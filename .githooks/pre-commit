@@ -1,0 +1,42 @@
+#!/bin/sh
+# Secret/topology guard: block commits containing private LAN addresses or
+# credential-looking values. Placeholders (RFC 5737 192.0.2.0/24, "REDACTED",
+# obvious fakes in tests) are allowed.
+
+files=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$files" ] && exit 0
+
+fail=0
+
+# 1. Private/LAN IP ranges (RFC 1918) — real topology must never land.
+hits=$(git diff --cached -U0 -- $files | grep -E '^\+' | grep -E '\b(192\.168\.[0-9]{1,3}\.[0-9]{1,3}|10\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|172\.(1[6-9]|2[0-9]|3[01])\.[0-9]{1,3}\.[0-9]{1,3})\b')
+if [ -n "$hits" ]; then
+  echo "BLOCKED: private LAN IP address in staged changes (use 192.0.2.x documentation range instead):" >&2
+  echo "$hits" | head -20 >&2
+  fail=1
+fi
+
+# 2. Credential-looking patterns in added lines. Allow REDACTED and known fakes.
+hits=$(git diff --cached -U0 -- $files | grep -E '^\+' | grep -Ei '(^|[^A-Za-z0-9])((apikey|api_key|password|passwd|secret|token)["'"'"' ]*[=:]["'"'"' ]*|bearer +)[A-Za-z0-9+/_-]{16,}' | grep -viE 'REDACTED|secret-api-key|placeholder|example|your-|xxxx')
+if [ -n "$hits" ]; then
+  echo "BLOCKED: credential-looking value in staged changes:" >&2
+  echo "$hits" | head -20 >&2
+  fail=1
+fi
+
+# 3. Files that should never be committed at all.
+for f in $files; do
+  case "$f" in
+    *.env|*.pfx|*.p12|*.key|*.pem|*.snk|*secrets.json|*appsettings.Local.json)
+      echo "BLOCKED: sensitive file staged: $f" >&2
+      fail=1
+      ;;
+  esac
+done
+
+if [ $fail -ne 0 ]; then
+  echo "" >&2
+  echo "Commit rejected by .git/hooks/pre-commit secret guard." >&2
+  exit 1
+fi
+exit 0

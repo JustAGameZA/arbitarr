@@ -1,0 +1,109 @@
+name: Build & test
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+jobs:
+  build-test:
+    name: Build & test
+    runs-on: ubuntu-latest
+    env:
+      DOTNET_GCHeapHardLimit: "0x80000000"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore Arbitarr.sln
+
+      - name: Build (sequential)
+        run: dotnet build Arbitarr.sln -c Release -m:1 --no-restore
+
+      - name: Test
+        run: dotnet test Arbitarr.sln -c Release --no-build --logger trx --results-directory ./TestResults
+
+      - name: Enforce test-count floor
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          floor_file="tests/test-count-floor.txt"
+          if [ ! -f "$floor_file" ]; then
+            echo "BLOCKED: $floor_file is missing." >&2
+            exit 1
+          fi
+          floor=$(tr -d '[:space:]' < "$floor_file")
+
+          total=0
+          for trx in ./TestResults/*.trx; do
+            [ -f "$trx" ] || continue
+            # Each .trx's <ResultSummary><Counters .../> element carries a "total"
+            # attribute with the number of tests executed in that assembly.
+            count=$(grep -o 'total="[0-9]*"' "$trx" | head -1 | grep -o '[0-9]*')
+            count=${count:-0}
+            total=$((total + count))
+          done
+
+          echo "Executed test count: $total (floor: $floor)"
+          if [ "$total" -lt "$floor" ]; then
+            echo "BLOCKED: executed test count ($total) is below the committed floor ($floor) in $floor_file." >&2
+            exit 1
+          fi
+
+      - name: Tree-wide secret/topology guard
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          fail=0
+
+          # 1. Private/LAN IP ranges (RFC 1918) anywhere in the tracked tree. Built up from
+          # octet ranges (not a literal private dotted-quad) so this guard does not trip on
+          # its own source. Mirrors .git/hooks/pre-commit's pattern.
+          oct2="[0-9]{1,3}"
+          p1="192\.168\.${oct2}\.${oct2}"
+          p2="10\.${oct2}\.${oct2}\.${oct2}"
+          p3="172\.(1[6-9]|2[0-9]|3[01])\.${oct2}\.${oct2}"
+          ip_pattern="\\b(${p1}|${p2}|${p3})\\b"
+
+          hits=$(git grep -InE "$ip_pattern" -- . ':(exclude)tests/test-count-floor.txt' || true)
+          if [ -n "$hits" ]; then
+            echo "BLOCKED: private LAN IP address found in tracked tree (use 192.0.2.x documentation range instead):" >&2
+            echo "$hits" | head -20 >&2
+            fail=1
+          fi
+
+          # 2. Credential-looking patterns. Allow REDACTED and other known placeholders.
+          cred_pattern='(^|[^A-Za-z0-9])((apikey|api_key|password|passwd|secret|token)["'"'"' ]*[=:]["'"'"' ]*|bearer +)[A-Za-z0-9+/_-]{16,}'
+          allowlist='REDACTED|secret-api-key|placeholder|example|your-|xxxx'
+
+          hits=$(git grep -InE "$cred_pattern" -- . | grep -viE "$allowlist" || true)
+          if [ -n "$hits" ]; then
+            echo "BLOCKED: credential-looking value found in tracked tree:" >&2
+            echo "$hits" | head -20 >&2
+            fail=1
+          fi
+
+          # 3. Files that should never be committed at all.
+          sensitive_files=$(git ls-files -- '*.env' '*.pfx' '*.p12' '*.key' '*.pem' '*.snk' '*secrets.json' '*appsettings.Local.json')
+          if [ -n "$sensitive_files" ]; then
+            echo "BLOCKED: sensitive file present in tracked tree:" >&2
+            echo "$sensitive_files" >&2
+            fail=1
+          fi
+
+          if [ "$fail" -ne 0 ]; then
+            echo "" >&2
+            echo "Tree-wide guard failed. This re-runs the .git/hooks/pre-commit checks over the" >&2
+            echo "whole tree so the guarantee does not depend on contributors configuring hooks." >&2
+            exit 1
+          fi
+
+          echo "Tree-wide secret/topology guard passed."

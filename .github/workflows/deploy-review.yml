@@ -1,0 +1,56 @@
+name: Deploy review environment
+
+# Name-vs-meaning warning (keep the name, correct the reading). The required-check name
+# `Deploy review environment` is fixed by the branch protection rule and is not renamed here.
+# But a green tick on it means exactly two things: the image builds, and the built container
+# answers /health. It does not mean anything was deployed anywhere - no review environment
+# exists, and the Unraid target is never reached from CI. At M0 this smoke check is
+# near-vacuous, because the Host exposes only /health: the check can pass while the product
+# does nothing. Its meaning grows as milestones land - after M1 it proves the endpoint surface
+# starts, after M2 the dashboard is served, after M7 the first-run path works. The only
+# deployment evidence in this plan is the manual Unraid round-trip recorded at M1, M2, and M7.
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+jobs:
+  deploy-review:
+    name: Deploy review environment
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build container image
+        run: docker build -f Dockerfile -t arbitarr-review:ci .
+
+      - name: Run container
+        run: docker run -d --name arbitarr-review -p 127.0.0.1:8080:8080 arbitarr-review:ci
+
+      - name: Smoke-check /health
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for i in $(seq 1 30); do
+            if curl -sf "http://127.0.0.1:8080/health" -o /tmp/health.json; then
+              echo "Container answered /health after ${i} attempt(s):"
+              cat /tmp/health.json
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "BLOCKED: container did not answer /health within the timeout." >&2
+          docker logs arbitarr-review >&2 || true
+          exit 1
+
+      - name: Container logs
+        if: always()
+        run: docker logs arbitarr-review || true
+
+      - name: Stop container
+        if: always()
+        run: docker rm -f arbitarr-review || true
