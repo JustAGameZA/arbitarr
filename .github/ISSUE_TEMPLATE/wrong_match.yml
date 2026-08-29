@@ -1,0 +1,66 @@
+name: Wrong or missed match
+description: Arbitarr matched the wrong release, or refused a match it should have made
+labels: ["bug", "identity-matching"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is the bug class Arbitarr exists to eliminate, so these reports get priority — and the release names you paste here usually become permanent regression fixtures. **Redact API keys and real hostnames/IPs** (use `192.0.2.x`).
+  - type: input
+    id: series
+    attributes:
+      label: Series / movie
+      description: Name plus a provider ID if you have one (TVDB/TMDB/AniDB).
+      placeholder: "Bleach (TVDB 74796)"
+    validations:
+      required: true
+  - type: textarea
+    id: query
+    attributes:
+      label: The search query
+      description: The Torznab query Sonarr/Radarr sent (or that you sent manually).
+      placeholder: t=tvsearch&q=Bleach&season=1&ep=36
+    validations:
+      required: true
+  - type: textarea
+    id: releases
+    attributes:
+      label: Release names
+      description: The release(s) involved — the one wrongly matched, the one wrongly rejected, or both. Exact strings, one per line.
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What went wrong?
+      options:
+        - Matched the wrong episode/edition
+        - Refused a match it should have made
+        - Merged two different series/franchise entries
+        - Ambiguity not flagged (silently picked one interpretation)
+        - Other (explain below)
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What the correct outcome is, and how you know
+      description: Which episode/identity the release actually is, and the evidence (XEM mapping, AniDB entry, arc numbering, etc.).
+    validations:
+      required: true
+  - type: textarea
+    id: provenance
+    attributes:
+      label: Provenance output
+      description: The provenance/flags Arbitarr reported for this match, if available.
+      render: text
+    validations:
+      required: false
+  - type: checkboxes
+    id: redaction
+    attributes:
+      label: Redaction check
+      options:
+        - label: I have removed all API keys and real hostnames/IP addresses from this report.
+          required: true

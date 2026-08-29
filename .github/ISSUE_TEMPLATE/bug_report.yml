@@ -1,0 +1,58 @@
+name: Bug report
+description: Something behaves incorrectly
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. **Redact everything sensitive before submitting**: API keys, and any real hostnames or IP addresses (use `192.0.2.x` placeholders — even LAN IPs leak your network topology).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+      placeholder: Searched for "Bleach S01E36" via the Torznab endpoint; expected the TYBW arc-relative match, got no results with no provenance flags.
+    validations:
+      required: true
+  - type: textarea
+    id: release-names
+    attributes:
+      label: Release names / queries involved (if identity-matching related)
+      description: |
+        For wrong-match or missed-match bugs, the exact release names and the search query are the most important part of the report — they usually become regression fixtures.
+      placeholder: |
+        Query: t=tvsearch&q=Bleach&season=1&ep=36
+        Release: [SubsPlease] Bleach - Thousand-Year Blood War - 36 (1080p)
+    validations:
+      required: false
+  - type: textarea
+    id: provenance
+    attributes:
+      label: Provenance / logs
+      description: Any provenance flags, log lines, or error output. Redact keys and real addresses.
+      render: text
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      description: Git commit hash or version you're running.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, how you run Arbitarr, and relevant upstream/downstream services and their versions (Sonarr/Radarr, NZBHydra2, Ollama model).
+      placeholder: |
+        Docker on Debian 12; Sonarr 4.x; NZBHydra2 7.x; Ollama qwen2.5:7b-instruct
+    validations:
+      required: false
+  - type: checkboxes
+    id: redaction
+    attributes:
+      label: Redaction check
+      options:
+        - label: I have removed all API keys and real hostnames/IP addresses from this report.
+          required: true

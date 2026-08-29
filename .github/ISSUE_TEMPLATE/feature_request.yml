@@ -1,0 +1,29 @@
+name: Feature request
+description: Propose an enhancement or new capability
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Arbitarr is in early development with a deliberately narrow scope: identity-aware search brokering. Proposals that fit that scope land much faster than general *arr-ecosystem wishes.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the situation where current behavior falls short. Concrete examples (real release names, queries) beat abstract descriptions.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: What should happen instead? If it affects matching, say what the provenance/flags should look like in the degraded cases too.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other ways to solve this, including "configure the existing stack differently", and why they're insufficient.
+    validations:
+      required: false
