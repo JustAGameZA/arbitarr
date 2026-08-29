@@ -1,10 +1,21 @@
-using Microsoft.Extensions.Hosting;
+using System.Reflection;
 
 // Arbitarr.Host is the explicit composition root: the only project permitted to
 // reference source-adapter and other outer-layer projects (AC6). Currently minimal —
 // other steps extend DI wiring and config binding here.
-var builder = Host.CreateApplicationBuilder(args);
+var builder = WebApplication.CreateBuilder(args);
 
-using var host = builder.Build();
+var app = builder.Build();
 
-await host.RunAsync();
+var version = Assembly.GetExecutingAssembly()
+    .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+    ?? "dev";
+
+app.MapGet("/health", () => Results.Json(new
+{
+    status = "ok",
+    name = "Arbitarr",
+    version,
+}));
+
+app.Run();
