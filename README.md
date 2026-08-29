@@ -31,18 +31,18 @@ Identity metadata is resolved through a fixed provider order — the *arr instan
 
 | Project | Role |
 |---|---|
-| `src/ArrSearcher.Core` | Domain primitives and shared contracts |
-| `src/ArrSearcher.Core.Identity` | Identity contracts: provenance, numbering candidates, match results |
-| `src/ArrSearcher.Media` | Identity resolution: providers, numbering/ambiguity policy, franchise classification, metadata cache |
-| `src/ArrSearcher.Sources.NzbHydra` | Torznab client for the NZBHydra2 upstream |
-| `src/ArrSearcher.Ai` | LLM arbitration (kept strictly independent of `Media` — enforced by architecture tests) |
-| `src/ArrSearcher.Data` | SQLite persistence (EF Core) |
-| `src/ArrSearcher.Api` | Torznab/Newznab endpoint surface |
-| `src/ArrSearcher.Host` | Composition root / entry point |
+| `src/Arbitarr.Core` | Domain primitives and shared contracts |
+| `src/Arbitarr.Core.Identity` | Identity contracts: provenance, numbering candidates, match results |
+| `src/Arbitarr.Media` | Identity resolution: providers, numbering/ambiguity policy, franchise classification, metadata cache |
+| `src/Arbitarr.Sources.NzbHydra` | Torznab client for the NZBHydra2 upstream |
+| `src/Arbitarr.Ai` | LLM arbitration (kept strictly independent of `Media` — enforced by architecture tests) |
+| `src/Arbitarr.Data` | SQLite persistence (EF Core) |
+| `src/Arbitarr.Api` | Torznab/Newznab endpoint surface |
+| `src/Arbitarr.Host` | Composition root / entry point |
 | `tests/` | xUnit test projects per component, plus architecture and integration tests |
 | `docs/` | Design notes, measurements, and captured (fully redacted) upstream fixtures |
 
-The solution still uses the working name `ArrSearcher` internally; a rename to `Arbitarr` is planned.
+The solution still uses the working name `Arbitarr` internally; a rename to `Arbitarr` is planned.
 
 ## Building
 
@@ -63,3 +63,7 @@ No credentials, API keys, or real network addresses are committed to this reposi
 ## Status
 
 Foundation work is in progress: the Torznab pipeline, SQLite caching layer, and the media-identity context (providers, ambiguity policy, provenance) are built and under test. Ranking/scoring, the LLM arbitration loop, and Docker packaging are next.
+
+## License
+
+Arbitarr is licensed under the [GNU General Public License v3.0](LICENSE).
