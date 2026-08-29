@@ -8,7 +8,7 @@ Arbitarr is in early development with no released versions yet. Security fixes l
 
 Please **do not open a public issue** for security vulnerabilities.
 
-Instead, use [GitHub's private vulnerability reporting](https://github.com/ZerithZA/arbitarr/security/advisories/new) for this repository. You should get an initial response within a week.
+Instead, use [GitHub's private vulnerability reporting](https://github.com/JustAGameZA/arbitarr/security/advisories/new) for this repository. You should get an initial response within a week.
 
 ## Scope notes
 

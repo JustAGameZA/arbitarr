@@ -5,14 +5,14 @@ Thanks for your interest! Arbitarr is in early, fast-moving development, so the 
 ## Before you start
 
 - **Open an issue first** for anything beyond a typo fix. The architecture is still settling; a short discussion up front avoids building on a moving floor.
-- Check the [issue tracker](https://github.com/ZerithZA/arbitarr/issues) for existing discussion.
+- Check the [issue tracker](https://github.com/JustAGameZA/arbitarr/issues) for existing discussion.
 
 ## Development setup
 
 You need the [.NET 10 SDK](https://dotnet.microsoft.com/download). Then:
 
 ```bash
-git clone https://github.com/ZerithZA/arbitarr.git
+git clone https://github.com/JustAGameZA/arbitarr.git
 cd arbitarr
 dotnet build
 dotnet test
@@ -62,4 +62,4 @@ The solution currently uses the working name `ArrSearcher` internally; a rename 
 
 ## Questions?
 
-Open a [discussion issue](https://github.com/ZerithZA/arbitarr/issues/new/choose). For security reports, see [SECURITY.md](SECURITY.md) — do not open a public issue.
+Open a [discussion issue](https://github.com/JustAGameZA/arbitarr/issues/new/choose). For security reports, see [SECURITY.md](SECURITY.md) — do not open a public issue.
