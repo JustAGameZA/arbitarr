@@ -276,4 +276,41 @@ public static class SettingsValidator
                 $"maintenance job interval must be <= {ceiling}, got {proposed}.");
         }
     }
+
+    /// <summary>
+    /// Validates a proposed <see cref="SettingKey.AdminApiKey"/> value (AC24-style: rejects
+    /// rather than silently accepting a weak value, since a short/blank key defeats the D2
+    /// mutation gate entirely). Floor: 16 characters (minimum length to resist casual guessing on
+    /// a LAN-exposed API). No ceiling — an arbitrarily long key is never a correctness hazard.
+    /// </summary>
+    public static void ValidateAdminApiKey(string proposed)
+    {
+        const int floor = 16;
+        if (string.IsNullOrWhiteSpace(proposed) || proposed.Length < floor)
+        {
+            throw new SettingsValidationException(SettingKey.AdminApiKey,
+                $"admin API key must be a non-blank string of at least {floor} characters.");
+        }
+    }
+
+    /// <summary>
+    /// Validates a proposed <see cref="SettingKey.AiConfidenceThreshold"/> value (D3: default
+    /// 0.9). Floor: 0.0 exclusive (a 0 threshold would suppress everything unconditionally,
+    /// silently defeating the "AI slot" of the precedence chain). Ceiling: 1.0 inclusive (a
+    /// confidence score is a probability and cannot exceed certainty).
+    /// </summary>
+    public static void ValidateAiConfidenceThreshold(double proposed)
+    {
+        if (proposed <= 0.0)
+        {
+            throw new SettingsValidationException(SettingKey.AiConfidenceThreshold,
+                $"AI confidence threshold must be > 0.0, got {proposed}.");
+        }
+
+        if (proposed > 1.0)
+        {
+            throw new SettingsValidationException(SettingKey.AiConfidenceThreshold,
+                $"AI confidence threshold must be <= 1.0, got {proposed}.");
+        }
+    }
 }

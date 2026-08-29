@@ -45,4 +45,22 @@ public enum SettingKey
 
     /// <summary>Maintenance job (prune + vacuum) scheduling interval. Restart-required exception.</summary>
     MaintenanceJobInterval,
+
+    /// <summary>
+    /// Global shadow-mode toggle spanning ALL suppression sources (deterministic rule engine,
+    /// identity layer, numbering scorer, AI verdicts). Defaults ON for fresh installs (D3):
+    /// suppressions are recorded/annotated but never enforced until the operator flips this off.
+    /// </summary>
+    ShadowMode,
+
+    /// <summary>
+    /// Admin API key required to gate mutating actions in the full UI/API (D2). Used starting at
+    /// M7; declared here so the settings catalog/validator surface it uniformly.
+    /// </summary>
+    AdminApiKey,
+
+    /// <summary>
+    /// Minimum AI verdict confidence required to suppress a release (D3). Default 0.9.
+    /// </summary>
+    AiConfidenceThreshold,
 }
