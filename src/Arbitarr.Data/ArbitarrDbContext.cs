@@ -31,6 +31,14 @@ public sealed class ArbitarrDbContext : DbContext
 
     public DbSet<SettingEntry> Settings => Set<SettingEntry>();
 
+    public DbSet<FilterProfileEntry> FilterProfiles => Set<FilterProfileEntry>();
+
+    public DbSet<FilterRuleEntry> FilterRules => Set<FilterRuleEntry>();
+
+    public DbSet<ApiKeyProfileEntry> ApiKeyProfiles => Set<ApiKeyProfileEntry>();
+
+    public DbSet<VerdictCacheEntry> VerdictCacheEntries => Set<VerdictCacheEntry>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<MetadataCacheEntry>(entity =>
@@ -93,6 +101,39 @@ public sealed class ArbitarrDbContext : DbContext
             entity.HasKey(e => e.Name);
             entity.Property(e => e.Name).IsRequired();
             entity.Property(e => e.Value).IsRequired();
+        });
+
+        modelBuilder.Entity<FilterProfileEntry>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.Name).IsUnique();
+            entity.Property(e => e.Name).IsRequired();
+        });
+
+        modelBuilder.Entity<FilterRuleEntry>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.FilterProfileId);
+            entity.Property(e => e.Name).IsRequired();
+            entity.Property(e => e.Pattern).IsRequired();
+        });
+
+        modelBuilder.Entity<ApiKeyProfileEntry>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.ApiKeyName).IsUnique();
+            entity.Property(e => e.ApiKeyName).IsRequired();
+        });
+
+        modelBuilder.Entity<VerdictCacheEntry>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.ReleaseKeyHash).IsUnique();
+            entity.HasIndex(e => e.LastAccessedAt);
+            entity.Property(e => e.ReleaseKeyHash).IsRequired();
+            entity.Property(e => e.ModelName).IsRequired();
+            entity.Property(e => e.ModelDigest).IsRequired();
+            entity.Property(e => e.PromptVersion).IsRequired();
         });
     }
 }

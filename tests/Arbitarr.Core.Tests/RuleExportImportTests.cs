@@ -1,0 +1,68 @@
+using Arbitarr.Core.Filtering;
+
+namespace Arbitarr.Core.Tests;
+
+/// <summary>
+/// Proves Q3-D: export/import round-trips a profile's rules exactly, and that import is a plain,
+/// explicitly-invoked function — nothing in <see cref="RuleExporter"/>/<see cref="RuleImporter"/>
+/// runs on a schedule or reacts to any ambient event, so applying an imported rule set is always a
+/// deliberate, single call a caller chooses to make.
+/// </summary>
+public class RuleExportImportTests
+{
+    [Fact]
+    public void Export_ThenImport_RoundTripsRulesExactly()
+    {
+        var profile = new FilterProfile("default", new[]
+        {
+            new FilterRule("deny-cam", isAllow: false, Precedence.High, "CAM|TS"),
+            new FilterRule("allow-trusted", isAllow: true, Precedence.Highest, "REPACK"),
+        });
+
+        var exported = RuleExporter.Export(profile);
+        var imported = RuleImporter.Import(exported);
+
+        Assert.Equal(profile.Rules.Count, imported.Count);
+        for (var i = 0; i < profile.Rules.Count; i++)
+        {
+            var original = (FilterRule)profile.Rules[i];
+            var round = imported[i];
+            Assert.Equal(original.Name, round.Name);
+            Assert.Equal(original.IsAllow, round.IsAllow);
+            Assert.Equal(original.Precedence, round.Precedence);
+            Assert.Equal(original.PatternText, round.PatternText);
+        }
+    }
+
+    [Fact]
+    public void Export_EscapesPipeCharacters_InNameAndPattern()
+    {
+        var profile = new FilterProfile("default", new[]
+        {
+            new FilterRule("deny|pipe", isAllow: false, Precedence.Normal, "a|b"),
+        });
+
+        var exported = RuleExporter.Export(profile);
+        var imported = RuleImporter.Import(exported);
+
+        Assert.Single(imported);
+        Assert.Equal("deny|pipe", imported[0].Name);
+        Assert.Equal("a|b", imported[0].PatternText);
+    }
+
+    [Fact]
+    public void Import_MalformedLine_ThrowsFormatException_RejectsWholeImport()
+    {
+        var badText = "only-two|fields\n";
+
+        Assert.Throws<FormatException>(() => RuleImporter.Import(badText));
+    }
+
+    [Fact]
+    public void Import_InvalidPrecedence_ThrowsFormatException()
+    {
+        var badText = "name|false|NotATier|pattern\n";
+
+        Assert.Throws<FormatException>(() => RuleImporter.Import(badText));
+    }
+}
