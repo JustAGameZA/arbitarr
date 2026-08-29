@@ -56,6 +56,15 @@ dotnet build
 dotnet test
 ```
 
+## Continuous integration
+
+Every PR must pass two required checks: `Build & test` (restore/build/test plus a test-count
+floor and a tree-wide secret/topology guard) and `Deploy review environment` (builds the
+container image and confirms it answers `GET /health`). A green `Deploy review environment`
+check means the image builds and `/health` answers — **it does not mean anything was deployed**.
+No review environment exists yet; CI never reaches the Unraid deployment target. See
+`.github/workflows/deploy-review.yml` for the full explanation.
+
 ## Privacy and secrets
 
 No credentials, API keys, or real network addresses are committed to this repository. Captured fixtures are scrubbed (`apikey=REDACTED`, hosts rewritten to RFC 5737 documentation addresses), and the repo enforces this with a pre-commit guard plus GitHub secret scanning with push protection.

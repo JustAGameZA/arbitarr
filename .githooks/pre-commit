@@ -1,0 +1,70 @@
+#!/bin/sh
+# Secret/topology guard: block commits containing private LAN addresses or
+# credential-looking values. Placeholders (RFC 5737 192.0.2.0/24, "REDACTED",
+# obvious fakes in tests) are allowed.
+
+diff=$(git diff --cached -U0 -a)
+[ -z "$diff" ] && exit 0
+
+fail=0
+
+# 1. Private/LAN IP ranges (RFC 1918) — real topology must never land.
+hits=$(printf '%s\n' "$diff" | grep -E '^\+' | grep -E '\b(192\.168\.[0-9]{1,3}\.[0-9]{1,3}|10\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|172\.(1[6-9]|2[0-9]|3[01])\.[0-9]{1,3}\.[0-9]{1,3})\b')
+if [ -n "$hits" ]; then
+  echo "BLOCKED: private LAN IP address in staged changes (use 192.0.2.x documentation range instead):" >&2
+  echo "$hits" | head -20 >&2
+  fail=1
+fi
+
+# 2. Credential-looking patterns in added lines. The allowlist is checked against the
+# matched VALUE only (not the whole line), so a real secret can't hide behind an
+# unrelated allowlist word elsewhere on the same line (e.g. a trailing "# example" comment).
+cred_pattern='(^|[^A-Za-z0-9])((apikey|api_key|password|passwd|secret|token)["'"'"' ]*[=:]["'"'"' ]*|bearer +)([A-Za-z0-9+/_-]{16,})'
+allowlist='^(REDACTED|secret-api-key|placeholder|example|your-|xxxx)'
+
+added=$(printf '%s\n' "$diff" | grep -E '^\+')
+hits=$(printf '%s\n' "$added" | grep -Ei "$cred_pattern" | while IFS= read -r ln; do
+  value=$(printf '%s\n' "$ln" | grep -oEi "$cred_pattern" | tail -1 | grep -oE '[A-Za-z0-9+/_-]{16,}$')
+  if [ -n "$value" ] && ! printf '%s\n' "$value" | grep -qiE "$allowlist"; then
+    printf '%s\n' "$ln"
+  fi
+done)
+if [ -n "$hits" ]; then
+  echo "BLOCKED: credential-looking value in staged changes:" >&2
+  echo "$hits" | head -20 >&2
+  fail=1
+fi
+
+# 2b. Keyword-less, high-signal secret shapes (AWS access key, GitHub PAT, JWT, PEM
+# private key header). Built from split literals so this guard's own source never
+# matches its own detection patterns.
+akia_pat="AKIA[0-9A-Z]{16}"
+ghp_pat="ghp_[A-Za-z0-9]{36}"
+jwt_pat="eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"
+pem_pat="-----BEGIN"' [A-Z ]*'"PRIVATE KEY-----"
+shape_pattern="${akia_pat}|${ghp_pat}|${jwt_pat}|${pem_pat}"
+
+hits=$(printf '%s\n' "$added" | grep -E "$shape_pattern")
+if [ -n "$hits" ]; then
+  echo "BLOCKED: high-signal secret shape (AWS/GitHub/JWT/PEM) in staged changes:" >&2
+  echo "$hits" | head -20 >&2
+  fail=1
+fi
+
+# 3. Files that should never be committed at all.
+files=$(git diff --cached --name-only --diff-filter=ACM)
+for f in $files; do
+  case "$f" in
+    *.env|*.env.*|.env*|*.pfx|*.p12|*.key|*.pem|*.snk|*secrets.json|*appsettings.Local.json)
+      echo "BLOCKED: sensitive file staged: $f" >&2
+      fail=1
+      ;;
+  esac
+done
+
+if [ $fail -ne 0 ]; then
+  echo "" >&2
+  echo "Commit rejected by .git/hooks/pre-commit secret guard." >&2
+  exit 1
+fi
+exit 0

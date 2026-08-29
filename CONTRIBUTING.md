@@ -20,6 +20,20 @@ dotnet test
 
 No external services are required for the test suite — upstream responses are captured as redacted fixtures under `docs/fixtures/`.
 
+### Shareable pre-commit hook
+
+The secret/topology guard described below lives at `.git/hooks/pre-commit`, which is not
+tracked by git and so isn't installed automatically when you clone the repo. A tracked,
+byte-identical copy lives at `.githooks/pre-commit`. Point git at it once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+CI also re-runs this guard's checks over the whole tree on every PR (the `Build & test`
+required check), so a missing local hook can't let something slip through — but installing it
+locally catches problems before you push.
+
 ## Project conventions
 
 ### Architecture boundaries
@@ -51,6 +65,20 @@ Arbitarr never silently guesses. Any code path that degrades (source unreachable
 3. Make sure `dotnet build` and `dotnet test` pass locally.
 4. Fill in the PR template, including which tests cover the change.
 5. Expect review feedback to focus on the invariants above (boundaries, provenance, redaction) first.
+
+### CI required checks
+
+Every PR must pass two required checks before merge:
+
+- **`Build & test`** — restores, builds (`dotnet build -m:1`, sequential to bound memory use),
+  and runs the full test suite. It also enforces a test-count floor (`tests/test-count-floor.txt`)
+  so the suite can't silently shrink, and re-runs the secret/topology guard over the whole tree.
+- **`Deploy review environment`** — builds the container image from `Dockerfile` and smoke-checks
+  that the running container answers `GET /health`. **A green tick here means the image builds
+  and `/health` answers — nothing more.** It does not mean anything was deployed anywhere; no
+  review environment exists, and CI never reaches the Unraid deployment target. See the comment
+  at the top of `.github/workflows/deploy-review.yml` for the full explanation of how this
+  check's meaning grows as later milestones land.
 
 ## Commit messages
 
