@@ -1,4 +1,4 @@
-namespace ArrSearcher.Core.Releases;
+namespace Arbitarr.Core.Releases;
 
 /// <summary>
 /// A single search-result release, modeled as a superset of standard Torznab and Newznab

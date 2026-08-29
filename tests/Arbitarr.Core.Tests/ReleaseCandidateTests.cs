@@ -1,6 +1,6 @@
-using ArrSearcher.Core.Releases;
+using Arbitarr.Core.Releases;
 
-namespace ArrSearcher.Core.Tests;
+namespace Arbitarr.Core.Tests;
 
 public class ReleaseCandidateTests
 {

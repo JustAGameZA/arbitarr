@@ -1,6 +1,6 @@
-using ArrSearcher.Core.Releases;
+using Arbitarr.Core.Releases;
 
-namespace ArrSearcher.Core.Filtering;
+namespace Arbitarr.Core.Filtering;
 
 /// <summary>
 /// An audit record of a release being suppressed by the filtering pipeline.

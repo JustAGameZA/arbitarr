@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace ArrSearcher.Core.Sources.CircuitBreaker;
+namespace Arbitarr.Core.Sources.CircuitBreaker;
 
 /// <summary>
 /// Per-source circuit breaker implementing AC20's curve as a pure, testable state machine.
@@ -18,7 +18,7 @@ namespace ArrSearcher.Core.Sources.CircuitBreaker;
 /// <see cref="TimeProvider"/> rather than <see cref="DateTimeOffset.UtcNow"/>, so tests can drive
 /// state transitions deterministically without sleeping for real minutes. Persistence (writing
 /// state into <c>SourceHealthRecord</c> rows) is handled by a separate thin adapter in
-/// ArrSearcher.Data; this class knows nothing about that entity or SQLite.
+/// Arbitarr.Data; this class knows nothing about that entity or SQLite.
 /// </para>
 /// </summary>
 public sealed class SourceCircuitBreaker
@@ -169,7 +169,7 @@ public sealed class SourceCircuitBreaker
     /// <summary>
     /// Seeds/overwrites the in-memory state for a source, e.g. from a persisted
     /// <c>SourceHealthRecord</c> row on startup so breaker state survives restarts. Persistence is
-    /// the caller's responsibility (see ArrSearcher.Data's adapter) — this method only affects the
+    /// the caller's responsibility (see Arbitarr.Data's adapter) — this method only affects the
     /// in-memory state machine.
     /// </summary>
     public void Seed(string sourceName, CircuitBreakerSnapshot snapshot)

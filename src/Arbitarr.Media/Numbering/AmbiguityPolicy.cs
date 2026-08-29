@@ -1,6 +1,6 @@
-using ArrSearcher.Core.Identity;
+using Arbitarr.Core.Identity;
 
-namespace ArrSearcher.Media.Numbering;
+namespace Arbitarr.Media.Numbering;
 
 /// <summary>
 /// Decides whether an absolute-episode lookup against an <see cref="ArcSeasonMap"/> is safely

@@ -1,4 +1,4 @@
-namespace ArrSearcher.Media.Identity;
+namespace Arbitarr.Media.Identity;
 
 /// <summary>
 /// How a candidate <c>SeriesIdentity</c> relates to the series actually being searched for.

@@ -1,10 +1,10 @@
 using System.Globalization;
 using System.Xml.Linq;
-using ArrSearcher.Core.Releases;
-using ArrSearcher.Core.Sources;
-using ArrSearcher.Core.Sources.CircuitBreaker;
+using Arbitarr.Core.Releases;
+using Arbitarr.Core.Sources;
+using Arbitarr.Core.Sources.CircuitBreaker;
 
-namespace ArrSearcher.Sources.NzbHydra;
+namespace Arbitarr.Sources.NzbHydra;
 
 /// <summary>
 /// <see cref="IUpstreamSource"/> implementation backed by a real NZBHydra2 instance's

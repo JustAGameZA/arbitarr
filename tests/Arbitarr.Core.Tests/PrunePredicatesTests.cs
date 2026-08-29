@@ -1,6 +1,6 @@
-using ArrSearcher.Core.Settings;
+using Arbitarr.Core.Settings;
 
-namespace ArrSearcher.Core.Tests;
+namespace Arbitarr.Core.Tests;
 
 /// <summary>
 /// Proves the search-result cache prune predicate is exactly <c>age &gt; serve_until</c> and

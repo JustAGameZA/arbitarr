@@ -1,8 +1,8 @@
-using ArrSearcher.Data;
-using ArrSearcher.Data.Entities;
+using Arbitarr.Data;
+using Arbitarr.Data.Entities;
 using Microsoft.EntityFrameworkCore;
 
-namespace ArrSearcher.Media.Cache;
+namespace Arbitarr.Media.Cache;
 
 /// <summary>
 /// EF Core/SQLite-backed <see cref="IMetadataCacheStore"/>, following the same hydrate-on-first-use,
@@ -12,9 +12,9 @@ namespace ArrSearcher.Media.Cache;
 /// </summary>
 public sealed class MetadataCacheStore : IMetadataCacheStore
 {
-    private readonly ArrSearcherDbContext _dbContext;
+    private readonly ArbitarrDbContext _dbContext;
 
-    public MetadataCacheStore(ArrSearcherDbContext dbContext)
+    public MetadataCacheStore(ArbitarrDbContext dbContext)
     {
         _dbContext = dbContext;
     }

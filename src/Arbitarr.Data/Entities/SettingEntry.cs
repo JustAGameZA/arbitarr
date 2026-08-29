@@ -1,4 +1,4 @@
-namespace ArrSearcher.Data.Entities;
+namespace Arbitarr.Data.Entities;
 
 /// <summary>
 /// Generic, typed-row settings store: one row per named setting, holding its current value and

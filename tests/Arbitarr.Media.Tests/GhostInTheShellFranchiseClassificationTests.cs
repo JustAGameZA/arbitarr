@@ -1,8 +1,8 @@
-using ArrSearcher.Core.Identity;
-using ArrSearcher.Media.Identity;
+using Arbitarr.Core.Identity;
+using Arbitarr.Media.Identity;
 using Xunit;
 
-namespace ArrSearcher.Media.Tests;
+namespace Arbitarr.Media.Tests;
 
 /// <summary>
 /// Ghost in the Shell fixture (AC-M7a): three canonical, distinct <see cref="SeriesIdentity"/>

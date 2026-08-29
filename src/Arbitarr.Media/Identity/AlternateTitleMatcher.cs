@@ -1,6 +1,6 @@
-using ArrSearcher.Core.Identity;
+using Arbitarr.Core.Identity;
 
-namespace ArrSearcher.Media.Identity;
+namespace Arbitarr.Media.Identity;
 
 /// <summary>
 /// Determines whether a release title positively identifies a <see cref="SeriesIdentity"/>, using its

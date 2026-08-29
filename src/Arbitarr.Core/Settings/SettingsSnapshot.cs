@@ -1,4 +1,4 @@
-namespace ArrSearcher.Core.Settings;
+namespace Arbitarr.Core.Settings;
 
 /// <summary>
 /// The full set of current setting values, needed because several bounds are cross-field

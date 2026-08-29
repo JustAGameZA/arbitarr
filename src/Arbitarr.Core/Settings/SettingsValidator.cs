@@ -1,4 +1,4 @@
-namespace ArrSearcher.Core.Settings;
+namespace Arbitarr.Core.Settings;
 
 /// <summary>
 /// Validates proposed setting values against the plan's floor/ceiling policy (plan lines

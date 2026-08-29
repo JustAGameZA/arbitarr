@@ -1,6 +1,6 @@
-using ArrSearcher.Core.Sources.CircuitBreaker;
+using Arbitarr.Core.Sources.CircuitBreaker;
 
-namespace ArrSearcher.Data.CircuitBreaker;
+namespace Arbitarr.Data.CircuitBreaker;
 
 /// <summary>
 /// Thin composition wrapper that pairs a pure <see cref="SourceCircuitBreaker"/> with a

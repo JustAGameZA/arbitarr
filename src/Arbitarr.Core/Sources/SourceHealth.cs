@@ -1,4 +1,4 @@
-namespace ArrSearcher.Core.Sources;
+namespace Arbitarr.Core.Sources;
 
 /// <summary>
 /// Point-in-time health/availability state for an upstream source, e.g. as tracked by a

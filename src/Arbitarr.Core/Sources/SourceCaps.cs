@@ -1,4 +1,4 @@
-namespace ArrSearcher.Core.Sources;
+namespace Arbitarr.Core.Sources;
 
 /// <summary>
 /// Describes the capabilities advertised by an upstream source (Torznab/Newznab "caps").

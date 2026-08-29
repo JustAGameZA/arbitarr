@@ -1,9 +1,9 @@
-using ArrSearcher.Data;
+using Arbitarr.Data;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using System.Linq;
 
-namespace ArrSearcher.Data.Tests;
+namespace Arbitarr.Data.Tests;
 
 public sealed class MigrationTests : IDisposable
 {
@@ -23,11 +23,11 @@ public sealed class MigrationTests : IDisposable
         }
     }
 
-    private ArrSearcherDbContext CreateContext()
+    private ArbitarrDbContext CreateContext()
     {
-        var optionsBuilder = new DbContextOptionsBuilder<ArrSearcherDbContext>();
+        var optionsBuilder = new DbContextOptionsBuilder<ArbitarrDbContext>();
         optionsBuilder.UseSqlite($"Data Source={_dbPath}");
-        return new ArrSearcherDbContext(optionsBuilder.Options);
+        return new ArbitarrDbContext(optionsBuilder.Options);
     }
 
     [Fact]
@@ -56,13 +56,13 @@ public sealed class MigrationTests : IDisposable
 
         var expectedTables = new[]
         {
-            nameof(ArrSearcherDbContext.MetadataCacheEntries),
-            nameof(ArrSearcherDbContext.SearchResultCacheEntries),
-            nameof(ArrSearcherDbContext.QuerySnapshotCacheEntries),
-            nameof(ArrSearcherDbContext.CapsCacheEntries),
-            nameof(ArrSearcherDbContext.SourceHealthRecords),
-            nameof(ArrSearcherDbContext.SuppressionAuditLogEntries),
-            nameof(ArrSearcherDbContext.Settings),
+            nameof(ArbitarrDbContext.MetadataCacheEntries),
+            nameof(ArbitarrDbContext.SearchResultCacheEntries),
+            nameof(ArbitarrDbContext.QuerySnapshotCacheEntries),
+            nameof(ArbitarrDbContext.CapsCacheEntries),
+            nameof(ArbitarrDbContext.SourceHealthRecords),
+            nameof(ArbitarrDbContext.SuppressionAuditLogEntries),
+            nameof(ArbitarrDbContext.Settings),
         };
 
         foreach (var expectedTable in expectedTables)

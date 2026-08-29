@@ -1,8 +1,8 @@
-namespace ArrSearcher.Media.Cache;
+namespace Arbitarr.Media.Cache;
 
 /// <summary>
 /// Which of the source's distinct outcomes a live fetch attempt produced, mirroring
-/// <c>ArrSearcher.Media.Providers.XemOutcomeKind</c> so <see cref="MetadataCacheCoordinator"/> can
+/// <c>Arbitarr.Media.Providers.XemOutcomeKind</c> so <see cref="MetadataCacheCoordinator"/> can
 /// stay provider-shape-agnostic (it depends on this small delegate-friendly type rather than
 /// referencing a specific provider's result envelope).
 /// </summary>

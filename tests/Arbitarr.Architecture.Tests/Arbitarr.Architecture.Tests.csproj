@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
-    <RootNamespace>ArrSearcher.Architecture.Tests</RootNamespace>
+    <RootNamespace>Arbitarr.Architecture.Tests</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,10 +16,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\ArrSearcher.Core\ArrSearcher.Core.csproj" />
-    <ProjectReference Include="..\..\src\ArrSearcher.Core.Identity\ArrSearcher.Core.Identity.csproj" />
-    <ProjectReference Include="..\..\src\ArrSearcher.Ai\ArrSearcher.Ai.csproj" />
-    <ProjectReference Include="..\..\src\ArrSearcher.Media\ArrSearcher.Media.csproj" />
+    <ProjectReference Include="..\..\src\Arbitarr.Core\Arbitarr.Core.csproj" />
+    <ProjectReference Include="..\..\src\Arbitarr.Core.Identity\Arbitarr.Core.Identity.csproj" />
+    <ProjectReference Include="..\..\src\Arbitarr.Ai\Arbitarr.Ai.csproj" />
+    <ProjectReference Include="..\..\src\Arbitarr.Media\Arbitarr.Media.csproj" />
   </ItemGroup>
 
 </Project>

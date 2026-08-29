@@ -1,4 +1,4 @@
-namespace ArrSearcher.Data.Entities;
+namespace Arbitarr.Data.Entities;
 
 /// <summary>
 /// Short-TTL, pagination-scoped snapshot of a query's result set, so that repeated paging

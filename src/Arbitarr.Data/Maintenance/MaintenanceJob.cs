@@ -1,18 +1,18 @@
-using ArrSearcher.Core.Settings;
+using Arbitarr.Core.Settings;
 using Microsoft.EntityFrameworkCore;
 
-namespace ArrSearcher.Data.Maintenance;
+namespace Arbitarr.Data.Maintenance;
 
 /// <summary>
 /// Prunes the accumulating cache-like tables and reclaims freed pages, per the plan's retention
 /// policy (plan lines ~1027-1032, ~1058-1080). This is the DB-touching implementation; the
-/// prune-eligibility predicates themselves live in <see cref="ArrSearcher.Core.Settings.PrunePredicates"/>
+/// prune-eligibility predicates themselves live in <see cref="Arbitarr.Core.Settings.PrunePredicates"/>
 /// (reference-free of EF Core) so they are independently unit-testable and so this class stays a
 /// thin adapter over them.
 ///
 /// Note on scope: the plan's retention table names four accumulating tables — search-result
 /// cache, AI verdict cache, metadata cache, and suppression audit log. Only the first, third, and
-/// fourth have a persisted schema as of Step 2 (see <see cref="ArrSearcherDbContext"/>); the AI
+/// fourth have a persisted schema as of Step 2 (see <see cref="ArbitarrDbContext"/>); the AI
 /// verdict cache entity belongs to the AI/classification layer (a later step) and does not exist
 /// yet, so this job does not (and cannot) prune it. When that entity is added, its prune step
 /// should be wired in here following the same pattern.
@@ -20,16 +20,16 @@ namespace ArrSearcher.Data.Maintenance;
 /// Scheduling: run on an interval equal to the <c>maintenance_job_interval</c> setting. Per
 /// <see cref="SettingsValidator.ValidateMaintenanceJobInterval"/>, this is the one setting
 /// explicitly permitted to require a restart to take effect — callers that own a recurring timer
-/// (e.g. a hosted service in ArrSearcher.Host) must read the interval once at startup/at each
+/// (e.g. a hosted service in Arbitarr.Host) must read the interval once at startup/at each
 /// fire and are not required to react to a live change without a restart, unlike every other
 /// setting in the catalog.
 /// </summary>
 public sealed class MaintenanceJob
 {
-    private readonly ArrSearcherDbContext _dbContext;
+    private readonly ArbitarrDbContext _dbContext;
     private readonly TimeProvider _timeProvider;
 
-    public MaintenanceJob(ArrSearcherDbContext dbContext, TimeProvider? timeProvider = null)
+    public MaintenanceJob(ArbitarrDbContext dbContext, TimeProvider? timeProvider = null)
     {
         _dbContext = dbContext;
         _timeProvider = timeProvider ?? TimeProvider.System;

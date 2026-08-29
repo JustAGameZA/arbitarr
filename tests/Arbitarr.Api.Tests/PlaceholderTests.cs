@@ -1,6 +1,6 @@
 using Xunit;
 
-namespace ArrSearcher.Api.Tests;
+namespace Arbitarr.Api.Tests;
 
 /// <summary>
 /// Placeholder test confirming this project builds and runs.

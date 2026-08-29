@@ -1,6 +1,6 @@
-using ArrSearcher.Core.Identity;
+using Arbitarr.Core.Identity;
 
-namespace ArrSearcher.Media.Cache;
+namespace Arbitarr.Media.Cache;
 
 /// <summary>
 /// Ties <see cref="IMetadataCacheStore"/> together with a live-fetch callback to implement AC-M8's

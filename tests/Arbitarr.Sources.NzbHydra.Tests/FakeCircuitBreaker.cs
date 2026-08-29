@@ -1,6 +1,6 @@
-using ArrSearcher.Core.Sources.CircuitBreaker;
+using Arbitarr.Core.Sources.CircuitBreaker;
 
-namespace ArrSearcher.Sources.NzbHydra.Tests;
+namespace Arbitarr.Sources.NzbHydra.Tests;
 
 /// <summary>Trivial in-memory <see cref="IAsyncCircuitBreaker"/> test double.</summary>
 internal sealed class FakeCircuitBreaker : IAsyncCircuitBreaker

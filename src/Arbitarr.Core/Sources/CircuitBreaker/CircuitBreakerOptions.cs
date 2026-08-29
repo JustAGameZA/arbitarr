@@ -1,4 +1,4 @@
-namespace ArrSearcher.Core.Sources.CircuitBreaker;
+namespace Arbitarr.Core.Sources.CircuitBreaker;
 
 /// <summary>
 /// Overridable constants for <see cref="SourceCircuitBreaker"/>, defaulting to AC20's curve as

@@ -1,4 +1,4 @@
-namespace ArrSearcher.Core.Filtering;
+namespace Arbitarr.Core.Filtering;
 
 /// <summary>
 /// Relative ordering used when multiple filter rules could apply to the same release.

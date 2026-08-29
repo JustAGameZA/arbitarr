@@ -12,7 +12,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\ArrSearcher.Core\ArrSearcher.Core.csproj" />
+    <ProjectReference Include="..\Arbitarr.Core\Arbitarr.Core.csproj" />
   </ItemGroup>
 
 </Project>

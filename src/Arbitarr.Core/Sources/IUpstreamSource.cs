@@ -1,11 +1,11 @@
-using ArrSearcher.Core.Releases;
+using Arbitarr.Core.Releases;
 
-namespace ArrSearcher.Core.Sources;
+namespace Arbitarr.Core.Sources;
 
 /// <summary>
 /// Contract for an upstream indexer/adapter capable of searching for releases,
 /// reporting its capabilities, and fetching a release's download payload.
-/// Implementations live outside Core (e.g. ArrSearcher.Sources.NzbHydra) — this
+/// Implementations live outside Core (e.g. Arbitarr.Sources.NzbHydra) — this
 /// project defines the contract only, per the pluggability guarantee (AC6).
 /// </summary>
 public interface IUpstreamSource

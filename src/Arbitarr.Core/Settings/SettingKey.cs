@@ -1,4 +1,4 @@
-namespace ArrSearcher.Core.Settings;
+namespace Arbitarr.Core.Settings;
 
 /// <summary>
 /// The fixed catalog of persisted retention/TTL settings (plan lines ~1043-1056). Each key

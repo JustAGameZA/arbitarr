@@ -1,4 +1,4 @@
-namespace ArrSearcher.Media.Numbering;
+namespace Arbitarr.Media.Numbering;
 
 /// <summary>
 /// One row of a series' season-keyed arc-title map: binds a story-arc name to the scene season

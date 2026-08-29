@@ -1,4 +1,4 @@
-namespace ArrSearcher.Sources.NzbHydra.Tests;
+namespace Arbitarr.Sources.NzbHydra.Tests;
 
 /// <summary>
 /// Stub <see cref="HttpMessageHandler"/> that records every request it receives and returns

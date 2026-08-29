@@ -1,9 +1,9 @@
 using System.Globalization;
 using System.Text.Json;
-using ArrSearcher.Core.Identity;
-using ArrSearcher.Core.Sources.CircuitBreaker;
+using Arbitarr.Core.Identity;
+using Arbitarr.Core.Sources.CircuitBreaker;
 
-namespace ArrSearcher.Media.Providers;
+namespace Arbitarr.Media.Providers;
 
 /// <summary>
 /// One row of TheXEM's <c>map/all</c> scene-numbering table: a single episode's numbering as seen

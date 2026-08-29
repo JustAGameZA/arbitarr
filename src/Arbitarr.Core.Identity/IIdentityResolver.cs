@@ -1,4 +1,4 @@
-namespace ArrSearcher.Core.Identity;
+namespace Arbitarr.Core.Identity;
 
 /// <summary>
 /// Optional hints that narrow identity resolution when a bare title is ambiguous.
@@ -17,7 +17,7 @@ public sealed record IdentityResolutionHints(int? TvdbId, int? TmdbId, int? Year
 /// "The Ghost in the Shell" is not sufficient to identify which sibling series a release belongs to.
 /// Implementations resolve the canonical identity (TVDB/TMDB ID plus alternate titles) that
 /// downstream matching uses instead of the display title. This interface defines the contract only —
-/// no resolution logic ships here; see the Step 3a implementations in <c>ArrSearcher.Media</c>.
+/// no resolution logic ships here; see the Step 3a implementations in <c>Arbitarr.Media</c>.
 /// </para>
 /// </remarks>
 public interface IIdentityResolver

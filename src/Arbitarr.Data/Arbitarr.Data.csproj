@@ -4,7 +4,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <RootNamespace>ArrSearcher.Data</RootNamespace>
+    <RootNamespace>Arbitarr.Data</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,8 +16,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\ArrSearcher.Core\ArrSearcher.Core.csproj" />
-    <ProjectReference Include="..\ArrSearcher.Core.Identity\ArrSearcher.Core.Identity.csproj" />
+    <ProjectReference Include="..\Arbitarr.Core\Arbitarr.Core.csproj" />
+    <ProjectReference Include="..\Arbitarr.Core.Identity\Arbitarr.Core.Identity.csproj" />
   </ItemGroup>
 
 </Project>

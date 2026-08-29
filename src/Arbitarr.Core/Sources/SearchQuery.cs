@@ -1,4 +1,4 @@
-namespace ArrSearcher.Core.Sources;
+namespace Arbitarr.Core.Sources;
 
 /// <summary>
 /// A search request to be issued against an upstream source.

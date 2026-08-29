@@ -1,4 +1,4 @@
-namespace ArrSearcher.Core.Settings;
+namespace Arbitarr.Core.Settings;
 
 /// <summary>
 /// Thrown when a proposed setting value violates its floor or ceiling. Validation always

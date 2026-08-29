@@ -1,7 +1,7 @@
-using ArrSearcher.Data.Entities;
+using Arbitarr.Data.Entities;
 using Microsoft.EntityFrameworkCore;
 
-namespace ArrSearcher.Data;
+namespace Arbitarr.Data;
 
 /// <summary>
 /// EF Core context for arr-searcher's persistence foundation (Step 2). Accepts its connection
@@ -10,9 +10,9 @@ namespace ArrSearcher.Data;
 /// or any pragma itself — that is owned by the connection-string/pragma configuration layer
 /// (Step 2, worker-2's scope), not the schema.
 /// </summary>
-public sealed class ArrSearcherDbContext : DbContext
+public sealed class ArbitarrDbContext : DbContext
 {
-    public ArrSearcherDbContext(DbContextOptions<ArrSearcherDbContext> options)
+    public ArbitarrDbContext(DbContextOptions<ArbitarrDbContext> options)
         : base(options)
     {
     }

@@ -1,6 +1,6 @@
-using ArrSearcher.Core.Releases;
+using Arbitarr.Core.Releases;
 
-namespace ArrSearcher.Core.Filtering;
+namespace Arbitarr.Core.Filtering;
 
 /// <summary>
 /// Contract for a single filter rule evaluated against a release candidate.

@@ -1,16 +1,16 @@
-namespace ArrSearcher.Core.Sources.CircuitBreaker;
+namespace Arbitarr.Core.Sources.CircuitBreaker;
 
 /// <summary>
 /// Per-source circuit breaker abstraction consulted by upstream source adapters (e.g.
 /// <c>NzbHydraSource</c>) before issuing a call and reported back into after each call completes.
 ///
 /// <para>
-/// Async because the production implementation (<c>ArrSearcher.Data.CircuitBreaker.PersistentSourceCircuitBreaker</c>)
+/// Async because the production implementation (<c>Arbitarr.Data.CircuitBreaker.PersistentSourceCircuitBreaker</c>)
 /// hydrates from a persisted <c>SourceHealthRecord</c> row on first use per source, which is
 /// necessarily an I/O-bound operation. The underlying decision logic (AC20's open/half-open/closed
 /// state machine, backoff/jitter curve) lives in the synchronous, dependency-free
 /// <see cref="SourceCircuitBreaker"/> — this interface exists only so adapter code can depend on
-/// the async, persistence-backed shape without referencing ArrSearcher.Data directly (keeping AC6
+/// the async, persistence-backed shape without referencing Arbitarr.Data directly (keeping AC6
 /// isolation intact: Core defines the contract, Data supplies the implementation).
 /// </para>
 /// </summary>

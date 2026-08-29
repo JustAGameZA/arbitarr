@@ -1,8 +1,8 @@
 using System.Net;
 using System.Text;
-using ArrSearcher.Core.Sources;
+using Arbitarr.Core.Sources;
 
-namespace ArrSearcher.Sources.NzbHydra.Tests;
+namespace Arbitarr.Sources.NzbHydra.Tests;
 
 public class NzbHydraSourceTests
 {

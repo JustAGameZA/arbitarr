@@ -20,7 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\ArrSearcher.Data\ArrSearcher.Data.csproj" />
+    <ProjectReference Include="..\..\src\Arbitarr.Data\Arbitarr.Data.csproj" />
   </ItemGroup>
 
 </Project>

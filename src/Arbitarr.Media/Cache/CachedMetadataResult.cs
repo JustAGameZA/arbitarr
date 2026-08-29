@@ -1,6 +1,6 @@
-using ArrSearcher.Core.Identity;
+using Arbitarr.Core.Identity;
 
-namespace ArrSearcher.Media.Cache;
+namespace Arbitarr.Media.Cache;
 
 /// <summary>
 /// Result of a <see cref="MetadataCacheCoordinator"/> resolution, carrying the resolved payload (if

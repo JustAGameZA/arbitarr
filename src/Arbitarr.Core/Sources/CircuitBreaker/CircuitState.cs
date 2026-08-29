@@ -1,9 +1,9 @@
-namespace ArrSearcher.Core.Sources.CircuitBreaker;
+namespace Arbitarr.Core.Sources.CircuitBreaker;
 
 /// <summary>
 /// Lifecycle state of a per-source circuit breaker (AC20). Mirrors
-/// <c>ArrSearcher.Data.Entities.CircuitBreakerState</c> in shape/intent, but this enum is defined
-/// here (in Core) so the pure state machine stays free of any dependency on ArrSearcher.Data.
+/// <c>Arbitarr.Data.Entities.CircuitBreakerState</c> in shape/intent, but this enum is defined
+/// here (in Core) so the pure state machine stays free of any dependency on Arbitarr.Data.
 /// The persistence adapter translates between the two.
 /// </summary>
 public enum CircuitState

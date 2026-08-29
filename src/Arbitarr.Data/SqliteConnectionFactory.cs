@@ -1,6 +1,6 @@
 using Microsoft.Data.Sqlite;
 
-namespace ArrSearcher.Data;
+namespace Arbitarr.Data;
 
 /// <summary>
 /// Opens SQLite connections configured for arr-searcher's persistence foundation (Step 2):

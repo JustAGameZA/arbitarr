@@ -1,4 +1,4 @@
-namespace ArrSearcher.Core.Filtering;
+namespace Arbitarr.Core.Filtering;
 
 /// <summary>
 /// Outcome of evaluating a release against the filtering pipeline.

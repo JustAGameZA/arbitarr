@@ -1,4 +1,4 @@
-namespace ArrSearcher.Core.Identity;
+namespace Arbitarr.Core.Identity;
 
 /// <summary>
 /// One numbering candidate under consideration during matching, together with the provenance that
@@ -53,7 +53,7 @@ public sealed record EpisodeMatchResult(
 /// first (matching the release's title tokens against a series' arc/season alternate names), and only
 /// then selecting the season-qualified numbering candidate that arc implies. This interface defines
 /// the contract only — no resolution logic ships here; see the Step 3a implementations in
-/// <c>ArrSearcher.Media</c>.
+/// <c>Arbitarr.Media</c>.
 /// </para>
 /// </remarks>
 public interface IEpisodeMatcher

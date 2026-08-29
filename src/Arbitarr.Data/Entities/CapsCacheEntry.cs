@@ -1,4 +1,4 @@
-namespace ArrSearcher.Data.Entities;
+namespace Arbitarr.Data.Entities;
 
 /// <summary>
 /// Last-known-good capability info for a single upstream source, so a dead upstream cannot

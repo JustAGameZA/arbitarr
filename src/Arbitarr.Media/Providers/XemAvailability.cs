@@ -1,4 +1,4 @@
-namespace ArrSearcher.Media.Providers;
+namespace Arbitarr.Media.Providers;
 
 /// <summary>
 /// Outcome of a <see cref="XemProvider"/> call, distinguishing the two failure shapes that

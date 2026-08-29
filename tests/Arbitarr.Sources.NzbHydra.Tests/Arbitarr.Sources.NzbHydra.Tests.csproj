@@ -19,7 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\ArrSearcher.Sources.NzbHydra\ArrSearcher.Sources.NzbHydra.csproj" />
+    <ProjectReference Include="..\..\src\Arbitarr.Sources.NzbHydra\Arbitarr.Sources.NzbHydra.csproj" />
   </ItemGroup>
 
 </Project>

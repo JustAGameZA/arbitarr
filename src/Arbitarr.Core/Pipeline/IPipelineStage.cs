@@ -1,6 +1,6 @@
-using ArrSearcher.Core.Releases;
+using Arbitarr.Core.Releases;
 
-namespace ArrSearcher.Core.Pipeline;
+namespace Arbitarr.Core.Pipeline;
 
 /// <summary>
 /// Contract for a single stage in the search-result processing pipeline

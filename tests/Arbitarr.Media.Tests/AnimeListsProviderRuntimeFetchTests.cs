@@ -1,9 +1,9 @@
 using System.Diagnostics;
 using System.Net;
-using ArrSearcher.Media.Providers;
+using Arbitarr.Media.Providers;
 using Xunit;
 
-namespace ArrSearcher.Media.Tests;
+namespace Arbitarr.Media.Tests;
 
 /// <summary>
 /// AC19 (AniDB fetch etiquette: rate-limit spacing and 24h no-refetch) and AC21 (the anime-lists XML

@@ -1,4 +1,4 @@
-namespace ArrSearcher.Core.Identity;
+namespace Arbitarr.Core.Identity;
 
 /// <summary>
 /// Canonical, display-title-independent identity for a series.

@@ -1,4 +1,4 @@
-namespace ArrSearcher.Media.Providers;
+namespace Arbitarr.Media.Providers;
 
 /// <summary>
 /// Outcome of an <see cref="AnimeListsProvider"/> lookup, distinguishing the same degraded-state

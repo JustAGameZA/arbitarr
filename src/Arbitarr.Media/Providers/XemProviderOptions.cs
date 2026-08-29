@@ -1,4 +1,4 @@
-namespace ArrSearcher.Media.Providers;
+namespace Arbitarr.Media.Providers;
 
 /// <summary>
 /// Configuration for <see cref="XemProvider"/>.

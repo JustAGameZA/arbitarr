@@ -1,4 +1,4 @@
-namespace ArrSearcher.Core.Identity;
+namespace Arbitarr.Core.Identity;
 
 /// <summary>
 /// The numbering scheme under which a <see cref="NumberingCandidate"/> was expressed.
@@ -50,7 +50,7 @@ public sealed record NumberingCandidate(
 /// (AC-M1's regression fixture: the Bleach <c>S01E36</c> release-group rendering must not produce a
 /// scene-season-1 candidate, since XEM has no scene season 1 in the Thousand-Year-Blood-War range and
 /// generating one would silently resolve to a different, wrong episode). This is enforced as a
-/// generation-time rule by the candidate-set builder in <c>ArrSearcher.Media</c> — it is not a shape
+/// generation-time rule by the candidate-set builder in <c>Arbitarr.Media</c> — it is not a shape
 /// constraint on this type. <see cref="NumberingCandidate"/> can still represent a genuine season-1
 /// candidate when one is actually warranted (e.g. a real TVDB-seasonal season 1 episode); what is
 /// excluded is specifically the *bare, unqualified* arc-relative-as-season-1 guess.

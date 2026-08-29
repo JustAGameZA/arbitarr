@@ -1,6 +1,6 @@
-using ArrSearcher.Core.Identity;
+using Arbitarr.Core.Identity;
 
-namespace ArrSearcher.Media.Numbering;
+namespace Arbitarr.Media.Numbering;
 
 /// <summary>
 /// Raw, scheme-agnostic numbering as decoded from a release's filename/title, prior to arc binding.

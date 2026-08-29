@@ -1,8 +1,8 @@
-using ArrSearcher.Core.Identity;
-using ArrSearcher.Media.Numbering;
+using Arbitarr.Core.Identity;
+using Arbitarr.Media.Numbering;
 using Xunit;
 
-namespace ArrSearcher.Media.Tests;
+namespace Arbitarr.Media.Tests;
 
 /// <summary>
 /// Flagship fixture (AC-M3, AC-M3a): release <c>Bleach-17x36(402)</c> must resolve to arc-relative

@@ -1,10 +1,10 @@
-namespace ArrSearcher.Core.Sources.CircuitBreaker;
+namespace Arbitarr.Core.Sources.CircuitBreaker;
 
 /// <summary>
 /// Point-in-time state for one source's circuit breaker, as tracked by
 /// <see cref="SourceCircuitBreaker"/>. Deliberately shaped to map cleanly onto
-/// <c>ArrSearcher.Data.Entities.SourceHealthRecord</c> so the persistence adapter is a thin
-/// translation, but this type itself has no dependency on ArrSearcher.Data.
+/// <c>Arbitarr.Data.Entities.SourceHealthRecord</c> so the persistence adapter is a thin
+/// translation, but this type itself has no dependency on Arbitarr.Data.
 /// </summary>
 /// <param name="State">Current lifecycle state.</param>
 /// <param name="ConsecutiveFailures">Consecutive failure count observed since the breaker last closed.</param>

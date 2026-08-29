@@ -1,4 +1,4 @@
-namespace ArrSearcher.Media.Cache;
+namespace Arbitarr.Media.Cache;
 
 /// <summary>
 /// Outcome of a <see cref="IMetadataCacheStore"/> lookup, distinguishing the states AC-M6 requires

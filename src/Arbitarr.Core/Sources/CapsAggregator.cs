@@ -1,4 +1,4 @@
-namespace ArrSearcher.Core.Sources;
+namespace Arbitarr.Core.Sources;
 
 /// <summary>
 /// Merges per-source <see cref="SourceCaps"/> (fetched from one or more <see cref="IUpstreamSource"/>

@@ -1,10 +1,10 @@
-using ArrSearcher.Core.Sources.CircuitBreaker;
-using ArrSearcher.Data.CircuitBreaker;
+using Arbitarr.Core.Sources.CircuitBreaker;
+using Arbitarr.Data.CircuitBreaker;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Time.Testing;
 
-namespace ArrSearcher.Data.Tests;
+namespace Arbitarr.Data.Tests;
 
 /// <summary>
 /// Proves the thin persistence adapter round-trips <see cref="CircuitBreakerSnapshot"/> to/from a
@@ -31,11 +31,11 @@ public sealed class SourceHealthRepositoryTests : IDisposable
         }
     }
 
-    private ArrSearcherDbContext CreateContext()
+    private ArbitarrDbContext CreateContext()
     {
-        var optionsBuilder = new DbContextOptionsBuilder<ArrSearcherDbContext>();
+        var optionsBuilder = new DbContextOptionsBuilder<ArbitarrDbContext>();
         optionsBuilder.UseSqlite($"Data Source={_dbPath}");
-        var context = new ArrSearcherDbContext(optionsBuilder.Options);
+        var context = new ArbitarrDbContext(optionsBuilder.Options);
         context.Database.Migrate();
         return context;
     }

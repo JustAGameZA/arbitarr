@@ -1,4 +1,4 @@
-namespace ArrSearcher.Sources.NzbHydra;
+namespace Arbitarr.Sources.NzbHydra;
 
 /// <summary>
 /// Simple per-instance token-bucket rate limiter used to throttle outbound calls to a single

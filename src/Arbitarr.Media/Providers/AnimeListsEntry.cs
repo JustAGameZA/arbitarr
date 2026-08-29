@@ -1,4 +1,4 @@
-namespace ArrSearcher.Media.Providers;
+namespace Arbitarr.Media.Providers;
 
 /// <summary>
 /// One <c>&lt;anime&gt;</c> entry from AniDB's <c>anime-lists</c> static XML mapping: the identity

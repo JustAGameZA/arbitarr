@@ -1,6 +1,6 @@
-using ArrSearcher.Media.Cache;
+using Arbitarr.Media.Cache;
 
-namespace ArrSearcher.Media.Tests;
+namespace Arbitarr.Media.Tests;
 
 /// <summary>
 /// Hand-written in-memory <see cref="IMetadataCacheStore"/> test double, matching this codebase's

@@ -1,4 +1,4 @@
-namespace ArrSearcher.Core.Identity;
+namespace Arbitarr.Core.Identity;
 
 /// <summary>
 /// A single piece of evidence that contributed to a match decision.

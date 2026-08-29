@@ -1,6 +1,6 @@
 using System.Xml.Linq;
 
-namespace ArrSearcher.Media.Providers;
+namespace Arbitarr.Media.Providers;
 
 /// <summary>
 /// Client for AniDB's <c>anime-lists</c> static XML identity mapping (Q5-D preference order: third

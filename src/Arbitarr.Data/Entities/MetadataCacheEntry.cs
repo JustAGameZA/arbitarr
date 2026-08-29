@@ -1,4 +1,4 @@
-namespace ArrSearcher.Data.Entities;
+namespace Arbitarr.Data.Entities;
 
 /// <summary>
 /// Cached identity/metadata (e.g. XEM/AniDB numbering) for a series, versioned against the

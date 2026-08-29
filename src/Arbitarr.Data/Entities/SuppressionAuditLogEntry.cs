@@ -1,4 +1,4 @@
-namespace ArrSearcher.Data.Entities;
+namespace Arbitarr.Data.Entities;
 
 /// <summary>
 /// Append-only log of filter/suppression decisions, so suppressions stay inspectable (P3) within

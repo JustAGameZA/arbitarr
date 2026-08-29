@@ -1,4 +1,4 @@
-namespace ArrSearcher.Data;
+namespace Arbitarr.Data;
 
 /// <summary>
 /// Configurable connection-level settings for arr-searcher's SQLite database. These are

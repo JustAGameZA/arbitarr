@@ -4,11 +4,11 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <RootNamespace>ArrSearcher.Api</RootNamespace>
+    <RootNamespace>Arbitarr.Api</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\ArrSearcher.Core\ArrSearcher.Core.csproj" />
+    <ProjectReference Include="..\Arbitarr.Core\Arbitarr.Core.csproj" />
   </ItemGroup>
 
 </Project>

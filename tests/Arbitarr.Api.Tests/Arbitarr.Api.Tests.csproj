@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
-    <RootNamespace>ArrSearcher.Api.Tests</RootNamespace>
+    <RootNamespace>Arbitarr.Api.Tests</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,7 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\ArrSearcher.Api\ArrSearcher.Api.csproj" />
+    <ProjectReference Include="..\..\src\Arbitarr.Api\Arbitarr.Api.csproj" />
   </ItemGroup>
 
 </Project>

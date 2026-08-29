@@ -1,4 +1,4 @@
-namespace ArrSearcher.Media.Providers;
+namespace Arbitarr.Media.Providers;
 
 /// <summary>
 /// Configuration for a single <see cref="ArrApiProvider"/> instance.
@@ -7,7 +7,7 @@ namespace ArrSearcher.Media.Providers;
 /// <param name="ApiKey">*arr API key. Passed as a query-string parameter to every request, never as a header, never logged.</param>
 /// <param name="SourceName">
 /// Stable name identifying this provider instance for circuit-breaker lookups and provenance
-/// (<see cref="ArrSearcher.Core.Identity.MatchProvenance.Scheme"/>-adjacent labelling). Defaults to
+/// (<see cref="Arbitarr.Core.Identity.MatchProvenance.Scheme"/>-adjacent labelling). Defaults to
 /// "ArrApi" to match the Q5-D preference-order naming in the plan.
 /// </param>
 /// <param name="RequestTimeout">

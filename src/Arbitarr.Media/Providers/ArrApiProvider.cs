@@ -1,9 +1,9 @@
 using System.Globalization;
 using System.Text.Json;
-using ArrSearcher.Core.Identity;
-using ArrSearcher.Core.Sources.CircuitBreaker;
+using Arbitarr.Core.Identity;
+using Arbitarr.Core.Sources.CircuitBreaker;
 
-namespace ArrSearcher.Media.Providers;
+namespace Arbitarr.Media.Providers;
 
 /// <summary>
 /// The default, highest-priority identity resolver in the Q5-D preference order

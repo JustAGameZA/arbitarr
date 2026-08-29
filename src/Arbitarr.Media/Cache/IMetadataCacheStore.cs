@@ -1,4 +1,4 @@
-namespace ArrSearcher.Media.Cache;
+namespace Arbitarr.Media.Cache;
 
 /// <summary>
 /// SQLite-backed cache for upstream identity/numbering metadata (e.g. XEM's maps), keyed by series
@@ -6,8 +6,8 @@ namespace ArrSearcher.Media.Cache;
 /// supports negative caching of confirmed no-coverage results (AC-M6).
 /// </summary>
 /// <remarks>
-/// Deliberately Media-local (not <c>ArrSearcher.Core</c>) — unlike <c>ICapsCacheStore</c>, nothing
-/// outside <c>ArrSearcher.Media</c> currently needs a persistence-agnostic seam for this cache, so
+/// Deliberately Media-local (not <c>Arbitarr.Core</c>) — unlike <c>ICapsCacheStore</c>, nothing
+/// outside <c>Arbitarr.Media</c> currently needs a persistence-agnostic seam for this cache, so
 /// introducing one here would be an abstraction with no second implementation. If Core.Identity or
 /// another assembly later needs to depend on this cache without pulling in the EF-backed
 /// implementation, extract an interface at that point.

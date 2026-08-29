@@ -1,6 +1,6 @@
-using ArrSearcher.Core.Settings;
+using Arbitarr.Core.Settings;
 
-namespace ArrSearcher.Core.Tests;
+namespace Arbitarr.Core.Tests;
 
 /// <summary>
 /// Proves each setting's floor AND ceiling actually rejects out-of-bounds input (mirrors Step
@@ -10,8 +10,8 @@ namespace ArrSearcher.Core.Tests;
 /// [[Accepts*]] test asserts the boundary value itself (inclusive) does NOT throw, so the tests
 /// cannot be satisfied by an overly strict validator either.
 ///
-/// Placed in ArrSearcher.Core.Tests (not ArrSearcher.Data.Tests) because the validator lives in
-/// ArrSearcher.Core.Settings, kept reference-free of EF Core/Data per AC6's spirit — see
+/// Placed in Arbitarr.Core.Tests (not Arbitarr.Data.Tests) because the validator lives in
+/// Arbitarr.Core.Settings, kept reference-free of EF Core/Data per AC6's spirit — see
 /// SettingsValidator's own XML doc for the rationale.
 /// </summary>
 public class SettingsValidationTests

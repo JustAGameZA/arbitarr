@@ -1,7 +1,7 @@
-using ArrSearcher.Core.Releases;
-using ArrSearcher.Core.Sources;
+using Arbitarr.Core.Releases;
+using Arbitarr.Core.Sources;
 
-namespace ArrSearcher.Core.Tests;
+namespace Arbitarr.Core.Tests;
 
 /// <summary>
 /// Proves <see cref="CapsAggregator"/>'s merge semantics (AC5, AC5a-i): union of categories

@@ -1,11 +1,11 @@
 using System.Security.Cryptography;
 using System.Text;
 
-namespace ArrSearcher.Media.Cache;
+namespace Arbitarr.Media.Cache;
 
 /// <summary>
 /// Computes a stable content hash for a fetched upstream metadata payload, used as the
-/// <c>SourceSnapshotVersion</c> stamp on <see cref="ArrSearcher.Data.Entities.MetadataCacheEntry"/>
+/// <c>SourceSnapshotVersion</c> stamp on <see cref="Arbitarr.Data.Entities.MetadataCacheEntry"/>
 /// (AC-M8).
 /// </summary>
 /// <remarks>

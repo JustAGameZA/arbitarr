@@ -1,8 +1,8 @@
-using ArrSearcher.Core.Identity;
-using ArrSearcher.Media.Cache;
+using Arbitarr.Core.Identity;
+using Arbitarr.Media.Cache;
 using Xunit;
 
-namespace ArrSearcher.Media.Tests;
+namespace Arbitarr.Media.Tests;
 
 /// <summary>
 /// AC-M6/AC-M6a: cache-absent, source-unreachable, and no-xem-coverage must each be distinctly

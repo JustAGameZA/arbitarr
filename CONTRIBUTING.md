@@ -24,7 +24,7 @@ No external services are required for the test suite — upstream responses are 
 
 ### Architecture boundaries
 
-Project boundaries are enforced by `tests/ArrSearcher.Architecture.Tests` (NetArchTest). The most important rule: **`ArrSearcher.Ai` and `ArrSearcher.Media` must never reference each other**, in either direction. Identity resolution is deterministic and testable; LLM arbitration is not. Keeping them separate is a design invariant, not a style preference. If your change needs data to cross that boundary, it flows through `ArrSearcher.Core` contracts.
+Project boundaries are enforced by `tests/Arbitarr.Architecture.Tests` (NetArchTest). The most important rule: **`Arbitarr.Ai` and `Arbitarr.Media` must never reference each other**, in either direction. Identity resolution is deterministic and testable; LLM arbitration is not. Keeping them separate is a design invariant, not a style preference. If your change needs data to cross that boundary, it flows through `Arbitarr.Core` contracts.
 
 ### Fail loud, degrade visibly
 
@@ -32,7 +32,7 @@ Arbitarr never silently guesses. Any code path that degrades (source unreachable
 
 ### Tests
 
-- Every behavioral change needs test coverage in the matching `tests/ArrSearcher.*.Tests` project.
+- Every behavioral change needs test coverage in the matching `tests/Arbitarr.*.Tests` project.
 - Real-world regression cases are first-class: the Bleach arc-relative numbering collision and the Ghost in the Shell franchise trio are canonical fixtures. If you fix an identity-resolution bug, add the release name that triggered it as a fixture-backed test.
 - Fixture data must be fully redacted — see the secrets policy below.
 
@@ -58,7 +58,7 @@ Short imperative subject line ("Add XEM season-name provider", not "Added..." or
 
 ## Naming note
 
-The solution currently uses the working name `ArrSearcher` internally; a rename to `Arbitarr` is planned. Don't pre-empt it piecemeal — new code follows the existing `ArrSearcher.*` naming until the coordinated rename lands.
+The solution currently uses the working name `Arbitarr` internally; a rename to `Arbitarr` is planned. Don't pre-empt it piecemeal — new code follows the existing `Arbitarr.*` naming until the coordinated rename lands.
 
 ## Questions?
 

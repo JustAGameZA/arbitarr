@@ -1,9 +1,9 @@
 using System.Diagnostics;
 using System.Linq;
-using ArrSearcher.Data;
+using Arbitarr.Data;
 using Microsoft.Data.Sqlite;
 
-namespace ArrSearcher.Data.Tests;
+namespace Arbitarr.Data.Tests;
 
 /// <summary>
 /// Proves AC15a: with WAL journal mode and an explicit busy_timeout, a background writer

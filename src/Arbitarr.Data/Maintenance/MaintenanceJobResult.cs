@@ -1,4 +1,4 @@
-namespace ArrSearcher.Data.Maintenance;
+namespace Arbitarr.Data.Maintenance;
 
 /// <summary>
 /// Outcome of a single maintenance job run: how many rows were pruned from each accumulating
@@ -7,7 +7,7 @@ namespace ArrSearcher.Data.Maintenance;
 /// </summary>
 /// <param name="SearchResultCacheRowsPruned">
 /// Rows removed from the search-result cache. Predicate is strictly <c>age &gt; serve_until</c>
-/// (plan lines ~1058-1080) — see <see cref="ArrSearcher.Core.Settings.PrunePredicates.IsSearchResultCacheEntryPrunable"/>.
+/// (plan lines ~1058-1080) — see <see cref="Arbitarr.Core.Settings.PrunePredicates.IsSearchResultCacheEntryPrunable"/>.
 /// </param>
 /// <param name="MetadataCacheRowsPruned">Rows removed from the metadata/identity cache.</param>
 /// <param name="SuppressionAuditLogRowsPruned">Rows removed from the suppression audit log.</param>

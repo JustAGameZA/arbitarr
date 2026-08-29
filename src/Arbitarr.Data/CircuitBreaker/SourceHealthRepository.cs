@@ -1,8 +1,8 @@
-using ArrSearcher.Core.Sources.CircuitBreaker;
-using ArrSearcher.Data.Entities;
+using Arbitarr.Core.Sources.CircuitBreaker;
+using Arbitarr.Data.Entities;
 using Microsoft.EntityFrameworkCore;
 
-namespace ArrSearcher.Data.CircuitBreaker;
+namespace Arbitarr.Data.CircuitBreaker;
 
 /// <summary>
 /// Thin persistence adapter translating <see cref="SourceCircuitBreaker"/>'s pure, dependency-free
@@ -13,9 +13,9 @@ namespace ArrSearcher.Data.CircuitBreaker;
 /// </summary>
 public sealed class SourceHealthRepository
 {
-    private readonly ArrSearcherDbContext _dbContext;
+    private readonly ArbitarrDbContext _dbContext;
 
-    public SourceHealthRepository(ArrSearcherDbContext dbContext)
+    public SourceHealthRepository(ArbitarrDbContext dbContext)
     {
         _dbContext = dbContext;
     }

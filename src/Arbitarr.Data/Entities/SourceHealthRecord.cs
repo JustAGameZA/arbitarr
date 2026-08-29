@@ -1,8 +1,8 @@
-namespace ArrSearcher.Data.Entities;
+namespace Arbitarr.Data.Entities;
 
 /// <summary>
 /// Per-source circuit breaker state. Named distinctly from
-/// <c>ArrSearcher.Core.Sources.SourceHealth</c> (the in-memory point-in-time snapshot type) since
+/// <c>Arbitarr.Core.Sources.SourceHealth</c> (the in-memory point-in-time snapshot type) since
 /// this is the persisted breaker state row. Default curve values (consecutive failures to open,
 /// backoff growth/ceiling, jitter, probe interval) come from <c>docs/step0-measurements.md</c> and
 /// are seeded/configured by worker-2's runtime logic, not hardcoded into this entity's shape.

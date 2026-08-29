@@ -1,4 +1,4 @@
-namespace ArrSearcher.Core.Sources;
+namespace Arbitarr.Core.Sources;
 
 /// <summary>
 /// Persistence-agnostic last-known-good cache for per-source <see cref="SourceCaps"/>. Backs
@@ -7,8 +7,8 @@ namespace ArrSearcher.Core.Sources;
 /// rather than dropping it from the merge or returning empty/default caps.
 ///
 /// This interface is deliberately persistence-agnostic — the EF Core-backed implementation
-/// against ArrSearcher.Data's CapsCacheEntry table is wired up separately, outside Core, to
-/// keep Core free of references to ArrSearcher.Data (AC6).
+/// against Arbitarr.Data's CapsCacheEntry table is wired up separately, outside Core, to
+/// keep Core free of references to Arbitarr.Data (AC6).
 /// </summary>
 public interface ICapsCacheStore
 {

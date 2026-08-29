@@ -1,6 +1,6 @@
-using ArrSearcher.Core.Identity;
+using Arbitarr.Core.Identity;
 
-namespace ArrSearcher.Media.Identity;
+namespace Arbitarr.Media.Identity;
 
 /// <summary>
 /// Classifies a candidate <see cref="SeriesIdentity"/> against the series a search actually requested,

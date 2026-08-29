@@ -1,4 +1,4 @@
-namespace ArrSearcher.Core.Settings;
+namespace Arbitarr.Core.Settings;
 
 /// <summary>
 /// Pure prune-eligibility predicates for the four accumulating tables (search-result cache, AI

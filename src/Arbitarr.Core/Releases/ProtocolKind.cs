@@ -1,4 +1,4 @@
-namespace ArrSearcher.Core.Releases;
+namespace Arbitarr.Core.Releases;
 
 /// <summary>
 /// Distinguishes the delivery protocol of a release, mirroring the Torznab/Newznab

@@ -1,16 +1,16 @@
-using ArrSearcher.Core.Settings;
-using ArrSearcher.Data.Entities;
-using ArrSearcher.Data.Maintenance;
+using Arbitarr.Core.Settings;
+using Arbitarr.Data.Entities;
+using Arbitarr.Data.Maintenance;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Time.Testing;
 
-namespace ArrSearcher.Data.Tests;
+namespace Arbitarr.Data.Tests;
 
 /// <summary>
 /// Proves the maintenance job's search-result cache prune predicate is exactly
 /// <c>age &gt; serve_until</c> against a real SQLite database (not just the pure predicate unit
-/// tests in ArrSearcher.Core.Tests) — specifically that a row well past fresh_until but still
+/// tests in Arbitarr.Core.Tests) — specifically that a row well past fresh_until but still
 /// within serve_until survives a maintenance run (plan lines ~1058-1080; the D3 anti-pattern this
 /// job must not fall into).
 /// </summary>
@@ -35,11 +35,11 @@ public sealed class MaintenanceJobTests : IDisposable
         }
     }
 
-    private ArrSearcherDbContext CreateContext()
+    private ArbitarrDbContext CreateContext()
     {
-        var optionsBuilder = new DbContextOptionsBuilder<ArrSearcherDbContext>();
+        var optionsBuilder = new DbContextOptionsBuilder<ArbitarrDbContext>();
         optionsBuilder.UseSqlite($"Data Source={_dbPath}");
-        return new ArrSearcherDbContext(optionsBuilder.Options);
+        return new ArbitarrDbContext(optionsBuilder.Options);
     }
 
     private static SettingsSnapshot Settings(TimeSpan serveUntil) => SettingsSnapshot.Defaults(TimeSpan.FromMinutes(15)) with

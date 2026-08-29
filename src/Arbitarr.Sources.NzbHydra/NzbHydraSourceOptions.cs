@@ -1,4 +1,4 @@
-namespace ArrSearcher.Sources.NzbHydra;
+namespace Arbitarr.Sources.NzbHydra;
 
 /// <summary>
 /// Configuration for a single <see cref="NzbHydraSource"/> instance.

@@ -1,4 +1,4 @@
-namespace ArrSearcher.Media.Providers;
+namespace Arbitarr.Media.Providers;
 
 /// <summary>
 /// Outcome of an <see cref="ArrApiProvider"/> fetch, distinguishing the two failure shapes AC-M6
@@ -12,7 +12,7 @@ public enum ArrApiOutcomeKind
 
     /// <summary>
     /// The *arr instance could not be reached: the circuit breaker was open, the HTTP call failed, or
-    /// *arr returned a non-success status. This is <see cref="ArrSearcher.Core.Identity.MatchProvenanceFlags.SourceUnreachable"/>,
+    /// *arr returned a non-success status. This is <see cref="Arbitarr.Core.Identity.MatchProvenanceFlags.SourceUnreachable"/>,
     /// distinct from *arr being reachable but simply having no episode for the requested series/numbers.
     /// </summary>
     Unreachable,

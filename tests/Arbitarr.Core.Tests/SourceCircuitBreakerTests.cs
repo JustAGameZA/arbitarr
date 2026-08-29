@@ -1,7 +1,7 @@
-using ArrSearcher.Core.Sources.CircuitBreaker;
+using Arbitarr.Core.Sources.CircuitBreaker;
 using Microsoft.Extensions.Time.Testing;
 
-namespace ArrSearcher.Core.Tests;
+namespace Arbitarr.Core.Tests;
 
 /// <summary>
 /// Validates AC20's backoff curve (docs/step0-measurements.md §5 and "Circuit breaker constants")
