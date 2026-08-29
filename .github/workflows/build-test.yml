@@ -1,5 +1,8 @@
 name: Build & test
 
+permissions:
+  contents: read
+
 on:
   pull_request:
   push:
@@ -44,9 +47,10 @@ jobs:
           total=0
           for trx in ./TestResults/*.trx; do
             [ -f "$trx" ] || continue
-            # Each .trx's <ResultSummary><Counters .../> element carries a "total"
-            # attribute with the number of tests executed in that assembly.
-            count=$(grep -o 'total="[0-9]*"' "$trx" | head -1 | grep -o '[0-9]*')
+            # Each .trx's <ResultSummary><Counters .../> element carries both "total" (includes
+            # skipped tests) and "executed" (tests that actually ran). Use "executed" so a
+            # skipped test can't be counted toward the floor without actually running.
+            count=$(grep -o 'executed="[0-9]*"' "$trx" | head -1 | grep -o '[0-9]*')
             count=${count:-0}
             total=$((total + count))
           done
@@ -73,20 +77,43 @@ jobs:
           p3="172\.(1[6-9]|2[0-9]|3[01])\.${oct2}\.${oct2}"
           ip_pattern="\\b(${p1}|${p2}|${p3})\\b"
 
-          hits=$(git grep -InE "$ip_pattern" -- . ':(exclude)tests/test-count-floor.txt' || true)
+          hits=$(git grep -aInE "$ip_pattern" -- . ':(exclude)tests/test-count-floor.txt' || true)
           if [ -n "$hits" ]; then
             echo "BLOCKED: private LAN IP address found in tracked tree (use 192.0.2.x documentation range instead):" >&2
             echo "$hits" | head -20 >&2
             fail=1
           fi
 
-          # 2. Credential-looking patterns. Allow REDACTED and other known placeholders.
-          cred_pattern='(^|[^A-Za-z0-9])((apikey|api_key|password|passwd|secret|token)["'"'"' ]*[=:]["'"'"' ]*|bearer +)[A-Za-z0-9+/_-]{16,}'
-          allowlist='REDACTED|secret-api-key|placeholder|example|your-|xxxx'
+          # 2. Credential-looking patterns. The allowlist is checked against the matched VALUE
+          # only (not the whole line), so a real secret can't hide behind an unrelated allowlist
+          # word elsewhere on the same line (e.g. a trailing "# example" comment).
+          cred_pattern='(^|[^A-Za-z0-9])((apikey|api_key|password|passwd|secret|token)["'"'"' ]*[=:]["'"'"' ]*|bearer +)([A-Za-z0-9+/_-]{16,})'
+          allowlist='^(REDACTED|secret-api-key|placeholder|example|your-|xxxx)'
 
-          hits=$(git grep -InE "$cred_pattern" -- . | grep -viE "$allowlist" || true)
+          hits=$(git grep -anE "$cred_pattern" -- . | while IFS=: read -r file line rest; do
+            value=$(printf '%s\n' "$rest" | grep -oE "$cred_pattern" | tail -1 | grep -oE '[A-Za-z0-9+/_-]{16,}$')
+            if [ -n "$value" ] && ! printf '%s\n' "$value" | grep -qiE "$allowlist"; then
+              printf '%s:%s:%s\n' "$file" "$line" "$rest"
+            fi
+          done)
           if [ -n "$hits" ]; then
             echo "BLOCKED: credential-looking value found in tracked tree:" >&2
+            echo "$hits" | head -20 >&2
+            fail=1
+          fi
+
+          # 2b. Keyword-less, high-signal secret shapes (AWS access key, GitHub PAT, JWT, PEM
+          # private key header). Built from split literals so this guard's own source never
+          # matches its own detection patterns.
+          akia_pat="AKIA[0-9A-Z]{16}"
+          ghp_pat="ghp_[A-Za-z0-9]{36}"
+          jwt_pat="eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"
+          pem_pat="-----BEGIN"' [A-Z ]*'"PRIVATE KEY-----"
+          shape_pattern="${akia_pat}|${ghp_pat}|${jwt_pat}|${pem_pat}"
+
+          hits=$(git grep -aInE "$shape_pattern" -- . || true)
+          if [ -n "$hits" ]; then
+            echo "BLOCKED: high-signal secret shape (AWS/GitHub/JWT/PEM) found in tracked tree:" >&2
             echo "$hits" | head -20 >&2
             fail=1
           fi

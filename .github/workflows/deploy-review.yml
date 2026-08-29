@@ -10,6 +10,9 @@ name: Deploy review environment
 # starts, after M2 the dashboard is served, after M7 the first-run path works. The only
 # deployment evidence in this plan is the manual Unraid round-trip recorded at M1, M2, and M7.
 
+permissions:
+  contents: read
+
 on:
   pull_request:
   push:
@@ -48,7 +51,7 @@ jobs:
           exit 1
 
       - name: Container logs
-        if: always()
+        if: failure()
         run: docker logs arbitarr-review || true
 
       - name: Stop container
