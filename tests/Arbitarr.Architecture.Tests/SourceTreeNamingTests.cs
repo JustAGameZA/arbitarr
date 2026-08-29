@@ -15,17 +15,22 @@ namespace Arbitarr.Architecture.Tests;
 /// </summary>
 public class SourceTreeNamingTests
 {
+    private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(5);
+
     private static readonly Regex AssemblyNameOverride = new(
         @"<AssemblyName>\s*(?<value>[^<]+?)\s*</AssemblyName>",
-        RegexOptions.Compiled);
+        RegexOptions.Compiled,
+        RegexTimeout);
 
     private static readonly Regex RootNamespaceOverride = new(
         @"<RootNamespace>\s*(?<value>[^<]+?)\s*</RootNamespace>",
-        RegexOptions.Compiled);
+        RegexOptions.Compiled,
+        RegexTimeout);
 
     private static readonly Regex SlnProjectEntry = new(
         @"^Project\(""\{[0-9A-Fa-f-]+\}""\)\s*=\s*""(?<name>[^""]+)""",
-        RegexOptions.Compiled | RegexOptions.Multiline);
+        RegexOptions.Compiled | RegexOptions.Multiline,
+        RegexTimeout);
 
     private static string FindRepoRoot()
     {

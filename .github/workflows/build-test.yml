@@ -68,16 +68,32 @@ jobs:
 
           fail=0
 
+          # grep/git-grep exit codes: 0 = match found, 1 = no match (expected, not an error),
+          # >=2 = a real error (bad pattern, I/O failure, etc.). A bare `|| true` after these
+          # calls would mask exit >=2 the same as exit 1, silently turning a broken guard into
+          # a no-op pass. run_grep captures output AND the exit code, and only tolerates 0/1.
+          run_grep() {
+            local out status
+            out=$("$@") ; status=$?
+            if [ "$status" -gt 1 ]; then
+              echo "BLOCKED: guard command failed (exit $status): $*" >&2
+              exit 1
+            fi
+            printf '%s' "$out"
+          }
+
           # 1. Private/LAN IP ranges (RFC 1918) anywhere in the tracked tree. Built up from
           # octet ranges (not a literal private dotted-quad) so this guard does not trip on
-          # its own source. Mirrors .git/hooks/pre-commit's pattern.
+          # its own source. Mirrors .git/hooks/pre-commit's pattern. Anchored on
+          # (^|[^0-9.]) / ([^0-9.]|$) rather than \b so a real dotted-quad can't hide by
+          # extending the run of digits/dots past a \b word boundary.
           oct2="[0-9]{1,3}"
           p1="192\.168\.${oct2}\.${oct2}"
           p2="10\.${oct2}\.${oct2}\.${oct2}"
           p3="172\.(1[6-9]|2[0-9]|3[01])\.${oct2}\.${oct2}"
-          ip_pattern="\\b(${p1}|${p2}|${p3})\\b"
+          ip_pattern="(^|[^0-9.])(${p1}|${p2}|${p3})([^0-9.]|\$)"
 
-          hits=$(git grep -aInE "$ip_pattern" -- . ':(exclude)tests/test-count-floor.txt' || true)
+          hits=$(run_grep git grep -aInE "$ip_pattern" -- . ':(exclude)tests/test-count-floor.txt')
           if [ -n "$hits" ]; then
             echo "BLOCKED: private LAN IP address found in tracked tree (use 192.0.2.x documentation range instead):" >&2
             echo "$hits" | head -20 >&2
@@ -90,7 +106,7 @@ jobs:
           cred_pattern='(^|[^A-Za-z0-9])((apikey|api_key|password|passwd|secret|token)["'"'"' ]*[=:]["'"'"' ]*|bearer +)([A-Za-z0-9+/_-]{16,})'
           allowlist='^(REDACTED|secret-api-key|placeholder|example|your-|xxxx)'
 
-          hits=$( (git grep -anE "$cred_pattern" -- . || true) | while IFS=: read -r file line rest; do
+          hits=$(run_grep git grep -anE "$cred_pattern" -- . | while IFS=: read -r file line rest; do
             value=$(printf '%s\n' "$rest" | grep -oE "$cred_pattern" | tail -1 | grep -oE '[A-Za-z0-9+/_-]{16,}$' || true)
             if [ -n "$value" ] && ! printf '%s\n' "$value" | grep -qiE "$allowlist"; then
               printf '%s:%s:%s\n' "$file" "$line" "$rest"
@@ -111,7 +127,7 @@ jobs:
           pem_pat="-----BEGIN"' [A-Z ]*'"PRIVATE KEY-----"
           shape_pattern="${akia_pat}|${ghp_pat}|${jwt_pat}|${pem_pat}"
 
-          hits=$(git grep -aInE "$shape_pattern" -- . || true)
+          hits=$(run_grep git grep -aInE "$shape_pattern" -- .)
           if [ -n "$hits" ]; then
             echo "BLOCKED: high-signal secret shape (AWS/GitHub/JWT/PEM) found in tracked tree:" >&2
             echo "$hits" | head -20 >&2
