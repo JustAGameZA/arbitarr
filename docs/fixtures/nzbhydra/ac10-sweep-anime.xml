@@ -1,0 +1,1264 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:torznab="http://torznab.com/schemas/2015/feed"  version="2.0">
+    
+    <channel>
+        <title>NZBHydra 2</title>
+        <link>https://www.github.com/theotherp/nzbhydra2</link>
+        <webMaster>theotherp@posteo.net</webMaster>
+        <generator>NZBHydra2</generator>
+        <item>
+            <title>Anime AzurLane Slow Ahead S02E08 1080p WEB H264-SENPAI</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-4385558566767630021?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-4385558566767630021?apikey=REDACTED" length="517996544" type="application/x-bittorrent"/>
+            <pubDate>Sun, 23 Aug 2026 16:56:22 +0000</pubDate>
+            <guid isPermaLink="false">-4385558566767630021</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/3144988/anime-azurlane-slow-ahead-s02e08-1080p-web-h264-senpai/?d=</comments>
+            <category>N/A</category>
+            <size>517996544</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-4385558566767630021"/>
+            <torznab:attr name="infohash" value="e01d74eba4fc4024ccbefb404153bf69669b5c38"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:e01d74eba4fc4024ccbefb404153bf69669b5c38&amp;dn=anime.azurlane.slow.ahead.s02e08.1080p.web.h264-senpai%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="6"/>
+            <torznab:attr name="seeders" value="6"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E06 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-2960330566039625375?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-2960330566039625375?apikey=REDACTED" length="177209344" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">-2960330566039625375</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2362610/rick-and-morty-the-anime-s01e06-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>177209344</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-2960330566039625375"/>
+            <torznab:attr name="infohash" value="b927e9dd4b2cf05d95dd5678c805b9e5c51a00c4"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:b927e9dd4b2cf05d95dd5678c805b9e5c51a00c4&amp;dn=Rick.and.Morty.The.Anime.S01E06.1080p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="3"/>
+            <torznab:attr name="seeders" value="3"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E05 Family 1080p BluRay Remux DTS-HD MA2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-9170570767455044168?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-9170570767455044168?apikey=REDACTED" length="3414499000" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">-9170570767455044168</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2660025/rick-and-morty-the-anime-s01e05-family-1080p-bluray-remux-dts-hd-ma2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>3414499000</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-9170570767455044168"/>
+            <torznab:attr name="infohash" value="937e9ef1a4c87143f3707d7186dcb0b20b72974e"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:937e9ef1a4c87143f3707d7186dcb0b20b72974e&amp;dn=Rick%20and%20Morty%20The%20Anime%20S01E05%20Family%201080p%20BluRay%20Remux%20DTS-HD%20MA2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime 2024 S01E05 Family 1080p AMZN WEB-DL DDP2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/4808906143512164542?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/4808906143512164542?apikey=REDACTED" length="557842432" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">4808906143512164542</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2360402/rick-and-morty-the-anime-2024-s01e05-family-1080p-amzn-web-dl-ddp2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>557842432</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="4808906143512164542"/>
+            <torznab:attr name="infohash" value="96520b187d90da9901ee3705883f20b2f590e334"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:96520b187d90da9901ee3705883f20b2f590e334&amp;dn=Rick.and.Morty.The.Anime.2024.S01E05.Family.1080p.AMZN.WEB-DL.DDP2.0.H.264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="4"/>
+            <torznab:attr name="seeders" value="4"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E07 1080p WEB H264-KAWAII</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/3248097334511870419?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/3248097334511870419?apikey=REDACTED" length="447741952" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">3248097334511870419</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2368772/rick-and-morty-the-anime-s01e07-1080p-web-h264-kawaii/?d=</comments>
+            <category>N/A</category>
+            <size>447741952</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="3248097334511870419"/>
+            <torznab:attr name="infohash" value="649bf71f023a433fa55b4ccc4331d3c8981eebce"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:649bf71f023a433fa55b4ccc4331d3c8981eebce&amp;dn=rick.and.morty.the.anime.s01e07.1080p.web.h264-kawaii%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="8"/>
+            <torznab:attr name="seeders" value="8"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E08 Feel Dont Think 1080p BluRay FLAC2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/5845149078898334936?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/5845149078898334936?apikey=REDACTED" length="2168958484" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">5845149078898334936</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2660518/rick-and-morty-the-anime-s01e08-feel-dont-think-1080p-bluray-flac2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>2168958484</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="5845149078898334936"/>
+            <torznab:attr name="infohash" value="2a5b3361032f2319f7b5a22b0b40c209b9eb1ecd"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:2a5b3361032f2319f7b5a22b0b40c209b9eb1ecd&amp;dn=Rick%20and%20Morty%20The%20Anime%20S01E08%20Feel%20Dont%20Think%201080p%20BluRay%20FLAC2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="6"/>
+            <torznab:attr name="seeders" value="6"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E03 Alien Elle 1080p BluRay FLAC2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/7215624843782777912?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/7215624843782777912?apikey=REDACTED" length="1675037245" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">7215624843782777912</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2660512/rick-and-morty-the-anime-s01e03-alien-elle-1080p-bluray-flac2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>1675037245</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="7215624843782777912"/>
+            <torznab:attr name="infohash" value="570fd4e12cf9c79420b076111886cb4fab5f971b"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:570fd4e12cf9c79420b076111886cb4fab5f971b&amp;dn=Rick%20and%20Morty%20The%20Anime%20S01E03%20Alien%20Elle%201080p%20BluRay%20FLAC2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="6"/>
+            <torznab:attr name="seeders" value="6"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E09 1080p WEB H264-SuccessfulCrab</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-5041076704799305196?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-5041076704799305196?apikey=REDACTED" length="411041792" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">-5041076704799305196</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2375778/rick-and-morty-the-anime-s01e09-1080p-web-h264-successfulcrab/?d=</comments>
+            <category>N/A</category>
+            <size>411041792</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-5041076704799305196"/>
+            <torznab:attr name="infohash" value="203a2bfadb704c2e55d917a87b684b333cc9ec6e"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:203a2bfadb704c2e55d917a87b684b333cc9ec6e&amp;dn=rick.and.morty.the.anime.s01e09.1080p.web.h264-successfulcrab%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="6"/>
+            <torznab:attr name="seeders" value="6"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime 2024 S01E04 Memories 1080p AMZN WEB-DL DDP2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/761242808626942666?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/761242808626942666?apikey=REDACTED" length="449839104" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">761242808626942666</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2356869/rick-and-morty-the-anime-2024-s01e04-memories-1080p-amzn-web-dl-ddp2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>449839104</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="761242808626942666"/>
+            <torznab:attr name="infohash" value="ac62c1b239f239342ee10b60a16b7c927591ef81"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:ac62c1b239f239342ee10b60a16b7c927591ef81&amp;dn=Rick.and.Morty.The.Anime.2024.S01E04.Memories.1080p.AMZN.WEB-DL.DDP2.0.H.264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="3"/>
+            <torznab:attr name="seeders" value="3"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E03 1080p WEB H264-SuccessfulCrab</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/6966518966548512261?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/6966518966548512261?apikey=REDACTED" length="218103808" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">6966518966548512261</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2354279/rick-and-morty-the-anime-s01e03-1080p-web-h264-successfulcrab/?d=</comments>
+            <category>N/A</category>
+            <size>218103808</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="6966518966548512261"/>
+            <torznab:attr name="infohash" value="1a4c5643ccbef3fbb5da9275469b6bca701d2698"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:1a4c5643ccbef3fbb5da9275469b6bca701d2698&amp;dn=rick.and.morty.the.anime.s01e03.1080p.web.h264-successfulcrab%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="4"/>
+            <torznab:attr name="seeders" value="4"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Smartypants 2024 S02E06 Crows Anime Parties 1080p DROP WEB-DL AAC2 0 H 264-DUSKLiGHT</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/7960067589149306243?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/7960067589149306243?apikey=REDACTED" length="1342177280" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">7960067589149306243</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2702749/smartypants-2024-s02e06-crows-anime-parties-1080p-drop-web-dl-aac2-0-h-264-dusklight/?d=</comments>
+            <category>N/A</category>
+            <size>1342177280</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="7960067589149306243"/>
+            <torznab:attr name="infohash" value="aad499020729e47898b0091f5cda7d1d76a76c8a"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:aad499020729e47898b0091f5cda7d1d76a76c8a&amp;dn=Smartypants%202024%20S02E06%20Crows%20Anime%20Parties%201080p%20DROP%20WEB-DL%20AAC2%200%20H%20264-DUSKLiGHT%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="13"/>
+            <torznab:attr name="seeders" value="13"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E06 Free Will 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/6990911519688949947?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/6990911519688949947?apikey=REDACTED" length="390070272" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">6990911519688949947</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2660491/rick-and-morty-the-anime-s01e06-free-will-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>390070272</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="6990911519688949947"/>
+            <torznab:attr name="infohash" value="96b8ef4744901731ce51d1175804b0de030f6bbd"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:96b8ef4744901731ce51d1175804b0de030f6bbd&amp;dn=Rick.and.Morty.The.Anime.S01E06.Free.Will.1080p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E08 Feel Dont Think 1080p BluRay Remux DTS-HD MA2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/7695862080326505953?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/7695862080326505953?apikey=REDACTED" length="3274912563" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">7695862080326505953</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2660037/rick-and-morty-the-anime-s01e08-feel-dont-think-1080p-bluray-remux-dts-hd-ma2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>3274912563</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="7695862080326505953"/>
+            <torznab:attr name="infohash" value="af2cd695037a05586071e4e558dc6106de32c710"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:af2cd695037a05586071e4e558dc6106de32c710&amp;dn=Rick%20and%20Morty%20The%20Anime%20S01E08%20Feel%20Dont%20Think%201080p%20BluRay%20Remux%20DTS-HD%20MA2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E10 A Pain in the Back 1080p BluRay Remux DTS-HD MA2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-4139932906395600756?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-4139932906395600756?apikey=REDACTED" length="4123168604" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">-4139932906395600756</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2660307/rick-and-morty-the-anime-s01e10-a-pain-in-the-back-1080p-bluray-remux-dts-hd-ma2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>4123168604</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-4139932906395600756"/>
+            <torznab:attr name="infohash" value="76984f6dc84812e7f9110b56317d5001dc82c542"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:76984f6dc84812e7f9110b56317d5001dc82c542&amp;dn=Rick%20and%20Morty%20The%20Anime%20S01E10%20A%20Pain%20in%20the%20Back%201080p%20BluRay%20Remux%20DTS-HD%20MA2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E10 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/5362653930692010996?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/5362653930692010996?apikey=REDACTED" length="203423744" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">5362653930692010996</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2379715/rick-and-morty-the-anime-s01e10-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>203423744</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="5362653930692010996"/>
+            <torznab:attr name="infohash" value="ce79dc0909cadd4749a839e922e4fb6c3c98f81a"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:ce79dc0909cadd4749a839e922e4fb6c3c98f81a&amp;dn=Rick.and.Morty.The.Anime.S01E10.1080p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E01 Girl Who Manipulates Time 1080p BluRay Remux DTS-HD MA2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-5869091139611597679?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-5869091139611597679?apikey=REDACTED" length="3328599654" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">-5869091139611597679</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2660021/rick-and-morty-the-anime-s01e01-girl-who-manipulates-time-1080p-bluray-remux-dts-hd-ma2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>3328599654</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-5869091139611597679"/>
+            <torznab:attr name="infohash" value="e500ef91f8d23a80b0254389ea4cd34368d191b3"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:e500ef91f8d23a80b0254389ea4cd34368d191b3&amp;dn=Rick%20and%20Morty%20The%20Anime%20S01E01%20Girl%20Who%20Manipulates%20Time%201080p%20BluRay%20Remux%20DTS-HD%20MA2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="4"/>
+            <torznab:attr name="seeders" value="4"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime 2024 S01E03 Alien Elle 1080p AMZN WEB-DL DDP2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-8466008565646416691?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-8466008565646416691?apikey=REDACTED" length="522190848" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">-8466008565646416691</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2354462/rick-and-morty-the-anime-2024-s01e03-alien-elle-1080p-amzn-web-dl-ddp2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>522190848</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-8466008565646416691"/>
+            <torznab:attr name="infohash" value="b638e1b3bb92c2508539fd82ad95823613e2a06f"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:b638e1b3bb92c2508539fd82ad95823613e2a06f&amp;dn=Rick%20and%20Morty%20The%20Anime%202024%20S01E03%20Alien%20Elle%201080p%20AMZN%20WEB-DL%20DDP2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="3"/>
+            <torznab:attr name="seeders" value="3"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E07 720p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-6663473606495700363?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-6663473606495700363?apikey=REDACTED" length="150994944" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">-6663473606495700363</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2368779/rick-and-morty-the-anime-s01e07-720p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>150994944</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-6663473606495700363"/>
+            <torznab:attr name="infohash" value="53727024732935ac2556440cdf16854616da4b4e"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:53727024732935ac2556440cdf16854616da4b4e&amp;dn=Rick.and.Morty.The.Anime.S01E07.720p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E04 1080p WEB H264-SuccessfulCrab</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/7214571350043477583?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/7214571350043477583?apikey=REDACTED" length="298844160" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">7214571350043477583</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2356706/rick-and-morty-the-anime-s01e04-1080p-web-h264-successfulcrab/?d=</comments>
+            <category>N/A</category>
+            <size>298844160</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="7214571350043477583"/>
+            <torznab:attr name="infohash" value="d8a5e304ec171d3881fbaa3d01e96f4d4e98e5d3"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:d8a5e304ec171d3881fbaa3d01e96f4d4e98e5d3&amp;dn=rick.and.morty.the.anime.s01e04.1080p.web.h264-successfulcrab%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="7"/>
+            <torznab:attr name="seeders" value="7"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E02 Fighting Mother 1080p BluRay Remux DTS-HD MA2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-7181211106494920219?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-7181211106494920219?apikey=REDACTED" length="2748779069" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">-7181211106494920219</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2660023/rick-and-morty-the-anime-s01e02-fighting-mother-1080p-bluray-remux-dts-hd-ma2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>2748779069</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-7181211106494920219"/>
+            <torznab:attr name="infohash" value="8cadfe07aaba94e59d1ab4d73235591c1874892b"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:8cadfe07aaba94e59d1ab4d73235591c1874892b&amp;dn=Rick%20and%20Morty%20The%20Anime%20S01E02%20Fighting%20Mother%201080p%20BluRay%20Remux%20DTS-HD%20MA2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="4"/>
+            <torznab:attr name="seeders" value="4"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01 720p x265-TiPEX</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/6953245531229646747?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/6953245531229646747?apikey=REDACTED" length="1610612736" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">6953245531229646747</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2629020/rick-and-morty-the-anime-s01-720p-x265-tipex/?d=</comments>
+            <category>N/A</category>
+            <size>1610612736</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="6953245531229646747"/>
+            <torznab:attr name="infohash" value="3EDE809EB59AA31274E5167DF6ABF6476F77516C"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:3EDE809EB59AA31274E5167DF6ABF6476F77516C&amp;dn=Rick.and.Morty.The.Anime.S01.720p.x265-TiPEX&amp;tr=udp://tracker.torrent.eu.org:451/announce&amp;tr=udp://open.stealth.si:80/announce&amp;tr=udp://tracker.dler.com:6969/announce&amp;tr=udp://tracker.opentrackr.org:1337/announce&amp;tr=udp://explodie.org:6969/announce&amp;tr=udp://tracker.tiny-vps.com:6969/announce&amp;tr=udp://tracker.darkness.services:6969/announce&amp;tr=udp://open.demonii.com:1337/announce&amp;tr=udp://open.tracker.cl:1337/announce&amp;tr=udp://tracker.dler.org:6969/announce&amp;tr=udp://p4p.arenabg.com:1337/announce"/>
+            <torznab:attr name="peers" value="5"/>
+            <torznab:attr name="seeders" value="5"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E05 720p WEB x265-MiNX</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-7637966371806409470?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-7637966371806409470?apikey=REDACTED" length="126877696" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">-7637966371806409470</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2360230/rick-and-morty-the-anime-s01e05-720p-web-x265-minx/?d=</comments>
+            <category>N/A</category>
+            <size>126877696</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-7637966371806409470"/>
+            <torznab:attr name="infohash" value="7fc78a42ed9edfab051409e489adc59b48cf4552"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:7fc78a42ed9edfab051409e489adc59b48cf4552&amp;dn=Rick%20and%20Morty%20The%20Anime%20S01E05%20720p%20WEB%20x265-MiNX%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E10 720p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/2553376613616332752?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/2553376613616332752?apikey=REDACTED" length="130023424" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">2553376613616332752</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2379593/rick-and-morty-the-anime-s01e10-720p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>130023424</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="2553376613616332752"/>
+            <torznab:attr name="infohash" value="8f6da81a13276afdc3785d024314421befdc45cf"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:8f6da81a13276afdc3785d024314421befdc45cf&amp;dn=Rick.and.Morty.The.Anime.S01E10.720p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="6"/>
+            <torznab:attr name="seeders" value="6"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E04 Memories 1080p BluRay FLAC2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-8438839369403235009?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-8438839369403235009?apikey=REDACTED" length="1578400481" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">-8438839369403235009</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2660514/rick-and-morty-the-anime-s01e04-memories-1080p-bluray-flac2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>1578400481</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-8438839369403235009"/>
+            <torznab:attr name="infohash" value="0512311dd5a5a88d1e7040e663c8311a42dd2297"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:0512311dd5a5a88d1e7040e663c8311a42dd2297&amp;dn=Rick%20and%20Morty%20The%20Anime%20S01E04%20Memories%201080p%20BluRay%20FLAC2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="7"/>
+            <torznab:attr name="seeders" value="7"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E10 A Pain in the Back 1080p BluRay FLAC2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-3996734549406937598?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-3996734549406937598?apikey=REDACTED" length="2587717795" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">-3996734549406937598</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2660516/rick-and-morty-the-anime-s01e10-a-pain-in-the-back-1080p-bluray-flac2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>2587717795</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-3996734549406937598"/>
+            <torznab:attr name="infohash" value="1ac2256cf188cb1df586db14f869c92ffe830b39"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:1ac2256cf188cb1df586db14f869c92ffe830b39&amp;dn=Rick%20and%20Morty%20The%20Anime%20S01E10%20A%20Pain%20in%20the%20Back%201080p%20BluRay%20FLAC2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="6"/>
+            <torznab:attr name="seeders" value="6"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E07 When We Meet in Our Dreams 1080p BluRay FLAC2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-2438668479912268380?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-2438668479912268380?apikey=REDACTED" length="2287070085" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">-2438668479912268380</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2660517/rick-and-morty-the-anime-s01e07-when-we-meet-in-our-dreams-1080p-bluray-flac2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>2287070085</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-2438668479912268380"/>
+            <torznab:attr name="infohash" value="3a44e1ad7c07c7947cb6e7c6fb741020f9871e9c"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:3a44e1ad7c07c7947cb6e7c6fb741020f9871e9c&amp;dn=Rick%20and%20Morty%20The%20Anime%20S01E07%20When%20We%20Meet%20in%20Our%20Dreams%201080p%20BluRay%20FLAC2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="8"/>
+            <torznab:attr name="seeders" value="8"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime 2024 S01E08 Feel Dont Think 1080p AMZN WEB-DL DDP2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/4501375815630189009?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/4501375815630189009?apikey=REDACTED" length="478150656" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">4501375815630189009</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2372340/rick-and-morty-the-anime-2024-s01e08-feel-dont-think-1080p-amzn-web-dl-ddp2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>478150656</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="4501375815630189009"/>
+            <torznab:attr name="infohash" value="cb350a56be249ae6f61ca15554e08f481aca881f"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:cb350a56be249ae6f61ca15554e08f481aca881f&amp;dn=Rick%20and%20Morty%20The%20Anime%202024%20S01E08%20Feel%20Dont%20Think%201080p%20AMZN%20WEB-DL%20DDP2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01 1080p x265-ELiTE</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-2215189070366745021?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-2215189070366745021?apikey=REDACTED" length="2899102924" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">-2215189070366745021</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2629021/rick-and-morty-the-anime-s01-1080p-x265-elite/?d=</comments>
+            <category>N/A</category>
+            <size>2899102924</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-2215189070366745021"/>
+            <torznab:attr name="infohash" value="1DB9DE8CD4CD2AB9092EF414319A99F116859C5B"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:1DB9DE8CD4CD2AB9092EF414319A99F116859C5B&amp;dn=Rick.and.Morty.The.Anime.S01.1080p.x265-ELiTE&amp;tr=udp://tracker.torrent.eu.org:451/announce&amp;tr=udp://open.stealth.si:80/announce&amp;tr=udp://tracker.dler.com:6969/announce&amp;tr=udp://tracker.opentrackr.org:1337/announce&amp;tr=udp://explodie.org:6969/announce&amp;tr=udp://tracker.tiny-vps.com:6969/announce&amp;tr=udp://tracker.darkness.services:6969/announce&amp;tr=udp://open.demonii.com:1337/announce&amp;tr=udp://open.tracker.cl:1337/announce&amp;tr=udp://tracker.dler.org:6969/announce&amp;tr=udp://p4p.arenabg.com:1337/announce"/>
+            <torznab:attr name="peers" value="27"/>
+            <torznab:attr name="seeders" value="27"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E09 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/7758931736037428933?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/7758931736037428933?apikey=REDACTED" length="208666624" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">7758931736037428933</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2375784/rick-and-morty-the-anime-s01e09-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>208666624</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="7758931736037428933"/>
+            <torznab:attr name="infohash" value="759914e6aea7f2c11f1a773291fa0823c0897be2"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:759914e6aea7f2c11f1a773291fa0823c0897be2&amp;dn=Rick.and.Morty.The.Anime.S01E09.1080p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E04 720p x265-TiPEX</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/2692656940267503181?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/2692656940267503181?apikey=REDACTED" length="134217728" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">2692656940267503181</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2357127/rick-and-morty-the-anime-s01e04-720p-x265-tipex/?d=</comments>
+            <category>N/A</category>
+            <size>134217728</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="2692656940267503181"/>
+            <torznab:attr name="infohash" value="9ddf5008147e60052d2b947fc8cf7cc3c1f34821"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:9ddf5008147e60052d2b947fc8cf7cc3c1f34821&amp;dn=Rick.and.Morty.The.Anime.S01E04.720p.x265-TiPEX%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E06 1080p WEB H264-SuccessfulCrab</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/909784735188679175?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/909784735188679175?apikey=REDACTED" length="327155712" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">909784735188679175</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2362600/rick-and-morty-the-anime-s01e06-1080p-web-h264-successfulcrab/?d=</comments>
+            <category>N/A</category>
+            <size>327155712</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="909784735188679175"/>
+            <torznab:attr name="infohash" value="3503c3705919603c35ee4fe007aafc13af0cd18c"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:3503c3705919603c35ee4fe007aafc13af0cd18c&amp;dn=rick.and.morty.the.anime.s01e06.1080p.web.h264-successfulcrab%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="9"/>
+            <torznab:attr name="seeders" value="9"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E08 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/654895722797846932?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/654895722797846932?apikey=REDACTED" length="178257920" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">654895722797846932</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2372087/rick-and-morty-the-anime-s01e08-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>178257920</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="654895722797846932"/>
+            <torznab:attr name="infohash" value="fd41fd8bbbe5d8d5f04ecf6bb18c0a81b8900d7a"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:fd41fd8bbbe5d8d5f04ecf6bb18c0a81b8900d7a&amp;dn=Rick.and.Morty.The.Anime.S01E08.1080p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E09 Her Innermost Wish 1080p BluRay FLAC2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-8862904872290117751?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-8862904872290117751?apikey=REDACTED" length="2319282339" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">-8862904872290117751</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2660515/rick-and-morty-the-anime-s01e09-her-innermost-wish-1080p-bluray-flac2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>2319282339</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-8862904872290117751"/>
+            <torznab:attr name="infohash" value="a4401395d18573a5bfef7ed41f8eb20df039ce18"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:a4401395d18573a5bfef7ed41f8eb20df039ce18&amp;dn=Rick%20and%20Morty%20The%20Anime%20S01E09%20Her%20Innermost%20Wish%201080p%20BluRay%20FLAC2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="6"/>
+            <torznab:attr name="seeders" value="6"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E02 Fighting Mother 1080p BluRay FLAC2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-4331781575184388075?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-4331781575184388075?apikey=REDACTED" length="1524713390" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">-4331781575184388075</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2660509/rick-and-morty-the-anime-s01e02-fighting-mother-1080p-bluray-flac2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>1524713390</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-4331781575184388075"/>
+            <torznab:attr name="infohash" value="5924e7f29a7d04e14d6d699ff11a876b95914444"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:5924e7f29a7d04e14d6d699ff11a876b95914444&amp;dn=Rick%20and%20Morty%20The%20Anime%20S01E02%20Fighting%20Mother%201080p%20BluRay%20FLAC2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="4"/>
+            <torznab:attr name="seeders" value="4"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime 2024 S01E07 When We Meet In Our Dreams 1080p AMZN WEB-DL DDP2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-3307185821698525919?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-3307185821698525919?apikey=REDACTED" length="656408576" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">-3307185821698525919</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2369399/rick-and-morty-the-anime-2024-s01e07-when-we-meet-in-our-dreams-1080p-amzn-web-dl-ddp2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>656408576</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-3307185821698525919"/>
+            <torznab:attr name="infohash" value="3fab0c09682dda72eae537e566dbb928f7cfc1ca"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:3fab0c09682dda72eae537e566dbb928f7cfc1ca&amp;dn=Rick%20and%20Morty%20The%20Anime%202024%20S01E07%20When%20We%20Meet%20In%20Our%20Dreams%201080p%20AMZN%20WEB-DL%20DDP2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="5"/>
+            <torznab:attr name="seeders" value="5"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E03 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/7110434665844194659?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/7110434665844194659?apikey=REDACTED" length="156237824" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">7110434665844194659</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2354284/rick-and-morty-the-anime-s01e03-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>156237824</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="7110434665844194659"/>
+            <torznab:attr name="infohash" value="6443e27274962559a8a0f386ea0468e1ed107ada"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:6443e27274962559a8a0f386ea0468e1ed107ada&amp;dn=Rick.and.Morty.The.Anime.S01E03.1080p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="4"/>
+            <torznab:attr name="seeders" value="4"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E04 Memories 1080p BluRay Remux DTS-HD MA2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-1033110676544176404?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-1033110676544176404?apikey=REDACTED" length="2963527434" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">-1033110676544176404</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2660024/rick-and-morty-the-anime-s01e04-memories-1080p-bluray-remux-dts-hd-ma2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>2963527434</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-1033110676544176404"/>
+            <torznab:attr name="infohash" value="dc5c1ae8fcbe12d0e13e058c8aa372114a6319c0"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:dc5c1ae8fcbe12d0e13e058c8aa372114a6319c0&amp;dn=Rick%20and%20Morty%20The%20Anime%20S01E04%20Memories%201080p%20BluRay%20Remux%20DTS-HD%20MA2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E05 1080p WEB H264-KAWAII</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-4576108034451127651?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-4576108034451127651?apikey=REDACTED" length="371195904" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">-4576108034451127651</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2360221/rick-and-morty-the-anime-s01e05-1080p-web-h264-kawaii/?d=</comments>
+            <category>N/A</category>
+            <size>371195904</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-4576108034451127651"/>
+            <torznab:attr name="infohash" value="46beae8086096ce9aef6b2bcf7737439a19b9fb1"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:46beae8086096ce9aef6b2bcf7737439a19b9fb1&amp;dn=rick.and.morty.the.anime.s01e05.1080p.web.h264-kawaii%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="4"/>
+            <torznab:attr name="seeders" value="4"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E01 Girl Who Manipulates Time 1080p BluRay FLAC2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-741569757802135791?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-741569757802135791?apikey=REDACTED" length="1782411427" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">-741569757802135791</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2660508/rick-and-morty-the-anime-s01e01-girl-who-manipulates-time-1080p-bluray-flac2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>1782411427</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-741569757802135791"/>
+            <torznab:attr name="infohash" value="824fe87df7c870c5ff9d46234abcac0a654d39bc"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:824fe87df7c870c5ff9d46234abcac0a654d39bc&amp;dn=Rick%20and%20Morty%20The%20Anime%20S01E01%20Girl%20Who%20Manipulates%20Time%201080p%20BluRay%20FLAC2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="6"/>
+            <torznab:attr name="seeders" value="6"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E10 1080p WEB H264-SuccessfulCrab</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-6050800597029469558?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-6050800597029469558?apikey=REDACTED" length="349175808" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">-6050800597029469558</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2379707/rick-and-morty-the-anime-s01e10-1080p-web-h264-successfulcrab/?d=</comments>
+            <category>N/A</category>
+            <size>349175808</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-6050800597029469558"/>
+            <torznab:attr name="infohash" value="346dc2a48317ceaf2902a9d30ceb07e6be4b65d8"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:346dc2a48317ceaf2902a9d30ceb07e6be4b65d8&amp;dn=rick.and.morty.the.anime.s01e10.1080p.web.h264-successfulcrab%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="6"/>
+            <torznab:attr name="seeders" value="6"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E09 Her Innermost Wish 1080p BluRay Remux DTS-HD MA2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/2447349025704199815?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/2447349025704199815?apikey=REDACTED" length="3489660928" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">2447349025704199815</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2660031/rick-and-morty-the-anime-s01e09-her-innermost-wish-1080p-bluray-remux-dts-hd-ma2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>3489660928</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="2447349025704199815"/>
+            <torznab:attr name="infohash" value="931139bb896fa7e0d00e7a546ff7c845649f779d"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:931139bb896fa7e0d00e7a546ff7c845649f779d&amp;dn=Rick%20and%20Morty%20The%20Anime%20S01E09%20Her%20Innermost%20Wish%201080p%20BluRay%20Remux%20DTS-HD%20MA2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Smartypants S02E06 Crows Anime Parties 720p DRPO WEB-DL AAC2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/4558234978550456851?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/4558234978550456851?apikey=REDACTED" length="611319808" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">4558234978550456851</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2672744/smartypants-s02e06-crows-anime-parties-720p-drpo-web-dl-aac2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>611319808</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="4558234978550456851"/>
+            <torznab:attr name="infohash" value="7331a45aa346037881f8b65236951a2ec7b172a3"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:7331a45aa346037881f8b65236951a2ec7b172a3&amp;dn=Smartypants%20S02E06%20Crows%20Anime%20Parties%20720p%20DRPO%20WEB-DL%20AAC2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="8"/>
+            <torznab:attr name="seeders" value="8"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E05 Family 1080p BluRay FLAC2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-826576012920135373?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-826576012920135373?apikey=REDACTED" length="1717986918" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">-826576012920135373</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2660511/rick-and-morty-the-anime-s01e05-family-1080p-bluray-flac2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>1717986918</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-826576012920135373"/>
+            <torznab:attr name="infohash" value="91e46b76779bc12b3c7f1c9a7fa4997bb2a430f0"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:91e46b76779bc12b3c7f1c9a7fa4997bb2a430f0&amp;dn=Rick%20and%20Morty%20The%20Anime%20S01E05%20Family%201080p%20BluRay%20FLAC2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="6"/>
+            <torznab:attr name="seeders" value="6"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime 2024 S01E06 Free Will 1080p AMZN WEB-DL DDP2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/6349210469122453775?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/6349210469122453775?apikey=REDACTED" length="483393536" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">6349210469122453775</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2364343/rick-and-morty-the-anime-2024-s01e06-free-will-1080p-amzn-web-dl-ddp2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>483393536</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="6349210469122453775"/>
+            <torznab:attr name="infohash" value="f592544d5288b03313405414e61899ecdd5cfcaf"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:f592544d5288b03313405414e61899ecdd5cfcaf&amp;dn=Rick.and.Morty.The.Anime.2024.S01E06.Free.Will.1080p.AMZN.WEB-DL.DDP2.0.H.264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E05 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/6164885186452322346?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/6164885186452322346?apikey=REDACTED" length="210763776" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">6164885186452322346</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2360232/rick-and-morty-the-anime-s01e05-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>210763776</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="6164885186452322346"/>
+            <torznab:attr name="infohash" value="cf612310f18c0e6530b8bc30b424ce25d9df0147"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:cf612310f18c0e6530b8bc30b424ce25d9df0147&amp;dn=Rick.and.Morty.The.Anime.S01E05.1080p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="3"/>
+            <torznab:attr name="seeders" value="3"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E08 1080p WEB H264-SuccessfulCrab</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-4165904220775724604?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-4165904220775724604?apikey=REDACTED" length="334495744" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">-4165904220775724604</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2372076/rick-and-morty-the-anime-s01e08-1080p-web-h264-successfulcrab/?d=</comments>
+            <category>N/A</category>
+            <size>334495744</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-4165904220775724604"/>
+            <torznab:attr name="infohash" value="fc6384345500746ddceb4aee7594c1c4487c3ca7"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:fc6384345500746ddceb4aee7594c1c4487c3ca7&amp;dn=rick.and.morty.the.anime.s01e08.1080p.web.h264-successfulcrab%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="9"/>
+            <torznab:attr name="seeders" value="9"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E07 1080p x265-ELiTE</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/1364385753388978427?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/1364385753388978427?apikey=REDACTED" length="367001600" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">1364385753388978427</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2369069/rick-and-morty-the-anime-s01e07-1080p-x265-elite/?d=</comments>
+            <category>N/A</category>
+            <size>367001600</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="1364385753388978427"/>
+            <torznab:attr name="infohash" value="3bca73d2db291bab5e255ef79b132d37bfe5c605"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:3bca73d2db291bab5e255ef79b132d37bfe5c605&amp;dn=Rick.and.Morty.The.Anime.S01E07.1080p.x265-ELiTE%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01 480p x264-RUBiK</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/5805848253309932225?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/5805848253309932225?apikey=REDACTED" length="1288490188" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">5805848253309932225</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2629019/rick-and-morty-the-anime-s01-480p-x264-rubik/?d=</comments>
+            <category>N/A</category>
+            <size>1288490188</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="5805848253309932225"/>
+            <torznab:attr name="infohash" value="26504EE2F43238590DDEB6D56E04C788315061CA"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:26504EE2F43238590DDEB6D56E04C788315061CA&amp;dn=Rick.and.Morty.The.Anime.S01.480p.x264-RUBiK&amp;tr=udp://tracker.torrent.eu.org:451/announce&amp;tr=udp://open.stealth.si:80/announce&amp;tr=udp://tracker.dler.com:6969/announce&amp;tr=udp://tracker.opentrackr.org:1337/announce&amp;tr=udp://explodie.org:6969/announce&amp;tr=udp://tracker.tiny-vps.com:6969/announce&amp;tr=udp://tracker.darkness.services:6969/announce&amp;tr=udp://open.demonii.com:1337/announce&amp;tr=udp://open.tracker.cl:1337/announce&amp;tr=udp://tracker.dler.org:6969/announce&amp;tr=udp://p4p.arenabg.com:1337/announce"/>
+            <torznab:attr name="peers" value="3"/>
+            <torznab:attr name="seeders" value="3"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E03 Alien Elle 1080p BluRay Remux DTS-HD MA2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/4729865254874337463?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/4729865254874337463?apikey=REDACTED" length="3167538380" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">4729865254874337463</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2660022/rick-and-morty-the-anime-s01e03-alien-elle-1080p-bluray-remux-dts-hd-ma2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>3167538380</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="4729865254874337463"/>
+            <torznab:attr name="infohash" value="f796f81c3439695fff9dce41e2afa830d5ea46e4"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:f796f81c3439695fff9dce41e2afa830d5ea46e4&amp;dn=Rick%20and%20Morty%20The%20Anime%20S01E03%20Alien%20Elle%201080p%20BluRay%20Remux%20DTS-HD%20MA2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E06 Free Will 1080p BluRay FLAC2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-7046292105312816779?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-7046292105312816779?apikey=REDACTED" length="1986422374" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">-7046292105312816779</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2660513/rick-and-morty-the-anime-s01e06-free-will-1080p-bluray-flac2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>1986422374</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-7046292105312816779"/>
+            <torznab:attr name="infohash" value="09900cd8fb1d271c73c7701b9aa4f5b1b875ee3c"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:09900cd8fb1d271c73c7701b9aa4f5b1b875ee3c&amp;dn=Rick%20and%20Morty%20The%20Anime%20S01E06%20Free%20Will%201080p%20BluRay%20FLAC2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="6"/>
+            <torznab:attr name="seeders" value="6"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E02 1080p WEB H264-KAWAII</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-2585890690550170150?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-2585890690550170150?apikey=REDACTED" length="274726912" type="application/x-bittorrent"/>
+            <pubDate>Tue, 27 Aug 2024 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">-2585890690550170150</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2351271/rick-and-morty-the-anime-s01e02-1080p-web-h264-kawaii/?d=</comments>
+            <category>N/A</category>
+            <size>274726912</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-2585890690550170150"/>
+            <torznab:attr name="infohash" value="d84c616f7c22b6f38b95e7c66f929a960a3ed32d"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:d84c616f7c22b6f38b95e7c66f929a960a3ed32d&amp;dn=rick.and.morty.the.anime.s01e02.1080p.web.h264-kawaii%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="6"/>
+            <torznab:attr name="seeders" value="6"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E02 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/3593434926809160191?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/3593434926809160191?apikey=REDACTED" length="196083712" type="application/x-bittorrent"/>
+            <pubDate>Tue, 27 Aug 2024 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">3593434926809160191</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2351274/rick-and-morty-the-anime-s01e02-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>196083712</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="3593434926809160191"/>
+            <torznab:attr name="infohash" value="27b578c6c70faf6b54dddfc41f63edc889fdf6a9"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:27b578c6c70faf6b54dddfc41f63edc889fdf6a9&amp;dn=Rick.and.Morty.The.Anime.S01E02.1080p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E01 1080p WEB H264-DontBeARick</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-7249347525995692247?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-7249347525995692247?apikey=REDACTED" length="381681664" type="application/x-bittorrent"/>
+            <pubDate>Tue, 27 Aug 2024 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">-7249347525995692247</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2349184/rick-and-morty-the-anime-s01e01-1080p-web-h264-dontbearick/?d=</comments>
+            <category>N/A</category>
+            <size>381681664</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-7249347525995692247"/>
+            <torznab:attr name="infohash" value="fb1738684f7311a4f3ee85778f0bcbe9c52f7525"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:fb1738684f7311a4f3ee85778f0bcbe9c52f7525&amp;dn=rick.and.morty.the.anime.s01e01.1080p.web.h264-dontbearick%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="3"/>
+            <torznab:attr name="seeders" value="3"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E02 720p x265-TiPEX</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-5887147603941973665?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-5887147603941973665?apikey=REDACTED" length="170917888" type="application/x-bittorrent"/>
+            <pubDate>Tue, 27 Aug 2024 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">-5887147603941973665</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2351709/rick-and-morty-the-anime-s01e02-720p-x265-tipex/?d=</comments>
+            <category>N/A</category>
+            <size>170917888</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-5887147603941973665"/>
+            <torznab:attr name="infohash" value="e29217ab8ea37d999996e65083a2562664e430dc"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:e29217ab8ea37d999996e65083a2562664e430dc&amp;dn=Rick.and.Morty.The.Anime.S01E02.720p.x265-TiPEX%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E01 XviD-AFG</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-3733825900503390669?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-3733825900503390669?apikey=REDACTED" length="226492416" type="application/x-bittorrent"/>
+            <pubDate>Tue, 27 Aug 2024 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">-3733825900503390669</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2349197/rick-and-morty-the-anime-s01e01-xvid-afg/?d=</comments>
+            <category>N/A</category>
+            <size>226492416</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-3733825900503390669"/>
+            <torznab:attr name="infohash" value="522140001e3e19334d8cdc8e6ffe8f55e1ae6a50"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:522140001e3e19334d8cdc8e6ffe8f55e1ae6a50&amp;dn=Rick.and.Morty.The.Anime.S01E01.XviD-AFG%5BEZTVx.to%5D.avi%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime S01E01 720p WEB x265-MiNX</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-96806465356276533?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-96806465356276533?apikey=REDACTED" length="117440512" type="application/x-bittorrent"/>
+            <pubDate>Tue, 27 Aug 2024 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">-96806465356276533</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2349201/rick-and-morty-the-anime-s01e01-720p-web-x265-minx/?d=</comments>
+            <category>N/A</category>
+            <size>117440512</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-96806465356276533"/>
+            <torznab:attr name="infohash" value="6b35e095fe6c6d6b5f27a55ac7a6e9ba409a8b20"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:6b35e095fe6c6d6b5f27a55ac7a6e9ba409a8b20&amp;dn=Rick%20and%20Morty%20The%20Anime%20S01E01%20720p%20WEB%20x265-MiNX%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="3"/>
+            <torznab:attr name="seeders" value="3"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Rick and Morty The Anime 2024 S01E01 Girl Who Manipulates Time 1080p AMZN WEB-DL DDP2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/5525354527038113654?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/5525354527038113654?apikey=REDACTED" length="565182464" type="application/x-bittorrent"/>
+            <pubDate>Tue, 27 Aug 2024 13:56:22 +0000</pubDate>
+            <guid isPermaLink="false">5525354527038113654</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2349362/rick-and-morty-the-anime-2024-s01e01-girl-who-manipulates-time-1080p-amzn-web-dl-ddp2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>565182464</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="5525354527038113654"/>
+            <torznab:attr name="infohash" value="d1fad99c342e585216ffcbfe8aa915626857b551"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:d1fad99c342e585216ffcbfe8aa915626857b551&amp;dn=Rick%20and%20Morty%20The%20Anime%202024%20S01E01%20Girl%20Who%20Manipulates%20Time%201080p%20AMZN%20WEB-DL%20DDP2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="4"/>
+            <torznab:attr name="seeders" value="4"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+    </channel>
+</rss>

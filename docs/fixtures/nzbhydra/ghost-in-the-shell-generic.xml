@@ -1,0 +1,604 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:torznab="http://torznab.com/schemas/2015/feed"  version="2.0">
+    
+    <channel>
+        <title>NZBHydra 2</title>
+        <link>https://www.github.com/theotherp/nzbhydra2</link>
+        <webMaster>theotherp@posteo.net</webMaster>
+        <generator>NZBHydra2</generator>
+        <item>
+            <title>Ghost In The Shell Stand Alone Complex S02E01 Di Reactivation Reembody EAC3 5 1 1080p Bluray x265-iVy</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-233060680972522936?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-233060680972522936?apikey=REDACTED" length="416284672" type="application/x-bittorrent"/>
+            <pubDate>Tue, 27 Aug 2024 13:55:37 +0000</pubDate>
+            <guid isPermaLink="false">-233060680972522936</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2345981/ghost-in-the-shell-stand-alone-complex-s02e01-di-reactivation-reembody-eac3-5-1-1080p-bluray-x265-ivy/?d=</comments>
+            <category>N/A</category>
+            <size>416284672</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-233060680972522936"/>
+            <torznab:attr name="infohash" value="0f4962285121f8fc61e4868cea4aa821f118e79e"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:0f4962285121f8fc61e4868cea4aa821f118e79e&amp;dn=Ghost%20In%20The%20Shell%20Stand%20Alone%20Complex%20S02E01%20Di%20Reactivation%20Reembody%20EAC3%205%201%201080p%20Bluray%20x265-iVy%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="13"/>
+            <torznab:attr name="seeders" value="13"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Ghost In The Shell Stand Alone Complex S02E21 In Escape in Defeat Embarrassment EAC3 5 1 1080p Bluray x265-iVy</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-4712214048096863030?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-4712214048096863030?apikey=REDACTED" length="442499072" type="application/x-bittorrent"/>
+            <pubDate>Tue, 27 Aug 2024 13:55:37 +0000</pubDate>
+            <guid isPermaLink="false">-4712214048096863030</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2345976/ghost-in-the-shell-stand-alone-complex-s02e21-in-escape-in-defeat-embarrassment-eac3-5-1-1080p-bluray-x265-ivy/?d=</comments>
+            <category>N/A</category>
+            <size>442499072</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-4712214048096863030"/>
+            <torznab:attr name="infohash" value="f56056e4b9c8875c6782d03cf0fb9f507390fb44"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:f56056e4b9c8875c6782d03cf0fb9f507390fb44&amp;dn=Ghost%20In%20The%20Shell%20Stand%20Alone%20Complex%20S02E21%20In%20Escape%20in%20Defeat%20Embarrassment%20EAC3%205%201%201080p%20Bluray%20x265-iVy%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="11"/>
+            <torznab:attr name="seeders" value="11"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Ghost In The Shell Stand Alone Complex S02E02 Di Well-Fed Me Night Cruise EAC3 5 1 1080p Bluray x265-iVy</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/663221286198301389?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/663221286198301389?apikey=REDACTED" length="437256192" type="application/x-bittorrent"/>
+            <pubDate>Tue, 27 Aug 2024 13:55:37 +0000</pubDate>
+            <guid isPermaLink="false">663221286198301389</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2345980/ghost-in-the-shell-stand-alone-complex-s02e02-di-well-fed-me-night-cruise-eac3-5-1-1080p-bluray-x265-ivy/?d=</comments>
+            <category>N/A</category>
+            <size>437256192</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="663221286198301389"/>
+            <torznab:attr name="infohash" value="3c23d42a0084846cfa41a37d7c60bebb3f38051e"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:3c23d42a0084846cfa41a37d7c60bebb3f38051e&amp;dn=Ghost%20In%20The%20Shell%20Stand%20Alone%20Complex%20S02E02%20Di%20Well-Fed%20Me%20Night%20Cruise%20EAC3%205%201%201080p%20Bluray%20x265-iVy%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="16"/>
+            <torznab:attr name="seeders" value="16"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Ghost in the Shell SAC 2045 S02E13 1080p WEB H264-SUGOI</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-4231510841359869374?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-4231510841359869374?apikey=REDACTED" length="978321408" type="application/x-bittorrent"/>
+            <pubDate>Sun, 28 Aug 2022 13:55:37 +0000</pubDate>
+            <guid isPermaLink="false">-4231510841359869374</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1799346/ghost-in-the-shell-sac-2045-s02e13-1080p-web-h264-sugoi/?d=</comments>
+            <category>N/A</category>
+            <size>978321408</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-4231510841359869374"/>
+            <torznab:attr name="infohash" value="ee1587ea5f98ec8a0f34f7f580c42a9396a03182"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:ee1587ea5f98ec8a0f34f7f580c42a9396a03182&amp;dn=ghost.in.the.shell.sac_2045.s02e13.1080p.web.h264-sugoi%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="5"/>
+            <torznab:attr name="seeders" value="5"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Ghost in the Shell SAC2045 S01 JAPANESE 1080p WEBRip x265</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-2630810111816065210?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-2630810111816065210?apikey=REDACTED" length="5035849154" type="application/x-bittorrent"/>
+            <pubDate>Sun, 28 Aug 2022 13:55:37 +0000</pubDate>
+            <guid isPermaLink="false">-2630810111816065210</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1799786/ghost-in-the-shell-sac2045-s01-japanese-1080p-webrip-x265/?d=</comments>
+            <category>N/A</category>
+            <size>5035849154</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-2630810111816065210"/>
+            <torznab:attr name="infohash" value="200d97f77d3cabc0c12cd738b80bf0a612cf750e"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:200d97f77d3cabc0c12cd738b80bf0a612cf750e&amp;dn=Ghost.in.the.Shell.SAC2045.S01.JAPANESE.1080p.WEBRip.x265%5Beztv.re%5D%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Ghost in the Shell SAC 2045 S02E08 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/8328988898924385891?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/8328988898924385891?apikey=REDACTED" length="402653184" type="application/x-bittorrent"/>
+            <pubDate>Sun, 28 Aug 2022 13:55:37 +0000</pubDate>
+            <guid isPermaLink="false">8328988898924385891</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1812865/ghost-in-the-shell-sac-2045-s02e08-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>402653184</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="8328988898924385891"/>
+            <torznab:attr name="infohash" value="d45c5aed2685b24d142aeeaf365be20552f852fe"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:d45c5aed2685b24d142aeeaf365be20552f852fe&amp;dn=Ghost.in.the.Shell.SAC.2045.S02E08.1080p.HEVC.x265-MeGusta%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="4"/>
+            <torznab:attr name="seeders" value="4"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Ghost in the Shell SAC 2045 S02E11 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-5218109272880255882?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-5218109272880255882?apikey=REDACTED" length="399507456" type="application/x-bittorrent"/>
+            <pubDate>Sun, 28 Aug 2022 13:55:37 +0000</pubDate>
+            <guid isPermaLink="false">-5218109272880255882</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1812867/ghost-in-the-shell-sac-2045-s02e11-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>399507456</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-5218109272880255882"/>
+            <torznab:attr name="infohash" value="ab73c0ff6e2ea5cedbe96cea89f096b7bfc499e8"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:ab73c0ff6e2ea5cedbe96cea89f096b7bfc499e8&amp;dn=Ghost.in.the.Shell.SAC.2045.S02E11.1080p.HEVC.x265-MeGusta%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="3"/>
+            <torznab:attr name="seeders" value="3"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Ghost in the Shell SAC 2045 S02E03 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/3120815473903960943?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/3120815473903960943?apikey=REDACTED" length="437256192" type="application/x-bittorrent"/>
+            <pubDate>Sun, 28 Aug 2022 13:55:37 +0000</pubDate>
+            <guid isPermaLink="false">3120815473903960943</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1812849/ghost-in-the-shell-sac-2045-s02e03-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>437256192</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="3120815473903960943"/>
+            <torznab:attr name="infohash" value="00d66142efe088656cf2d0b0aa30e1bf44f269ef"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:00d66142efe088656cf2d0b0aa30e1bf44f269ef&amp;dn=Ghost.in.the.Shell.SAC.2045.S02E03.1080p.HEVC.x265-MeGusta%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="3"/>
+            <torznab:attr name="seeders" value="3"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Ghost in the Shell SAC 2045 S02E05 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-3631001467692636758?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-3631001467692636758?apikey=REDACTED" length="352321536" type="application/x-bittorrent"/>
+            <pubDate>Sun, 28 Aug 2022 13:55:37 +0000</pubDate>
+            <guid isPermaLink="false">-3631001467692636758</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1812860/ghost-in-the-shell-sac-2045-s02e05-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>352321536</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-3631001467692636758"/>
+            <torznab:attr name="infohash" value="28f4913ab80584f758596771b21b2c4fb2a6062a"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:28f4913ab80584f758596771b21b2c4fb2a6062a&amp;dn=Ghost.in.the.Shell.SAC.2045.S02E05.1080p.HEVC.x265-MeGusta%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="4"/>
+            <torznab:attr name="seeders" value="4"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Ghost in the Shell SAC 2045 S02E16 1080p WEB H264-SUGOI</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/5130307769309241833?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/5130307769309241833?apikey=REDACTED" length="953155584" type="application/x-bittorrent"/>
+            <pubDate>Sun, 28 Aug 2022 13:55:37 +0000</pubDate>
+            <guid isPermaLink="false">5130307769309241833</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1799348/ghost-in-the-shell-sac-2045-s02e16-1080p-web-h264-sugoi/?d=</comments>
+            <category>N/A</category>
+            <size>953155584</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="5130307769309241833"/>
+            <torznab:attr name="infohash" value="1240aefd4b690cbd7e912861a1931db43a7b75ed"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:1240aefd4b690cbd7e912861a1931db43a7b75ed&amp;dn=ghost.in.the.shell.sac_2045.s02e16.1080p.web.h264-sugoi%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="6"/>
+            <torznab:attr name="seeders" value="6"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Ghost in the Shell SAC2045 S02 DUBBED 1080p WEBRip x265</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/4523438005149748434?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/4523438005149748434?apikey=REDACTED" length="5164698173" type="application/x-bittorrent"/>
+            <pubDate>Sun, 28 Aug 2022 13:55:37 +0000</pubDate>
+            <guid isPermaLink="false">4523438005149748434</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1799784/ghost-in-the-shell-sac2045-s02-dubbed-1080p-webrip-x265/?d=</comments>
+            <category>N/A</category>
+            <size>5164698173</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="4523438005149748434"/>
+            <torznab:attr name="infohash" value="92a1af3073d763c039aaae712e58d0414d874f7a"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:92a1af3073d763c039aaae712e58d0414d874f7a&amp;dn=Ghost.in.the.Shell.SAC2045.S02.DUBBED.1080p.WEBRip.x265%5Beztv.re%5D%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="4"/>
+            <torznab:attr name="seeders" value="4"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Ghost in the Shell SAC2045 S01 JAPANESE 1080p NF WEBRip DDP5 1 Atmos x264-SMURF</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/1305014289334009960?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/1305014289334009960?apikey=REDACTED" length="12841952215" type="application/x-bittorrent"/>
+            <pubDate>Sun, 28 Aug 2022 13:55:37 +0000</pubDate>
+            <guid isPermaLink="false">1305014289334009960</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1799518/ghost-in-the-shell-sac2045-s01-japanese-1080p-nf-webrip-ddp5-1-atmos-x264-smurf/?d=</comments>
+            <category>N/A</category>
+            <size>12841952215</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="1305014289334009960"/>
+            <torznab:attr name="infohash" value="c75e2ac79e0f1e32eb2325a1858ca14c0a1154b3"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:c75e2ac79e0f1e32eb2325a1858ca14c0a1154b3&amp;dn=Ghost.in.the.Shell.SAC2045.S01.JAPANESE.1080p.NF.WEBRip.DDP5.1.Atmos.x264-SMURF%5Beztv.re%5D%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="5"/>
+            <torznab:attr name="seeders" value="5"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Ghost in the Shell SAC2045 S02 JAPANESE 1080p WEBRip x265</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-3222360592513305808?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-3222360592513305808?apikey=REDACTED" length="5164698173" type="application/x-bittorrent"/>
+            <pubDate>Sun, 28 Aug 2022 13:55:37 +0000</pubDate>
+            <guid isPermaLink="false">-3222360592513305808</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1799791/ghost-in-the-shell-sac2045-s02-japanese-1080p-webrip-x265/?d=</comments>
+            <category>N/A</category>
+            <size>5164698173</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-3222360592513305808"/>
+            <torznab:attr name="infohash" value="ae37f970f244c54a53d86c2079eadb22c12e9cad"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:ae37f970f244c54a53d86c2079eadb22c12e9cad&amp;dn=Ghost.in.the.Shell.SAC2045.S02.JAPANESE.1080p.WEBRip.x265%5Beztv.re%5D%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Ghost in the Shell SAC2045 S02 DUBBED WEBRip x264-ION10</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-1363992763001857739?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-1363992763001857739?apikey=REDACTED" length="2995739688" type="application/x-bittorrent"/>
+            <pubDate>Sun, 28 Aug 2022 13:55:37 +0000</pubDate>
+            <guid isPermaLink="false">-1363992763001857739</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1799399/ghost-in-the-shell-sac2045-s02-dubbed-webrip-x264-ion10/?d=</comments>
+            <category>N/A</category>
+            <size>2995739688</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-1363992763001857739"/>
+            <torznab:attr name="infohash" value="82bceb64206e8c26528e830ad66a38c0355ce7dc"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:82bceb64206e8c26528e830ad66a38c0355ce7dc&amp;dn=Ghost.in.the.Shell.SAC2045.S02.DUBBED.WEBRip.x264-ION10%5Beztv.re%5D%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Ghost in the Shell SAC 2045 S02E24 1080p WEB H264-SUGOI</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-8494417971335029334?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-8494417971335029334?apikey=REDACTED" length="1003487232" type="application/x-bittorrent"/>
+            <pubDate>Sun, 28 Aug 2022 13:55:37 +0000</pubDate>
+            <guid isPermaLink="false">-8494417971335029334</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1799351/ghost-in-the-shell-sac-2045-s02e24-1080p-web-h264-sugoi/?d=</comments>
+            <category>N/A</category>
+            <size>1003487232</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-8494417971335029334"/>
+            <torznab:attr name="infohash" value="f7d4f0660f1738c15134f9f6c2f911b0f1b47e79"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:f7d4f0660f1738c15134f9f6c2f911b0f1b47e79&amp;dn=ghost.in.the.shell.sac_2045.s02e24.1080p.web.h264-sugoi%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="5"/>
+            <torznab:attr name="seeders" value="5"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Ghost in the Shell SAC 2045 S02E07 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-272400534733652674?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-272400534733652674?apikey=REDACTED" length="502267904" type="application/x-bittorrent"/>
+            <pubDate>Sun, 28 Aug 2022 13:55:37 +0000</pubDate>
+            <guid isPermaLink="false">-272400534733652674</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1812869/ghost-in-the-shell-sac-2045-s02e07-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>502267904</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-272400534733652674"/>
+            <torznab:attr name="infohash" value="4dfddb75a4a27c06445a9ac4a1bff89037bfd20b"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:4dfddb75a4a27c06445a9ac4a1bff89037bfd20b&amp;dn=Ghost.in.the.Shell.SAC.2045.S02E07.1080p.HEVC.x265-MeGusta%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="3"/>
+            <torznab:attr name="seeders" value="3"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Ghost in the Shell SAC 2045 S02E06 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-1000472398884871346?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-1000472398884871346?apikey=REDACTED" length="593494016" type="application/x-bittorrent"/>
+            <pubDate>Sun, 28 Aug 2022 13:55:37 +0000</pubDate>
+            <guid isPermaLink="false">-1000472398884871346</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1812850/ghost-in-the-shell-sac-2045-s02e06-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>593494016</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-1000472398884871346"/>
+            <torznab:attr name="infohash" value="00548143eb4db6bf66c554f34d780167cf31d861"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:00548143eb4db6bf66c554f34d780167cf31d861&amp;dn=Ghost.in.the.Shell.SAC.2045.S02E06.1080p.HEVC.x265-MeGusta%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="3"/>
+            <torznab:attr name="seeders" value="3"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Ghost in the Shell SAC 2045 S01E03 720p WEB H264-CONFRONT</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-1565081290885080053?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-1565081290885080053?apikey=REDACTED" length="636485632" type="application/x-bittorrent"/>
+            <pubDate>Fri, 28 Aug 2020 13:55:37 +0000</pubDate>
+            <guid isPermaLink="false">-1565081290885080053</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1450334/ghost-in-the-shell-sac-2045-s01e03-720p-web-h264-confront/?d=</comments>
+            <category>N/A</category>
+            <size>636485632</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-1565081290885080053"/>
+            <torznab:attr name="infohash" value="b0e1c11758f9bcc36817a0bb402221d032d9030c"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:b0e1c11758f9bcc36817a0bb402221d032d9030c&amp;dn=Ghost.in.the.Shell.SAC.2045.S01E03.720p.WEB.H264-CONFRONT%5Beztv.io%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="3"/>
+            <torznab:attr name="seeders" value="3"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Ghost in the Shell SAC 2045 S01E05 720p WEB H264-CONFRONT</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/6969800771799774702?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/6969800771799774702?apikey=REDACTED" length="785383424" type="application/x-bittorrent"/>
+            <pubDate>Fri, 28 Aug 2020 13:55:37 +0000</pubDate>
+            <guid isPermaLink="false">6969800771799774702</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1450333/ghost-in-the-shell-sac-2045-s01e05-720p-web-h264-confront/?d=</comments>
+            <category>N/A</category>
+            <size>785383424</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="6969800771799774702"/>
+            <torznab:attr name="infohash" value="ff689ab8557a6552bd02b54d6dd6874f8fb6ec25"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:ff689ab8557a6552bd02b54d6dd6874f8fb6ec25&amp;dn=Ghost.in.the.Shell.SAC.2045.S01E05.720p.WEB.H264-CONFRONT%5Beztv.io%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="3"/>
+            <torznab:attr name="seeders" value="3"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Ghost in the Shell SAC 2045 S01E06 720p WEB H264-CONFRONT</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/8330445960607768018?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/8330445960607768018?apikey=REDACTED" length="587202560" type="application/x-bittorrent"/>
+            <pubDate>Fri, 28 Aug 2020 13:55:37 +0000</pubDate>
+            <guid isPermaLink="false">8330445960607768018</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1450337/ghost-in-the-shell-sac-2045-s01e06-720p-web-h264-confront/?d=</comments>
+            <category>N/A</category>
+            <size>587202560</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="8330445960607768018"/>
+            <torznab:attr name="infohash" value="3881eca89c2867ce1450c83c7dd9de28e2bb7ffd"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:3881eca89c2867ce1450c83c7dd9de28e2bb7ffd&amp;dn=Ghost.in.the.Shell.SAC.2045.S01E06.720p.WEB.H264-CONFRONT%5Beztv.io%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Ghost in the Shell SAC 2045 S01E09 720p WEB H264-CONFRONT</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-8403137322447404227?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-8403137322447404227?apikey=REDACTED" length="620756992" type="application/x-bittorrent"/>
+            <pubDate>Fri, 28 Aug 2020 13:55:37 +0000</pubDate>
+            <guid isPermaLink="false">-8403137322447404227</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1450339/ghost-in-the-shell-sac-2045-s01e09-720p-web-h264-confront/?d=</comments>
+            <category>N/A</category>
+            <size>620756992</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-8403137322447404227"/>
+            <torznab:attr name="infohash" value="aa6935f9981149ec7e8c81b3e3524bc684838ff5"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:aa6935f9981149ec7e8c81b3e3524bc684838ff5&amp;dn=Ghost.in.the.Shell.SAC.2045.S01E09.720p.WEB.H264-CONFRONT%5Beztv.io%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="6"/>
+            <torznab:attr name="seeders" value="6"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Ghost in the Shell SAC 2045 S01E08 720p WEB H264-CONFRONT</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-90483040900077474?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-90483040900077474?apikey=REDACTED" length="695205888" type="application/x-bittorrent"/>
+            <pubDate>Fri, 28 Aug 2020 13:55:37 +0000</pubDate>
+            <guid isPermaLink="false">-90483040900077474</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1450342/ghost-in-the-shell-sac-2045-s01e08-720p-web-h264-confront/?d=</comments>
+            <category>N/A</category>
+            <size>695205888</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-90483040900077474"/>
+            <torznab:attr name="infohash" value="42c08e5832782d217be01159d0ea0a6e6b350923"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:42c08e5832782d217be01159d0ea0a6e6b350923&amp;dn=Ghost.in.the.Shell.SAC.2045.S01E08.720p.WEB.H264-CONFRONT%5Beztv.io%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="4"/>
+            <torznab:attr name="seeders" value="4"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Ghost in the Shell SAC 2045 S01E07 720p WEB H264-CONFRONT</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/8784984542945247649?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/8784984542945247649?apikey=REDACTED" length="809500672" type="application/x-bittorrent"/>
+            <pubDate>Fri, 28 Aug 2020 13:55:37 +0000</pubDate>
+            <guid isPermaLink="false">8784984542945247649</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1450338/ghost-in-the-shell-sac-2045-s01e07-720p-web-h264-confront/?d=</comments>
+            <category>N/A</category>
+            <size>809500672</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="8784984542945247649"/>
+            <torznab:attr name="infohash" value="3156827a09c9bc84baa7bb504ff2ff109ac02a17"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:3156827a09c9bc84baa7bb504ff2ff109ac02a17&amp;dn=Ghost.in.the.Shell.SAC.2045.S01E07.720p.WEB.H264-CONFRONT%5Beztv.io%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="3"/>
+            <torznab:attr name="seeders" value="3"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Ghost in the Shell SAC 2045 S01E01 720p WEB H264-CONFRONT</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/187457939246592313?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/187457939246592313?apikey=REDACTED" length="838860800" type="application/x-bittorrent"/>
+            <pubDate>Fri, 28 Aug 2020 13:55:37 +0000</pubDate>
+            <guid isPermaLink="false">187457939246592313</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1450332/ghost-in-the-shell-sac-2045-s01e01-720p-web-h264-confront/?d=</comments>
+            <category>N/A</category>
+            <size>838860800</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="187457939246592313"/>
+            <torznab:attr name="infohash" value="7fbb603dec6bd3a98ecf6985717ff4ee445beff9"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:7fbb603dec6bd3a98ecf6985717ff4ee445beff9&amp;dn=Ghost.in.the.Shell.SAC.2045.S01E01.720p.WEB.H264-CONFRONT%5Beztv.io%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="3"/>
+            <torznab:attr name="seeders" value="3"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Ghost in the Shell SAC 2045 S01E12 720p WEB H264-CONFRONT</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/3115466195566987498?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/3115466195566987498?apikey=REDACTED" length="694157312" type="application/x-bittorrent"/>
+            <pubDate>Fri, 28 Aug 2020 13:55:37 +0000</pubDate>
+            <guid isPermaLink="false">3115466195566987498</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1450340/ghost-in-the-shell-sac-2045-s01e12-720p-web-h264-confront/?d=</comments>
+            <category>N/A</category>
+            <size>694157312</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="3115466195566987498"/>
+            <torznab:attr name="infohash" value="5946f9f2dc46761cfcbc59520db0e2f1165a19f6"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:5946f9f2dc46761cfcbc59520db0e2f1165a19f6&amp;dn=Ghost.in.the.Shell.SAC.2045.S01E12.720p.WEB.H264-CONFRONT%5Beztv.io%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="3"/>
+            <torznab:attr name="seeders" value="3"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Ghost in the Shell SAC 2045 S01E11 720p WEB H264-CONFRONT</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-1801689560417795483?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-1801689560417795483?apikey=REDACTED" length="557842432" type="application/x-bittorrent"/>
+            <pubDate>Fri, 28 Aug 2020 13:55:37 +0000</pubDate>
+            <guid isPermaLink="false">-1801689560417795483</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1450341/ghost-in-the-shell-sac-2045-s01e11-720p-web-h264-confront/?d=</comments>
+            <category>N/A</category>
+            <size>557842432</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-1801689560417795483"/>
+            <torznab:attr name="infohash" value="31fe4b276182d187ce52d1cd6f934525c8e0ee78"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:31fe4b276182d187ce52d1cd6f934525c8e0ee78&amp;dn=Ghost.in.the.Shell.SAC.2045.S01E11.720p.WEB.H264-CONFRONT%5Beztv.io%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="4"/>
+            <torznab:attr name="seeders" value="4"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Ghost in the Shell SAC 2045 S01E10 720p WEB H264-CONFRONT</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-7673100109473727815?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-7673100109473727815?apikey=REDACTED" length="837812224" type="application/x-bittorrent"/>
+            <pubDate>Fri, 28 Aug 2020 13:55:37 +0000</pubDate>
+            <guid isPermaLink="false">-7673100109473727815</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1450343/ghost-in-the-shell-sac-2045-s01e10-720p-web-h264-confront/?d=</comments>
+            <category>N/A</category>
+            <size>837812224</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-7673100109473727815"/>
+            <torznab:attr name="infohash" value="5f6111b8ed07f5e15ee901ff2a71f0189f7d0bf6"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:5f6111b8ed07f5e15ee901ff2a71f0189f7d0bf6&amp;dn=Ghost.in.the.Shell.SAC.2045.S01E10.720p.WEB.H264-CONFRONT%5Beztv.io%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="4"/>
+            <torznab:attr name="seeders" value="4"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+    </channel>
+</rss>

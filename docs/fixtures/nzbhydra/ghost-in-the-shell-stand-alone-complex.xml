@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:torznab="http://torznab.com/schemas/2015/feed"  version="2.0">
+    
+    <channel>
+        <title>NZBHydra 2</title>
+        <link>https://www.github.com/theotherp/nzbhydra2</link>
+        <webMaster>theotherp@posteo.net</webMaster>
+        <generator>NZBHydra2</generator>
+        <item>
+            <title>Ghost In The Shell Stand Alone Complex S02E01 Di Reactivation Reembody EAC3 5 1 1080p Bluray x265-iVy</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-233060680972522936?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-233060680972522936?apikey=REDACTED" length="416284672" type="application/x-bittorrent"/>
+            <pubDate>Tue, 27 Aug 2024 13:55:25 +0000</pubDate>
+            <guid isPermaLink="false">-233060680972522936</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2345981/ghost-in-the-shell-stand-alone-complex-s02e01-di-reactivation-reembody-eac3-5-1-1080p-bluray-x265-ivy/?d=</comments>
+            <category>N/A</category>
+            <size>416284672</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-233060680972522936"/>
+            <torznab:attr name="infohash" value="0f4962285121f8fc61e4868cea4aa821f118e79e"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:0f4962285121f8fc61e4868cea4aa821f118e79e&amp;dn=Ghost%20In%20The%20Shell%20Stand%20Alone%20Complex%20S02E01%20Di%20Reactivation%20Reembody%20EAC3%205%201%201080p%20Bluray%20x265-iVy%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="13"/>
+            <torznab:attr name="seeders" value="13"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Ghost In The Shell Stand Alone Complex S02E21 In Escape in Defeat Embarrassment EAC3 5 1 1080p Bluray x265-iVy</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-4712214048096863030?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-4712214048096863030?apikey=REDACTED" length="442499072" type="application/x-bittorrent"/>
+            <pubDate>Tue, 27 Aug 2024 13:55:25 +0000</pubDate>
+            <guid isPermaLink="false">-4712214048096863030</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2345976/ghost-in-the-shell-stand-alone-complex-s02e21-in-escape-in-defeat-embarrassment-eac3-5-1-1080p-bluray-x265-ivy/?d=</comments>
+            <category>N/A</category>
+            <size>442499072</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-4712214048096863030"/>
+            <torznab:attr name="infohash" value="f56056e4b9c8875c6782d03cf0fb9f507390fb44"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:f56056e4b9c8875c6782d03cf0fb9f507390fb44&amp;dn=Ghost%20In%20The%20Shell%20Stand%20Alone%20Complex%20S02E21%20In%20Escape%20in%20Defeat%20Embarrassment%20EAC3%205%201%201080p%20Bluray%20x265-iVy%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="11"/>
+            <torznab:attr name="seeders" value="11"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Ghost In The Shell Stand Alone Complex S02E02 Di Well-Fed Me Night Cruise EAC3 5 1 1080p Bluray x265-iVy</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/663221286198301389?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/663221286198301389?apikey=REDACTED" length="437256192" type="application/x-bittorrent"/>
+            <pubDate>Tue, 27 Aug 2024 13:55:25 +0000</pubDate>
+            <guid isPermaLink="false">663221286198301389</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2345980/ghost-in-the-shell-stand-alone-complex-s02e02-di-well-fed-me-night-cruise-eac3-5-1-1080p-bluray-x265-ivy/?d=</comments>
+            <category>N/A</category>
+            <size>437256192</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="663221286198301389"/>
+            <torznab:attr name="infohash" value="3c23d42a0084846cfa41a37d7c60bebb3f38051e"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:3c23d42a0084846cfa41a37d7c60bebb3f38051e&amp;dn=Ghost%20In%20The%20Shell%20Stand%20Alone%20Complex%20S02E02%20Di%20Well-Fed%20Me%20Night%20Cruise%20EAC3%205%201%201080p%20Bluray%20x265-iVy%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="16"/>
+            <torznab:attr name="seeders" value="16"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+    </channel>
+</rss>

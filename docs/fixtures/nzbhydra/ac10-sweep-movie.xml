@@ -1,0 +1,1726 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:torznab="http://torznab.com/schemas/2015/feed"  version="2.0">
+    
+    <channel>
+        <title>NZBHydra 2</title>
+        <link>https://www.github.com/theotherp/nzbhydra2</link>
+        <webMaster>theotherp@posteo.net</webMaster>
+        <generator>NZBHydra2</generator>
+        <item>
+            <title>Jeff Dunhams The Cars That Drove Us S01E07 Dune Buggy 1080p DISC WEB-DL AAC2 0 H 264-RAWR</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-3343026078457441483?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-3343026078457441483?apikey=REDACTED" length="939524096" type="application/x-bittorrent"/>
+            <pubDate>Wed, 29 Apr 2026 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-3343026078457441483</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/3088369/jeff-dunhams-the-cars-that-drove-us-s01e07-dune-buggy-1080p-disc-web-dl-aac2-0-h-264-rawr/?d=</comments>
+            <category>N/A</category>
+            <size>939524096</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-3343026078457441483"/>
+            <torznab:attr name="infohash" value="83b4b366c2061d03c95cd72b57941f589b367100"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:83b4b366c2061d03c95cd72b57941f589b367100&amp;dn=Jeff%20Dunhams%20The%20Cars%20That%20Drove%20Us%20S01E07%20Dune%20Buggy%201080p%20DISC%20WEB-DL%20AAC2%200%20H%20264-RAWR%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="6"/>
+            <torznab:attr name="seeders" value="6"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Summer House S10E03 Apology Dunes 1080p AMZN WEB-DL DDP2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/8002649024889159910?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/8002649024889159910?apikey=REDACTED" length="3113851289" type="application/x-bittorrent"/>
+            <pubDate>Sat, 28 Feb 2026 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">8002649024889159910</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/3016440/summer-house-s10e03-apology-dunes-1080p-amzn-web-dl-ddp2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>3113851289</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="8002649024889159910"/>
+            <torznab:attr name="infohash" value="1203b1ad1ba2eb4a0a5fa02ce27a910e6b542ab4"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:1203b1ad1ba2eb4a0a5fa02ce27a910e6b542ab4&amp;dn=Summer%20House%20S10E03%20Apology%20Dunes%201080p%20AMZN%20WEB-DL%20DDP2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="11"/>
+            <torznab:attr name="seeders" value="11"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E01 The Hidden Hand 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/6938821725575010764?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/6938821725575010764?apikey=REDACTED" length="590348288" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">6938821725575010764</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2395789/dune-prophecy-s01e01-the-hidden-hand-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>590348288</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="6938821725575010764"/>
+            <torznab:attr name="infohash" value="4208ac2f8ea39f6c8537e906040a20835a94e044"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:4208ac2f8ea39f6c8537e906040a20835a94e044&amp;dn=Dune.Prophecy.S01E01.The.Hidden.Hand.1080p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="3"/>
+            <torznab:attr name="seeders" value="3"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E02 480p x264-mSD</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-8906927686369671707?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-8906927686369671707?apikey=REDACTED" length="385875968" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-8906927686369671707</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2399287/dune-prophecy-s01e02-480p-x264-msd/?d=</comments>
+            <category>N/A</category>
+            <size>385875968</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-8906927686369671707"/>
+            <torznab:attr name="infohash" value="674d9b35076396945db615ad6a55b17b0b8a7483"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:674d9b35076396945db615ad6a55b17b0b8a7483&amp;dn=Dune.Prophecy.S01E02.480p.x264-mSD%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="3"/>
+            <torznab:attr name="seeders" value="3"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E05 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-2882326731740916737?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-2882326731740916737?apikey=REDACTED" length="525336576" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-2882326731740916737</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2408190/dune-prophecy-s01e05-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>525336576</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-2882326731740916737"/>
+            <torznab:attr name="infohash" value="f6a1d5da60949166ec9461d54850a3069ce981f7"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:f6a1d5da60949166ec9461d54850a3069ce981f7&amp;dn=Dune.Prophecy.S01E05.1080p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="12"/>
+            <torznab:attr name="seeders" value="12"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E05 480p x264-mSD</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/4230492631511767196?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/4230492631511767196?apikey=REDACTED" length="389021696" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">4230492631511767196</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2408164/dune-prophecy-s01e05-480p-x264-msd/?d=</comments>
+            <category>N/A</category>
+            <size>389021696</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="4230492631511767196"/>
+            <torznab:attr name="infohash" value="24062d0e7e454c06aafd02a01694b2ef9c15519a"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:24062d0e7e454c06aafd02a01694b2ef9c15519a&amp;dn=Dune.Prophecy.S01E05.480p.x264-mSD%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="10"/>
+            <torznab:attr name="seeders" value="10"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E03 Sisterhood Above All 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-2763018618745075550?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-2763018618745075550?apikey=REDACTED" length="552599552" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-2763018618745075550</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2402040/dune-prophecy-s01e03-sisterhood-above-all-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>552599552</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-2763018618745075550"/>
+            <torznab:attr name="infohash" value="a38eddaad65aa83a1276cd4791cb33cd5cba98d3"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:a38eddaad65aa83a1276cd4791cb33cd5cba98d3&amp;dn=Dune.Prophecy.S01E03.Sisterhood.Above.All.1080p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E01 The Hidden Hand 1080p AMZN WEB-DL DDP5 1 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/7603593065489702334?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/7603593065489702334?apikey=REDACTED" length="3500398346" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">7603593065489702334</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2395663/dune-prophecy-s01e01-the-hidden-hand-1080p-amzn-web-dl-ddp5-1-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>3500398346</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="7603593065489702334"/>
+            <torznab:attr name="infohash" value="95a0cd0a7c77aca87bb4350224e3470133971db3"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:95a0cd0a7c77aca87bb4350224e3470133971db3&amp;dn=Dune.Prophecy.S01E01.The.Hidden.Hand.1080p.AMZN.WEB-DL.DDP5.1.H.264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="17"/>
+            <torznab:attr name="seeders" value="17"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E03 Sisterhood Above All 1080p AMZN WEB-DL DDP5 1 Atmos H 264-FLUX</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-6810915102067754120?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-6810915102067754120?apikey=REDACTED" length="3253437726" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-6810915102067754120</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2402050/dune-prophecy-s01e03-sisterhood-above-all-1080p-amzn-web-dl-ddp5-1-atmos-h-264-flux/?d=</comments>
+            <category>N/A</category>
+            <size>3253437726</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-6810915102067754120"/>
+            <torznab:attr name="infohash" value="ecca1ce232c6f6d218d5b894cb958454a6fb08f1"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:ecca1ce232c6f6d218d5b894cb958454a6fb08f1&amp;dn=Dune%20Prophecy%20S01E03%20Sisterhood%20Above%20All%201080p%20AMZN%20WEB-DL%20DDP5%201%20Atmos%20H%20264-FLUX%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="3"/>
+            <torznab:attr name="seeders" value="3"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E04 1080p AV1 10bit-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-669100731845194217?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-669100731845194217?apikey=REDACTED" length="503316480" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-669100731845194217</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2405082/dune-prophecy-s01e04-1080p-av1-10bit-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>503316480</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-669100731845194217"/>
+            <torznab:attr name="infohash" value="7627805c1959707673f1dead3d79334954611a97"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:7627805c1959707673f1dead3d79334954611a97&amp;dn=Dune.Prophecy.S01E04.1080p.AV1.10bit-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E03 Sisterhood Above All 1080p MAX WEB-DL DDP5 1 x264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-8187637513576248664?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-8187637513576248664?apikey=REDACTED" length="1277752770" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-8187637513576248664</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2402019/dune-prophecy-s01e03-sisterhood-above-all-1080p-max-web-dl-ddp5-1-x264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>1277752770</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-8187637513576248664"/>
+            <torznab:attr name="infohash" value="49965b4d09348038382949ffbffbbf2e7771f0cd"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:49965b4d09348038382949ffbffbbf2e7771f0cd&amp;dn=Dune%20Prophecy%20S01E03%20Sisterhood%20Above%20All%201080p%20MAX%20WEB-DL%20DDP5%201%20x264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="28"/>
+            <torznab:attr name="seeders" value="28"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E06 The High-Handed Enemy 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/6449695259126447479?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/6449695259126447479?apikey=REDACTED" length="691011584" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">6449695259126447479</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2410028/dune-prophecy-s01e06-the-high-handed-enemy-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>691011584</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="6449695259126447479"/>
+            <torznab:attr name="infohash" value="a7263c05229e389c8e559a0362ab85139ec7c645"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:a7263c05229e389c8e559a0362ab85139ec7c645&amp;dn=Dune.Prophecy.S01E06.The.High-Handed.Enemy.1080p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="29"/>
+            <torznab:attr name="seeders" value="29"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E03 1080p x265-ELiTE</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-4900551669991918620?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-4900551669991918620?apikey=REDACTED" length="731906048" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-4900551669991918620</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2402092/dune-prophecy-s01e03-1080p-x265-elite/?d=</comments>
+            <category>N/A</category>
+            <size>731906048</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-4900551669991918620"/>
+            <torznab:attr name="infohash" value="de79398839fa52a7b245b2e77b5b4c85ac326661"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:de79398839fa52a7b245b2e77b5b4c85ac326661&amp;dn=Dune%20Prophecy%20S01E03%201080p%20x265-ELiTE%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E03 Sisterhood Above All 720p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/6988155425088659186?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/6988155425088659186?apikey=REDACTED" length="463470592" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">6988155425088659186</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2402039/dune-prophecy-s01e03-sisterhood-above-all-720p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>463470592</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="6988155425088659186"/>
+            <torznab:attr name="infohash" value="28ddb9486ab610bcca3f90f22a5179386abf65d1"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:28ddb9486ab610bcca3f90f22a5179386abf65d1&amp;dn=Dune.Prophecy.S01E03.Sisterhood.Above.All.720p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="3"/>
+            <torznab:attr name="seeders" value="3"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E05 In Blood Truth XviD-AFG</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-5666981074203698519?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-5666981074203698519?apikey=REDACTED" length="419430400" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-5666981074203698519</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2408148/dune-prophecy-s01e05-in-blood-truth-xvid-afg/?d=</comments>
+            <category>N/A</category>
+            <size>419430400</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-5666981074203698519"/>
+            <torznab:attr name="infohash" value="871600901e753fe842aa04451d83fa17e908ac7a"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:871600901e753fe842aa04451d83fa17e908ac7a&amp;dn=Dune.Prophecy.S01E05.In.Blood.Truth.XviD-AFG%5BEZTVx.to%5D.avi%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E03 Sisterhood Above All 1080p AMZN WEB-DL DDP5 1 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-2277604378315394698?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-2277604378315394698?apikey=REDACTED" length="3253437726" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-2277604378315394698</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2402035/dune-prophecy-s01e03-sisterhood-above-all-1080p-amzn-web-dl-ddp5-1-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>3253437726</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-2277604378315394698"/>
+            <torznab:attr name="infohash" value="1590e5c893cc2047be0edcd88b69bceaa61db5cf"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:1590e5c893cc2047be0edcd88b69bceaa61db5cf&amp;dn=Dune%20Prophecy%20S01E03%20Sisterhood%20Above%20All%201080p%20AMZN%20WEB-DL%20DDP5%201%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E04 Twice Born 720p AMZN WEB-DL DD 5 1 H 264-playWEB</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/5035124096352145199?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/5035124096352145199?apikey=REDACTED" length="1513975971" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">5035124096352145199</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2405075/dune-prophecy-s01e04-twice-born-720p-amzn-web-dl-dd-5-1-h-264-playweb/?d=</comments>
+            <category>N/A</category>
+            <size>1513975971</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="5035124096352145199"/>
+            <torznab:attr name="infohash" value="fbf9403398870b1952c30b141362907a594f1840"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:fbf9403398870b1952c30b141362907a594f1840&amp;dn=Dune%20Prophecy%20S01E04%20Twice%20Born%20720p%20AMZN%20WEB-DL%20DD%205%201%20H%20264-playWEB%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="6"/>
+            <torznab:attr name="seeders" value="6"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E02 1080p AV1 10bit-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-5523685119329320734?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-5523685119329320734?apikey=REDACTED" length="458227712" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-5523685119329320734</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2399363/dune-prophecy-s01e02-1080p-av1-10bit-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>458227712</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-5523685119329320734"/>
+            <torznab:attr name="infohash" value="9c4c5ab17f86226035323e66a0f4a84e76cdef13"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:9c4c5ab17f86226035323e66a0f4a84e76cdef13&amp;dn=Dune.Prophecy.S01E02.1080p.AV1.10bit-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="3"/>
+            <torznab:attr name="seeders" value="3"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E02 1080p BLUTV WEB-DL [TR-EN] AAC2 0 H264 - TURG</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/28445727926344911?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/28445727926344911?apikey=REDACTED" length="1632087572" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">28445727926344911</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2399428/dune-prophecy-s01e02-1080p-blutv-web-dl-tr-en-aac2-0-h264-turg/?d=</comments>
+            <category>N/A</category>
+            <size>1632087572</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="28445727926344911"/>
+            <torznab:attr name="infohash" value="9f9215819559a195301e07f20832be1a6e361276"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:9f9215819559a195301e07f20832be1a6e361276&amp;dn=Dune%20Prophecy%20S01E02%201080p%20BLUTV%20WEB-DL%20%5BTR-EN%5D%20AAC2.0%20H264%20TURG%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E02 1080p x265-ELiTE</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/2448524929829181453?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/2448524929829181453?apikey=REDACTED" length="588251136" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">2448524929829181453</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2399359/dune-prophecy-s01e02-1080p-x265-elite/?d=</comments>
+            <category>N/A</category>
+            <size>588251136</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="2448524929829181453"/>
+            <torznab:attr name="infohash" value="9271e60141831178e83ba0a48720aad7046536e5"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:9271e60141831178e83ba0a48720aad7046536e5&amp;dn=Dune%20Prophecy%20S01E02%201080p%20x265-ELiTE%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="6"/>
+            <torznab:attr name="seeders" value="6"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E02 Two Wolves 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-7462944090384581730?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-7462944090384581730?apikey=REDACTED" length="485490688" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-7462944090384581730</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2399314/dune-prophecy-s01e02-two-wolves-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>485490688</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-7462944090384581730"/>
+            <torznab:attr name="infohash" value="72c8dc948df7b828c582339f97374a23c67a4eb5"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:72c8dc948df7b828c582339f97374a23c67a4eb5&amp;dn=Dune.Prophecy.S01E02.Two.Wolves.1080p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="9"/>
+            <torznab:attr name="seeders" value="9"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E05 In Blood Truth 1080p MAX WEB-DL DDP5 1 x264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/4780809152474315683?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/4780809152474315683?apikey=REDACTED" length="1159641169" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">4780809152474315683</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2408099/dune-prophecy-s01e05-in-blood-truth-1080p-max-web-dl-ddp5-1-x264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>1159641169</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="4780809152474315683"/>
+            <torznab:attr name="infohash" value="f6559d6eb22a489f3647fa326a92e59773d97aae"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:f6559d6eb22a489f3647fa326a92e59773d97aae&amp;dn=Dune%20Prophecy%20S01E05%20In%20Blood%20Truth%201080p%20MAX%20WEB-DL%20DDP5%201%20x264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="23"/>
+            <torznab:attr name="seeders" value="23"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E05 MULTI 1080p WEB X264-HiggsBoson</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/5389261982081310637?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/5389261982081310637?apikey=REDACTED" length="1267015352" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">5389261982081310637</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2408097/dune-prophecy-s01e05-multi-1080p-web-x264-higgsboson/?d=</comments>
+            <category>N/A</category>
+            <size>1267015352</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="5389261982081310637"/>
+            <torznab:attr name="infohash" value="42ebf367b42f6c85e578d8b5374c7988a53f4a20"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:42ebf367b42f6c85e578d8b5374c7988a53f4a20&amp;dn=Dune.Prophecy.S01E05.MULTI.1080p.WEB.X264-HiggsBoson%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="66"/>
+            <torznab:attr name="seeders" value="66"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E04 Twice Born 1080p MAX WEB-DL DDP5 1 Atmos H 264-FLUX</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-344442952582096427?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-344442952582096427?apikey=REDACTED" length="1245540515" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-344442952582096427</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2405071/dune-prophecy-s01e04-twice-born-1080p-max-web-dl-ddp5-1-atmos-h-264-flux/?d=</comments>
+            <category>N/A</category>
+            <size>1245540515</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-344442952582096427"/>
+            <torznab:attr name="infohash" value="ef5b05255e2ae762edd7091d6cdd4fc0ab3e13b6"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:ef5b05255e2ae762edd7091d6cdd4fc0ab3e13b6&amp;dn=Dune%20Prophecy%20S01E04%20Twice%20Born%201080p%20MAX%20WEB-DL%20DDP5%201%20Atmos%20H%20264-FLUX%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="30"/>
+            <torznab:attr name="seeders" value="30"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E01 MULTI XviD-AFG</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-8728174981883083516?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-8728174981883083516?apikey=REDACTED" length="437256192" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-8728174981883083516</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2395655/dune-prophecy-s01e01-multi-xvid-afg/?d=</comments>
+            <category>N/A</category>
+            <size>437256192</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-8728174981883083516"/>
+            <torznab:attr name="infohash" value="d78afa86a66552f8d3cca38ba3f2710aa2c72d85"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:d78afa86a66552f8d3cca38ba3f2710aa2c72d85&amp;dn=Dune.Prophecy.S01E01.MULTI.XviD-AFG%5BEZTVx.to%5D.avi%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E02 MULTI XviD-AFG</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/1234445757135021822?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/1234445757135021822?apikey=REDACTED" length="325058560" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">1234445757135021822</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2399281/dune-prophecy-s01e02-multi-xvid-afg/?d=</comments>
+            <category>N/A</category>
+            <size>325058560</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="1234445757135021822"/>
+            <torznab:attr name="infohash" value="a4af166bcc1c1ce78be7587d7024d626964d3b5c"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:a4af166bcc1c1ce78be7587d7024d626964d3b5c&amp;dn=Dune.Prophecy.S01E02.MULTI.XviD-AFG%5BEZTVx.to%5D.avi%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E03 Sisterhood Above All 720p AMZN WEB-DL DDP5 1 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-4501109740138544118?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-4501109740138544118?apikey=REDACTED" length="1481763717" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-4501109740138544118</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2402038/dune-prophecy-s01e03-sisterhood-above-all-720p-amzn-web-dl-ddp5-1-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>1481763717</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-4501109740138544118"/>
+            <torznab:attr name="infohash" value="3b5b0586e8f2c8b8151e06c13fe89c3fa8b3e17d"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:3b5b0586e8f2c8b8151e06c13fe89c3fa8b3e17d&amp;dn=Dune%20Prophecy%20S01E03%20Sisterhood%20Above%20All%20720p%20AMZN%20WEB-DL%20DDP5%201%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="5"/>
+            <torznab:attr name="seeders" value="5"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E06 The High-Handed Enemy 720p MAX WEB-DL DDP5 1 x264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-7823896724548116952?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-7823896724548116952?apikey=REDACTED" length="938475520" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-7823896724548116952</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2410011/dune-prophecy-s01e06-the-high-handed-enemy-720p-max-web-dl-ddp5-1-x264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>938475520</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-7823896724548116952"/>
+            <torznab:attr name="infohash" value="28a52b7ad766c8360356d646a3862d2ce1ae524a"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:28a52b7ad766c8360356d646a3862d2ce1ae524a&amp;dn=Dune%20Prophecy%20S01E06%20The%20High-Handed%20Enemy%20720p%20MAX%20WEB-DL%20DDP5%201%20x264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="13"/>
+            <torznab:attr name="seeders" value="13"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E02 Two Wolves 1080p MAX WEB-DL DDP5 1 x264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-757531972317612601?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-757531972317612601?apikey=REDACTED" length="1060110336" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-757531972317612601</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2399284/dune-prophecy-s01e02-two-wolves-1080p-max-web-dl-ddp5-1-x264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>1060110336</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-757531972317612601"/>
+            <torznab:attr name="infohash" value="62da5cd6d5e5f6eb44fc851316f8b027c777be83"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:62da5cd6d5e5f6eb44fc851316f8b027c777be83&amp;dn=Dune%20Prophecy%20S01E02%20Two%20Wolves%201080p%20MAX%20WEB-DL%20DDP5%201%20x264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="6"/>
+            <torznab:attr name="seeders" value="6"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E01 XviD-AFG</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-7121873355383134127?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-7121873355383134127?apikey=REDACTED" length="440401920" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-7121873355383134127</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2395653/dune-prophecy-s01e01-xvid-afg/?d=</comments>
+            <category>N/A</category>
+            <size>440401920</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-7121873355383134127"/>
+            <torznab:attr name="infohash" value="ce090e3b72eb84cd350430f50fa001b7487b3d50"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:ce090e3b72eb84cd350430f50fa001b7487b3d50&amp;dn=Dune.Prophecy.S01E01.XviD-AFG%5BEZTVx.to%5D.avi%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E05 In Blood Truth 1080p AMZN WEB-DL DDP5 1 Atmos H 264-FLUX</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/6238363963696753420?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/6238363963696753420?apikey=REDACTED" length="3167538380" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">6238363963696753420</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2408113/dune-prophecy-s01e05-in-blood-truth-1080p-amzn-web-dl-ddp5-1-atmos-h-264-flux/?d=</comments>
+            <category>N/A</category>
+            <size>3167538380</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="6238363963696753420"/>
+            <torznab:attr name="infohash" value="501d3d2a5a374790ed2ba8995549f95cca80104f"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:501d3d2a5a374790ed2ba8995549f95cca80104f&amp;dn=Dune%20Prophecy%20S01E05%20In%20Blood%20Truth%201080p%20AMZN%20WEB-DL%20DDP5%201%20Atmos%20H%20264-FLUX%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="19"/>
+            <torznab:attr name="seeders" value="19"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E05 In Blood Truth 1080p AMZN WEB-DL DDP5 1 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/7713583879379933320?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/7713583879379933320?apikey=REDACTED" length="2909840343" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">7713583879379933320</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2408104/dune-prophecy-s01e05-in-blood-truth-1080p-amzn-web-dl-ddp5-1-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>2909840343</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="7713583879379933320"/>
+            <torznab:attr name="infohash" value="8eef2a1ca3cd79d12c7485604bfffbf05842988f"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:8eef2a1ca3cd79d12c7485604bfffbf05842988f&amp;dn=Dune.Prophecy.S01E05.In.Blood.Truth.1080p.AMZN.WEB-DL.DDP5.1.H.264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="15"/>
+            <torznab:attr name="seeders" value="15"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E01 1080p WEB h264-ETHEL</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/5163914761743422865?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/5163914761743422865?apikey=REDACTED" length="3500398346" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">5163914761743422865</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2395648/dune-prophecy-s01e01-1080p-web-h264-ethel/?d=</comments>
+            <category>N/A</category>
+            <size>3500398346</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="5163914761743422865"/>
+            <torznab:attr name="infohash" value="4615b6a2c6d356534176f7ff13e38ead5023cf0f"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:4615b6a2c6d356534176f7ff13e38ead5023cf0f&amp;dn=Dune.Prophecy.S01E01.1080p.WEB.h264-ETHEL%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="76"/>
+            <torznab:attr name="seeders" value="76"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E03 480p x264-mSD</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/8197646547417108421?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/8197646547417108421?apikey=REDACTED" length="415236096" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">8197646547417108421</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2402012/dune-prophecy-s01e03-480p-x264-msd/?d=</comments>
+            <category>N/A</category>
+            <size>415236096</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="8197646547417108421"/>
+            <torznab:attr name="infohash" value="635bfc7f86a0a02ab93f99465b0cc68962753039"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:635bfc7f86a0a02ab93f99465b0cc68962753039&amp;dn=Dune.Prophecy.S01E03.480p.x264-mSD%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="9"/>
+            <torznab:attr name="seeders" value="9"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E04 480p x264-mSD</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-3557860675092029836?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-3557860675092029836?apikey=REDACTED" length="409993216" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-3557860675092029836</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2405059/dune-prophecy-s01e04-480p-x264-msd/?d=</comments>
+            <category>N/A</category>
+            <size>409993216</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-3557860675092029836"/>
+            <torznab:attr name="infohash" value="8be0d1f5fd375569400fb3bfb514a6b8cb5dfdd1"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:8be0d1f5fd375569400fb3bfb514a6b8cb5dfdd1&amp;dn=Dune.Prophecy.S01E04.480p.x264-mSD%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="6"/>
+            <torznab:attr name="seeders" value="6"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E04 Twice Born 720p MAX WEB-DL DDP5 1 x264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-3755407478281755076?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-3755407478281755076?apikey=REDACTED" length="716177408" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-3755407478281755076</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2405065/dune-prophecy-s01e04-twice-born-720p-max-web-dl-ddp5-1-x264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>716177408</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-3755407478281755076"/>
+            <torznab:attr name="infohash" value="c0136dfe3a724ee4b4decead3643c5d0f0d55f7c"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:c0136dfe3a724ee4b4decead3643c5d0f0d55f7c&amp;dn=Dune.Prophecy.S01E04.Twice.Born.720p.MAX.WEB-DL.DDP5.1.x264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="12"/>
+            <torznab:attr name="seeders" value="12"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E01 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-3405895388282765725?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-3405895388282765725?apikey=REDACTED" length="584056832" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-3405895388282765725</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2395754/dune-prophecy-s01e01-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>584056832</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-3405895388282765725"/>
+            <torznab:attr name="infohash" value="c281b840f0cd8c8dd01c65808a88cb12ecaad86f"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:c281b840f0cd8c8dd01c65808a88cb12ecaad86f&amp;dn=Dune.Prophecy.S01E01.1080p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="16"/>
+            <torznab:attr name="seeders" value="16"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E02 Two Wolves 1080p AMZN WEB-DL DDP5 1 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/5217496948175422275?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/5217496948175422275?apikey=REDACTED" length="2856153251" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">5217496948175422275</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2399303/dune-prophecy-s01e02-two-wolves-1080p-amzn-web-dl-ddp5-1-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>2856153251</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="5217496948175422275"/>
+            <torznab:attr name="infohash" value="d04a9500391a4e328c547d1db82711418d33e11e"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:d04a9500391a4e328c547d1db82711418d33e11e&amp;dn=Dune%20Prophecy%20S01E02%20Two%20Wolves%201080p%20AMZN%20WEB-DL%20DDP5%201%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="6"/>
+            <torznab:attr name="seeders" value="6"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E02 Two Wolves 1080p AMZN WEB-DL DDP5 1 Atmos H 264-FLUX</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/4351504494928604730?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/4351504494928604730?apikey=REDACTED" length="2856153251" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">4351504494928604730</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2399323/dune-prophecy-s01e02-two-wolves-1080p-amzn-web-dl-ddp5-1-atmos-h-264-flux/?d=</comments>
+            <category>N/A</category>
+            <size>2856153251</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="4351504494928604730"/>
+            <torznab:attr name="infohash" value="abec43478f951c0f73fb38a65911cdd91e5cd528"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:abec43478f951c0f73fb38a65911cdd91e5cd528&amp;dn=Dune%20Prophecy%20S01E02%20Two%20Wolves%201080p%20AMZN%20WEB-DL%20DDP5%201%20Atmos%20H%20264-FLUX%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="3"/>
+            <torznab:attr name="seeders" value="3"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E04 1080p WEB H264-SuccessfulCrab</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/2859656224847885088?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/2859656224847885088?apikey=REDACTED" length="3607772528" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">2859656224847885088</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2405054/dune-prophecy-s01e04-1080p-web-h264-successfulcrab/?d=</comments>
+            <category>N/A</category>
+            <size>3607772528</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="2859656224847885088"/>
+            <torznab:attr name="infohash" value="31adeebed0ce48e6a892d71f7611182479a6e6c2"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:31adeebed0ce48e6a892d71f7611182479a6e6c2&amp;dn=dune.prophecy.s01e04.1080p.web.h264-successfulcrab%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="62"/>
+            <torznab:attr name="seeders" value="62"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E02 MULTI 1080p WEB X264-HiggsBoson</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/8663072816458553780?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/8663072816458553780?apikey=REDACTED" length="1181116006" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">8663072816458553780</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2399274/dune-prophecy-s01e02-multi-1080p-web-x264-higgsboson/?d=</comments>
+            <category>N/A</category>
+            <size>1181116006</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="8663072816458553780"/>
+            <torznab:attr name="infohash" value="5313387db47bf65ad0c502d9574a66c8b9390857"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:5313387db47bf65ad0c502d9574a66c8b9390857&amp;dn=Dune.Prophecy.S01E02.MULTI.1080p.WEB.X264-HiggsBoson%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="14"/>
+            <torznab:attr name="seeders" value="14"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E02 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-2051661078138619431?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-2051661078138619431?apikey=REDACTED" length="480247808" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-2051661078138619431</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2399306/dune-prophecy-s01e02-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>480247808</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-2051661078138619431"/>
+            <torznab:attr name="infohash" value="1fc953366b45ba7f44ef1cc6798cca7e0c024dcb"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:1fc953366b45ba7f44ef1cc6798cca7e0c024dcb&amp;dn=Dune.Prophecy.S01E02.1080p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="9"/>
+            <torznab:attr name="seeders" value="9"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E01 The Hidden Hand 1080p MAX WEB-DL DDP5 1 x264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/6852627328105441018?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/6852627328105441018?apikey=REDACTED" length="1299227607" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">6852627328105441018</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2395679/dune-prophecy-s01e01-the-hidden-hand-1080p-max-web-dl-ddp5-1-x264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>1299227607</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="6852627328105441018"/>
+            <torznab:attr name="infohash" value="015aa587f8f5f124394bad167bc10f2d32126f54"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:015aa587f8f5f124394bad167bc10f2d32126f54&amp;dn=Dune%20Prophecy%20S01E01%20The%20Hidden%20Hand%201080p%20MAX%20WEB-DL%20DDP5%201%20x264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="4"/>
+            <torznab:attr name="seeders" value="4"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E01 1080p x265-ELiTE</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/581370997029758755?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/581370997029758755?apikey=REDACTED" length="758120448" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">581370997029758755</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2395802/dune-prophecy-s01e01-1080p-x265-elite/?d=</comments>
+            <category>N/A</category>
+            <size>758120448</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="581370997029758755"/>
+            <torznab:attr name="infohash" value="095a0ba1cf2705070ae4b22df879eb6106989736"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:095a0ba1cf2705070ae4b22df879eb6106989736&amp;dn=Dune%20Prophecy%20S01E01%201080p%20x265-ELiTE%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="4"/>
+            <torznab:attr name="seeders" value="4"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E06 FINAL MULTI 1080p WEB X264-HiggsBoson</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-5923510113556704538?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-5923510113556704538?apikey=REDACTED" length="1771674009" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-5923510113556704538</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2410005/dune-prophecy-s01e06-final-multi-1080p-web-x264-higgsboson/?d=</comments>
+            <category>N/A</category>
+            <size>1771674009</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-5923510113556704538"/>
+            <torznab:attr name="infohash" value="3577fb40fe93c411e67bccc4aaf484e3adf62082"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:3577fb40fe93c411e67bccc4aaf484e3adf62082&amp;dn=Dune.Prophecy.S01E06.FINAL.MULTI.1080p.WEB.X264-HiggsBoson%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="28"/>
+            <torznab:attr name="seeders" value="28"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E06 The High-Handed Enemy 1080P AMZN WEB-DL DDP5 1 HEVC-X254 POOTLED</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/8654431109412621903?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/8654431109412621903?apikey=REDACTED" length="2383706849" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">8654431109412621903</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2410838/dune-prophecy-s01e06-the-high-handed-enemy-1080p-amzn-web-dl-ddp5-1-hevc-x254-pootled/?d=</comments>
+            <category>N/A</category>
+            <size>2383706849</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="8654431109412621903"/>
+            <torznab:attr name="infohash" value="3deccdbe8bbfd764d8834127e292458945d5166c"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:3deccdbe8bbfd764d8834127e292458945d5166c&amp;dn=Dune%20Prophecy%20S01E06%20The%20High-Handed%20Enemy%201080P%20AMZN%20WEB-DL%20DDP5%201%20HEVC-X254%20POOTLED%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="4"/>
+            <torznab:attr name="seeders" value="4"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E03 Sisterhood Above All 1080P AMZN WEB-DL DDP5 1 HEVC-X265 POOTLED</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/5994232481744492599?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/5994232481744492599?apikey=REDACTED" length="1814623682" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">5994232481744492599</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2402202/dune-prophecy-s01e03-sisterhood-above-all-1080p-amzn-web-dl-ddp5-1-hevc-x265-pootled/?d=</comments>
+            <category>N/A</category>
+            <size>1814623682</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="5994232481744492599"/>
+            <torznab:attr name="infohash" value="75e8f70b0911a803a91780f0111b40dc95ac43e0"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:75e8f70b0911a803a91780f0111b40dc95ac43e0&amp;dn=Dune%20Prophecy%20S01E03%20Sisterhood%20Above%20All%201080P%20AMZN%20WEB-DL%20DDP5%201%20HEVC-X265%20POOTLED%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="3"/>
+            <torznab:attr name="seeders" value="3"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E02 Two Wolves 1080p AMZN WEB-DL DDP5 1 H 264-playWEB</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-5550398156282094921?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-5550398156282094921?apikey=REDACTED" length="2856153251" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-5550398156282094921</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2399342/dune-prophecy-s01e02-two-wolves-1080p-amzn-web-dl-ddp5-1-h-264-playweb/?d=</comments>
+            <category>N/A</category>
+            <size>2856153251</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-5550398156282094921"/>
+            <torznab:attr name="infohash" value="54ec051922293cd6f6726bf0fb4f5734f0cb7d36"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:54ec051922293cd6f6726bf0fb4f5734f0cb7d36&amp;dn=Dune%20Prophecy%20S01E02%20Two%20Wolves%201080p%20AMZN%20WEB-DL%20DDP5%201%20H%20264-playWEB%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="4"/>
+            <torznab:attr name="seeders" value="4"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E05 1080p WEB H264-SuccessfulCrab</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/4401700191061705913?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/4401700191061705913?apikey=REDACTED" length="3167538380" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">4401700191061705913</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2408111/dune-prophecy-s01e05-1080p-web-h264-successfulcrab/?d=</comments>
+            <category>N/A</category>
+            <size>3167538380</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="4401700191061705913"/>
+            <torznab:attr name="infohash" value="ffaf2d97349db5b9a0781c7cc2abfa8807ad424e"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:ffaf2d97349db5b9a0781c7cc2abfa8807ad424e&amp;dn=dune.prophecy.s01e05.1080p.web.h264-successfulcrab%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="4"/>
+            <torznab:attr name="seeders" value="4"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E02 Two Wolves 720p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-344703219571020175?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-344703219571020175?apikey=REDACTED" length="420478976" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-344703219571020175</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2399315/dune-prophecy-s01e02-two-wolves-720p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>420478976</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-344703219571020175"/>
+            <torznab:attr name="infohash" value="9f49ed808ccddc472314e3cf26d52564a48137f7"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:9f49ed808ccddc472314e3cf26d52564a48137f7&amp;dn=Dune.Prophecy.S01E02.Two.Wolves.720p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="4"/>
+            <torznab:attr name="seeders" value="4"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E03 1080p WEB H264-SuccessfulCrab</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/285693797998066396?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/285693797998066396?apikey=REDACTED" length="3253437726" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">285693797998066396</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2402010/dune-prophecy-s01e03-1080p-web-h264-successfulcrab/?d=</comments>
+            <category>N/A</category>
+            <size>3253437726</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="285693797998066396"/>
+            <torznab:attr name="infohash" value="c9cb7c19d202f4b6546b5f662aebdbb797d4bf5d"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:c9cb7c19d202f4b6546b5f662aebdbb797d4bf5d&amp;dn=dune.prophecy.s01e03.1080p.web.h264-successfulcrab%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="72"/>
+            <torznab:attr name="seeders" value="72"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E05 In Blood Truth 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/6535103781582164558?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/6535103781582164558?apikey=REDACTED" length="531628032" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">6535103781582164558</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2408171/dune-prophecy-s01e05-in-blood-truth-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>531628032</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="6535103781582164558"/>
+            <torznab:attr name="infohash" value="c70a3401eaf44dac4eba913ff7aa447eca5ad280"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:c70a3401eaf44dac4eba913ff7aa447eca5ad280&amp;dn=Dune.Prophecy.S01E05.In.Blood.Truth.1080p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="6"/>
+            <torznab:attr name="seeders" value="6"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E01 480p x264-mSD</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-4333612616122275853?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-4333612616122275853?apikey=REDACTED" length="439353344" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-4333612616122275853</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2395650/dune-prophecy-s01e01-480p-x264-msd/?d=</comments>
+            <category>N/A</category>
+            <size>439353344</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-4333612616122275853"/>
+            <torznab:attr name="infohash" value="d1130f7b9a676c1b5619e42ce92a044d8aec3d1b"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:d1130f7b9a676c1b5619e42ce92a044d8aec3d1b&amp;dn=Dune.Prophecy.S01E01.480p.x264-mSD%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="3"/>
+            <torznab:attr name="seeders" value="3"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E01 MULTI 1080p WEB X264-HiggsBoson</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/6705929245265852873?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/6705929245265852873?apikey=REDACTED" length="1417339207" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">6705929245265852873</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2395651/dune-prophecy-s01e01-multi-1080p-web-x264-higgsboson/?d=</comments>
+            <category>N/A</category>
+            <size>1417339207</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="6705929245265852873"/>
+            <torznab:attr name="infohash" value="c87cad6a608e405a502657c51816ef0e91934850"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:c87cad6a608e405a502657c51816ef0e91934850&amp;dn=Dune.Prophecy.S01E01.MULTI.1080p.WEB.X264-HiggsBoson%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="29"/>
+            <torznab:attr name="seeders" value="29"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E05 1080p x265-ELiTE</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/8670435755561487801?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/8670435755561487801?apikey=REDACTED" length="686817280" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">8670435755561487801</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2408129/dune-prophecy-s01e05-1080p-x265-elite/?d=</comments>
+            <category>N/A</category>
+            <size>686817280</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="8670435755561487801"/>
+            <torznab:attr name="infohash" value="e77933d08b9f883841d546d61faa87a11c47fed8"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:e77933d08b9f883841d546d61faa87a11c47fed8&amp;dn=Dune%20Prophecy%20S01E05%201080p%20x265-ELiTE%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="4"/>
+            <torznab:attr name="seeders" value="4"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E06 The High-Handed Enemy 720p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/5216084064126695265?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/5216084064126695265?apikey=REDACTED" length="585105408" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">5216084064126695265</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2410017/dune-prophecy-s01e06-the-high-handed-enemy-720p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>585105408</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="5216084064126695265"/>
+            <torznab:attr name="infohash" value="c3c12daf690486c004ab7593f34740e5891f602b"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:c3c12daf690486c004ab7593f34740e5891f602b&amp;dn=Dune.Prophecy.S01E06.The.High-Handed.Enemy.720p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="7"/>
+            <torznab:attr name="seeders" value="7"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E06 1080p WEB H264-SuccessfulCrab</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-1908950718475844394?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-1908950718475844394?apikey=REDACTED" length="4058744094" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-1908950718475844394</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2410006/dune-prophecy-s01e06-1080p-web-h264-successfulcrab/?d=</comments>
+            <category>N/A</category>
+            <size>4058744094</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-1908950718475844394"/>
+            <torznab:attr name="infohash" value="9859036cbc3cb06b62598e0227f54b141a826d4e"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:9859036cbc3cb06b62598e0227f54b141a826d4e&amp;dn=dune.prophecy.s01e06.1080p.web.h264-successfulcrab%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="73"/>
+            <torznab:attr name="seeders" value="73"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E02 1080p WEB H264-SuccessfulCrab</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-3548687284261565110?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-3548687284261565110?apikey=REDACTED" length="2856153251" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-3548687284261565110</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2399272/dune-prophecy-s01e02-1080p-web-h264-successfulcrab/?d=</comments>
+            <category>N/A</category>
+            <size>2856153251</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-3548687284261565110"/>
+            <torznab:attr name="infohash" value="5fd24c6cfc232ac46cd1eb7ffd7aec0e9fe2160c"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:5fd24c6cfc232ac46cd1eb7ffd7aec0e9fe2160c&amp;dn=dune.prophecy.s01e02.1080p.web.h264-successfulcrab%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="56"/>
+            <torznab:attr name="seeders" value="56"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E06 XviD-AFG</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/8671879376040547303?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/8671879376040547303?apikey=REDACTED" length="504365056" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">8671879376040547303</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2410010/dune-prophecy-s01e06-xvid-afg/?d=</comments>
+            <category>N/A</category>
+            <size>504365056</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="8671879376040547303"/>
+            <torznab:attr name="infohash" value="0caaf1253164ad0bef9572469621121ff4c8d375"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:0caaf1253164ad0bef9572469621121ff4c8d375&amp;dn=Dune.Prophecy.S01E06.XviD-AFG%5BEZTVx.to%5D.avi%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="5"/>
+            <torznab:attr name="seeders" value="5"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E05 In Blood Truth 720p MAX WEB-DL DDP5 1 x264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-4268390318499723025?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-4268390318499723025?apikey=REDACTED" length="682622976" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-4268390318499723025</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2408098/dune-prophecy-s01e05-in-blood-truth-720p-max-web-dl-ddp5-1-x264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>682622976</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-4268390318499723025"/>
+            <torznab:attr name="infohash" value="f9bb0a83a8dc623ae0c1d62cd04ad5e46e9f2237"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:f9bb0a83a8dc623ae0c1d62cd04ad5e46e9f2237&amp;dn=Dune.Prophecy.S01E05.In.Blood.Truth.720p.MAX.WEB-DL.DDP5.1.x264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="14"/>
+            <torznab:attr name="seeders" value="14"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E03 Sisterhood Above All 720p MAX WEB-DL DDP5 1 x264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/7790122442078197457?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/7790122442078197457?apikey=REDACTED" length="743440384" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">7790122442078197457</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2402023/dune-prophecy-s01e03-sisterhood-above-all-720p-max-web-dl-ddp5-1-x264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>743440384</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="7790122442078197457"/>
+            <torznab:attr name="infohash" value="59d5a348d1658c151b7418e6ff190ba638ddeb04"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:59d5a348d1658c151b7418e6ff190ba638ddeb04&amp;dn=Dune%20Prophecy%20S01E03%20Sisterhood%20Above%20All%20720p%20MAX%20WEB-DL%20DDP5%201%20x264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="6"/>
+            <torznab:attr name="seeders" value="6"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E01 The Hidden Hand 720p AMZN WEB-DL DDP5 1 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-830461017663309344?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-830461017663309344?apikey=REDACTED" length="1567663063" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-830461017663309344</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2395661/dune-prophecy-s01e01-the-hidden-hand-720p-amzn-web-dl-ddp5-1-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>1567663063</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-830461017663309344"/>
+            <torznab:attr name="infohash" value="cb6f887166a8ad9df9764b68b216dd143e5d45a8"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:cb6f887166a8ad9df9764b68b216dd143e5d45a8&amp;dn=Dune.Prophecy.S01E01.The.Hidden.Hand.720p.AMZN.WEB-DL.DDP5.1.H.264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="6"/>
+            <torznab:attr name="seeders" value="6"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E04 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/4041795751903530745?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/4041795751903530745?apikey=REDACTED" length="533725184" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">4041795751903530745</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2405074/dune-prophecy-s01e04-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>533725184</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="4041795751903530745"/>
+            <torznab:attr name="infohash" value="a92ce48d71856994376429cc480ae076f8130c56"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:a92ce48d71856994376429cc480ae076f8130c56&amp;dn=Dune.Prophecy.S01E04.1080p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="16"/>
+            <torznab:attr name="seeders" value="16"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01 1080p x265-ELiTE</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/8380290289814818661?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/8380290289814818661?apikey=REDACTED" length="4348654387" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">8380290289814818661</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2410688/dune-prophecy-s01-1080p-x265-elite/?d=</comments>
+            <category>N/A</category>
+            <size>4348654387</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="8380290289814818661"/>
+            <torznab:attr name="infohash" value="2f475a31aa42ad1bd76083973c5ee7f24665ac40"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:2f475a31aa42ad1bd76083973c5ee7f24665ac40&amp;dn=Dune.Prophecy.S01.1080p.x265-ELiTE%5BEZTVx.to%5D%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="74"/>
+            <torznab:attr name="seeders" value="74"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E05 1080p AV1 10bit-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/3368832003138056630?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/3368832003138056630?apikey=REDACTED" length="491782144" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">3368832003138056630</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2408115/dune-prophecy-s01e05-1080p-av1-10bit-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>491782144</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="3368832003138056630"/>
+            <torznab:attr name="infohash" value="cedcc4f3391b90a1a856b9626e4f3b3f129b920d"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:cedcc4f3391b90a1a856b9626e4f3b3f129b920d&amp;dn=Dune.Prophecy.S01E05.1080p.AV1.10bit-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E04 Twice Born 1080p MAX WEB-DL DDP5 1 x264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-3740394833146284518?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-3740394833146284518?apikey=REDACTED" length="1245540515" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-3740394833146284518</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2405077/dune-prophecy-s01e04-twice-born-1080p-max-web-dl-ddp5-1-x264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>1245540515</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-3740394833146284518"/>
+            <torznab:attr name="infohash" value="91d6168faaa21c71613725d371712ab7cb979d86"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:91d6168faaa21c71613725d371712ab7cb979d86&amp;dn=Dune%20Prophecy%20S01E04%20Twice%20Born%201080p%20MAX%20WEB-DL%20DDP5%201%20x264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="3"/>
+            <torznab:attr name="seeders" value="3"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E02 720p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/5165243998198595264?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/5165243998198595264?apikey=REDACTED" length="418381824" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">5165243998198595264</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2399291/dune-prophecy-s01e02-720p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>418381824</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="5165243998198595264"/>
+            <torznab:attr name="infohash" value="428c39ee06bfada93e0f7055b43e5cb3e980583e"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:428c39ee06bfada93e0f7055b43e5cb3e980583e&amp;dn=Dune.Prophecy.S01E02.720p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="4"/>
+            <torznab:attr name="seeders" value="4"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E02 XviD-AFG</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/1866705411846376782?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/1866705411846376782?apikey=REDACTED" length="329252864" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">1866705411846376782</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2399276/dune-prophecy-s01e02-xvid-afg/?d=</comments>
+            <category>N/A</category>
+            <size>329252864</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="1866705411846376782"/>
+            <torznab:attr name="infohash" value="cda89dc42e5fe39fe8eacf2af4542deea8ed53aa"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:cda89dc42e5fe39fe8eacf2af4542deea8ed53aa&amp;dn=Dune.Prophecy.S01E02.XviD-AFG%5BEZTVx.to%5D.avi%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="4"/>
+            <torznab:attr name="seeders" value="4"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E04 720p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-1136954672615151013?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-1136954672615151013?apikey=REDACTED" length="456130560" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-1136954672615151013</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2405069/dune-prophecy-s01e04-720p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>456130560</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-1136954672615151013"/>
+            <torznab:attr name="infohash" value="976440b84304715f932d219413bba07a574b6063"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:976440b84304715f932d219413bba07a574b6063&amp;dn=Dune.Prophecy.S01E04.720p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="4"/>
+            <torznab:attr name="seeders" value="4"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E03 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-6001117189162962696?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-6001117189162962696?apikey=REDACTED" length="548405248" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-6001117189162962696</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2402022/dune-prophecy-s01e03-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>548405248</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-6001117189162962696"/>
+            <torznab:attr name="infohash" value="cfa2a94b1d15c85705273e63b20fd55a9db41390"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:cfa2a94b1d15c85705273e63b20fd55a9db41390&amp;dn=Dune.Prophecy.S01E03.1080p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="23"/>
+            <torznab:attr name="seeders" value="23"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E05 720p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/5967993178331078111?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/5967993178331078111?apikey=REDACTED" length="442499072" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">5967993178331078111</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2408149/dune-prophecy-s01e05-720p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>442499072</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="5967993178331078111"/>
+            <torznab:attr name="infohash" value="f2a128b65164fe1fdcd05013ec359d4af5412213"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:f2a128b65164fe1fdcd05013ec359d4af5412213&amp;dn=Dune.Prophecy.S01E05.720p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E02 Two Wolves 720p MAX WEB-DL DDP5 1 x264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-4361173063604832233?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-4361173063604832233?apikey=REDACTED" length="636485632" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-4361173063604832233</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2399285/dune-prophecy-s01e02-two-wolves-720p-max-web-dl-ddp5-1-x264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>636485632</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-4361173063604832233"/>
+            <torznab:attr name="infohash" value="437184784274fd66a94adb1048cd80a46a127e2c"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:437184784274fd66a94adb1048cd80a46a127e2c&amp;dn=Dune%20Prophecy%20S01E02%20Two%20Wolves%20720p%20MAX%20WEB-DL%20DDP5%201%20x264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="9"/>
+            <torznab:attr name="seeders" value="9"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E01 720p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/258747011147580806?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/258747011147580806?apikey=REDACTED" length="493879296" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">258747011147580806</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2395652/dune-prophecy-s01e01-720p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>493879296</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="258747011147580806"/>
+            <torznab:attr name="infohash" value="2ce6bfad2f0892e70a8d75bff86b074653e7b1e0"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:2ce6bfad2f0892e70a8d75bff86b074653e7b1e0&amp;dn=Dune.Prophecy.S01E01.720p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="9"/>
+            <torznab:attr name="seeders" value="9"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E04 Twice Born 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/8626216698547197853?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/8626216698547197853?apikey=REDACTED" length="540016640" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">8626216698547197853</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2405097/dune-prophecy-s01e04-twice-born-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>540016640</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="8626216698547197853"/>
+            <torznab:attr name="infohash" value="60b9e07e8f3821dfb209afe65b296b52e8880c54"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:60b9e07e8f3821dfb209afe65b296b52e8880c54&amp;dn=Dune.Prophecy.S01E04.Twice.Born.1080p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="6"/>
+            <torznab:attr name="seeders" value="6"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E06 FINAL MULTI 480p x264-mSD</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/2879063363708946822?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/2879063363708946822?apikey=REDACTED" length="301989888" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">2879063363708946822</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2410016/dune-prophecy-s01e06-final-multi-480p-x264-msd/?d=</comments>
+            <category>N/A</category>
+            <size>301989888</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="2879063363708946822"/>
+            <torznab:attr name="infohash" value="d57906dd736bbb79dd1b1122b41799d3960b227f"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:d57906dd736bbb79dd1b1122b41799d3960b227f&amp;dn=Dune.Prophecy.S01E06.FINAL.MULTI.480p.x264-mSD%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="5"/>
+            <torznab:attr name="seeders" value="5"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E04 Twice Born 1080p AMZN WEB-DL DDP5 1 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-3298273798505686521?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-3298273798505686521?apikey=REDACTED" length="3607772528" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-3298273798505686521</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2405094/dune-prophecy-s01e04-twice-born-1080p-amzn-web-dl-ddp5-1-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>3607772528</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-3298273798505686521"/>
+            <torznab:attr name="infohash" value="7ff777376402dc94b3c0a7dfb3bd8819c7c35b6f"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:7ff777376402dc94b3c0a7dfb3bd8819c7c35b6f&amp;dn=Dune%20Prophecy%20S01E04%20Twice%20Born%201080p%20AMZN%20WEB-DL%20DDP5%201%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="8"/>
+            <torznab:attr name="seeders" value="8"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Dune Prophecy S01E04 1080p x265-ELiTE</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-5187131360117032797?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-5187131360117032797?apikey=REDACTED" length="694157312" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-5187131360117032797</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2405137/dune-prophecy-s01e04-1080p-x265-elite/?d=</comments>
+            <category>N/A</category>
+            <size>694157312</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-5187131360117032797"/>
+            <torznab:attr name="infohash" value="a796a32ddfc09d54d413ea816461ade5535b53f4"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:a796a32ddfc09d54d413ea816461ade5535b53f4&amp;dn=Dune%20Prophecy%20S01E04%201080p%20x265-ELiTE%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Practical Geology Set 1 07of12 Desert Fans Washes Salt Lakes and Dunes 720p WEB H264 AC3 MVGroup</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-8517948146825857812?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-8517948146825857812?apikey=REDACTED" length="395313152" type="application/x-bittorrent"/>
+            <pubDate>Tue, 27 Aug 2024 13:56:44 +0000</pubDate>
+            <guid isPermaLink="false">-8517948146825857812</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2303645/practical-geology-set-1-07of12-desert-fans-washes-salt-lakes-and-dunes-720p-web-h264-ac3-mvgroup/?d=</comments>
+            <category>N/A</category>
+            <size>395313152</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-8517948146825857812"/>
+            <torznab:attr name="infohash" value="5c16e61f29857b205ceb874fc41114efb799ffa3"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:5c16e61f29857b205ceb874fc41114efb799ffa3&amp;dn=Practical.Geology.Set.1.07of12.Desert.Fans.Washes.Salt.Lakes.and.Dunes.720p.WEB.H264.AC3.MVGroup&amp;tr=udp://tracker.opentrackr.org:1337/announce&amp;tr=http://www.mvgroup.org:2710/announce&amp;tr=udp://tracker.torrent.eu.org:451/announce&amp;tr=udp://open.stealth.si:80/announce&amp;tr=udp://open.demonii.com:1337/announce&amp;tr=udp://open.tracker.cl:1337/announce&amp;tr=udp://tracker.dler.org:6969/announce&amp;tr=udp://p4p.arenabg.com:1337/announce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+    </channel>
+</rss>

@@ -1,0 +1,1990 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:torznab="http://torznab.com/schemas/2015/feed"  version="2.0">
+    
+    <channel>
+        <title>NZBHydra 2</title>
+        <link>https://www.github.com/theotherp/nzbhydra2</link>
+        <webMaster>theotherp@posteo.net</webMaster>
+        <generator>NZBHydra2</generator>
+        <item>
+            <title>Bleach S17E45 DEFEND YOU 1080p DSNP WEB-DL AAC2 0 H 264-playWEB</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/2215981299181082891?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/2215981299181082891?apikey=REDACTED" length="1138166333" type="application/x-bittorrent"/>
+            <pubDate>Sun, 23 Aug 2026 10:55:15 +0000</pubDate>
+            <guid isPermaLink="false">2215981299181082891</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/3144898/bleach-s17e45-defend-you-1080p-dsnp-web-dl-aac2-0-h-264-playweb/?d=</comments>
+            <category>N/A</category>
+            <size>1138166333</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="2215981299181082891"/>
+            <torznab:attr name="infohash" value="332afa1fd16fc0a5fd8d54e18d62e57f60a06764"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:332afa1fd16fc0a5fd8d54e18d62e57f60a06764&amp;dn=Bleach%20S17E45%20DEFEND%20YOU%201080p%20DSNP%20WEB-DL%20AAC2%200%20H%20264-playWEB%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="182"/>
+            <torznab:attr name="seeders" value="182"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E45 DEFEND YOU 720p DSNP WEB-DL AAC2 0 H 264-playWEB</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-5985053125542237465?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-5985053125542237465?apikey=REDACTED" length="646971392" type="application/x-bittorrent"/>
+            <pubDate>Sun, 23 Aug 2026 10:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-5985053125542237465</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/3144897/bleach-s17e45-defend-you-720p-dsnp-web-dl-aac2-0-h-264-playweb/?d=</comments>
+            <category>N/A</category>
+            <size>646971392</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-5985053125542237465"/>
+            <torznab:attr name="infohash" value="7baeb4a0f7c2be7f7e7a0572fea0d87f05d006b8"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:7baeb4a0f7c2be7f7e7a0572fea0d87f05d006b8&amp;dn=Bleach%20S17E45%20DEFEND%20YOU%20720p%20DSNP%20WEB-DL%20AAC2%200%20H%20264-playWEB%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="34"/>
+            <torznab:attr name="seeders" value="34"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E44 THE PERFECT CRIMSON XviD-AFG</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/3785865718622812681?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/3785865718622812681?apikey=REDACTED" length="414187520" type="application/x-bittorrent"/>
+            <pubDate>Thu, 20 Aug 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">3785865718622812681</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/3139793/bleach-s17e44-the-perfect-crimson-xvid-afg/?d=</comments>
+            <category>N/A</category>
+            <size>414187520</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="3785865718622812681"/>
+            <torznab:attr name="infohash" value="6470934363a528ff3d3a89e8b03da2cb8d71bb91"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:6470934363a528ff3d3a89e8b03da2cb8d71bb91&amp;dn=Bleach.S17E44.THE.PERFECT.CRIMSON.XviD-AFG%5BEZTVx.to%5D.avi%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="6"/>
+            <torznab:attr name="seeders" value="6"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E44 THE PERFECT CRIMSON 720p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/3195273264603888779?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/3195273264603888779?apikey=REDACTED" length="232783872" type="application/x-bittorrent"/>
+            <pubDate>Thu, 20 Aug 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">3195273264603888779</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/3139792/bleach-s17e44-the-perfect-crimson-720p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>232783872</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="3195273264603888779"/>
+            <torznab:attr name="infohash" value="106a7af5f6b219c735125de0634b6cd49a7999ca"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:106a7af5f6b219c735125de0634b6cd49a7999ca&amp;dn=Bleach.S17E44.THE.PERFECT.CRIMSON.720p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="11"/>
+            <torznab:attr name="seeders" value="11"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E44 THE PERFECT CRIMSON 1080p DSNP WEB-DL AAC2 0 H 264-playWEB</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-8699467443276810414?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-8699467443276810414?apikey=REDACTED" length="1070596096" type="application/x-bittorrent"/>
+            <pubDate>Thu, 20 Aug 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-8699467443276810414</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/3139789/bleach-s17e44-the-perfect-crimson-1080p-dsnp-web-dl-aac2-0-h-264-playweb/?d=</comments>
+            <category>N/A</category>
+            <size>1070596096</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-8699467443276810414"/>
+            <torznab:attr name="infohash" value="19ac7df2067ab5937c8d079c1aa77394e6c8695b"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:19ac7df2067ab5937c8d079c1aa77394e6c8695b&amp;dn=Bleach%20S17E44%20THE%20PERFECT%20CRIMSON%201080p%20DSNP%20WEB-DL%20AAC2%200%20H%20264-playWEB%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="89"/>
+            <torznab:attr name="seeders" value="89"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E44 THE PERFECT CRIMSON 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/1483821949924117142?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/1483821949924117142?apikey=REDACTED" length="360710144" type="application/x-bittorrent"/>
+            <pubDate>Thu, 20 Aug 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">1483821949924117142</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/3139794/bleach-s17e44-the-perfect-crimson-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>360710144</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="1483821949924117142"/>
+            <torznab:attr name="infohash" value="84e9e78dfff87daa859ca632a9e68eaf03b2d812"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:84e9e78dfff87daa859ca632a9e68eaf03b2d812&amp;dn=Bleach.S17E44.THE.PERFECT.CRIMSON.1080p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="34"/>
+            <torznab:attr name="seeders" value="34"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E44 THE PERFECT CRIMSON 720p DSNP WEB-DL AAC2 0 H 264-playWEB</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/4540047189955478982?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/4540047189955478982?apikey=REDACTED" length="611319808" type="application/x-bittorrent"/>
+            <pubDate>Thu, 20 Aug 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">4540047189955478982</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/3139791/bleach-s17e44-the-perfect-crimson-720p-dsnp-web-dl-aac2-0-h-264-playweb/?d=</comments>
+            <category>N/A</category>
+            <size>611319808</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="4540047189955478982"/>
+            <torznab:attr name="infohash" value="d7eaf3be359d83830814db977b0948f88f6b8f42"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:d7eaf3be359d83830814db977b0948f88f6b8f42&amp;dn=Bleach%20S17E44%20THE%20PERFECT%20CRIMSON%20720p%20DSNP%20WEB-DL%20AAC2%200%20H%20264-playWEB%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="8"/>
+            <torznab:attr name="seeders" value="8"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E43 BLOOD FOR MY BONE 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-8546708774945315630?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-8546708774945315630?apikey=REDACTED" length="309329920" type="application/x-bittorrent"/>
+            <pubDate>Thu, 13 Aug 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-8546708774945315630</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/3137400/bleach-s17e43-blood-for-my-bone-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>309329920</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-8546708774945315630"/>
+            <torznab:attr name="infohash" value="e7408cb47b434add023b7daec47bf36906fc3cb1"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:e7408cb47b434add023b7daec47bf36906fc3cb1&amp;dn=Bleach.S17E43.BLOOD.FOR.MY.BONE.1080p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="33"/>
+            <torznab:attr name="seeders" value="33"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E43 BLOOD FOR MY BONE 480p x264-mSD</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-7435144368771764164?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-7435144368771764164?apikey=REDACTED" length="138412032" type="application/x-bittorrent"/>
+            <pubDate>Thu, 13 Aug 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-7435144368771764164</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/3137402/bleach-s17e43-blood-for-my-bone-480p-x264-msd/?d=</comments>
+            <category>N/A</category>
+            <size>138412032</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-7435144368771764164"/>
+            <torznab:attr name="infohash" value="77ea9e3f6e4472818e83bd5c50430904fa193b00"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:77ea9e3f6e4472818e83bd5c50430904fa193b00&amp;dn=Bleach.S17E43.BLOOD.FOR.MY.BONE.480p.x264-mSD%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="3"/>
+            <torznab:attr name="seeders" value="3"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E43 BLOOD FOR MY BONE 1080p DSNP WEB-DL AAC2 0 H 264-playWEB</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-7777039257007317105?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-7777039257007317105?apikey=REDACTED" length="1054867456" type="application/x-bittorrent"/>
+            <pubDate>Thu, 13 Aug 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-7777039257007317105</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/3137393/bleach-s17e43-blood-for-my-bone-1080p-dsnp-web-dl-aac2-0-h-264-playweb/?d=</comments>
+            <category>N/A</category>
+            <size>1054867456</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-7777039257007317105"/>
+            <torznab:attr name="infohash" value="95c946b0793227d7c09c1a69ee02d182ebb0da15"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:95c946b0793227d7c09c1a69ee02d182ebb0da15&amp;dn=Bleach%20S17E43%20BLOOD%20FOR%20MY%20BONE%201080p%20DSNP%20WEB-DL%20AAC2%200%20H%20264-playWEB%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="129"/>
+            <torznab:attr name="seeders" value="129"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E43 BLOOD FOR MY BONE 720p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-8187151488422255080?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-8187151488422255080?apikey=REDACTED" length="199229440" type="application/x-bittorrent"/>
+            <pubDate>Thu, 13 Aug 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-8187151488422255080</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/3137395/bleach-s17e43-blood-for-my-bone-720p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>199229440</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-8187151488422255080"/>
+            <torznab:attr name="infohash" value="59e86d262ec01bc148685555ac14a5f43bf73a03"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:59e86d262ec01bc148685555ac14a5f43bf73a03&amp;dn=Bleach.S17E43.BLOOD.FOR.MY.BONE.720p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="4"/>
+            <torznab:attr name="seeders" value="4"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E43 BLOOD FOR MY BONE 720p DSNP WEB-DL AAC2 0 H 264-playWEB</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-1478483429330367345?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-1478483429330367345?apikey=REDACTED" length="606076928" type="application/x-bittorrent"/>
+            <pubDate>Thu, 13 Aug 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-1478483429330367345</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/3137394/bleach-s17e43-blood-for-my-bone-720p-dsnp-web-dl-aac2-0-h-264-playweb/?d=</comments>
+            <category>N/A</category>
+            <size>606076928</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-1478483429330367345"/>
+            <torznab:attr name="infohash" value="30b85fb0a9d421ecdc360d3bc9f987b4d4c3936d"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:30b85fb0a9d421ecdc360d3bc9f987b4d4c3936d&amp;dn=Bleach%20S17E43%20BLOOD%20FOR%20MY%20BONE%20720p%20DSNP%20WEB-DL%20AAC2%200%20H%20264-playWEB%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="7"/>
+            <torznab:attr name="seeders" value="7"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E42 Thousand-Year Blood War SON OF DARKNESS 1080p DSNP WEB-DL AAC2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-5710120457333651565?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-5710120457333651565?apikey=REDACTED" length="1127428915" type="application/x-bittorrent"/>
+            <pubDate>Thu, 06 Aug 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-5710120457333651565</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/3132839/bleach-s17e42-thousand-year-blood-war-son-of-darkness-1080p-dsnp-web-dl-aac2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>1127428915</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-5710120457333651565"/>
+            <torznab:attr name="infohash" value="588ce637f0aa20d51ca9d2fdc576f32e14ecbeb3"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:588ce637f0aa20d51ca9d2fdc576f32e14ecbeb3&amp;dn=Bleach%20S17E42%20Thousand-Year%20Blood%20War%20SON%20OF%20DARKNESS%201080p%20DSNP%20WEB-DL%20AAC2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="123"/>
+            <torznab:attr name="seeders" value="123"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E41 Thousand-Year Blood War GOD OF THUNDER XviD-AFG</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-4168577379234670746?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-4168577379234670746?apikey=REDACTED" length="382730240" type="application/x-bittorrent"/>
+            <pubDate>Tue, 28 Jul 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-4168577379234670746</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/3129767/bleach-s17e41-thousand-year-blood-war-god-of-thunder-xvid-afg/?d=</comments>
+            <category>N/A</category>
+            <size>382730240</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-4168577379234670746"/>
+            <torznab:attr name="infohash" value="3dee96de6b5a1428fe976e6eeaf0928a52c418a2"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:3dee96de6b5a1428fe976e6eeaf0928a52c418a2&amp;dn=Bleach.S17E41.Thousand-Year.Blood.War.GOD.OF.THUNDER.XviD-AFG%5BEZTVx.to%5D.avi%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="8"/>
+            <torznab:attr name="seeders" value="8"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E41 Thousand-Year Blood War GOD OF THUNDER 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/7859661791929776939?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/7859661791929776939?apikey=REDACTED" length="349175808" type="application/x-bittorrent"/>
+            <pubDate>Tue, 28 Jul 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">7859661791929776939</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/3129764/bleach-s17e41-thousand-year-blood-war-god-of-thunder-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>349175808</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="7859661791929776939"/>
+            <torznab:attr name="infohash" value="11aa95302bcd9bce9a091393fa71d618f181c59e"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:11aa95302bcd9bce9a091393fa71d618f181c59e&amp;dn=Bleach.S17E41.Thousand-Year.Blood.War.GOD.OF.THUNDER.1080p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="18"/>
+            <torznab:attr name="seeders" value="18"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E41 Thousand-Year Blood War GOD OF THUNDER 480p x264-mSD</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-2075298348173770467?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-2075298348173770467?apikey=REDACTED" length="143654912" type="application/x-bittorrent"/>
+            <pubDate>Tue, 28 Jul 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-2075298348173770467</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/3129766/bleach-s17e41-thousand-year-blood-war-god-of-thunder-480p-x264-msd/?d=</comments>
+            <category>N/A</category>
+            <size>143654912</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-2075298348173770467"/>
+            <torznab:attr name="infohash" value="d3ac125e84b215ae271b92ff3346d32e91bd618e"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:d3ac125e84b215ae271b92ff3346d32e91bd618e&amp;dn=Bleach.S17E41.Thousand-Year.Blood.War.GOD.OF.THUNDER.480p.x264-mSD%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="7"/>
+            <torznab:attr name="seeders" value="7"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E41 Thousand-Year Blood War GOD OF THUNDER 720p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/2644340852571095386?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/2644340852571095386?apikey=REDACTED" length="226492416" type="application/x-bittorrent"/>
+            <pubDate>Tue, 28 Jul 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">2644340852571095386</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/3129762/bleach-s17e41-thousand-year-blood-war-god-of-thunder-720p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>226492416</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="2644340852571095386"/>
+            <torznab:attr name="infohash" value="3852c6d6b9e1c7e601b0ea2df29117370361d71f"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:3852c6d6b9e1c7e601b0ea2df29117370361d71f&amp;dn=Bleach.S17E41.Thousand-Year.Blood.War.GOD.OF.THUNDER.720p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="7"/>
+            <torznab:attr name="seeders" value="7"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E41 Thousand-Year Blood War GOD OF THUNDER 1080p DSNP WEB-DL AAC2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/6219823928651790220?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/6219823928651790220?apikey=REDACTED" length="1045430272" type="application/x-bittorrent"/>
+            <pubDate>Tue, 28 Jul 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">6219823928651790220</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/3129747/bleach-s17e41-thousand-year-blood-war-god-of-thunder-1080p-dsnp-web-dl-aac2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>1045430272</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="6219823928651790220"/>
+            <torznab:attr name="infohash" value="2d41f38eb047f91042af4a2146d99fabf9e17b9a"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:2d41f38eb047f91042af4a2146d99fabf9e17b9a&amp;dn=Bleach%20S17E41%20Thousand-Year%20Blood%20War%20GOD%20OF%20THUNDER%201080p%20DSNP%20WEB-DL%20AAC2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="140"/>
+            <torznab:attr name="seeders" value="140"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>BLEACH Sennen Kessen hen S01E33 2024 1080p Baha WEB-DL x264 AAC-ADWeb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-5113954409114301152?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-5113954409114301152?apikey=REDACTED" length="801112064" type="application/x-bittorrent"/>
+            <pubDate>Thu, 29 Jan 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-5113954409114301152</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2936674/bleach-sennen-kessen-hen-s01e33-2024-1080p-baha-web-dl-x264-aac-adweb/?d=</comments>
+            <category>N/A</category>
+            <size>801112064</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-5113954409114301152"/>
+            <torznab:attr name="infohash" value="9d0138d7018ebfbc5c9d3cf3d9692b22c5abf1be"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:9d0138d7018ebfbc5c9d3cf3d9692b22c5abf1be&amp;dn=BLEACH%20Sennen%20Kessen%20hen%20S01E33%202024%201080p%20Baha%20WEB-DL%20x264%20AAC-ADWeb%5BEZTVx.to%5D.mp4%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="15"/>
+            <torznab:attr name="seeders" value="15"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>BLEACH Sennen Kessen hen S01E30 2024 1080p Baha WEB-DL x264 AAC-ADWeb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/6710701899724432409?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/6710701899724432409?apikey=REDACTED" length="837812224" type="application/x-bittorrent"/>
+            <pubDate>Thu, 29 Jan 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">6710701899724432409</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2936673/bleach-sennen-kessen-hen-s01e30-2024-1080p-baha-web-dl-x264-aac-adweb/?d=</comments>
+            <category>N/A</category>
+            <size>837812224</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="6710701899724432409"/>
+            <torznab:attr name="infohash" value="5c498a10abf04013126dda35c007b0764c819548"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:5c498a10abf04013126dda35c007b0764c819548&amp;dn=BLEACH%20Sennen%20Kessen%20hen%20S01E30%202024%201080p%20Baha%20WEB-DL%20x264%20AAC-ADWeb%5BEZTVx.to%5D.mp4%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="14"/>
+            <torznab:attr name="seeders" value="14"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>BLEACH Sennen Kessen hen S01E36 2024 1080p Baha WEB-DL x264 AAC-ADWeb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/8032380654425418308?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/8032380654425418308?apikey=REDACTED" length="550502400" type="application/x-bittorrent"/>
+            <pubDate>Thu, 29 Jan 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">8032380654425418308</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2936663/bleach-sennen-kessen-hen-s01e36-2024-1080p-baha-web-dl-x264-aac-adweb/?d=</comments>
+            <category>N/A</category>
+            <size>550502400</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="8032380654425418308"/>
+            <torznab:attr name="infohash" value="2cd8bf93cec37f8b5e8f09bec72d818d1be02cdd"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:2cd8bf93cec37f8b5e8f09bec72d818d1be02cdd&amp;dn=BLEACH%20Sennen%20Kessen%20hen%20S01E36%202024%201080p%20Baha%20WEB-DL%20x264%20AAC-ADWeb%5BEZTVx.to%5D.mp4%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="10"/>
+            <torznab:attr name="seeders" value="10"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>BLEACH Sennen Kessen hen S01E28 2024 1080p Baha WEB-DL x264 AAC-ADWeb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-4965285628617917160?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-4965285628617917160?apikey=REDACTED" length="778043392" type="application/x-bittorrent"/>
+            <pubDate>Thu, 29 Jan 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-4965285628617917160</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2936676/bleach-sennen-kessen-hen-s01e28-2024-1080p-baha-web-dl-x264-aac-adweb/?d=</comments>
+            <category>N/A</category>
+            <size>778043392</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-4965285628617917160"/>
+            <torznab:attr name="infohash" value="599785b0fcc4c79922ab54223f898c58f74181b2"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:599785b0fcc4c79922ab54223f898c58f74181b2&amp;dn=BLEACH%20Sennen%20Kessen%20hen%20S01E28%202024%201080p%20Baha%20WEB-DL%20x264%20AAC-ADWeb%5BEZTVx.to%5D.mp4%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="10"/>
+            <torznab:attr name="seeders" value="10"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach Sennen Kessen Hen S01E26 2022 1080p Baha WEB-DL x264 AAC-ADWeb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/78194964895021811?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/78194964895021811?apikey=REDACTED" length="880803840" type="application/x-bittorrent"/>
+            <pubDate>Thu, 29 Jan 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">78194964895021811</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2938850/bleach-sennen-kessen-hen-s01e26-2022-1080p-baha-web-dl-x264-aac-adweb/?d=</comments>
+            <category>N/A</category>
+            <size>880803840</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="78194964895021811"/>
+            <torznab:attr name="infohash" value="266c51b25578db9c4d4d3899dad7a015950216db"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:266c51b25578db9c4d4d3899dad7a015950216db&amp;dn=Bleach%20Sennen%20Kessen%20Hen%20S01E26%202022%201080p%20Baha%20WEB-DL%20x264%20AAC-ADWeb%5BEZTVx.to%5D.mp4%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="17"/>
+            <torznab:attr name="seeders" value="17"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach Sennen Kessen Hen S01E23 2022 1080p Baha WEB-DL x264 AAC-ADWeb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-6221778314337668563?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-6221778314337668563?apikey=REDACTED" length="962592768" type="application/x-bittorrent"/>
+            <pubDate>Thu, 29 Jan 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-6221778314337668563</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2938822/bleach-sennen-kessen-hen-s01e23-2022-1080p-baha-web-dl-x264-aac-adweb/?d=</comments>
+            <category>N/A</category>
+            <size>962592768</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-6221778314337668563"/>
+            <torznab:attr name="infohash" value="674b16606c53c5c92872f96ccfc2b299ed459116"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:674b16606c53c5c92872f96ccfc2b299ed459116&amp;dn=Bleach%20Sennen%20Kessen%20Hen%20S01E23%202022%201080p%20Baha%20WEB-DL%20x264%20AAC-ADWeb%5BEZTVx.to%5D.mp4%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="21"/>
+            <torznab:attr name="seeders" value="21"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>BLEACH Sennen Kessen hen S01E37 2024 1080p Baha WEB-DL x264 AAC-ADWeb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-7632437508233728942?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-7632437508233728942?apikey=REDACTED" length="593494016" type="application/x-bittorrent"/>
+            <pubDate>Thu, 29 Jan 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-7632437508233728942</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2936669/bleach-sennen-kessen-hen-s01e37-2024-1080p-baha-web-dl-x264-aac-adweb/?d=</comments>
+            <category>N/A</category>
+            <size>593494016</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-7632437508233728942"/>
+            <torznab:attr name="infohash" value="66c25a75db07c34ed29214caa2d214c31766f87c"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:66c25a75db07c34ed29214caa2d214c31766f87c&amp;dn=BLEACH%20Sennen%20Kessen%20hen%20S01E37%202024%201080p%20Baha%20WEB-DL%20x264%20AAC-ADWeb%5BEZTVx.to%5D.mp4%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="9"/>
+            <torznab:attr name="seeders" value="9"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach Sennen Kessen Hen S01E22 2022 1080p Baha WEB-DL x264 AAC-ADWeb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-7159022509141713666?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-7159022509141713666?apikey=REDACTED" length="847249408" type="application/x-bittorrent"/>
+            <pubDate>Thu, 29 Jan 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-7159022509141713666</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2938825/bleach-sennen-kessen-hen-s01e22-2022-1080p-baha-web-dl-x264-aac-adweb/?d=</comments>
+            <category>N/A</category>
+            <size>847249408</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-7159022509141713666"/>
+            <torznab:attr name="infohash" value="fba5d73bfc5b45cf1d23f06c750bc8f25d799a10"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:fba5d73bfc5b45cf1d23f06c750bc8f25d799a10&amp;dn=Bleach%20Sennen%20Kessen%20Hen%20S01E22%202022%201080p%20Baha%20WEB-DL%20x264%20AAC-ADWeb%5BEZTVx.to%5D.mp4%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="14"/>
+            <torznab:attr name="seeders" value="14"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach Sennen Kessen Hen S01E25 2022 1080p Baha WEB-DL x264 AAC-ADWeb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-7497696395234036587?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-7497696395234036587?apikey=REDACTED" length="919601152" type="application/x-bittorrent"/>
+            <pubDate>Thu, 29 Jan 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-7497696395234036587</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2938826/bleach-sennen-kessen-hen-s01e25-2022-1080p-baha-web-dl-x264-aac-adweb/?d=</comments>
+            <category>N/A</category>
+            <size>919601152</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-7497696395234036587"/>
+            <torznab:attr name="infohash" value="017c5fc29bbdaa3d8b8b8ffaa801b0950797dd8a"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:017c5fc29bbdaa3d8b8b8ffaa801b0950797dd8a&amp;dn=Bleach%20Sennen%20Kessen%20Hen%20S01E25%202022%201080p%20Baha%20WEB-DL%20x264%20AAC-ADWeb%5BEZTVx.to%5D.mp4%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="21"/>
+            <torznab:attr name="seeders" value="21"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>BLEACH Sennen Kessen hen S01E34 2024 1080p Baha WEB-DL x264 AAC-ADWeb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-3381845311030872888?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-3381845311030872888?apikey=REDACTED" length="756023296" type="application/x-bittorrent"/>
+            <pubDate>Thu, 29 Jan 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-3381845311030872888</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2936670/bleach-sennen-kessen-hen-s01e34-2024-1080p-baha-web-dl-x264-aac-adweb/?d=</comments>
+            <category>N/A</category>
+            <size>756023296</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-3381845311030872888"/>
+            <torznab:attr name="infohash" value="e54106d76851293f6d231839d529175518f19d0d"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:e54106d76851293f6d231839d529175518f19d0d&amp;dn=BLEACH%20Sennen%20Kessen%20hen%20S01E34%202024%201080p%20Baha%20WEB-DL%20x264%20AAC-ADWeb%5BEZTVx.to%5D.mp4%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="7"/>
+            <torznab:attr name="seeders" value="7"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>BLEACH Sennen Kessen hen S01E31 2024 1080p Baha WEB-DL x264 AAC-ADWeb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/8283298430186981799?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/8283298430186981799?apikey=REDACTED" length="565182464" type="application/x-bittorrent"/>
+            <pubDate>Thu, 29 Jan 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">8283298430186981799</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2936677/bleach-sennen-kessen-hen-s01e31-2024-1080p-baha-web-dl-x264-aac-adweb/?d=</comments>
+            <category>N/A</category>
+            <size>565182464</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="8283298430186981799"/>
+            <torznab:attr name="infohash" value="e9f301f10d0a71aa2a5483c4af52e6b5768572a8"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:e9f301f10d0a71aa2a5483c4af52e6b5768572a8&amp;dn=BLEACH%20Sennen%20Kessen%20hen%20S01E31%202024%201080p%20Baha%20WEB-DL%20x264%20AAC-ADWeb%5BEZTVx.to%5D.mp4%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="3"/>
+            <torznab:attr name="seeders" value="3"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach Sennen Kessen Hen S01E21 2022 1080p Baha WEB-DL x264 AAC-ADWeb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-768736458668667767?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-768736458668667767?apikey=REDACTED" length="991952896" type="application/x-bittorrent"/>
+            <pubDate>Thu, 29 Jan 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-768736458668667767</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2938827/bleach-sennen-kessen-hen-s01e21-2022-1080p-baha-web-dl-x264-aac-adweb/?d=</comments>
+            <category>N/A</category>
+            <size>991952896</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-768736458668667767"/>
+            <torznab:attr name="infohash" value="bd8d9956b1b5c565833f4fc78d127adcc9ddd66a"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:bd8d9956b1b5c565833f4fc78d127adcc9ddd66a&amp;dn=Bleach%20Sennen%20Kessen%20Hen%20S01E21%202022%201080p%20Baha%20WEB-DL%20x264%20AAC-ADWeb%5BEZTVx.to%5D.mp4%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="18"/>
+            <torznab:attr name="seeders" value="18"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>BLEACH Sennen Kessen hen S01E27 2024 1080p Baha WEB-DL x264 AAC-ADWeb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-4504003608560059870?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-4504003608560059870?apikey=REDACTED" length="685768704" type="application/x-bittorrent"/>
+            <pubDate>Thu, 29 Jan 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-4504003608560059870</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2936664/bleach-sennen-kessen-hen-s01e27-2024-1080p-baha-web-dl-x264-aac-adweb/?d=</comments>
+            <category>N/A</category>
+            <size>685768704</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-4504003608560059870"/>
+            <torznab:attr name="infohash" value="896e20cbdcb39187a9fe7dc03e2a2274daacc386"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:896e20cbdcb39187a9fe7dc03e2a2274daacc386&amp;dn=BLEACH%20Sennen%20Kessen%20hen%20S01E27%202024%201080p%20Baha%20WEB-DL%20x264%20AAC-ADWeb%5BEZTVx.to%5D.mp4%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="16"/>
+            <torznab:attr name="seeders" value="16"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>BLEACH Sennen Kessen hen S01E32 2024 1080p Baha WEB-DL x264 AAC-ADWeb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-4395312488914742177?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-4395312488914742177?apikey=REDACTED" length="543162368" type="application/x-bittorrent"/>
+            <pubDate>Thu, 29 Jan 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-4395312488914742177</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2936665/bleach-sennen-kessen-hen-s01e32-2024-1080p-baha-web-dl-x264-aac-adweb/?d=</comments>
+            <category>N/A</category>
+            <size>543162368</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-4395312488914742177"/>
+            <torznab:attr name="infohash" value="36b8a96b9f6da7749ad0f7feae02b9eccb2392df"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:36b8a96b9f6da7749ad0f7feae02b9eccb2392df&amp;dn=BLEACH%20Sennen%20Kessen%20hen%20S01E32%202024%201080p%20Baha%20WEB-DL%20x264%20AAC-ADWeb%5BEZTVx.to%5D.mp4%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="11"/>
+            <torznab:attr name="seeders" value="11"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>BLEACH Sennen Kessen hen S01E35 2024 1080p Baha WEB-DL x264 AAC-ADWeb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/4038715004449219125?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/4038715004449219125?apikey=REDACTED" length="532676608" type="application/x-bittorrent"/>
+            <pubDate>Thu, 29 Jan 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">4038715004449219125</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2936675/bleach-sennen-kessen-hen-s01e35-2024-1080p-baha-web-dl-x264-aac-adweb/?d=</comments>
+            <category>N/A</category>
+            <size>532676608</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="4038715004449219125"/>
+            <torznab:attr name="infohash" value="66f8e1c9f7db015ba68bfad954c0e28ef2ac7d7e"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:66f8e1c9f7db015ba68bfad954c0e28ef2ac7d7e&amp;dn=BLEACH%20Sennen%20Kessen%20hen%20S01E35%202024%201080p%20Baha%20WEB-DL%20x264%20AAC-ADWeb%5BEZTVx.to%5D.mp4%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="10"/>
+            <torznab:attr name="seeders" value="10"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>BLEACH Sennen Kessen hen S01E40 2024 1080p Baha WEB-DL x264 AAC-ADWeb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/94548453405273065?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/94548453405273065?apikey=REDACTED" length="583008256" type="application/x-bittorrent"/>
+            <pubDate>Thu, 29 Jan 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">94548453405273065</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2936671/bleach-sennen-kessen-hen-s01e40-2024-1080p-baha-web-dl-x264-aac-adweb/?d=</comments>
+            <category>N/A</category>
+            <size>583008256</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="94548453405273065"/>
+            <torznab:attr name="infohash" value="2282a8491e02bd46d796931af5a6928c66cdc7f8"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:2282a8491e02bd46d796931af5a6928c66cdc7f8&amp;dn=BLEACH%20Sennen%20Kessen%20hen%20S01E40%202024%201080p%20Baha%20WEB-DL%20x264%20AAC-ADWeb%5BEZTVx.to%5D.mp4%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="14"/>
+            <torznab:attr name="seeders" value="14"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>BLEACH Sennen Kessen hen S01E38 2024 1080p Baha WEB-DL x264 AAC-ADWeb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-8940336587189207320?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-8940336587189207320?apikey=REDACTED" length="628097024" type="application/x-bittorrent"/>
+            <pubDate>Thu, 29 Jan 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-8940336587189207320</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2936668/bleach-sennen-kessen-hen-s01e38-2024-1080p-baha-web-dl-x264-aac-adweb/?d=</comments>
+            <category>N/A</category>
+            <size>628097024</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-8940336587189207320"/>
+            <torznab:attr name="infohash" value="4b25c1a937cd092b7865b735e3ed82f6e70356c0"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:4b25c1a937cd092b7865b735e3ed82f6e70356c0&amp;dn=BLEACH%20Sennen%20Kessen%20hen%20S01E38%202024%201080p%20Baha%20WEB-DL%20x264%20AAC-ADWeb%5BEZTVx.to%5D.mp4%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="10"/>
+            <torznab:attr name="seeders" value="10"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>BLEACH Sennen Kessen hen S01E39 2024 1080p Baha WEB-DL x264 AAC-ADWeb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/5726700155492034508?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/5726700155492034508?apikey=REDACTED" length="646971392" type="application/x-bittorrent"/>
+            <pubDate>Thu, 29 Jan 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">5726700155492034508</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2936666/bleach-sennen-kessen-hen-s01e39-2024-1080p-baha-web-dl-x264-aac-adweb/?d=</comments>
+            <category>N/A</category>
+            <size>646971392</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="5726700155492034508"/>
+            <torznab:attr name="infohash" value="fa6fa96ad53f13f7b24c96900c225d5dc07f5970"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:fa6fa96ad53f13f7b24c96900c225d5dc07f5970&amp;dn=BLEACH%20Sennen%20Kessen%20hen%20S01E39%202024%201080p%20Baha%20WEB-DL%20x264%20AAC-ADWeb%5BEZTVx.to%5D.mp4%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="9"/>
+            <torznab:attr name="seeders" value="9"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach Sennen Kessen Hen S01E24 2022 1080p Baha WEB-DL x264 AAC-ADWeb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-3485352048256861893?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-3485352048256861893?apikey=REDACTED" length="668991488" type="application/x-bittorrent"/>
+            <pubDate>Thu, 29 Jan 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-3485352048256861893</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2938824/bleach-sennen-kessen-hen-s01e24-2022-1080p-baha-web-dl-x264-aac-adweb/?d=</comments>
+            <category>N/A</category>
+            <size>668991488</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-3485352048256861893"/>
+            <torznab:attr name="infohash" value="b83655abed04233e7ba36927abf50d624544f50a"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:b83655abed04233e7ba36927abf50d624544f50a&amp;dn=Bleach%20Sennen%20Kessen%20Hen%20S01E24%202022%201080p%20Baha%20WEB-DL%20x264%20AAC-ADWeb%5BEZTVx.to%5D.mp4%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="13"/>
+            <torznab:attr name="seeders" value="13"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>BLEACH Sennen Kessen hen S01E29 2024 1080p Baha WEB-DL x264 AAC-ADWeb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-8604935865011815172?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-8604935865011815172?apikey=REDACTED" length="480247808" type="application/x-bittorrent"/>
+            <pubDate>Thu, 29 Jan 2026 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-8604935865011815172</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2936672/bleach-sennen-kessen-hen-s01e29-2024-1080p-baha-web-dl-x264-aac-adweb/?d=</comments>
+            <category>N/A</category>
+            <size>480247808</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-8604935865011815172"/>
+            <torznab:attr name="infohash" value="e918ba8b25f815c77158bb469b64a040c481a8cf"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:e918ba8b25f815c77158bb469b64a040c481a8cf&amp;dn=BLEACH%20Sennen%20Kessen%20hen%20S01E29%202024%201080p%20Baha%20WEB-DL%20x264%20AAC-ADWeb%5BEZTVx.to%5D.mp4%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="10"/>
+            <torznab:attr name="seeders" value="10"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E34 Thousand-Year Blood War Baby Hold Your Hand 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-7020418700836631855?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-7020418700836631855?apikey=REDACTED" length="309329920" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-7020418700836631855</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2398840/bleach-s17e34-thousand-year-blood-war-baby-hold-your-hand-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>309329920</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-7020418700836631855"/>
+            <torznab:attr name="infohash" value="1034c1f7a172c9775f9adbb03cb559b3960fe2bd"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:1034c1f7a172c9775f9adbb03cb559b3960fe2bd&amp;dn=Bleach.S17E34.Thousand-Year.Blood.War.Baby.Hold.Your.Hand.1080p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E35 Thousand-Year Blood War Dont Chase a Shadow 1080p DSNP WEB-DL AAC2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/2571221672560400907?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/2571221672560400907?apikey=REDACTED" length="896532480" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">2571221672560400907</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2401554/bleach-s17e35-thousand-year-blood-war-dont-chase-a-shadow-1080p-dsnp-web-dl-aac2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>896532480</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="2571221672560400907"/>
+            <torznab:attr name="infohash" value="71ca3278440ddf92fe460366e6ceb543ea773aca"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:71ca3278440ddf92fe460366e6ceb543ea773aca&amp;dn=Bleach%20S17E35%20Thousand-Year%20Blood%20War%20Dont%20Chase%20a%20Shadow%201080p%20DSNP%20WEB-DL%20AAC2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="15"/>
+            <torznab:attr name="seeders" value="15"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E36 Thousand-Year Blood War 720p DSNP WEB-DL AAC2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/1962446463115939754?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/1962446463115939754?apikey=REDACTED" length="484442112" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">1962446463115939754</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2404643/bleach-s17e36-thousand-year-blood-war-720p-dsnp-web-dl-aac2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>484442112</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="1962446463115939754"/>
+            <torznab:attr name="infohash" value="cc38851fececf78c93f01ed3f8329cf0db7cac70"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:cc38851fececf78c93f01ed3f8329cf0db7cac70&amp;dn=Bleach%20S17E36%20Thousand-Year%20Blood%20War%20720p%20DSNP%20WEB-DL%20AAC2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="10"/>
+            <torznab:attr name="seeders" value="10"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E31 Thousand-Year Blood War Against The Judgement 720p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-1431241855708172149?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-1431241855708172149?apikey=REDACTED" length="159383552" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-1431241855708172149</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2387933/bleach-s17e31-thousand-year-blood-war-against-the-judgement-720p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>159383552</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-1431241855708172149"/>
+            <torznab:attr name="infohash" value="680495edfcb8b2ce237c2d776520ccd970af7728"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:680495edfcb8b2ce237c2d776520ccd970af7728&amp;dn=Bleach.S17E31.Thousand-Year.Blood.War.Against.The.Judgement.720p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E29 Thousand-Year Blood War The Dark Arm 720p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-3580066330716376849?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-3580066330716376849?apikey=REDACTED" length="130023424" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-3580066330716376849</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2380749/bleach-s17e29-thousand-year-blood-war-the-dark-arm-720p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>130023424</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-3580066330716376849"/>
+            <torznab:attr name="infohash" value="fe3832169430066fe23513db9a9363d7ff20091c"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:fe3832169430066fe23513db9a9363d7ff20091c&amp;dn=Bleach.S17E29.Thousand-Year.Blood.War.The.Dark.Arm.720p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E31 Thousand-Year Blood War Against The Judgement 720p DSNP WEB-DL AAC2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/1805462795635153674?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/1805462795635153674?apikey=REDACTED" length="512753664" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">1805462795635153674</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2387929/bleach-s17e31-thousand-year-blood-war-against-the-judgement-720p-dsnp-web-dl-aac2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>512753664</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="1805462795635153674"/>
+            <torznab:attr name="infohash" value="7198c8a0eb9452577e36cd972f8252ad396639df"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:7198c8a0eb9452577e36cd972f8252ad396639df&amp;dn=Bleach%20S17E31%20Thousand-Year%20Blood%20War%20Against%20The%20Judgement%20720p%20DSNP%20WEB-DL%20AAC2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E29 Thousand-Year Blood War The Dark Arm 720p DSNP WEB-DL AAC2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/6219776057800843376?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/6219776057800843376?apikey=REDACTED" length="470810624" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">6219776057800843376</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2391697/bleach-s17e29-thousand-year-blood-war-the-dark-arm-720p-dsnp-web-dl-aac2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>470810624</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="6219776057800843376"/>
+            <torznab:attr name="infohash" value="9318d9b39a852fb10bfa46761100d08667e85b57"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:9318d9b39a852fb10bfa46761100d08667e85b57&amp;dn=Bleach%20S17E29%20Thousand-Year%20Blood%20War%20The%20Dark%20Arm%20720p%20DSNP%20WEB-DL%20AAC2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="3"/>
+            <torznab:attr name="seeders" value="3"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>BLEACH Thousand-Year Blood War S03E10 1080p WEB H264-KAWAII</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/2108999999605348264?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/2108999999605348264?apikey=REDACTED" length="903872512" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">2108999999605348264</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2404628/bleach-thousand-year-blood-war-s03e10-1080p-web-h264-kawaii/?d=</comments>
+            <category>N/A</category>
+            <size>903872512</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="2108999999605348264"/>
+            <torznab:attr name="infohash" value="148838ba343e8d23dcdff48bd5e2dfc50b2b0aa2"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:148838ba343e8d23dcdff48bd5e2dfc50b2b0aa2&amp;dn=bleach.thousand-year.blood.war.s03e10.1080p.web.h264-kawaii%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="5"/>
+            <torznab:attr name="seeders" value="5"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>BLEACH Thousand-Year Blood War S03E09 1080p WEB H264-KAWAII</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-8823518883585454026?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-8823518883585454026?apikey=REDACTED" length="905969664" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-8823518883585454026</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2401548/bleach-thousand-year-blood-war-s03e09-1080p-web-h264-kawaii/?d=</comments>
+            <category>N/A</category>
+            <size>905969664</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-8823518883585454026"/>
+            <torznab:attr name="infohash" value="987edff616bb7061bf2a00f9b86bb3a9f97b085a"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:987edff616bb7061bf2a00f9b86bb3a9f97b085a&amp;dn=bleach.thousand-year.blood.war.s03e09.1080p.web.h264-kawaii%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="5"/>
+            <torznab:attr name="seeders" value="5"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E39 Thousand-Year Blood War Friend 1080p DSNP WEB-DL AAC2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/2323507581711234421?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/2323507581711234421?apikey=REDACTED" length="951058432" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">2323507581711234421</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2409982/bleach-s17e39-thousand-year-blood-war-friend-1080p-dsnp-web-dl-aac2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>951058432</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="2323507581711234421"/>
+            <torznab:attr name="infohash" value="8293981c21725a281dbaf357bf83b40b56d67471"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:8293981c21725a281dbaf357bf83b40b56d67471&amp;dn=Bleach.S17E39.Thousand-Year.Blood.War.Friend.1080p.DSNP.WEB-DL.AAC2.0.H.264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="8"/>
+            <torznab:attr name="seeders" value="8"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E40 Thousand-Year Blood War My Last Words 1080p DSNP WEB-DL AAC2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/5494671308870100456?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/5494671308870100456?apikey=REDACTED" length="924844032" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">5494671308870100456</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2410972/bleach-s17e40-thousand-year-blood-war-my-last-words-1080p-dsnp-web-dl-aac2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>924844032</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="5494671308870100456"/>
+            <torznab:attr name="infohash" value="290328e0a60bda7f1e9c458351b0c1160b2491fd"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:290328e0a60bda7f1e9c458351b0c1160b2491fd&amp;dn=Bleach%20S17E40%20Thousand-Year%20Blood%20War%20My%20Last%20Words%201080p%20DSNP%20WEB-DL%20AAC2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="13"/>
+            <torznab:attr name="seeders" value="13"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>BLEACH Thousand-Year Blood War S03E08 1080p WEB H264-KAWAII</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/2579776283047100926?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/2579776283047100926?apikey=REDACTED" length="1070596096" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">2579776283047100926</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2398846/bleach-thousand-year-blood-war-s03e08-1080p-web-h264-kawaii/?d=</comments>
+            <category>N/A</category>
+            <size>1070596096</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="2579776283047100926"/>
+            <torznab:attr name="infohash" value="cb85307311ce8db0187dac4e81e4e3e0d3f8021c"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:cb85307311ce8db0187dac4e81e4e3e0d3f8021c&amp;dn=bleach.thousand-year.blood.war.s03e08.1080p.web.h264-kawaii%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="6"/>
+            <torznab:attr name="seeders" value="6"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E39 Thousand-Year Blood War The Visible Answer REPACK 1080p DSNP WEB-DL AAC2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-8480554614483308147?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-8480554614483308147?apikey=REDACTED" length="920649728" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-8480554614483308147</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2410974/bleach-s17e39-thousand-year-blood-war-the-visible-answer-repack-1080p-dsnp-web-dl-aac2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>920649728</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-8480554614483308147"/>
+            <torznab:attr name="infohash" value="cf1b24f388ef25b388b0dd36827e415f1dd6969d"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:cf1b24f388ef25b388b0dd36827e415f1dd6969d&amp;dn=Bleach%20S17E39%20Thousand-Year%20Blood%20War%20The%20Visible%20Answer%20REPACK%201080p%20DSNP%20WEB-DL%20AAC2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="22"/>
+            <torznab:attr name="seeders" value="22"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E29 Thousand-Year Blood War The Dark Arm 1080p DSNP WEB-DL AAC2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/5300139531438534950?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/5300139531438534950?apikey=REDACTED" length="831520768" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">5300139531438534950</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2380745/bleach-s17e29-thousand-year-blood-war-the-dark-arm-1080p-dsnp-web-dl-aac2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>831520768</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="5300139531438534950"/>
+            <torznab:attr name="infohash" value="38974f1c3a96ca3c641f52bf7fa12a0f6e8cfb81"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:38974f1c3a96ca3c641f52bf7fa12a0f6e8cfb81&amp;dn=Bleach%20S17E29%20Thousand-Year%20Blood%20War%20The%20Dark%20Arm%201080p%20DSNP%20WEB-DL%20AAC2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="8"/>
+            <torznab:attr name="seeders" value="8"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E32 Thousand-Year Blood War The Holy Newborn 720p DSNP WEB-DL AAC2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/6162091269055970798?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/6162091269055970798?apikey=REDACTED" length="494927872" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">6162091269055970798</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2391758/bleach-s17e32-thousand-year-blood-war-the-holy-newborn-720p-dsnp-web-dl-aac2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>494927872</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="6162091269055970798"/>
+            <torznab:attr name="infohash" value="39d116006e6dc48166bf9ceb2e05303692428e62"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:39d116006e6dc48166bf9ceb2e05303692428e62&amp;dn=Bleach%20S17E32%20Thousand-Year%20Blood%20War%20The%20Holy%20Newborn%20720p%20DSNP%20WEB-DL%20AAC2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="9"/>
+            <torznab:attr name="seeders" value="9"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E31 Thousand-Year Blood War Against The Judgement 1080p DSNP WEB-DL AAC2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/3352732179924461817?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/3352732179924461817?apikey=REDACTED" length="913309696" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">3352732179924461817</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2387930/bleach-s17e31-thousand-year-blood-war-against-the-judgement-1080p-dsnp-web-dl-aac2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>913309696</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="3352732179924461817"/>
+            <torznab:attr name="infohash" value="e37635db4804f74759f79e8cd70c369b5cd6eb72"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:e37635db4804f74759f79e8cd70c369b5cd6eb72&amp;dn=Bleach%20S17E31%20Thousand-Year%20Blood%20War%20Against%20The%20Judgement%201080p%20DSNP%20WEB-DL%20AAC2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="17"/>
+            <torznab:attr name="seeders" value="17"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E33 Thousand-Year Blood War Gate Of The Sun 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-30003327064037423?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-30003327064037423?apikey=REDACTED" length="381681664" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-30003327064037423</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2395235/bleach-s17e33-thousand-year-blood-war-gate-of-the-sun-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>381681664</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-30003327064037423"/>
+            <torznab:attr name="infohash" value="7eaf6ae5d42cd38d87e68eb1b69f9a62ed5cf7b2"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:7eaf6ae5d42cd38d87e68eb1b69f9a62ed5cf7b2&amp;dn=Bleach.S17E33.Thousand-Year.Blood.War.Gate.Of.The.Sun.1080p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>BLEACH Thousand-Year Blood War S03E14 1080p WEB H264-KAWAII</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/5986210118597676721?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/5986210118597676721?apikey=REDACTED" length="934281216" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">5986210118597676721</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2410967/bleach-thousand-year-blood-war-s03e14-1080p-web-h264-kawaii/?d=</comments>
+            <category>N/A</category>
+            <size>934281216</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="5986210118597676721"/>
+            <torznab:attr name="infohash" value="f8936a21b11e7f054d2c830396c8f6f527f86843"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:f8936a21b11e7f054d2c830396c8f6f527f86843&amp;dn=bleach.thousand-year.blood.war.s03e14.1080p.web.h264-kawaii%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E39 Thousand-Year Blood War The Visible Answer REPACK 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-3245200273582986706?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-3245200273582986706?apikey=REDACTED" length="282066944" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-3245200273582986706</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2410983/bleach-s17e39-thousand-year-blood-war-the-visible-answer-repack-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>282066944</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-3245200273582986706"/>
+            <torznab:attr name="infohash" value="0c6e0ec893e6751ae50e9ed3d0a735dec126f09e"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:0c6e0ec893e6751ae50e9ed3d0a735dec126f09e&amp;dn=Bleach.S17E39.Thousand-Year.Blood.War.The.Visible.Answer.REPACK.1080p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>BLEACH Thousand-Year Blood War S03E06 1080p WEB H264-KAWAII</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/941861509982121028?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/941861509982121028?apikey=REDACTED" length="887095296" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">941861509982121028</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2391391/bleach-thousand-year-blood-war-s03e06-1080p-web-h264-kawaii/?d=</comments>
+            <category>N/A</category>
+            <size>887095296</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="941861509982121028"/>
+            <torznab:attr name="infohash" value="9df1750d30dabf99e065d95b1f4646a90d4c12cf"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:9df1750d30dabf99e065d95b1f4646a90d4c12cf&amp;dn=bleach.thousand-year.blood.war.s03e06.1080p.web.h264-kawaii%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E38 Thousand-Year Blood War Friend 1080p DSNP WEB-DL AAC2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-7546484294346616157?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-7546484294346616157?apikey=REDACTED" length="951058432" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-7546484294346616157</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2409983/bleach-s17e38-thousand-year-blood-war-friend-1080p-dsnp-web-dl-aac2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>951058432</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-7546484294346616157"/>
+            <torznab:attr name="infohash" value="6fdb6c2636719e6b00eecc964900e55a8c1b8016"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:6fdb6c2636719e6b00eecc964900e55a8c1b8016&amp;dn=Bleach.S17E38.Thousand-Year.Blood.War.Friend.1080p.DSNP.WEB-DL.AAC2.0.H.264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="13"/>
+            <torznab:attr name="seeders" value="13"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E34 Thousand-Year Blood War Baby Hold Your Hand 1080p DSNP WEB-DL AAC2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/23250844740710108?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/23250844740710108?apikey=REDACTED" length="1066401792" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">23250844740710108</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2398835/bleach-s17e34-thousand-year-blood-war-baby-hold-your-hand-1080p-dsnp-web-dl-aac2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>1066401792</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="23250844740710108"/>
+            <torznab:attr name="infohash" value="1ad0939aa19d1e4b4c82ad33f1fc8eb586090283"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:1ad0939aa19d1e4b4c82ad33f1fc8eb586090283&amp;dn=Bleach%20S17E34%20Thousand-Year%20Blood%20War%20Baby%20Hold%20Your%20Hand%201080p%20DSNP%20WEB-DL%20AAC2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="9"/>
+            <torznab:attr name="seeders" value="9"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E33 Thousand-Year Blood War Gate Of The Sun 1080p DSNP WEB-DL AAC2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-5414651394449060032?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-5414651394449060032?apikey=REDACTED" length="1067450368" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-5414651394449060032</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2395226/bleach-s17e33-thousand-year-blood-war-gate-of-the-sun-1080p-dsnp-web-dl-aac2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>1067450368</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-5414651394449060032"/>
+            <torznab:attr name="infohash" value="536adefdb8932b9e940a4b3d4926e111a9115901"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:536adefdb8932b9e940a4b3d4926e111a9115901&amp;dn=Bleach%20S17E33%20Thousand-Year%20Blood%20War%20Gate%20Of%20The%20Sun%201080p%20DSNP%20WEB-DL%20AAC2%200%20H%20264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="18"/>
+            <torznab:attr name="seeders" value="18"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E39 Thousand-Year Blood War Friend 720p DSNP WEB-DL AAC2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/2312672162276323133?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/2312672162276323133?apikey=REDACTED" length="531628032" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">2312672162276323133</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2409981/bleach-s17e39-thousand-year-blood-war-friend-720p-dsnp-web-dl-aac2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>531628032</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="2312672162276323133"/>
+            <torznab:attr name="infohash" value="bd83ec0029f731fc295f3e2a859a6dd79f606a29"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:bd83ec0029f731fc295f3e2a859a6dd79f606a29&amp;dn=Bleach.S17E39.Thousand-Year.Blood.War.Friend.720p.DSNP.WEB-DL.AAC2.0.H.264-NTb%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="3"/>
+            <torznab:attr name="seeders" value="3"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E40 Thousand-Year Blood War My Last Words 720p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/834957013156511984?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/834957013156511984?apikey=REDACTED" length="152043520" type="application/x-bittorrent"/>
+            <pubDate>Wed, 27 Aug 2025 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">834957013156511984</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2410981/bleach-s17e40-thousand-year-blood-war-my-last-words-720p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>152043520</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="834957013156511984"/>
+            <torznab:attr name="infohash" value="d1b92ed0188c6109edca3e53a02f463acc4070be"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:d1b92ed0188c6109edca3e53a02f463acc4070be&amp;dn=Bleach.S17E40.Thousand-Year.Blood.War.My.Last.Words.720p.HEVC.x265-MeGusta%5BEZTVx.to%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="3"/>
+            <torznab:attr name="seeders" value="3"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E21 1080p WEB h264-QUiNTESSENCE</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-6478912217961171581?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-6478912217961171581?apikey=REDACTED" length="1245540515" type="application/x-bittorrent"/>
+            <pubDate>Tue, 27 Aug 2024 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-6478912217961171581</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2016631/bleach-s17e21-1080p-web-h264-quintessence/?d=</comments>
+            <category>N/A</category>
+            <size>1245540515</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-6478912217961171581"/>
+            <torznab:attr name="infohash" value="64bc9c7c5f5e1db7e78ef41f4770547b0245ac12"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:64bc9c7c5f5e1db7e78ef41f4770547b0245ac12&amp;dn=Bleach.S17E21.1080p.WEB.h264-QUiNTESSENCE%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="5"/>
+            <torznab:attr name="seeders" value="5"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E22 1080p WEB h264-QUiNTESSENCE</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/144104126164736253?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/144104126164736253?apikey=REDACTED" length="1181116006" type="application/x-bittorrent"/>
+            <pubDate>Tue, 27 Aug 2024 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">144104126164736253</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2055523/bleach-s17e22-1080p-web-h264-quintessence/?d=</comments>
+            <category>N/A</category>
+            <size>1181116006</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="144104126164736253"/>
+            <torznab:attr name="infohash" value="faaad70c7b8f21d841334a48b5451b514d43822f"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:faaad70c7b8f21d841334a48b5451b514d43822f&amp;dn=Bleach.S17E22.1080p.WEB.h264-QUiNTESSENCE%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="14"/>
+            <torznab:attr name="seeders" value="14"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E24 1080p WEB h264-QUiNTESSENCE</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/5434589461190654993?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/5434589461190654993?apikey=REDACTED" length="1028653056" type="application/x-bittorrent"/>
+            <pubDate>Tue, 27 Aug 2024 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">5434589461190654993</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2087619/bleach-s17e24-1080p-web-h264-quintessence/?d=</comments>
+            <category>N/A</category>
+            <size>1028653056</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="5434589461190654993"/>
+            <torznab:attr name="infohash" value="12c020878dbbfc952c68940e1783b684a6f5f560"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:12c020878dbbfc952c68940e1783b684a6f5f560&amp;dn=Bleach.S17E24.1080p.WEB.h264-QUiNTESSENCE%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="11"/>
+            <torznab:attr name="seeders" value="11"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E23 1080p WEB h264-QUiNTESSENCE</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-6783877858254200459?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-6783877858254200459?apikey=REDACTED" length="1245540515" type="application/x-bittorrent"/>
+            <pubDate>Tue, 27 Aug 2024 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-6783877858254200459</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2087624/bleach-s17e23-1080p-web-h264-quintessence/?d=</comments>
+            <category>N/A</category>
+            <size>1245540515</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-6783877858254200459"/>
+            <torznab:attr name="infohash" value="e7c62ddc2f737c97c162841e48afba59e492b622"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:e7c62ddc2f737c97c162841e48afba59e492b622&amp;dn=Bleach.S17E23.1080p.WEB.h264-QUiNTESSENCE%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="11"/>
+            <torznab:attr name="seeders" value="11"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E26 1080p WEB h264-QUiNTESSENCE</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/6254431195578810640?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/6254431195578810640?apikey=REDACTED" length="1181116006" type="application/x-bittorrent"/>
+            <pubDate>Tue, 27 Aug 2024 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">6254431195578810640</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2110940/bleach-s17e26-1080p-web-h264-quintessence/?d=</comments>
+            <category>N/A</category>
+            <size>1181116006</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="6254431195578810640"/>
+            <torznab:attr name="infohash" value="f87080485d620301a981533b732f995a55d58691"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:f87080485d620301a981533b732f995a55d58691&amp;dn=Bleach.S17E26.1080p.WEB.h264-QUiNTESSENCE%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="11"/>
+            <torznab:attr name="seeders" value="11"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E26 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-8959380838798820221?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-8959380838798820221?apikey=REDACTED" length="372244480" type="application/x-bittorrent"/>
+            <pubDate>Tue, 27 Aug 2024 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-8959380838798820221</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2110980/bleach-s17e26-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>372244480</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-8959380838798820221"/>
+            <torznab:attr name="infohash" value="490bca3846d2ff367ecf3251ec9a0bfe02c4f46c"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:490bca3846d2ff367ecf3251ec9a0bfe02c4f46c&amp;dn=Bleach.S17E26.1080p.HEVC.x265-MeGusta%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E25 1080p WEB h264-QUiNTESSENCE</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/8043114708477479409?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/8043114708477479409?apikey=REDACTED" length="1095216660" type="application/x-bittorrent"/>
+            <pubDate>Tue, 27 Aug 2024 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">8043114708477479409</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/2110942/bleach-s17e25-1080p-web-h264-quintessence/?d=</comments>
+            <category>N/A</category>
+            <size>1095216660</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="8043114708477479409"/>
+            <torznab:attr name="infohash" value="7ca673db4603ff739c76eecd76f41d0162991011"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:7ca673db4603ff739c76eecd76f41d0162991011&amp;dn=Bleach.S17E25.1080p.WEB.h264-QUiNTESSENCE%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="10"/>
+            <torznab:attr name="seeders" value="10"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E18 1080p WEB h264-QUiNTESSENCE</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/8477348459739470369?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/8477348459739470369?apikey=REDACTED" length="1234803097" type="application/x-bittorrent"/>
+            <pubDate>Mon, 28 Aug 2023 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">8477348459739470369</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1981655/bleach-s17e18-1080p-web-h264-quintessence/?d=</comments>
+            <category>N/A</category>
+            <size>1234803097</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="8477348459739470369"/>
+            <torznab:attr name="infohash" value="0395fd10342e9b803d062ed882584270e1a3d768"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:0395fd10342e9b803d062ed882584270e1a3d768&amp;dn=Bleach.S17E18.1080p.WEB.h264-QUiNTESSENCE%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="16"/>
+            <torznab:attr name="seeders" value="16"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E04 1080p WEB h264-QUiNTESSENCE</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-5402973870887677156?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-5402973870887677156?apikey=REDACTED" length="805306368" type="application/x-bittorrent"/>
+            <pubDate>Mon, 28 Aug 2023 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-5402973870887677156</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1887040/bleach-s17e04-1080p-web-h264-quintessence/?d=</comments>
+            <category>N/A</category>
+            <size>805306368</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-5402973870887677156"/>
+            <torznab:attr name="infohash" value="eb92057ac3237b5a92a4cfa376f937d0ef5fbbbe"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:eb92057ac3237b5a92a4cfa376f937d0ef5fbbbe&amp;dn=Bleach.S17E04.1080p.WEB.h264-QUiNTESSENCE%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="13"/>
+            <torznab:attr name="seeders" value="13"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>BLEACH Thousand-Year Blood War S01 JAPANESE 720p DSNP WEBRip AAC2 0 x264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/2706005923791043622?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/2706005923791043622?apikey=REDACTED" length="8224862371" type="application/x-bittorrent"/>
+            <pubDate>Mon, 28 Aug 2023 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">2706005923791043622</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1990243/bleach-thousand-year-blood-war-s01-japanese-720p-dsnp-webrip-aac2-0-x264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>8224862371</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="2706005923791043622"/>
+            <torznab:attr name="infohash" value="fbc8f9df3f32a580db6b9abe0c55203d5d92e403"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:fbc8f9df3f32a580db6b9abe0c55203d5d92e403&amp;dn=BLEACH.Thousand-Year.Blood.War.S01.JAPANESE.720p.DSNP.WEBRip.AAC2.0.x264-NTb%5Beztv.re%5D%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="7"/>
+            <torznab:attr name="seeders" value="7"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E14 720p WEB h264-QUiNTESSENCE</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-1181411754520762719?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-1181411754520762719?apikey=REDACTED" length="550502400" type="application/x-bittorrent"/>
+            <pubDate>Mon, 28 Aug 2023 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-1181411754520762719</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1979047/bleach-s17e14-720p-web-h264-quintessence/?d=</comments>
+            <category>N/A</category>
+            <size>550502400</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-1181411754520762719"/>
+            <torznab:attr name="infohash" value="9674bec549d9a175e411c0aebdab55ec6131e6b3"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:9674bec549d9a175e411c0aebdab55ec6131e6b3&amp;dn=Bleach.S17E14.720p.WEB.h264-QUiNTESSENCE%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="5"/>
+            <torznab:attr name="seeders" value="5"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E16 1080p WEB h264-QUiNTESSENCE</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-8498159658049910668?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-8498159658049910668?apikey=REDACTED" length="1234803097" type="application/x-bittorrent"/>
+            <pubDate>Mon, 28 Aug 2023 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-8498159658049910668</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1979034/bleach-s17e16-1080p-web-h264-quintessence/?d=</comments>
+            <category>N/A</category>
+            <size>1234803097</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-8498159658049910668"/>
+            <torznab:attr name="infohash" value="1bdada030be23744fb437748eee861ff52af78c2"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:1bdada030be23744fb437748eee861ff52af78c2&amp;dn=Bleach.S17E16.1080p.WEB.h264-QUiNTESSENCE%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="18"/>
+            <torznab:attr name="seeders" value="18"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E19 Thousand-Year Blood War The White Haze 1080p DSNP WEB-DL AAC2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/4348004588653562578?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/4348004588653562578?apikey=REDACTED" length="1105954078" type="application/x-bittorrent"/>
+            <pubDate>Mon, 28 Aug 2023 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">4348004588653562578</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1983830/bleach-s17e19-thousand-year-blood-war-the-white-haze-1080p-dsnp-web-dl-aac2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>1105954078</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="4348004588653562578"/>
+            <torznab:attr name="infohash" value="a3559a764459214c8d999d8f029d501aa1a2f3a9"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:a3559a764459214c8d999d8f029d501aa1a2f3a9&amp;dn=Bleach.S17E19.Thousand-Year.Blood.War.The.White.Haze.1080p.DSNP.WEB-DL.AAC2.0.H.264-NTb%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="23"/>
+            <torznab:attr name="seeders" value="23"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E01 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-5955260956758740898?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-5955260956758740898?apikey=REDACTED" length="269484032" type="application/x-bittorrent"/>
+            <pubDate>Mon, 28 Aug 2023 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-5955260956758740898</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1877935/bleach-s17e01-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>269484032</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-5955260956758740898"/>
+            <torznab:attr name="infohash" value="6e3ca20de92d5da12f85a4c1672844ddb54f807b"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:6e3ca20de92d5da12f85a4c1672844ddb54f807b&amp;dn=Bleach.S17E01.1080p.HEVC.x265-MeGusta%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="3"/>
+            <torznab:attr name="seeders" value="3"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E01 1080p WEB h264-QUiNTESSENCE</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-5423973032896306906?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-5423973032896306906?apikey=REDACTED" length="718274560" type="application/x-bittorrent"/>
+            <pubDate>Mon, 28 Aug 2023 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-5423973032896306906</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1877879/bleach-s17e01-1080p-web-h264-quintessence/?d=</comments>
+            <category>N/A</category>
+            <size>718274560</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-5423973032896306906"/>
+            <torznab:attr name="infohash" value="7db39982bce6a3fc2f1a3042e4636155ca296f2e"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:7db39982bce6a3fc2f1a3042e4636155ca296f2e&amp;dn=Bleach.S17E01.1080p.WEB.h264-QUiNTESSENCE%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="14"/>
+            <torznab:attr name="seeders" value="14"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E20 1080p WEB h264-QUiNTESSENCE</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/7292904364639958671?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/7292904364639958671?apikey=REDACTED" length="1105954078" type="application/x-bittorrent"/>
+            <pubDate>Mon, 28 Aug 2023 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">7292904364639958671</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1992048/bleach-s17e20-1080p-web-h264-quintessence/?d=</comments>
+            <category>N/A</category>
+            <size>1105954078</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="7292904364639958671"/>
+            <torznab:attr name="infohash" value="1c97bd57736c5f6a04eea2fd7a6f29c500a9eb3e"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:1c97bd57736c5f6a04eea2fd7a6f29c500a9eb3e&amp;dn=Bleach.S17E20.1080p.WEB.h264-QUiNTESSENCE%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="14"/>
+            <torznab:attr name="seeders" value="14"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E14 1080p WEB h264-QUiNTESSENCE</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-2703161564638432299?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-2703161564638432299?apikey=REDACTED" length="939524096" type="application/x-bittorrent"/>
+            <pubDate>Mon, 28 Aug 2023 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-2703161564638432299</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1979133/bleach-s17e14-1080p-web-h264-quintessence/?d=</comments>
+            <category>N/A</category>
+            <size>939524096</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-2703161564638432299"/>
+            <torznab:attr name="infohash" value="0ee39c5f7c827c8c6d6fa936012d5923fad2778d"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:0ee39c5f7c827c8c6d6fa936012d5923fad2778d&amp;dn=Bleach.S17E14.1080p.WEB.h264-QUiNTESSENCE%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="12"/>
+            <torznab:attr name="seeders" value="12"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E05 1080p HEVC x265-MeGusta</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/4476949628050269295?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/4476949628050269295?apikey=REDACTED" length="310378496" type="application/x-bittorrent"/>
+            <pubDate>Mon, 28 Aug 2023 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">4476949628050269295</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1887160/bleach-s17e05-1080p-hevc-x265-megusta/?d=</comments>
+            <category>N/A</category>
+            <size>310378496</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="4476949628050269295"/>
+            <torznab:attr name="infohash" value="dea2927cc049556ce450728f89c87065f17fd7d0"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:dea2927cc049556ce450728f89c87065f17fd7d0&amp;dn=Bleach.S17E05.1080p.HEVC.x265-MeGusta%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="3"/>
+            <torznab:attr name="seeders" value="3"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>BLEACH Thousand-Year Blood War S01 JAPANESE 1080p DSNP WEBRip AAC2 0 x264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-7898270734813804525?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-7898270734813804525?apikey=REDACTED" length="14624363642" type="application/x-bittorrent"/>
+            <pubDate>Mon, 28 Aug 2023 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-7898270734813804525</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1978834/bleach-thousand-year-blood-war-s01-japanese-1080p-dsnp-webrip-aac2-0-x264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>14624363642</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-7898270734813804525"/>
+            <torznab:attr name="infohash" value="459040e020002fcc4d2cef3d6364574dc4df67f1"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:459040e020002fcc4d2cef3d6364574dc4df67f1&amp;dn=BLEACH.Thousand-Year.Blood.War.S01.JAPANESE.1080p.DSNP.WEBRip.AAC2.0.x264-NTb%5Beztv.re%5D%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="33"/>
+            <torznab:attr name="seeders" value="33"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E17 1080p WEB h264-QUiNTESSENCE</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-1365316501660217485?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-1365316501660217485?apikey=REDACTED" length="1191853424" type="application/x-bittorrent"/>
+            <pubDate>Mon, 28 Aug 2023 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-1365316501660217485</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1979040/bleach-s17e17-1080p-web-h264-quintessence/?d=</comments>
+            <category>N/A</category>
+            <size>1191853424</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-1365316501660217485"/>
+            <torznab:attr name="infohash" value="e9bf0d0c4cf3519e31b73203328bf0616d6cc66f"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:e9bf0d0c4cf3519e31b73203328bf0616d6cc66f&amp;dn=Bleach.S17E17.1080p.WEB.h264-QUiNTESSENCE%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="10"/>
+            <torznab:attr name="seeders" value="10"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E01 480p x264-mSD</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-4884018685698313044?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-4884018685698313044?apikey=REDACTED" length="101711872" type="application/x-bittorrent"/>
+            <pubDate>Mon, 28 Aug 2023 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-4884018685698313044</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1877891/bleach-s17e01-480p-x264-msd/?d=</comments>
+            <category>N/A</category>
+            <size>101711872</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-4884018685698313044"/>
+            <torznab:attr name="infohash" value="e1c3d9f66a79559f31d8da6c32f9f1af07e55cc8"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:e1c3d9f66a79559f31d8da6c32f9f1af07e55cc8&amp;dn=Bleach.S17E01.480p.x264-mSD%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E03 1080p WEB h264-QUiNTESSENCE</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-7987314361402397717?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-7987314361402397717?apikey=REDACTED" length="731906048" type="application/x-bittorrent"/>
+            <pubDate>Mon, 28 Aug 2023 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-7987314361402397717</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1877885/bleach-s17e03-1080p-web-h264-quintessence/?d=</comments>
+            <category>N/A</category>
+            <size>731906048</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-7987314361402397717"/>
+            <torznab:attr name="infohash" value="6d5df787351d52bdee601b57c04a6727368493fb"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:6d5df787351d52bdee601b57c04a6727368493fb&amp;dn=Bleach.S17E03.1080p.WEB.h264-QUiNTESSENCE%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="15"/>
+            <torznab:attr name="seeders" value="15"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E17 Thousand-Year Blood War Heart Of Wolf 1080p DSNP WEB-DL AAC2 0 H 264-NTb</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/6611074154117287437?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/6611074154117287437?apikey=REDACTED" length="1191853424" type="application/x-bittorrent"/>
+            <pubDate>Mon, 28 Aug 2023 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">6611074154117287437</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1979044/bleach-s17e17-thousand-year-blood-war-heart-of-wolf-1080p-dsnp-web-dl-aac2-0-h-264-ntb/?d=</comments>
+            <category>N/A</category>
+            <size>1191853424</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="6611074154117287437"/>
+            <torznab:attr name="infohash" value="2c9c76800b353516163e0317d69daae38ec68c9c"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:2c9c76800b353516163e0317d69daae38ec68c9c&amp;dn=Bleach.S17E17.Thousand-Year.Blood.War.Heart.Of.Wolf.1080p.DSNP.WEB-DL.AAC2.0.H.264-NTb%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="13"/>
+            <torznab:attr name="seeders" value="13"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E02 1080p WEB h264-QUiNTESSENCE</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/1873466906530882134?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/1873466906530882134?apikey=REDACTED" length="678428672" type="application/x-bittorrent"/>
+            <pubDate>Mon, 28 Aug 2023 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">1873466906530882134</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1877882/bleach-s17e02-1080p-web-h264-quintessence/?d=</comments>
+            <category>N/A</category>
+            <size>678428672</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="1873466906530882134"/>
+            <torznab:attr name="infohash" value="254d3dbe18df9462b7d9a7f69faecfb09031bae9"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:254d3dbe18df9462b7d9a7f69faecfb09031bae9&amp;dn=Bleach.S17E02.1080p.WEB.h264-QUiNTESSENCE%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="17"/>
+            <torznab:attr name="seeders" value="17"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E20 720p WEB h264-QUiNTESSENCE</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/1980168178503390656?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/1980168178503390656?apikey=REDACTED" length="677380096" type="application/x-bittorrent"/>
+            <pubDate>Mon, 28 Aug 2023 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">1980168178503390656</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1992044/bleach-s17e20-720p-web-h264-quintessence/?d=</comments>
+            <category>N/A</category>
+            <size>677380096</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="1980168178503390656"/>
+            <torznab:attr name="infohash" value="3d9382474d701df25778e394d7fb1cd4a056953e"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:3d9382474d701df25778e394d7fb1cd4a056953e&amp;dn=Bleach.S17E20.720p.WEB.h264-QUiNTESSENCE%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="2"/>
+            <torznab:attr name="seeders" value="2"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E15 1080p WEB h264-QUiNTESSENCE</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/3120331657982397522?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/3120331657982397522?apikey=REDACTED" length="1065353216" type="application/x-bittorrent"/>
+            <pubDate>Mon, 28 Aug 2023 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">3120331657982397522</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1979031/bleach-s17e15-1080p-web-h264-quintessence/?d=</comments>
+            <category>N/A</category>
+            <size>1065353216</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="3120331657982397522"/>
+            <torznab:attr name="infohash" value="7a15157f6e9010a56895774782a2f6fa02be0359"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:7a15157f6e9010a56895774782a2f6fa02be0359&amp;dn=Bleach.S17E15.1080p.WEB.h264-QUiNTESSENCE%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="24"/>
+            <torznab:attr name="seeders" value="24"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+        <item>
+            <title>Bleach S17E05 1080p WEB h264-QUiNTESSENCE</title>
+            <link>http://192.0.2.21:5076/gettorrent/api/-8792664930329322476?apikey=REDACTED</link>
+            <enclosure url="http://192.0.2.21:5076/gettorrent/api/-8792664930329322476?apikey=REDACTED" length="771751936" type="application/x-bittorrent"/>
+            <pubDate>Mon, 28 Aug 2023 13:55:15 +0000</pubDate>
+            <guid isPermaLink="false">-8792664930329322476</guid>
+            <description></description>
+            <comments>https://eztvx.to/ep/1887039/bleach-s17e05-1080p-web-h264-quintessence/?d=</comments>
+            <category>N/A</category>
+            <size>771751936</size>
+            <torznab:attr name="category" value="5000"/>
+            <torznab:attr name="downloadvolumefactor" value="0"/>
+            <torznab:attr name="guid" value="-8792664930329322476"/>
+            <torznab:attr name="infohash" value="a0e339669edc1e3ea56607280cc64691345b2e61"/>
+            <torznab:attr name="magneturl" value="magnet:?xt=urn:btih:a0e339669edc1e3ea56607280cc64691345b2e61&amp;dn=Bleach.S17E05.1080p.WEB.h264-QUiNTESSENCE%5Beztv.re%5D.mkv%5Beztvx.to%5D&amp;tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&amp;tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&amp;tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&amp;tr=https%3A%2F%2Ftracker.moeblog.cn%3A443%2Fannounce&amp;tr=https%3A%2F%2Ftracker.zhuqiy.com%3A443%2Fannounce&amp;tr=udp%3A%2F%2Fopen.dstud.io%3A6969%2Fannounce"/>
+            <torznab:attr name="peers" value="21"/>
+            <torznab:attr name="seeders" value="21"/>
+            <torznab:attr name="uploadvolumefactor" value="1"/>
+            <torznab:attr name="hydraIndexerScore" value="2"/>
+            <torznab:attr name="hydraIndexerHost" value="192.0.2.28"/>
+            <torznab:attr name="hydraIndexerName" value="eztv"/>
+        </item>
+    </channel>
+</rss>

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>ArrSearcher.Media</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ArrSearcher.Core\ArrSearcher.Core.csproj" />
+    <ProjectReference Include="..\ArrSearcher.Core.Identity\ArrSearcher.Core.Identity.csproj" />
+    <ProjectReference Include="..\ArrSearcher.Data\ArrSearcher.Data.csproj" />
+  </ItemGroup>
+
+</Project>

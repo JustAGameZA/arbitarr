@@ -1,0 +1,35 @@
+.omc/
+review-receipts/
+.claude/
+
+# .NET build artifacts
+bin/
+obj/
+*.user
+.vs/
+
+# Secrets and local configuration — never commit
+.env
+.env.*
+*.env
+!*.env.example
+secrets.json
+appsettings.Local.json
+appsettings.*.Local.json
+appsettings.Development.json
+*.secrets.json
+infra.env
+
+# Keys and certificates
+*.pfx
+*.p12
+*.key
+*.pem
+*.crt
+*.snk
+
+# Runtime data directories
+/config/
+*.db
+*.sqlite
+*.sqlite3
