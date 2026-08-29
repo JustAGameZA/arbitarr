@@ -90,8 +90,8 @@ jobs:
           cred_pattern='(^|[^A-Za-z0-9])((apikey|api_key|password|passwd|secret|token)["'"'"' ]*[=:]["'"'"' ]*|bearer +)([A-Za-z0-9+/_-]{16,})'
           allowlist='^(REDACTED|secret-api-key|placeholder|example|your-|xxxx)'
 
-          hits=$(git grep -anE "$cred_pattern" -- . | while IFS=: read -r file line rest; do
-            value=$(printf '%s\n' "$rest" | grep -oE "$cred_pattern" | tail -1 | grep -oE '[A-Za-z0-9+/_-]{16,}$')
+          hits=$( (git grep -anE "$cred_pattern" -- . || true) | while IFS=: read -r file line rest; do
+            value=$(printf '%s\n' "$rest" | grep -oE "$cred_pattern" | tail -1 | grep -oE '[A-Za-z0-9+/_-]{16,}$' || true)
             if [ -n "$value" ] && ! printf '%s\n' "$value" | grep -qiE "$allowlist"; then
               printf '%s:%s:%s\n' "$file" "$line" "$rest"
             fi
