@@ -36,6 +36,7 @@ public sealed class RefreshWorker : BackgroundService
     private readonly TimeProvider _timeProvider;
     private readonly RefreshWorkerOptions _options;
     private readonly string _sourceName;
+    private readonly RepopulationPacer _pacer;
 
     public RefreshWorker(
         ISearchResultCacheStore store,
@@ -44,7 +45,8 @@ public sealed class RefreshWorker : BackgroundService
         RefreshFetcher fetcher,
         TimeProvider timeProvider,
         RefreshWorkerOptions options,
-        string sourceName)
+        string sourceName,
+        RepopulationPacer? pacer = null)
     {
         _store = store;
         _cache = cache;
@@ -53,6 +55,7 @@ public sealed class RefreshWorker : BackgroundService
         _timeProvider = timeProvider;
         _options = options;
         _sourceName = sourceName;
+        _pacer = pacer ?? new RepopulationPacer();
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -96,10 +99,32 @@ public sealed class RefreshWorker : BackgroundService
             return;
         }
 
-        foreach (var entry in candidates)
+        // Plan a paced schedule (R22): spread refresh starts across a full fresh_until interval
+        // so a large backlog (e.g. following a circuit close) does not fire as a synchronized
+        // burst, and bound how many refreshes may be in flight against this source at once.
+        var plan = _pacer.Plan(candidates, _options.RepopulationSpreadWindow, _options.MaxConcurrentRefreshes, _sourceName);
+        var entriesByKey = candidates.ToDictionary(c => c.QueryKey);
+        using var throttle = new SemaphoreSlim(_options.MaxConcurrentRefreshes);
+
+        var tasks = plan.Select(async paced =>
         {
-            await RefreshOneAsync(entry, cancellationToken);
-        }
+            if (paced.StartOffset > TimeSpan.Zero)
+            {
+                await Task.Delay(paced.StartOffset, _timeProvider, cancellationToken);
+            }
+
+            await throttle.WaitAsync(cancellationToken);
+            try
+            {
+                await RefreshOneAsync(entriesByKey[paced.QueryKey], cancellationToken);
+            }
+            finally
+            {
+                throttle.Release();
+            }
+        });
+
+        await Task.WhenAll(tasks);
     }
 
     private async Task RefreshOneAsync(CachedSearchResult entry, CancellationToken cancellationToken)
@@ -136,10 +161,14 @@ public sealed class RefreshWorker : BackgroundService
 /// <param name="RefreshLead">How far ahead of FreshUntil the worker aims to refresh.</param>
 /// <param name="FreshUntilAge">The FreshUntil age to apply when writing back a successful refresh.</param>
 /// <param name="ServeUntilAge">The ServeUntil age to apply when writing back a successful refresh.</param>
+/// <param name="RepopulationSpreadWindow">Window across which refresh starts are spread on each cycle (R22); typically the configured <see cref="FreshUntilAge"/>.</param>
+/// <param name="MaxConcurrentRefreshes">Maximum number of refreshes against this source permitted in flight at once (R22).</param>
 public sealed record RefreshWorkerOptions(
     bool Enabled,
     TimeSpan WorkerCycleInterval,
     TimeSpan ActiveWindow,
     TimeSpan RefreshLead,
     TimeSpan FreshUntilAge,
-    TimeSpan ServeUntilAge);
+    TimeSpan ServeUntilAge,
+    TimeSpan RepopulationSpreadWindow,
+    int MaxConcurrentRefreshes);
