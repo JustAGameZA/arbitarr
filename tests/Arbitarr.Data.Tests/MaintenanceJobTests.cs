@@ -62,7 +62,7 @@ public sealed class MaintenanceJobTests : IDisposable
                 FetchedAt = Now - serveUntil - TimeSpan.FromSeconds(1),
                 FreshUntil = Now - TimeSpan.FromDays(6),
                 ServeUntil = Now - TimeSpan.FromSeconds(1),
-                LastAccessedAt = Now - serveUntil - TimeSpan.FromSeconds(1),
+                LastRequestedAt = Now - serveUntil - TimeSpan.FromSeconds(1),
             });
             context.SaveChanges();
         }
@@ -100,7 +100,7 @@ public sealed class MaintenanceJobTests : IDisposable
                 FetchedAt = Now - age,
                 FreshUntil = Now - age + freshUntil,
                 ServeUntil = Now - age + serveUntil,
-                LastAccessedAt = Now - age,
+                LastRequestedAt = Now - age,
             });
             context.SaveChanges();
         }
