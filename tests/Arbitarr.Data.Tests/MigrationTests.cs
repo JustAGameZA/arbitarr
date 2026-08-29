@@ -113,4 +113,21 @@ public sealed class MigrationTests : IDisposable
             Assert.Equal("1800", setting.Ceiling);
         }
     }
+
+    [Fact]
+    public void FreshInstall_HasNoShadowModeRow_CatalogDefaultsToOn()
+    {
+        // M4-8/D3: a brand-new database created purely from migrations (no seeding) has no
+        // Settings row for ShadowMode at all — the fresh-install default comes entirely from
+        // Arbitarr.Core.Settings.SettingsCatalog, not from any row the migration inserts.
+        using var context = CreateContext();
+        context.Database.Migrate();
+
+        var hasShadowModeRow = context.Settings.Any(s => s.Name.Contains("shadow_mode"));
+        Assert.False(hasShadowModeRow);
+
+        var shadowModeDefault = (bool)Arbitarr.Core.Settings.SettingsCatalog.GetDefault(
+            Arbitarr.Core.Settings.SettingKey.ShadowMode);
+        Assert.True(shadowModeDefault);
+    }
 }
