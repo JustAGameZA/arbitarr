@@ -1,5 +1,8 @@
 using Arbitarr.Api.Rendering;
+using Arbitarr.Api.Search;
 using Arbitarr.Core.Sources;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Arbitarr.Api.Tests;
@@ -42,28 +45,51 @@ public class CapsXmlGoldenTests
     }
 
     [Fact]
-    public void Torznab_caps_render_exact_whole_document()
+    public async Task Torznab_caps_render_exact_whole_document()
     {
         // Whole-document golden test (torznab caps for the fixed SampleCaps aggregator input),
-        // exact bytes modulo a single trailing newline.
-        var xml = TorznabXmlWriter.WriteCaps(SampleCaps);
-        var rendered = xml.ToString() + Environment.NewLine;
+        // exact bytes, rendered through the real production path (CapsEndpoint.HandleTorznabAsync
+        // -> XmlDocumentRendering.ToXmlString) rather than a bare XDocument.ToString() — this
+        // previously bypassed the production renderer entirely (no XML declaration, host-OS-
+        // dependent newlines). Newlines are "\n" only: the production renderer pins NewLineChars
+        // explicitly so the wire format is byte-identical regardless of host OS.
+        var source = new SingleCapsUpstreamSource("eztv", SampleCaps);
+        var aggregator = new CapsAggregator(new NoOpCapsCacheStore());
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var httpContext = new DefaultHttpContext
+        {
+            RequestServices = services.BuildServiceProvider(),
+        };
+
+        var result = await CapsEndpoint.HandleTorznabAsync(
+            aggregator,
+            new[] { (IUpstreamSource)source },
+            CancellationToken.None);
+
+        using var body = new MemoryStream();
+        httpContext.Response.Body = body;
+        await result.ExecuteAsync(httpContext);
+        body.Seek(0, SeekOrigin.Begin);
+        var rendered = new StreamReader(body).ReadToEnd();
 
         const string expected =
-            "<caps>\r\n" +
-            "  <server version=\"1.0\" title=\"Arbitarr\" />\r\n" +
-            "  <limits max=\"100\" default=\"100\" />\r\n" +
-            "  <searching>\r\n" +
-            "    <search available=\"yes\" supportedParams=\"q,season,ep\" />\r\n" +
-            "    <tv-search available=\"yes\" supportedParams=\"q,season,ep\" />\r\n" +
-            "    <movie-search available=\"yes\" supportedParams=\"q,season,ep\" />\r\n" +
-            "  </searching>\r\n" +
-            "  <categories>\r\n" +
-            "    <category id=\"5000\" name=\"TV\" />\r\n" +
-            "    <category id=\"2000\" name=\"Movies\" />\r\n" +
-            "    <category id=\"3000\" name=\"Audio\" />\r\n" +
-            "  </categories>\r\n" +
-            "</caps>\r\n";
+            "<?xml version=\"1.0\" encoding=\"utf-8\" standalone=\"yes\"?>\n" +
+            "<caps>\n" +
+            "  <server version=\"1.0\" title=\"Arbitarr\" />\n" +
+            "  <limits max=\"100\" default=\"100\" />\n" +
+            "  <searching>\n" +
+            "    <search available=\"yes\" supportedParams=\"ep,q,season\" />\n" +
+            "    <tv-search available=\"yes\" supportedParams=\"ep,q,season\" />\n" +
+            "    <movie-search available=\"yes\" supportedParams=\"ep,q,season\" />\n" +
+            "  </searching>\n" +
+            "  <categories>\n" +
+            "    <category id=\"2000\" name=\"Movies\" />\n" +
+            "    <category id=\"3000\" name=\"Audio\" />\n" +
+            "    <category id=\"5000\" name=\"TV\" />\n" +
+            "  </categories>\n" +
+            "</caps>";
 
         Assert.Equal(expected, rendered);
     }
@@ -81,5 +107,37 @@ public class CapsXmlGoldenTests
         {
             Assert.Contains($"id=\"{categoryId}\"", rendered);
         }
+    }
+
+    /// <summary>Minimal <see cref="IUpstreamSource"/> double that returns a fixed <see cref="SourceCaps"/>.</summary>
+    private sealed class SingleCapsUpstreamSource : IUpstreamSource
+    {
+        private readonly SourceCaps _caps;
+
+        public SingleCapsUpstreamSource(string name, SourceCaps caps)
+        {
+            Name = name;
+            _caps = caps;
+        }
+
+        public string Name { get; }
+
+        public Task<IReadOnlyList<Arbitarr.Core.Releases.ReleaseCandidate>> SearchAsync(SearchQuery query, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<Arbitarr.Core.Releases.ReleaseCandidate>>(Array.Empty<Arbitarr.Core.Releases.ReleaseCandidate>());
+
+        public Task<SourceCaps> GetCapsAsync(CancellationToken cancellationToken = default) => Task.FromResult(_caps);
+
+        public Task<Stream> FetchDownloadAsync(Arbitarr.Core.Releases.ReleaseCandidate release, CancellationToken cancellationToken = default) =>
+            Task.FromResult<Stream>(new MemoryStream());
+    }
+
+    /// <summary>No-op <see cref="ICapsCacheStore"/> double — this test never exercises the fallback path.</summary>
+    private sealed class NoOpCapsCacheStore : ICapsCacheStore
+    {
+        public Task<SourceCaps?> GetLastKnownGoodAsync(string sourceName, CancellationToken cancellationToken = default) =>
+            Task.FromResult<SourceCaps?>(null);
+
+        public Task SaveAsync(string sourceName, SourceCaps caps, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
     }
 }
