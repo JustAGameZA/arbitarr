@@ -26,6 +26,13 @@ public sealed class SettingsRepository
         _arrSyncInterval = arrSyncInterval;
     }
 
+    /// <summary>
+    /// The AC0c-measured *arr RSS sync interval this repository validates against — exposed so
+    /// callers (e.g. the admin settings endpoint, AC24/M7-8) can compute the same bounds
+    /// <see cref="SettingsValidator.GetBounds"/> uses without duplicating the measurement.
+    /// </summary>
+    public TimeSpan ArrSyncInterval => _arrSyncInterval;
+
     /// <summary>Loads the current effective settings snapshot, falling back to defaults for unpersisted keys.</summary>
     public async Task<SettingsSnapshot> LoadSnapshotAsync(CancellationToken cancellationToken)
     {

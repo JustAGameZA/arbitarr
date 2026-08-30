@@ -108,6 +108,32 @@ th {
   font-style: italic;
 }
 
+.success-text {
+  color: var(--ok);
+}
+
+.bounds-text,
+.rationale-text {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.settings-group-heading {
+  margin-top: 1.5rem;
+}
+
+.requires-restart-badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 0.25rem;
+  background: var(--warn);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
 #search-form {
   display: flex;
   flex-direction: column;

@@ -13,6 +13,12 @@ namespace Arbitarr.Api.Admin;
 /// own <c>ToString()</c>) — the same wire shape <see cref="AdminSettingsEndpoints"/>'s PUT accepts,
 /// so a GET response can be edited and PUT back unchanged.
 /// </summary>
+/// <param name="Min">
+/// The current floor for this setting (same string form as <see cref="Value"/>), from
+/// <see cref="SettingsValidator.GetBounds"/>, or null for an unbounded/boolean setting (AC24/M7-8) —
+/// the admin UI renders bounds from this payload rather than hardcoding them.
+/// </param>
+/// <param name="Max">The current ceiling for this setting, or null if there is none.</param>
 public sealed record SettingCatalogEntryResponse(
     string Key,
     string Group,
@@ -20,7 +26,9 @@ public sealed record SettingCatalogEntryResponse(
     string Rationale,
     bool RequiresRestart,
     bool IsBoolean,
-    string Value);
+    string Value,
+    string? Min,
+    string? Max);
 
 /// <summary>Request body for <c>PUT /api/admin/settings/{key}</c>.</summary>
 public sealed record UpdateSettingRequest(string Value);
@@ -50,14 +58,20 @@ public static class AdminSettingsEndpoints
         var snapshot = await repository.LoadSnapshotAsync(cancellationToken);
         var aiKillSwitch = await repository.GetAiKillSwitchAsync(cancellationToken);
 
-        var entries = SettingsCatalog.Entries.Select(entry => new SettingCatalogEntryResponse(
-            Key: entry.Key.ToString(),
-            Group: entry.Group.ToString(),
-            DisplayName: entry.DisplayName,
-            Rationale: entry.Rationale,
-            RequiresRestart: entry.RequiresRestart,
-            IsBoolean: entry.IsBoolean,
-            Value: CurrentValue(entry.Key, snapshot, aiKillSwitch)));
+        var entries = SettingsCatalog.Entries.Select(entry =>
+        {
+            var (min, max) = SettingsValidator.GetBounds(snapshot, entry.Key, repository.ArrSyncInterval);
+            return new SettingCatalogEntryResponse(
+                Key: entry.Key.ToString(),
+                Group: entry.Group.ToString(),
+                DisplayName: entry.DisplayName,
+                Rationale: entry.Rationale,
+                RequiresRestart: entry.RequiresRestart,
+                IsBoolean: entry.IsBoolean,
+                Value: CurrentValue(entry.Key, snapshot, aiKillSwitch),
+                Min: min,
+                Max: max);
+        });
 
         return Results.Ok(entries);
     }
