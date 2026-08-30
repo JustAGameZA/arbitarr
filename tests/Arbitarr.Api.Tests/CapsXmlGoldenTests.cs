@@ -42,6 +42,33 @@ public class CapsXmlGoldenTests
     }
 
     [Fact]
+    public void Torznab_caps_render_exact_whole_document()
+    {
+        // Whole-document golden test (torznab caps for the fixed SampleCaps aggregator input),
+        // exact bytes modulo a single trailing newline.
+        var xml = TorznabXmlWriter.WriteCaps(SampleCaps);
+        var rendered = xml.ToString() + Environment.NewLine;
+
+        const string expected =
+            "<caps>\r\n" +
+            "  <server version=\"1.0\" title=\"Arbitarr\" />\r\n" +
+            "  <limits max=\"100\" default=\"100\" />\r\n" +
+            "  <searching>\r\n" +
+            "    <search available=\"yes\" supportedParams=\"q,season,ep\" />\r\n" +
+            "    <tv-search available=\"yes\" supportedParams=\"q,season,ep\" />\r\n" +
+            "    <movie-search available=\"yes\" supportedParams=\"q,season,ep\" />\r\n" +
+            "  </searching>\r\n" +
+            "  <categories>\r\n" +
+            "    <category id=\"5000\" name=\"TV\" />\r\n" +
+            "    <category id=\"2000\" name=\"Movies\" />\r\n" +
+            "    <category id=\"3000\" name=\"Audio\" />\r\n" +
+            "  </categories>\r\n" +
+            "</caps>\r\n";
+
+        Assert.Equal(expected, rendered);
+    }
+
+    [Fact]
     public void Caps_writer_renders_exactly_the_categories_it_is_given()
     {
         // M1-12's "book categories never appear in caps" guarantee is enforced upstream by
