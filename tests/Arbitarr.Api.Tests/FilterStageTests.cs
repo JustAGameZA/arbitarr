@@ -104,7 +104,7 @@ public sealed class FilterStageTests : IDisposable
         await SetShadowModeAsync(context, shadowMode: true);
 
         var stage = new FilterStage(
-            new FilterProfileLoader(context),
+            new ApiKeyProfileResolver(context, new FilterProfileLoader(context)),
             new SettingsReader(context),
             context,
             new FakeTimeProvider(Now));
@@ -125,7 +125,7 @@ public sealed class FilterStageTests : IDisposable
         await SetShadowModeAsync(context, shadowMode: false);
 
         var stage = new FilterStage(
-            new FilterProfileLoader(context),
+            new ApiKeyProfileResolver(context, new FilterProfileLoader(context)),
             new SettingsReader(context),
             context,
             new FakeTimeProvider(Now));
@@ -145,7 +145,7 @@ public sealed class FilterStageTests : IDisposable
         await SetShadowModeAsync(context, shadowMode: true);
 
         var stage = new FilterStage(
-            new FilterProfileLoader(context),
+            new ApiKeyProfileResolver(context, new FilterProfileLoader(context)),
             new SettingsReader(context),
             context,
             new FakeTimeProvider(Now));
@@ -166,6 +166,72 @@ public sealed class FilterStageTests : IDisposable
         var release = Assert.Single(output);
         Assert.Null(release.SuppressionAnnotation);
         Assert.Equal(0, await context.SuppressionAuditLogEntries.CountAsync());
+    }
+
+    /// <summary>
+    /// M4-3 acceptance (A3): a client mapped (via <see cref="ApiKeyProfileEntry"/>) to a non-default
+    /// profile gets that profile's rules applied — a release that only the mapped profile's deny
+    /// rule matches is withheld when <paramref name="clientName"/> mapped to it, but survives (no
+    /// matching rule) under the default profile used when no/unmapped client name is supplied.
+    /// </summary>
+    [Fact]
+    public async Task ApplyAsync_ClientMappedToProfile_UsesMappedProfileNotDefault()
+    {
+        using var context = CreateContext();
+
+        var defaultProfile = new FilterProfileEntry
+        {
+            Name = "Default",
+            IsDefault = true,
+            CreatedAt = Now,
+            UpdatedAt = Now,
+        };
+        var clientProfile = new FilterProfileEntry
+        {
+            Name = "ClientProfile",
+            IsDefault = false,
+            CreatedAt = Now,
+            UpdatedAt = Now,
+        };
+        context.FilterProfiles.AddRange(defaultProfile, clientProfile);
+        await context.SaveChangesAsync();
+
+        context.FilterRules.Add(new FilterRuleEntry
+        {
+            FilterProfileId = clientProfile.Id,
+            Name = "deny-cam",
+            IsAllow = false,
+            Pattern = "CAM",
+            Precedence = 2,
+            Enabled = true,
+            CreatedAt = Now,
+            UpdatedAt = Now,
+        });
+        await context.SaveChangesAsync();
+
+        context.ApiKeyProfiles.Add(new ApiKeyProfileEntry
+        {
+            ApiKeyName = "sonarr-client",
+            FilterProfileId = clientProfile.Id,
+            CreatedAt = Now,
+        });
+        await context.SaveChangesAsync();
+
+        await SetShadowModeAsync(context, shadowMode: false);
+
+        var stage = new FilterStage(
+            new ApiKeyProfileResolver(context, new FilterProfileLoader(context)),
+            new SettingsReader(context),
+            context,
+            new FakeTimeProvider(Now));
+
+        var input = new[] { DenyMatchedRelease() };
+
+        var mappedOutput = await stage.ApplyAsync(input, "query-1", clientName: "sonarr-client");
+        Assert.Empty(mappedOutput);
+
+        var defaultOutput = await stage.ApplyAsync(input, "query-2");
+        Assert.Single(defaultOutput);
     }
 
     /// <summary>
@@ -218,7 +284,7 @@ public sealed class FilterStageTests : IDisposable
         await SetShadowModeAsync(context, shadowMode: false);
 
         var stage = new FilterStage(
-            new FilterProfileLoader(context),
+            new ApiKeyProfileResolver(context, new FilterProfileLoader(context)),
             new SettingsReader(context),
             context,
             new FakeTimeProvider(Now));
