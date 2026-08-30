@@ -6,6 +6,7 @@ using Arbitarr.Api.Routing;
 using Arbitarr.Api.Search;
 using Arbitarr.Core.Caching;
 using Arbitarr.Core.Diagnostics;
+using Arbitarr.Host.Caching;
 using Arbitarr.Core.Security;
 using Arbitarr.Core.Sources;
 using Arbitarr.Core.Sources.CircuitBreaker;
@@ -97,18 +98,13 @@ builder.Services.AddScoped<PaginationSnapshotService>();
 builder.Services.AddSingleton<RefreshWorkerHealthTracker>(_ => new RefreshWorkerHealthTracker(RefreshWorkerDefaults.WorkerEnabled));
 builder.Services.AddSingleton<IRefreshWorkerHealth>(sp => sp.GetRequiredService<RefreshWorkerHealthTracker>());
 
+// M7-8b/AC24: options are re-read from the settings store on every cycle (see
+// SettingsRefreshWorkerOptionsSource), not captured once at startup from RefreshWorkerDefaults.
+builder.Services.AddScoped<IRefreshWorkerOptionsSource, SettingsRefreshWorkerOptionsSource>();
+
 builder.Services.AddHostedService(sp => new RefreshWorker(
     sp.GetRequiredService<IServiceScopeFactory>(),
     sp.GetRequiredService<TimeProvider>(),
-    new RefreshWorkerOptions(
-        RefreshWorkerDefaults.WorkerEnabled,
-        RefreshWorkerDefaults.WorkerCycleInterval,
-        RefreshWorkerDefaults.ActiveWindow,
-        RefreshWorkerDefaults.RefreshLead,
-        RefreshWorkerDefaults.FreshUntilAge,
-        RefreshWorkerDefaults.ServeUntilAge,
-        RefreshWorkerDefaults.RepopulationSpreadWindow,
-        RefreshWorkerDefaults.MaxConcurrentRefreshes),
     builder.Configuration["Arbitarr:Sources:NzbHydra:SourceName"] ?? "NZBHydra2",
     logger: sp.GetRequiredService<ILogger<RefreshWorker>>(),
     health: sp.GetRequiredService<IRefreshWorkerHealth>()));
