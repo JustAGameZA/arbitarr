@@ -35,7 +35,7 @@ public class PaginationSnapshotTests
         var mergeStage = new UpstreamMergeStage(new[] { source });
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
-        var service = new PaginationSnapshotService(mergeStage, store, time);
+        var service = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);
 
         var firstPage = await service.GetPageAsync("search", new SearchQuery("x", Array.Empty<int>(), 50, 0));
         var secondPage = await service.GetPageAsync("search", new SearchQuery("x", Array.Empty<int>(), 50, 50));
@@ -57,7 +57,7 @@ public class PaginationSnapshotTests
         var mergeStage = new UpstreamMergeStage(new[] { source });
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
-        var service = new PaginationSnapshotService(mergeStage, store, time);
+        var service = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);
 
         await service.GetPageAsync("search", new SearchQuery("x", Array.Empty<int>(), 5, 0));
         await service.GetPageAsync("search", new SearchQuery("x", Array.Empty<int>(), 5, 5));
@@ -73,7 +73,7 @@ public class PaginationSnapshotTests
         var mergeStage = new UpstreamMergeStage(new[] { source });
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
-        var service = new PaginationSnapshotService(mergeStage, store, time);
+        var service = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);
 
         await service.GetPageAsync("search", new SearchQuery("bleach", Array.Empty<int>(), 5, 0));
         await service.GetPageAsync("search", new SearchQuery("naruto", Array.Empty<int>(), 5, 0));
@@ -88,7 +88,7 @@ public class PaginationSnapshotTests
         var mergeStage = new UpstreamMergeStage(new[] { source });
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
-        var service = new PaginationSnapshotService(mergeStage, store, time, ttl: TimeSpan.FromSeconds(60));
+        var service = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time, ttl: TimeSpan.FromSeconds(60));
 
         await service.GetPageAsync("search", new SearchQuery("x", Array.Empty<int>(), 5, 0));
         Assert.Equal(1, store.SaveCallCount);
@@ -106,7 +106,7 @@ public class PaginationSnapshotTests
         var mergeStage = new UpstreamMergeStage(new[] { source });
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
-        var service = new PaginationSnapshotService(mergeStage, store, time);
+        var service = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);
 
         var result = await service.GetPageAsync("search", new SearchQuery("x", Array.Empty<int>(), 5, 0));
 
@@ -122,7 +122,7 @@ public class PaginationSnapshotTests
         var mergeStage = new UpstreamMergeStage(new[] { source });
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
-        var service = new PaginationSnapshotService(mergeStage, store, time);
+        var service = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);
 
         await service.GetPageAsync("search", new SearchQuery("x", Array.Empty<int>(), 3, 0));
         await service.GetPageAsync("search", new SearchQuery("x", Array.Empty<int>(), 7, 3));

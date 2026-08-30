@@ -39,7 +39,7 @@ public class MusicSearchGoldenTests
         var mergeStage = new UpstreamMergeStage(new[] { (IUpstreamSource)source });
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
-        var snapshotService = new PaginationSnapshotService(mergeStage, store, time);
+        var snapshotService = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);
         var releaseLookup = new InMemoryReleaseLookup();
 
         var services = new ServiceCollection();
@@ -84,7 +84,7 @@ public class MusicSearchGoldenTests
         var mergeStage = new UpstreamMergeStage(new[] { (IUpstreamSource)source });
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
-        var snapshotService = new PaginationSnapshotService(mergeStage, store, time);
+        var snapshotService = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);
         var releaseLookup = new InMemoryReleaseLookup();
 
         var services = new ServiceCollection();

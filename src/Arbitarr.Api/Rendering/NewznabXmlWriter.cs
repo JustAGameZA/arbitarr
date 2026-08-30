@@ -1,4 +1,5 @@
 using System.Xml.Linq;
+using Arbitarr.Core.Caching;
 using Arbitarr.Core.Sources;
 
 namespace Arbitarr.Api.Rendering;
@@ -11,8 +12,12 @@ public static class NewznabXmlWriter
 {
     public const string ContentType = IndexerXmlWriter.ContentType;
 
-    public static XDocument WriteSearchResults(IReadOnlyList<RenderedRelease> releases, Func<RenderedRelease, Uri> downloadLinkFactory) =>
-        IndexerXmlWriter.WriteSearchResults(IndexerFamily.Newznab, releases, downloadLinkFactory);
+    public static XDocument WriteSearchResults(
+        IReadOnlyList<RenderedRelease> releases,
+        Func<RenderedRelease, Uri> downloadLinkFactory,
+        TimeSpan? cacheAge = null,
+        CacheBand? cacheBand = null) =>
+        IndexerXmlWriter.WriteSearchResults(IndexerFamily.Newznab, releases, downloadLinkFactory, cacheAge, cacheBand);
 
     public static XDocument WriteCaps(SourceCaps caps) => IndexerXmlWriter.WriteCaps(IndexerFamily.Newznab, caps);
 

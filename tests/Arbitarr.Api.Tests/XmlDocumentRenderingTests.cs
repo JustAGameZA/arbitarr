@@ -73,7 +73,7 @@ public class XmlDocumentRenderingTests
         var mergeStage = new UpstreamMergeStage(new[] { (IUpstreamSource)source });
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(TestReleases.FixedPubDate);
-        var snapshotService = new PaginationSnapshotService(mergeStage, store, time);
+        var snapshotService = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);
         var releaseLookup = new InMemoryReleaseLookup();
 
         var httpContext = NewHttpContext();
@@ -100,7 +100,7 @@ public class XmlDocumentRenderingTests
         var mergeStage = new UpstreamMergeStage(new[] { (IUpstreamSource)source });
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(TestReleases.FixedPubDate);
-        var snapshotService = new PaginationSnapshotService(mergeStage, store, time);
+        var snapshotService = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);
         var releaseLookup = new InMemoryReleaseLookup();
 
         var httpContext = NewHttpContext();

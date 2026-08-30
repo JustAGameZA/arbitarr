@@ -13,6 +13,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Arbitarr.Core\Arbitarr.Core.csproj" />
+    <!-- Identity/cache-key derivation for the two-age cache stage (M3-9). Arbitarr.Core.Identity is
+         an inner-layer project (it references only Arbitarr.Core), so this does not breach AC6. -->
+    <ProjectReference Include="..\Arbitarr.Core.Identity\Arbitarr.Core.Identity.csproj" />
     <ProjectReference Include="..\Arbitarr.Data\Arbitarr.Data.csproj" />
   </ItemGroup>
 

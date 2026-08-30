@@ -3,11 +3,13 @@ using Arbitarr.Api.Dashboard;
 using Arbitarr.Api.Rendering;
 using Arbitarr.Api.Routing;
 using Arbitarr.Api.Search;
+using Arbitarr.Core.Caching;
 using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Security;
 using Arbitarr.Core.Sources;
 using Arbitarr.Core.Sources.CircuitBreaker;
 using Arbitarr.Data;
+using Arbitarr.Data.Caching;
 using Arbitarr.Data.CircuitBreaker;
 using Arbitarr.Host.Security;
 using Arbitarr.Sources.NzbHydra;
@@ -75,7 +77,32 @@ builder.Services.AddScoped<IUpstreamSource>(sp =>
 builder.Services.AddScoped<IReadOnlyList<IUpstreamSource>>(sp => sp.GetServices<IUpstreamSource>().ToArray());
 builder.Services.AddScoped<UpstreamMergeStage>();
 builder.Services.AddScoped<IQuerySnapshotStore, QuerySnapshotStore>();
+
+// Two-age search-result cache (M3). Everything on the read path is scoped because the EF-backed
+// store shares the per-request ArbitarrDbContext; the RefreshWorker below is a singleton hosted
+// service that opens its own scope per cycle rather than capturing one of these.
+builder.Services.AddScoped<ISearchResultCacheStore, SearchResultCacheStore>();
+builder.Services.AddScoped<SearchResultCache>();
+builder.Services.AddScoped<SearchResultCacheStage>();
+builder.Services.AddScoped<SearchResultRefresher>();
+builder.Services.AddScoped<RefreshFetcher>(sp =>
+    (_, entry, cancellationToken) => sp.GetRequiredService<SearchResultRefresher>().RefreshAsync(entry, cancellationToken));
 builder.Services.AddScoped<PaginationSnapshotService>();
+
+builder.Services.AddHostedService(sp => new RefreshWorker(
+    sp.GetRequiredService<IServiceScopeFactory>(),
+    sp.GetRequiredService<TimeProvider>(),
+    new RefreshWorkerOptions(
+        RefreshWorkerDefaults.WorkerEnabled,
+        RefreshWorkerDefaults.WorkerCycleInterval,
+        RefreshWorkerDefaults.ActiveWindow,
+        RefreshWorkerDefaults.RefreshLead,
+        RefreshWorkerDefaults.FreshUntilAge,
+        RefreshWorkerDefaults.ServeUntilAge,
+        RefreshWorkerDefaults.RepopulationSpreadWindow,
+        RefreshWorkerDefaults.MaxConcurrentRefreshes),
+    builder.Configuration["Arbitarr:Sources:NzbHydra:SourceName"] ?? "NZBHydra2",
+    logger: sp.GetRequiredService<ILogger<RefreshWorker>>()));
 builder.Services.AddSingleton<InMemoryReleaseLookup>();
 builder.Services.AddSingleton<IReleaseLookup>(sp => sp.GetRequiredService<InMemoryReleaseLookup>());
 
@@ -141,6 +168,10 @@ app.MapGet("/torznab/api", async (
     string? cat,
     int? limit,
     int? offset,
+    int? tvdbid,
+    int? tmdbid,
+    int? season,
+    int? ep,
     string? apikey,
     IClientApiKeyResolver apiKeyResolver,
     CapsAggregator capsAggregator,
@@ -174,7 +205,11 @@ app.MapGet("/torznab/api", async (
         releaseLookup,
         recentSearchLog,
         request,
-        cancellationToken).ConfigureAwait(false);
+        cancellationToken,
+        tvdbid,
+        tmdbid,
+        season,
+        ep).ConfigureAwait(false);
 })
     .WithClassification(RouteClassification.PublicRead);
 
@@ -185,6 +220,10 @@ app.MapGet("/newznab/api", async (
     string? cat,
     int? limit,
     int? offset,
+    int? tvdbid,
+    int? tmdbid,
+    int? season,
+    int? ep,
     string? apikey,
     IClientApiKeyResolver apiKeyResolver,
     CapsAggregator capsAggregator,
@@ -218,7 +257,11 @@ app.MapGet("/newznab/api", async (
         releaseLookup,
         recentSearchLog,
         request,
-        cancellationToken).ConfigureAwait(false);
+        cancellationToken,
+        tvdbid,
+        tmdbid,
+        season,
+        ep).ConfigureAwait(false);
 })
     .WithClassification(RouteClassification.PublicRead);
 

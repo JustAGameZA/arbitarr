@@ -79,7 +79,7 @@ public class SearchXmlGoldenTests
         var mergeStage = new UpstreamMergeStage(new[] { (IUpstreamSource)source });
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(TestReleases.FixedPubDate);
-        var snapshotService = new PaginationSnapshotService(mergeStage, store, time);
+        var snapshotService = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);
         var releaseLookup = new InMemoryReleaseLookup();
 
         var services = new ServiceCollection();
@@ -117,10 +117,11 @@ public class SearchXmlGoldenTests
 
         var expected =
             "<?xml version=\"1.0\" encoding=\"utf-8\" standalone=\"yes\"?>\n" +
-            "<rss version=\"2.0\" xmlns:atom=\"http://www.w3.org/2005/Atom\" xmlns:torznab=\"http://torznab.com/schemas/2015/feed\">\n" +
+            "<rss version=\"2.0\" xmlns:atom=\"http://www.w3.org/2005/Atom\" xmlns:torznab=\"http://torznab.com/schemas/2015/feed\" xmlns:arbitarr=\"https://arbitarr.example/schemas/2026/feed\">\n" +
             "  <channel>\n" +
             "    <title>Arbitarr</title>\n" +
             "    <description>Arbitarr merged search results</description>\n" +
+            "    <arbitarr:cache band=\"fresh\" age=\"0\" />\n" +
             "    <item>\n" +
             "      <title>Bleach S17E45 DEFEND YOU 1080p DSNP WEB-DL AAC2 0 H 264-playWEB</title>\n" +
             $"      <guid isPermaLink=\"false\">{firstGuid}</guid>\n" +

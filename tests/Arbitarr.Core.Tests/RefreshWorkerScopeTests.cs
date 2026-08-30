@@ -159,4 +159,57 @@ public sealed class RefreshWorkerScopeTests
         Assert.Equal(0, breaker.SuccessCount);
         Assert.False(store.Entries.ContainsKey("key-1"));
     }
+
+    /// <summary>
+    /// A store that fails every selection call — stands in for the host booting against a database
+    /// whose migration has not run yet, the case that must not take the whole host down.
+    /// </summary>
+    private sealed class ThrowingStore : ISearchResultCacheStore
+    {
+        public int SelectionAttempts;
+
+        public Task<CachedSearchResult?> GetAsync(string queryKey, CancellationToken cancellationToken = default)
+            => Task.FromResult<CachedSearchResult?>(null);
+
+        public Task SaveAsync(string queryKey, string payloadJson, DateTimeOffset fetchedAt, DateTimeOffset freshUntil, DateTimeOffset serveUntil, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task TouchLastRequestedAsync(string queryKey, DateTimeOffset requestedAt, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task<IReadOnlyList<CachedSearchResult>> GetRefreshCandidatesAsync(DateTimeOffset now, TimeSpan activeWindow, TimeSpan refreshLead, CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref SelectionAttempts);
+            throw new InvalidOperationException("no such table: SearchResultCacheEntries");
+        }
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ThrowingCycle_DoesNotFaultTheWorker_AndKeepsRetryingUntilStopped()
+    {
+        var clock = new FakeTimeProvider(Start);
+        var store = new ThrowingStore();
+        var breaker = new FakeBreaker();
+        RefreshFetcher fetcher = (_, _, _) => Task.FromResult<string?>("new");
+
+        var worker = new RefreshWorker(store, new SearchResultCache(store, clock), breaker, fetcher, clock, Options(), SourceName);
+
+        await worker.StartAsync(CancellationToken.None);
+
+        // Drive several cycles: each throws out of the store, and each must be swallowed and retried
+        // rather than faulting the BackgroundService (which would otherwise take the host down).
+        for (var i = 0; i < 3; i++)
+        {
+            clock.Advance(Options().WorkerCycleInterval);
+            await Task.Yield();
+        }
+
+        Assert.True(store.SelectionAttempts > 1, $"expected repeated retries, saw {store.SelectionAttempts}");
+        Assert.NotEqual(TaskStatus.Faulted, worker.ExecuteTask?.Status);
+        Assert.Null(worker.ExecuteTask?.Exception);
+
+        await worker.StopAsync(CancellationToken.None);
+
+        Assert.Null(worker.ExecuteTask?.Exception);
+    }
 }

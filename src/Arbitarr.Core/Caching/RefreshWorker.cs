@@ -1,5 +1,8 @@
 using Arbitarr.Core.Sources.CircuitBreaker;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Arbitarr.Core.Caching;
 
@@ -29,15 +32,17 @@ public delegate Task<string?> RefreshFetcher(string sourceName, CachedSearchResu
 /// </summary>
 public sealed class RefreshWorker : BackgroundService
 {
-    private readonly ISearchResultCacheStore _store;
-    private readonly SearchResultCache _cache;
-    private readonly IAsyncCircuitBreaker _circuitBreaker;
-    private readonly RefreshFetcher _fetcher;
+    private readonly Func<(RefreshWorkerDependencies Dependencies, IDisposable? Scope)> _resolveDependencies;
     private readonly TimeProvider _timeProvider;
     private readonly RefreshWorkerOptions _options;
     private readonly string _sourceName;
     private readonly RepopulationPacer _pacer;
+    private readonly ILogger _logger;
 
+    /// <summary>
+    /// Constructs a worker over fixed dependencies. Used by tests (fakes, injected clock) and valid
+    /// wherever the store/cache/breaker are themselves long-lived.
+    /// </summary>
     public RefreshWorker(
         ISearchResultCacheStore store,
         SearchResultCache cache,
@@ -46,16 +51,79 @@ public sealed class RefreshWorker : BackgroundService
         TimeProvider timeProvider,
         RefreshWorkerOptions options,
         string sourceName,
-        RepopulationPacer? pacer = null)
+        RepopulationPacer? pacer = null,
+        ILogger? logger = null)
+        : this(
+            () => (new RefreshWorkerDependencies(store, cache, circuitBreaker, fetcher), null),
+            timeProvider,
+            options,
+            sourceName,
+            pacer,
+            logger)
     {
-        _store = store;
-        _cache = cache;
-        _circuitBreaker = circuitBreaker;
-        _fetcher = fetcher;
-        _timeProvider = timeProvider;
-        _options = options;
-        _sourceName = sourceName;
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentNullException.ThrowIfNull(cache);
+        ArgumentNullException.ThrowIfNull(circuitBreaker);
+        ArgumentNullException.ThrowIfNull(fetcher);
+    }
+
+    /// <summary>
+    /// Constructs a worker that resolves <see cref="RefreshWorkerDependencies"/> from a fresh DI
+    /// scope on <b>every cycle</b>. This is the Host wiring: the worker is a singleton hosted
+    /// service, but the EF-backed store, the persistent breaker and the fetcher's upstream sources
+    /// are scoped (they share a per-request <c>DbContext</c>), so each cycle gets — and disposes —
+    /// its own scope rather than holding a single <c>DbContext</c> open for the process lifetime.
+    /// </summary>
+    public RefreshWorker(
+        IServiceScopeFactory scopeFactory,
+        TimeProvider timeProvider,
+        RefreshWorkerOptions options,
+        string sourceName,
+        RepopulationPacer? pacer = null,
+        ILogger<RefreshWorker>? logger = null)
+        : this(
+            () =>
+            {
+                var scope = scopeFactory.CreateScope();
+                try
+                {
+                    var provider = scope.ServiceProvider;
+                    var dependencies = new RefreshWorkerDependencies(
+                        provider.GetRequiredService<ISearchResultCacheStore>(),
+                        provider.GetRequiredService<SearchResultCache>(),
+                        provider.GetRequiredService<IAsyncCircuitBreaker>(),
+                        provider.GetRequiredService<RefreshFetcher>());
+                    return (dependencies, scope);
+                }
+                catch
+                {
+                    scope.Dispose();
+                    throw;
+                }
+            },
+            timeProvider,
+            options,
+            sourceName,
+            pacer,
+            logger)
+    {
+        ArgumentNullException.ThrowIfNull(scopeFactory);
+    }
+
+    private RefreshWorker(
+        Func<(RefreshWorkerDependencies Dependencies, IDisposable? Scope)> resolveDependencies,
+        TimeProvider timeProvider,
+        RefreshWorkerOptions options,
+        string sourceName,
+        RepopulationPacer? pacer,
+        ILogger? logger)
+    {
+        _resolveDependencies = resolveDependencies;
+        _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+        _options = options ?? throw new ArgumentNullException(nameof(options));
+        _sourceName = sourceName ?? throw new ArgumentNullException(nameof(sourceName));
         _pacer = pacer ?? new RepopulationPacer();
+        _logger = logger ?? NullLogger.Instance;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -64,7 +132,21 @@ public sealed class RefreshWorker : BackgroundService
         {
             if (_options.Enabled)
             {
-                await RunCycleAsync(stoppingToken);
+                try
+                {
+                    await RunCycleAsync(stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    // A failed cycle (e.g. the store is unreachable) must not take the host down:
+                    // BackgroundService faults propagate to the host by default. Log and retry on
+                    // the next tick; the breaker already governs per-source upstream failures.
+                    _logger.LogError(ex, "Search-result refresh cycle for source {SourceName} failed; will retry next cycle.", _sourceName);
+                }
             }
 
             try
@@ -84,15 +166,24 @@ public sealed class RefreshWorker : BackgroundService
     /// </summary>
     public async Task RunCycleAsync(CancellationToken cancellationToken = default)
     {
+        var (dependencies, scope) = _resolveDependencies();
+        using (scope)
+        {
+            await RunCycleAsync(dependencies, cancellationToken);
+        }
+    }
+
+    private async Task RunCycleAsync(RefreshWorkerDependencies deps, CancellationToken cancellationToken)
+    {
         var now = _timeProvider.GetUtcNow();
 
-        var candidates = await _store.GetRefreshCandidatesAsync(now, _options.ActiveWindow, _options.RefreshLead, cancellationToken);
+        var candidates = await deps.Store.GetRefreshCandidatesAsync(now, _options.ActiveWindow, _options.RefreshLead, cancellationToken);
         if (candidates.Count == 0)
         {
             return;
         }
 
-        if (!await _circuitBreaker.CanCallAsync(_sourceName, cancellationToken))
+        if (!await deps.CircuitBreaker.CanCallAsync(_sourceName, cancellationToken))
         {
             // Breaker open for this source: the worker defers to the same breaker the inline
             // path uses and does not attempt any refresh this cycle.
@@ -116,7 +207,7 @@ public sealed class RefreshWorker : BackgroundService
             await throttle.WaitAsync(cancellationToken);
             try
             {
-                await RefreshOneAsync(entriesByKey[paced.QueryKey], cancellationToken);
+                await RefreshOneAsync(deps, entriesByKey[paced.QueryKey], cancellationToken);
             }
             finally
             {
@@ -127,16 +218,20 @@ public sealed class RefreshWorker : BackgroundService
         await Task.WhenAll(tasks);
     }
 
-    private async Task RefreshOneAsync(CachedSearchResult entry, CancellationToken cancellationToken)
+    private async Task RefreshOneAsync(RefreshWorkerDependencies deps, CachedSearchResult entry, CancellationToken cancellationToken)
     {
         string? payload;
         try
         {
-            payload = await _fetcher(_sourceName, entry, cancellationToken);
+            payload = await deps.Fetcher(_sourceName, entry, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
-            await _circuitBreaker.RecordFailureAsync(_sourceName, ex, cancellationToken);
+            await deps.CircuitBreaker.RecordFailureAsync(_sourceName, ex, cancellationToken);
             return;
         }
 
@@ -149,10 +244,20 @@ public sealed class RefreshWorker : BackgroundService
             return;
         }
 
-        await _circuitBreaker.RecordSuccessAsync(_sourceName, cancellationToken);
-        await _cache.SaveAsync(entry.QueryKey, payload, _options.FreshUntilAge, _options.ServeUntilAge, cancellationToken);
+        await deps.CircuitBreaker.RecordSuccessAsync(_sourceName, cancellationToken);
+        await deps.Cache.SaveAsync(entry.QueryKey, payload, _options.FreshUntilAge, _options.ServeUntilAge, cancellationToken);
     }
 }
+
+/// <summary>
+/// The per-cycle collaborators a <see cref="RefreshWorker"/> needs: resolved once per cycle from a
+/// DI scope in the Host, or supplied directly (fakes) in tests.
+/// </summary>
+public sealed record RefreshWorkerDependencies(
+    ISearchResultCacheStore Store,
+    SearchResultCache Cache,
+    IAsyncCircuitBreaker CircuitBreaker,
+    RefreshFetcher Fetcher);
 
 /// <summary>Configuration for one <see cref="RefreshWorker"/> instance's cycle/selection/write-back behaviour.</summary>
 /// <param name="Enabled">Global on/off for proactive refresh (<see cref="Settings.SettingKey.WorkerEnabled"/>).</param>
