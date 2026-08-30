@@ -686,4 +686,47 @@ public class SettingsValidationTests
         var ex = Record.Exception(() => SettingsValidator.ValidateAiConfidenceThreshold(1.0));
         Assert.Null(ex);
     }
+
+    // M7-8 (plan line 943): the four M5 keys are catalog-listed, so GetBounds must project the
+    // bounds the UI shows (or null for booleans / open-ended settings) rather than throwing.
+
+    [Theory]
+    [InlineData(SettingKey.ShadowMode)]
+    [InlineData(SettingKey.TitleNormalizationEnabled)]
+    [InlineData(SettingKey.WorkerEnabled)]
+    public void GetBounds_BooleanSettings_AreUnbounded(SettingKey key)
+    {
+        var (min, max) = SettingsValidator.GetBounds(BaselineSnapshot(), key, ArrSyncInterval);
+
+        Assert.Null(min);
+        Assert.Null(max);
+    }
+
+    [Fact]
+    public void GetBounds_AiConfidenceThreshold_Is0To1()
+    {
+        var (min, max) = SettingsValidator.GetBounds(BaselineSnapshot(), SettingKey.AiConfidenceThreshold, ArrSyncInterval);
+
+        Assert.Equal("0", min);
+        Assert.Equal("1", max);
+    }
+
+    [Fact]
+    public void GetBounds_ClassifierPollInterval_Has15sFloor_AndNoCeiling()
+    {
+        var (min, max) = SettingsValidator.GetBounds(BaselineSnapshot(), SettingKey.ClassifierPollInterval, ArrSyncInterval);
+
+        Assert.Equal(TimeSpan.FromSeconds(15).ToString(), min);
+        Assert.Null(max);
+    }
+
+    [Fact]
+    public void GetBounds_EveryCatalogEntry_DoesNotThrow()
+    {
+        foreach (var entry in SettingsCatalog.Entries)
+        {
+            var ex = Record.Exception(() => SettingsValidator.GetBounds(BaselineSnapshot(), entry.Key, ArrSyncInterval));
+            Assert.Null(ex);
+        }
+    }
 }

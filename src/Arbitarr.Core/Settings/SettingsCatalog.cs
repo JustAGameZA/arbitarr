@@ -26,6 +26,9 @@ public enum SettingGroup
 
     /// <summary>Maintenance job (prune + vacuum) scheduling.</summary>
     Maintenance,
+
+    /// <summary>D3 global shadow-mode toggle spanning every suppression source.</summary>
+    Filtering,
 }
 
 /// <summary>
@@ -188,6 +191,45 @@ public static class SettingsCatalog
             "arbitration waits per release before that release fails open to an Unknown verdict. " +
             "Floor 1s (below this every call would fail open, defeating the opt-in). Ceiling 30s " +
             "(above this the admin UI feels unresponsive). Distinct from the AC14 machine budget.",
+            RequiresRestart: false,
+            IsBoolean: false),
+        new SettingCatalogEntry(
+            SettingKey.ShadowMode,
+            SettingGroup.Filtering,
+            "Shadow mode",
+            "D3 global shadow toggle across every suppression source (rule engine, identity layer, " +
+            "numbering scorer, AI verdicts). ON (the fresh-install default): suppressions are recorded " +
+            "and annotated but never enforced, so nothing is withheld from the *arr apps until you have " +
+            "reviewed the suppression log. OFF: suppressions are enforced.",
+            RequiresRestart: false,
+            IsBoolean: true),
+        new SettingCatalogEntry(
+            SettingKey.AiConfidenceThreshold,
+            SettingGroup.Ai,
+            "AI confidence threshold",
+            "D3 minimum verdict confidence for an AI suppression to count. Must be strictly greater than " +
+            "0 (a 0 threshold would suppress on any verdict, silently defeating the AI slot of the " +
+            "allow > deny > AI > pass chain) and at most 1 (a confidence is a probability). Default 0.9; " +
+            "tune only after reviewing verdict-vs-confidence data from a soak.",
+            RequiresRestart: false,
+            IsBoolean: false),
+        new SettingCatalogEntry(
+            SettingKey.TitleNormalizationEnabled,
+            SettingGroup.Ai,
+            "AI title normalization",
+            "AC26b kill-switch for AI title normalization (allow-list, deny-list, differential-parse " +
+            "guard). Defaults OFF so a fresh install never alters titles the *arr apps parse; enable " +
+            "only after reviewing normalization output in the match-explanation view.",
+            RequiresRestart: false,
+            IsBoolean: true),
+        new SettingCatalogEntry(
+            SettingKey.ClassifierPollInterval,
+            SettingGroup.Ai,
+            "Classifier poll interval",
+            "How often the background classifier loop polls for unclassified releases. Floor 15s " +
+            "(prevents a hot loop against the release lookup). No ceiling: a long interval only delays " +
+            "classification, it cannot cause silent wrongness. Re-read at the top of every cycle, so " +
+            "changes apply on the next cycle without restart.",
             RequiresRestart: false,
             IsBoolean: false),
     };

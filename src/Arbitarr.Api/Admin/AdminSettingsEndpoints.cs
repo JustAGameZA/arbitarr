@@ -1,3 +1,4 @@
+using System.Globalization;
 using Arbitarr.Core.Settings;
 using Arbitarr.Data.Settings;
 using Microsoft.AspNetCore.Builder;
@@ -53,11 +54,17 @@ public static class AdminSettingsEndpoints
 
     private static async Task<IResult> GetSettingsAsync(
         SettingsRepository repository,
+        SettingsReader reader,
         CancellationToken cancellationToken)
     {
         var snapshot = await repository.LoadSnapshotAsync(cancellationToken);
-        var aiKillSwitch = await repository.GetAiKillSwitchAsync(cancellationToken);
-        var syncArbitrationBudget = await repository.GetSyncArbitrationBudgetAsync(cancellationToken);
+        var live = new LiveValues(
+            AiKillSwitch: await repository.GetAiKillSwitchAsync(cancellationToken),
+            SyncArbitrationBudget: await repository.GetSyncArbitrationBudgetAsync(cancellationToken),
+            ShadowMode: await reader.GetShadowModeAsync(cancellationToken),
+            AiConfidenceThreshold: await reader.GetAiConfidenceThresholdAsync(cancellationToken),
+            TitleNormalizationEnabled: await reader.GetTitleNormalizationEnabledAsync(cancellationToken),
+            ClassifierPollInterval: await reader.GetClassifierPollIntervalAsync(cancellationToken));
 
         var entries = SettingsCatalog.Entries.Select(entry =>
         {
@@ -69,7 +76,7 @@ public static class AdminSettingsEndpoints
                 Rationale: entry.Rationale,
                 RequiresRestart: entry.RequiresRestart,
                 IsBoolean: entry.IsBoolean,
-                Value: CurrentValue(entry.Key, snapshot, aiKillSwitch, syncArbitrationBudget),
+                Value: CurrentValue(entry.Key, snapshot, live),
                 Min: min,
                 Max: max);
         });
@@ -101,7 +108,19 @@ public static class AdminSettingsEndpoints
         return Results.Ok();
     }
 
-    private static string CurrentValue(SettingKey key, SettingsSnapshot snapshot, bool aiKillSwitch, TimeSpan syncArbitrationBudget) => key switch
+    /// <summary>
+    /// Settings that are not part of <see cref="SettingsSnapshot"/> (which only carries the cache /
+    /// worker / maintenance keys) and are read individually from their own accessors instead.
+    /// </summary>
+    private sealed record LiveValues(
+        bool AiKillSwitch,
+        TimeSpan SyncArbitrationBudget,
+        bool ShadowMode,
+        double AiConfidenceThreshold,
+        bool TitleNormalizationEnabled,
+        TimeSpan ClassifierPollInterval);
+
+    private static string CurrentValue(SettingKey key, SettingsSnapshot snapshot, LiveValues live) => key switch
     {
         SettingKey.FreshUntil => snapshot.FreshUntil.ToString(),
         SettingKey.ServeUntil => snapshot.ServeUntil.ToString(),
@@ -116,8 +135,12 @@ public static class AdminSettingsEndpoints
         SettingKey.SuppressionAuditRetention => snapshot.SuppressionAuditRetention.ToString(),
         SettingKey.QuerySnapshotTtl => snapshot.QuerySnapshotTtl.ToString(),
         SettingKey.MaintenanceJobInterval => snapshot.MaintenanceJobInterval.ToString(),
-        SettingKey.AiKillSwitch => aiKillSwitch.ToString(),
-        SettingKey.SyncArbitrationBudget => syncArbitrationBudget.ToString(),
+        SettingKey.AiKillSwitch => live.AiKillSwitch.ToString(),
+        SettingKey.SyncArbitrationBudget => live.SyncArbitrationBudget.ToString(),
+        SettingKey.ShadowMode => live.ShadowMode.ToString(),
+        SettingKey.AiConfidenceThreshold => live.AiConfidenceThreshold.ToString(CultureInfo.InvariantCulture),
+        SettingKey.TitleNormalizationEnabled => live.TitleNormalizationEnabled.ToString(),
+        SettingKey.ClassifierPollInterval => live.ClassifierPollInterval.ToString(),
         _ => throw new ArgumentOutOfRangeException(nameof(key), key, "No wire projection for this setting key."),
     };
 }

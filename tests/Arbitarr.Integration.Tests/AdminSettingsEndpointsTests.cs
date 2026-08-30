@@ -214,4 +214,106 @@ public sealed class AdminSettingsEndpointsTests : IClassFixture<ArbitarrWebAppli
             }
         });
     }
+
+    // M7-8 / A7: the M5 keys (ShadowMode, AiConfidenceThreshold, TitleNormalizationEnabled,
+    // ClassifierPollInterval) are exposed through the same catalog + PUT path, rejecting rather
+    // than clamping out-of-bound values.
+
+    [Fact]
+    public async Task GET_settings_includes_the_M5_keys_with_their_defaults()
+    {
+        await SeedAdminKeyAsync();
+
+        using var client = AuthorizedClient();
+        var response = await client.GetAsync(SettingsRoute);
+        var entries = (await response.Content.ReadFromJsonAsync<List<SettingCatalogEntryResponse>>())!;
+
+        var shadowMode = entries!.Single(e => e.Key == nameof(SettingKey.ShadowMode));
+        Assert.Equal(nameof(SettingGroup.Filtering), shadowMode.Group);
+        Assert.True(shadowMode.IsBoolean);
+        Assert.Equal(bool.TrueString, shadowMode.Value);
+
+        var threshold = entries.Single(e => e.Key == nameof(SettingKey.AiConfidenceThreshold));
+        Assert.Equal("0.9", threshold.Value);
+        Assert.Equal("0", threshold.Min);
+        Assert.Equal("1", threshold.Max);
+
+        var normalization = entries.Single(e => e.Key == nameof(SettingKey.TitleNormalizationEnabled));
+        Assert.True(normalization.IsBoolean);
+        Assert.Equal(bool.FalseString, normalization.Value);
+
+        var poll = entries.Single(e => e.Key == nameof(SettingKey.ClassifierPollInterval));
+        Assert.Equal(TimeSpan.FromMinutes(1).ToString(), poll.Value);
+        Assert.Equal(TimeSpan.FromSeconds(15).ToString(), poll.Min);
+        Assert.Null(poll.Max);
+    }
+
+    [Fact]
+    public async Task PUT_AiConfidenceThreshold_persists_a_valid_value()
+    {
+        await SeedAdminKeyAsync();
+
+        using var client = AuthorizedClient();
+        var response = await client.PutAsJsonAsync(
+            $"{SettingsRoute}/{SettingKey.AiConfidenceThreshold}",
+            new UpdateSettingRequest("0.8"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var getResponse = await client.GetAsync(SettingsRoute);
+        var entries = await getResponse.Content.ReadFromJsonAsync<List<SettingCatalogEntryResponse>>();
+        Assert.Equal("0.8", entries!.Single(e => e.Key == nameof(SettingKey.AiConfidenceThreshold)).Value);
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("1.5")]
+    [InlineData("abc")]
+    public async Task PUT_AiConfidenceThreshold_rejects_out_of_bound_or_unparseable_values_with_400(string value)
+    {
+        await SeedAdminKeyAsync();
+
+        using var client = AuthorizedClient();
+        var response = await client.PutAsJsonAsync(
+            $"{SettingsRoute}/{SettingKey.AiConfidenceThreshold}",
+            new UpdateSettingRequest(value));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task PUT_ClassifierPollInterval_rejects_below_15s_floor_with_400()
+    {
+        await SeedAdminKeyAsync();
+
+        using var client = AuthorizedClient();
+        var response = await client.PutAsJsonAsync(
+            $"{SettingsRoute}/{SettingKey.ClassifierPollInterval}",
+            new UpdateSettingRequest(TimeSpan.FromSeconds(1).ToString()));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task PUT_ShadowMode_false_persists()
+    {
+        await SeedAdminKeyAsync();
+
+        using var client = AuthorizedClient();
+        var response = await client.PutAsJsonAsync(
+            $"{SettingsRoute}/{SettingKey.ShadowMode}",
+            new UpdateSettingRequest(bool.FalseString));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var getResponse = await client.GetAsync(SettingsRoute);
+        var entries = await getResponse.Content.ReadFromJsonAsync<List<SettingCatalogEntryResponse>>();
+        Assert.Equal(bool.FalseString, entries!.Single(e => e.Key == nameof(SettingKey.ShadowMode)).Value);
+
+        // Restore the default so sibling tests sharing the factory see shadow mode ON.
+        var restore = await client.PutAsJsonAsync(
+            $"{SettingsRoute}/{SettingKey.ShadowMode}",
+            new UpdateSettingRequest(bool.TrueString));
+        Assert.Equal(HttpStatusCode.OK, restore.StatusCode);
+    }
 }

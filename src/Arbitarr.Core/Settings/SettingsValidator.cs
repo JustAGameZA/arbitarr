@@ -399,6 +399,7 @@ public static class SettingsValidator
                 break;
             case SettingKey.ClassifierPollInterval:
                 ValidateClassifierPollInterval((TimeSpan)proposed);
+                break;
             case SettingKey.SyncArbitrationBudget:
                 ValidateSyncArbitrationBudget((TimeSpan)proposed);
                 break;
@@ -526,7 +527,8 @@ public static class SettingsValidator
     /// <paramref name="current"/> snapshot, for display in the admin settings UI (AC24/M7-8) — the
     /// exact same bounds <see cref="ValidateChange"/> enforces, surfaced as data instead of only as
     /// a rejection message. Boolean settings (<see cref="SettingKey.WorkerEnabled"/>,
-    /// <see cref="SettingKey.AiKillSwitch"/>) and <see cref="SettingKey.AdminApiKey"/> are unbounded
+    /// <see cref="SettingKey.AiKillSwitch"/>, <see cref="SettingKey.ShadowMode"/>,
+    /// <see cref="SettingKey.TitleNormalizationEnabled"/>) and <see cref="SettingKey.AdminApiKey"/> are unbounded
     /// and return (null, null).
     /// </summary>
     /// <param name="current">The live snapshot the bound is computed against (for cross-field bounds).</param>
@@ -553,6 +555,12 @@ public static class SettingsValidator
         SettingKey.QuerySnapshotTtl => (TimeSpan.FromSeconds(60).ToString(), TimeSpan.FromHours(1).ToString()),
         SettingKey.MaintenanceJobInterval => (TimeSpan.FromMinutes(5).ToString(), TimeSpan.FromHours(24).ToString()),
         SettingKey.SyncArbitrationBudget => (TimeSpan.FromSeconds(1).ToString(), TimeSpan.FromSeconds(30).ToString()),
+        SettingKey.ShadowMode => (null, null),
+        SettingKey.TitleNormalizationEnabled => (null, null),
+        // Floor is exclusive (see ValidateAiConfidenceThreshold): shown as 0 with the exclusivity
+        // stated in the catalog rationale, since the wire form carries no open/closed flag.
+        SettingKey.AiConfidenceThreshold => ((0.0).ToString(CultureInfo.InvariantCulture), (1.0).ToString(CultureInfo.InvariantCulture)),
+        SettingKey.ClassifierPollInterval => (TimeSpan.FromSeconds(15).ToString(), null),
         _ => (null, null),
     };
 }

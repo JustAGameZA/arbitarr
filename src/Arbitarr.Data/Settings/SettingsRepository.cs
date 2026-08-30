@@ -137,6 +137,17 @@ public sealed class SettingsRepository
             case SettingKey.SyncArbitrationBudget:
                 SettingsValidator.ValidateSyncArbitrationBudget(ParseTimeSpan(key, proposed));
                 break;
+            case SettingKey.ShadowMode:
+            case SettingKey.TitleNormalizationEnabled:
+                // D3 / AC26b toggles: booleans, not bound-validated (SettingsCatalog.IsBoolean).
+                ParseBool(key, proposed);
+                break;
+            case SettingKey.AiConfidenceThreshold:
+                SettingsValidator.ValidateAiConfidenceThreshold(ParseDouble(key, proposed));
+                break;
+            case SettingKey.ClassifierPollInterval:
+                SettingsValidator.ValidateClassifierPollInterval(ParseTimeSpan(key, proposed));
+                break;
             case SettingKey.AdminApiKey:
                 throw new SettingsValidationException(key,
                     "admin_api_key is not editable through the settings write path.");
@@ -178,6 +189,11 @@ public sealed class SettingsRepository
         bool.TryParse(raw, out var value)
             ? value
             : throw new SettingsValidationException(key, $"'{raw}' is not a valid boolean.");
+
+    private static double ParseDouble(SettingKey key, string raw) =>
+        double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
+            ? value
+            : throw new SettingsValidationException(key, $"'{raw}' is not a valid number.");
 
     private static int ParseInt(SettingKey key, string raw) =>
         int.TryParse(raw, CultureInfo.InvariantCulture, out var value)
