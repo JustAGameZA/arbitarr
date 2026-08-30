@@ -118,8 +118,8 @@ public sealed class BackoffCurveTests
         DriveFailingLoop(breaker, clock, source, TimeSpan.FromMilliseconds(100), maxAttempts: 3);
         Assert.Equal(3, source.AttemptTimestamps.Count);
 
-        // Each probe's delay is the *previous jittered* delay doubled (and re-jittered), capped at
-        // 900s -- not a pure doubling of the original nominal, since jitter compounds step over step.
+        // Each probe's delay doubles the un-jittered BaseBackoff and caps it at 900s; jitter is applied
+        // once at the gate from that nominal value, so it no longer compounds step over step.
         // Drive enough probes to reach and hold the ceiling.
         const int probeCount = 10;
         var totalAttempts = 3 + probeCount;
