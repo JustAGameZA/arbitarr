@@ -67,7 +67,11 @@ public sealed class RepopulationPacingTests
 
     private sealed class FakeStore : ISearchResultCacheStore
     {
-        public readonly Dictionary<string, CachedSearchResult> Entries = new();
+        // M3-fix7: RefreshWorker.RunCycleAsync runs refreshes concurrently (bounded by
+        // MaxConcurrentRefreshes), so SaveAsync can be invoked from multiple tasks at once. A plain
+        // Dictionary is not thread-safe under concurrent writes and can silently drop an entry,
+        // making the test's final Entries.Count flaky. ConcurrentDictionary makes it deterministic.
+        public readonly System.Collections.Concurrent.ConcurrentDictionary<string, CachedSearchResult> Entries = new();
         public IReadOnlyList<CachedSearchResult> CandidatesToReturn = Array.Empty<CachedSearchResult>();
 
         public Task<CachedSearchResult?> GetAsync(string queryKey, CancellationToken cancellationToken = default)
