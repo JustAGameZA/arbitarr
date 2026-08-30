@@ -47,7 +47,29 @@ public sealed class SearchResultCacheStore : ISearchResultCacheStore
         record.FreshUntil = freshUntil;
         record.ServeUntil = serveUntil;
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException) when (record.Id == 0)
+        {
+            // Two concurrent misses can both read null and both Add: the loser hits the unique index
+            // on QueryKey here. Recover by re-reading the row the winner just inserted and updating
+            // it in place instead of surfacing a 500 for what is really a cache write, not a
+            // correctness failure. LastRequestedAt is deliberately excluded from the retry update,
+            // same as the normal path (M3-8a).
+            _dbContext.ChangeTracker.Clear();
+
+            var existing = await _dbContext.SearchResultCacheEntries
+                .SingleAsync(e => e.QueryKey == queryKey, cancellationToken);
+
+            existing.PayloadJson = payloadJson;
+            existing.FetchedAt = fetchedAt;
+            existing.FreshUntil = freshUntil;
+            existing.ServeUntil = serveUntil;
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
     }
 
     public async Task TouchLastRequestedAsync(string queryKey, DateTimeOffset requestedAt, CancellationToken cancellationToken = default)

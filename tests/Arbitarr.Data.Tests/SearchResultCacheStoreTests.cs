@@ -137,4 +137,53 @@ public sealed class SearchResultCacheStoreTests : IDisposable
         await store.SaveAsync(key, "payload", Now - TimeSpan.FromMinutes(10), freshUntil, Now + TimeSpan.FromHours(1));
         await store.TouchLastRequestedAsync(key, lastRequestedAt);
     }
+
+    /// <summary>
+    /// Security-m3 MEDIUM #3: two concurrent cache misses for the same key both see no existing row
+    /// (each via its own <see cref="ArbitarrDbContext"/>/tracker, as separate requests would) and
+    /// both attempt an Add. The second <see cref="SearchResultCacheStore.SaveAsync"/> call must not
+    /// surface the unique-index violation as an exception -- it should recover by updating the row
+    /// the first call already inserted. LastRequestedAt must be preserved (M3-8a: SaveAsync never
+    /// touches it), simulated here by stamping it directly against the "winner" context before the
+    /// "loser" saves, so a regression that overwrote it on the retry path would be caught.
+    /// </summary>
+    [Fact]
+    public async Task SaveAsync_ConcurrentInsertRace_RecoversWithoutThrowing_AndPreservesLastRequestedAt()
+    {
+        const string key = "series:race-key";
+        var stampedAt = Now + TimeSpan.FromMinutes(1);
+
+        using (var migrationContext = CreateContext())
+        {
+            migrationContext.Database.Migrate();
+        }
+
+        // Simulate the race window: both contexts read null for the key before either writes.
+        using var winnerContext = CreateContext();
+        using var loserContext = CreateContext();
+        var winnerStore = new SearchResultCacheStore(winnerContext);
+        var loserStore = new SearchResultCacheStore(loserContext);
+
+        Assert.Null(await winnerContext.SearchResultCacheEntries.SingleOrDefaultAsync(e => e.QueryKey == key));
+        Assert.Null(await loserContext.SearchResultCacheEntries.SingleOrDefaultAsync(e => e.QueryKey == key));
+
+        // Winner inserts first and its row is what a caller then serves (stamping LastRequestedAt).
+        await winnerStore.SaveAsync(key, "payload-winner", Now, Now + TimeSpan.FromMinutes(5), Now + TimeSpan.FromHours(1));
+        await winnerStore.TouchLastRequestedAsync(key, stampedAt);
+
+        // Loser's DbContext still has no tracked row for this key (it never saw the winner's insert),
+        // so it attempts its own Add and must hit + recover from the unique-index violation.
+        var exception = await Record.ExceptionAsync(() =>
+            loserStore.SaveAsync(key, "payload-loser", Now + TimeSpan.FromSeconds(1), Now + TimeSpan.FromMinutes(6), Now + TimeSpan.FromHours(1)));
+
+        Assert.Null(exception);
+
+        using var verifyContext = CreateContext();
+        var verifyStore = new SearchResultCacheStore(verifyContext);
+        var reloaded = await verifyStore.GetAsync(key);
+
+        Assert.NotNull(reloaded);
+        Assert.Equal("payload-loser", reloaded!.PayloadJson);
+        Assert.Equal(stampedAt, reloaded.LastRequestedAt);
+    }
 }

@@ -102,6 +102,54 @@ public sealed class CacheKeyIdentityTests
     }
 
     [Fact]
+    public void Build_TitleSetFallback_IsDeterministic_RegardlessOfOrderCasingOrDuplicates()
+    {
+        // Security-m3 HIGH #1: the title-set token is hashed, not embedded verbatim. Verify the
+        // hash still collapses equivalent title sets (order-independent, case-insensitive,
+        // duplicate-tolerant) rather than asserting the old raw "titles:{joined text}" format.
+        var numbering = new NumberingCandidate(NumberingScheme.TvdbSeasonal, 1, 1, 1);
+        var categories = new[] { 5000 };
+
+        var canonical = new SeriesIdentity(TvdbId: null, TmdbId: null, PrimaryTitle: "Naruto", AlternateTitles: new[] { "NARUTO SHIPPUDEN" });
+        var reorderedAndDuplicated = new SeriesIdentity(TvdbId: null, TmdbId: null, PrimaryTitle: "naruto shippuden", AlternateTitles: new[] { "  Naruto  ", "Naruto Shippuden" });
+
+        var key1 = SearchCacheKeyBuilder.Build(canonical, numbering, categories);
+        var key2 = SearchCacheKeyBuilder.Build(reorderedAndDuplicated, numbering, categories);
+
+        Assert.Equal(key1, key2);
+    }
+
+    [Fact]
+    public void Build_TitleSetFallback_SeparatesDistinctTitleSets()
+    {
+        var numbering = new NumberingCandidate(NumberingScheme.TvdbSeasonal, 1, 1, 1);
+        var categories = new[] { 5000 };
+
+        var naruto = new SeriesIdentity(TvdbId: null, TmdbId: null, PrimaryTitle: "Naruto", AlternateTitles: Array.Empty<string>());
+        var narutoShippuden = new SeriesIdentity(TvdbId: null, TmdbId: null, PrimaryTitle: "Naruto Shippuden", AlternateTitles: Array.Empty<string>());
+
+        var key1 = SearchCacheKeyBuilder.Build(naruto, numbering, categories);
+        var key2 = SearchCacheKeyBuilder.Build(narutoShippuden, numbering, categories);
+
+        Assert.NotEqual(key1, key2);
+    }
+
+    [Fact]
+    public void Build_TitleSetFallback_StaysBounded_ForAVeryLongTitle()
+    {
+        // Security-m3 HIGH #1: an unbounded q-derived title must not produce an unbounded QueryKey
+        // (one row per distinct value is a cache-table flooding vector). A 10 KB title should still
+        // yield a key comfortably under ~200 characters once hashed.
+        var hugeTitle = new string('a', 10_000);
+        var identity = new SeriesIdentity(TvdbId: null, TmdbId: null, PrimaryTitle: hugeTitle, AlternateTitles: Array.Empty<string>());
+        var numbering = new NumberingCandidate(NumberingScheme.TvdbSeasonal, 1, 1, 1);
+
+        var key = SearchCacheKeyBuilder.Build(identity, numbering, new[] { 5000 });
+
+        Assert.True(key.Length < 200, $"Expected a bounded key under 200 chars, got {key.Length}.");
+    }
+
+    [Fact]
     public void Build_DifferentNumberingScheme_SeparatesKeys_EvenWithSameSeasonEpisode()
     {
         // Arc-relative and TVDB-seasonal candidates can share the same bare season/episode numbers

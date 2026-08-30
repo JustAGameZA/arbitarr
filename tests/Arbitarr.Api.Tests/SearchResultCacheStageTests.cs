@@ -191,6 +191,30 @@ public class SearchResultCacheStageTests
     }
 
     [Fact]
+    public void Very_long_query_text_still_yields_a_bounded_cache_key()
+    {
+        // Security-m3 HIGH #1: an unbounded q-derived fallback text must not itself carry unbounded
+        // length into the identity/key path, independent of SearchCacheKeyBuilder's own hashing.
+        var query = new SearchQuery(new string('x', 10_000), Array.Empty<int>(), 50);
+
+        var key = SearchResultCacheStage.BuildQueryKey(query);
+
+        Assert.True(key.Length < 200, $"Expected a bounded key under 200 chars, got {key.Length}.");
+    }
+
+    [Fact]
+    public void Query_text_beyond_the_bound_still_collapses_with_an_identical_prefix()
+    {
+        // Two texts that agree within the 256-char cap must still collapse onto one key even though
+        // their full raw text differs beyond that point.
+        var prefix = new string('x', 256);
+        var first = new SearchQuery(prefix + "-tail-one", Array.Empty<int>(), 50);
+        var second = new SearchQuery(prefix + "-tail-two", Array.Empty<int>(), 50);
+
+        Assert.Equal(SearchResultCacheStage.BuildQueryKey(first), SearchResultCacheStage.BuildQueryKey(second));
+    }
+
+    [Fact]
     public void Categories_are_part_of_the_cache_key()
     {
         var withCategory = new SearchQuery("bleach", new[] { 5000 }, 50, 0, TvdbId: 74796, Season: 17, Episode: 36);

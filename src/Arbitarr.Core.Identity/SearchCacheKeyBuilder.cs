@@ -1,3 +1,6 @@
+using System.Security.Cryptography;
+using System.Text;
+
 namespace Arbitarr.Core.Identity;
 
 /// <summary>
@@ -18,6 +21,13 @@ namespace Arbitarr.Core.Identity;
 /// display text, satisfies both directions at once: equivalent numbering renderings resolve to the
 /// same candidate and collapse, while distinct series never share a provider ID or title set and so
 /// never collapse — "a key that only separates, or only collapses, satisfies half of AC23b(4)."
+/// </para>
+/// <para>
+/// The title-set fallback token is a fixed-length SHA-256 hash of the normalised (trimmed,
+/// lowercased, deduplicated, ordinally-ordered) title set rather than the joined text itself, so an
+/// unbounded or attacker-controlled title set cannot produce an unbounded <c>QueryKey</c> (a
+/// cache-table flooding vector). Normalising before hashing preserves the collapse behaviour: equal
+/// title sets always hash identically regardless of input order, casing, or duplicates.
 /// </para>
 /// </remarks>
 public static class SearchCacheKeyBuilder
@@ -79,7 +89,16 @@ public static class SearchCacheKeyBuilder
             .Distinct()
             .OrderBy(t => t, StringComparer.Ordinal);
 
-        return $"titles:{string.Join("|", titles)}";
+        // Hashed rather than embedded verbatim: an unbounded, attacker-controlled title set (e.g. a
+        // very long q-derived title) would otherwise produce an unbounded QueryKey, one row per
+        // distinct value -- a cache-table flooding vector. Normalising (trim/lowercase/distinct/
+        // ordinal-order) before hashing is what preserves the collapse behaviour above: equal title
+        // sets still hash identically regardless of input order/casing/duplicates.
+        var normalized = string.Join("|", titles);
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(normalized));
+        var hashToken = Convert.ToHexStringLower(hash)[..32];
+
+        return $"titles:{hashToken}";
     }
 
     private static string BuildNumberingToken(NumberingCandidate candidate)

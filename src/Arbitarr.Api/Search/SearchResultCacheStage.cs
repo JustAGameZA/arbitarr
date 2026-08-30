@@ -48,6 +48,13 @@ namespace Arbitarr.Api.Search;
 public sealed class SearchResultCacheStage
 {
     /// <summary>Resolution-profile discriminator (M4 territory); fixed until profiles exist.</summary>
+    /// <remarks>
+    /// The cache is currently client-independent: every client shares one upstream credential set,
+    /// so there is no per-client key to scope by yet. M4 must thread the resolved client/profile
+    /// name (from <c>ClientKeyContext</c>) into <see cref="SearchCacheKeyBuilder.Build"/>'s
+    /// <c>profile</c> parameter once per-client upstream keys or filter profiles exist — otherwise
+    /// distinct clients continue to share cache entries.
+    /// </remarks>
     public const string DefaultProfile = "default";
 
     private readonly SearchResultCache _cache;
@@ -76,6 +83,15 @@ public sealed class SearchResultCacheStage
     public static NumberingCandidate BuildNumbering(int? season, int? episode) =>
         new(NumberingScheme.TvdbSeasonal, season, episode ?? 0, Absolute: null);
 
+    /// <summary>Upper bound on the raw <c>q</c> text folded into the title-set fallback identity.</summary>
+    /// <remarks>
+    /// <see cref="SearchCacheKeyBuilder"/> already hashes its title-set token, so an unbounded
+    /// <c>QueryText</c> cannot itself blow up the stored <c>QueryKey</c>. This cap exists one layer
+    /// up regardless, so an unbounded request body is never carried into hashing (or into
+    /// <see cref="SeriesIdentity"/>/<see cref="CachedSearchPayload"/>) in the first place.
+    /// </remarks>
+    private const int MaxFallbackQueryTextLength = 256;
+
     /// <summary>
     /// Resolves the two-age cache key for <paramref name="query"/>: provider-id identity when
     /// available (M3-9 collapse), title-set fallback otherwise. Categories are part of the key.
@@ -85,9 +101,17 @@ public sealed class SearchResultCacheStage
         ArgumentNullException.ThrowIfNull(query);
 
         var identity = TryBuildIdentity(query.TvdbId, query.TmdbId, title: query.QueryText)
-            ?? new SeriesIdentity(TvdbId: null, TmdbId: null, PrimaryTitle: query.QueryText ?? string.Empty, AlternateTitles: Array.Empty<string>());
+            ?? new SeriesIdentity(TvdbId: null, TmdbId: null, PrimaryTitle: BoundedFallbackText(query.QueryText), AlternateTitles: Array.Empty<string>());
         var candidate = BuildNumbering(query.Season, query.Episode);
         return SearchCacheKeyBuilder.Build(identity, candidate, query.Categories, DefaultProfile);
+    }
+
+    private static string BoundedFallbackText(string? queryText)
+    {
+        var trimmed = (queryText ?? string.Empty).Trim();
+        return trimmed.Length > MaxFallbackQueryTextLength
+            ? trimmed[..MaxFallbackQueryTextLength]
+            : trimmed;
     }
 
     /// <summary>
