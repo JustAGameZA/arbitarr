@@ -33,8 +33,8 @@ public delegate Task<string?> RefreshFetcher(string sourceName, CachedSearchResu
 public sealed class RefreshWorker : BackgroundService
 {
     private readonly Func<(RefreshWorkerDependencies Dependencies, IDisposable? Scope)> _resolveDependencies;
+    private readonly Func<CancellationToken, ValueTask<RefreshWorkerOptions>> _resolveOptions;
     private readonly TimeProvider _timeProvider;
-    private readonly RefreshWorkerOptions _options;
     private readonly string _sourceName;
     private readonly RepopulationPacer _pacer;
     private readonly ILogger _logger;
@@ -42,7 +42,10 @@ public sealed class RefreshWorker : BackgroundService
 
     /// <summary>
     /// Constructs a worker over fixed dependencies. Used by tests (fakes, injected clock) and valid
-    /// wherever the store/cache/breaker are themselves long-lived.
+    /// wherever the store/cache/breaker are themselves long-lived. <paramref name="options"/> is
+    /// wrapped in a static <see cref="IRefreshWorkerOptionsSource"/> — existing tests that pass a
+    /// fixed <see cref="RefreshWorkerOptions"/> keep their exact semantics (the options never
+    /// change out from under them mid-test).
     /// </summary>
     public RefreshWorker(
         ISearchResultCacheStore store,
@@ -57,8 +60,8 @@ public sealed class RefreshWorker : BackgroundService
         IRefreshWorkerHealth? health = null)
         : this(
             () => (new RefreshWorkerDependencies(store, cache, circuitBreaker, fetcher), null),
+            new StaticRefreshWorkerOptionsSource(options),
             timeProvider,
-            options,
             sourceName,
             pacer,
             logger,
@@ -71,16 +74,19 @@ public sealed class RefreshWorker : BackgroundService
     }
 
     /// <summary>
-    /// Constructs a worker that resolves <see cref="RefreshWorkerDependencies"/> from a fresh DI
-    /// scope on <b>every cycle</b>. This is the Host wiring: the worker is a singleton hosted
-    /// service, but the EF-backed store, the persistent breaker and the fetcher's upstream sources
-    /// are scoped (they share a per-request <c>DbContext</c>), so each cycle gets — and disposes —
-    /// its own scope rather than holding a single <c>DbContext</c> open for the process lifetime.
+    /// Constructs a worker that resolves <see cref="RefreshWorkerDependencies"/> and the current
+    /// <see cref="RefreshWorkerOptions"/> (via <see cref="IRefreshWorkerOptionsSource"/>) from a
+    /// fresh DI scope on <b>every cycle</b>. This is the Host wiring: the worker is a singleton
+    /// hosted service, but the EF-backed store, the persistent breaker, the fetcher's upstream
+    /// sources, and the live settings read are scoped (they share a per-request <c>DbContext</c>),
+    /// so each cycle gets — and disposes — its own scope rather than holding a single
+    /// <c>DbContext</c> open for the process lifetime. Because options are re-resolved every cycle
+    /// (M7-8b), toggling <c>WorkerEnabled</c> or changing the cycle interval or any other tunable
+    /// takes effect at the next tick without a restart.
     /// </summary>
     public RefreshWorker(
         IServiceScopeFactory scopeFactory,
         TimeProvider timeProvider,
-        RefreshWorkerOptions options,
         string sourceName,
         RepopulationPacer? pacer = null,
         ILogger<RefreshWorker>? logger = null,
@@ -105,8 +111,8 @@ public sealed class RefreshWorker : BackgroundService
                     throw;
                 }
             },
+            new ScopedRefreshWorkerOptionsSource(scopeFactory),
             timeProvider,
-            options,
             sourceName,
             pacer,
             logger,
@@ -117,31 +123,48 @@ public sealed class RefreshWorker : BackgroundService
 
     private RefreshWorker(
         Func<(RefreshWorkerDependencies Dependencies, IDisposable? Scope)> resolveDependencies,
+        IRefreshWorkerOptionsSource optionsSource,
         TimeProvider timeProvider,
-        RefreshWorkerOptions options,
         string sourceName,
         RepopulationPacer? pacer,
         ILogger? logger,
         IRefreshWorkerHealth? health)
     {
+        ArgumentNullException.ThrowIfNull(optionsSource);
         _resolveDependencies = resolveDependencies;
+        _resolveOptions = optionsSource.GetAsync;
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
-        _options = options ?? throw new ArgumentNullException(nameof(options));
         _sourceName = sourceName ?? throw new ArgumentNullException(nameof(sourceName));
         _pacer = pacer ?? new RepopulationPacer();
         _logger = logger ?? NullLogger.Instance;
         _health = health ?? NullRefreshWorkerHealth.Instance;
     }
 
+    /// <summary>
+    /// A DI scope for resolving a fresh <see cref="IRefreshWorkerOptionsSource"/> each cycle (Host
+    /// wiring): the underlying settings read is scoped alongside the other per-cycle dependencies.
+    /// </summary>
+    private sealed class ScopedRefreshWorkerOptionsSource(IServiceScopeFactory scopeFactory) : IRefreshWorkerOptionsSource
+    {
+        public async ValueTask<RefreshWorkerOptions> GetAsync(CancellationToken cancellationToken)
+        {
+            using var scope = scopeFactory.CreateScope();
+            var source = scope.ServiceProvider.GetRequiredService<IRefreshWorkerOptionsSource>();
+            return await source.GetAsync(cancellationToken);
+        }
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            if (_options.Enabled)
+            var options = await _resolveOptions(stoppingToken);
+
+            if (options.Enabled)
             {
                 try
                 {
-                    await RunCycleAsync(stoppingToken);
+                    await RunCycleAsync(options, stoppingToken);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
@@ -159,7 +182,7 @@ public sealed class RefreshWorker : BackgroundService
 
             try
             {
-                await Task.Delay(_options.WorkerCycleInterval, _timeProvider, stoppingToken);
+                await Task.Delay(options.WorkerCycleInterval, _timeProvider, stoppingToken);
             }
             catch (OperationCanceledException)
             {
@@ -169,24 +192,31 @@ public sealed class RefreshWorker : BackgroundService
     }
 
     /// <summary>
-    /// Runs one selection-and-refresh cycle. Public so tests can drive individual cycles under a
-    /// fake clock without waiting on the hosted-service loop.
+    /// Runs one selection-and-refresh cycle, re-reading options from the source first (M7-8b) so a
+    /// setting changed since the last cycle applies immediately. Public so tests can drive
+    /// individual cycles under a fake clock without waiting on the hosted-service loop.
     /// </summary>
     public async Task RunCycleAsync(CancellationToken cancellationToken = default)
+    {
+        var options = await _resolveOptions(cancellationToken);
+        await RunCycleAsync(options, cancellationToken);
+    }
+
+    private async Task RunCycleAsync(RefreshWorkerOptions options, CancellationToken cancellationToken)
     {
         var (dependencies, scope) = _resolveDependencies();
         using (scope)
         {
-            await RunCycleAsync(dependencies, cancellationToken);
+            await RunCycleAsync(dependencies, options, cancellationToken);
         }
     }
 
-    private async Task RunCycleAsync(RefreshWorkerDependencies deps, CancellationToken cancellationToken)
+    private async Task RunCycleAsync(RefreshWorkerDependencies deps, RefreshWorkerOptions options, CancellationToken cancellationToken)
     {
         var now = _timeProvider.GetUtcNow();
 
-        var candidates = await deps.Store.GetRefreshCandidatesAsync(now, _options.ActiveWindow, _options.RefreshLead, cancellationToken);
-        _health.CycleStarted(now, _options.Enabled, candidates.Count);
+        var candidates = await deps.Store.GetRefreshCandidatesAsync(now, options.ActiveWindow, options.RefreshLead, cancellationToken);
+        _health.CycleStarted(now, options.Enabled, candidates.Count);
 
         if (candidates.Count == 0)
         {
@@ -205,9 +235,9 @@ public sealed class RefreshWorker : BackgroundService
         // Plan a paced schedule (R22): spread refresh starts across a full fresh_until interval
         // so a large backlog (e.g. following a circuit close) does not fire as a synchronized
         // burst, and bound how many refreshes may be in flight against this source at once.
-        var plan = _pacer.Plan(candidates, _options.RepopulationSpreadWindow, _options.MaxConcurrentRefreshes, _sourceName);
+        var plan = _pacer.Plan(candidates, options.RepopulationSpreadWindow, options.MaxConcurrentRefreshes, _sourceName);
         var entriesByKey = candidates.ToDictionary(c => c.QueryKey);
-        using var throttle = new SemaphoreSlim(_options.MaxConcurrentRefreshes);
+        using var throttle = new SemaphoreSlim(options.MaxConcurrentRefreshes);
 
         var refreshedCount = 0;
         var failedCount = 0;
@@ -222,7 +252,7 @@ public sealed class RefreshWorker : BackgroundService
             await throttle.WaitAsync(cancellationToken);
             try
             {
-                var succeeded = await RefreshOneAsync(deps, entriesByKey[paced.QueryKey], cancellationToken);
+                var succeeded = await RefreshOneAsync(deps, options, entriesByKey[paced.QueryKey], cancellationToken);
                 if (succeeded)
                 {
                     Interlocked.Increment(ref refreshedCount);
@@ -243,7 +273,7 @@ public sealed class RefreshWorker : BackgroundService
     }
 
     /// <returns>true if the entry was successfully refreshed and written back; false otherwise.</returns>
-    private async Task<bool> RefreshOneAsync(RefreshWorkerDependencies deps, CachedSearchResult entry, CancellationToken cancellationToken)
+    private async Task<bool> RefreshOneAsync(RefreshWorkerDependencies deps, RefreshWorkerOptions options, CachedSearchResult entry, CancellationToken cancellationToken)
     {
         string? payload;
         try
@@ -270,7 +300,7 @@ public sealed class RefreshWorker : BackgroundService
         }
 
         await deps.CircuitBreaker.RecordSuccessAsync(_sourceName, cancellationToken);
-        await deps.Cache.SaveAsync(entry.QueryKey, payload, _options.FreshUntilAge, _options.ServeUntilAge, cancellationToken);
+        await deps.Cache.SaveAsync(entry.QueryKey, payload, options.FreshUntilAge, options.ServeUntilAge, cancellationToken);
         return true;
     }
 }
@@ -284,6 +314,27 @@ public sealed record RefreshWorkerDependencies(
     SearchResultCache Cache,
     IAsyncCircuitBreaker CircuitBreaker,
     RefreshFetcher Fetcher);
+
+/// <summary>
+/// Supplies the current <see cref="RefreshWorkerOptions"/> on demand (M7-8b/AC24 settings
+/// liveness): <see cref="RefreshWorker"/> calls this at the top of every loop iteration and every
+/// cycle so a setting changed via the admin API takes effect at the next tick without a restart.
+/// </summary>
+public interface IRefreshWorkerOptionsSource
+{
+    ValueTask<RefreshWorkerOptions> GetAsync(CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// Wraps a fixed <see cref="RefreshWorkerOptions"/> value that never changes — used by the
+/// fixed-deps <see cref="RefreshWorker"/> constructor so existing tests keep their exact semantics.
+/// </summary>
+public sealed class StaticRefreshWorkerOptionsSource(RefreshWorkerOptions options) : IRefreshWorkerOptionsSource
+{
+    private readonly RefreshWorkerOptions _options = options ?? throw new ArgumentNullException(nameof(options));
+
+    public ValueTask<RefreshWorkerOptions> GetAsync(CancellationToken cancellationToken) => ValueTask.FromResult(_options);
+}
 
 /// <summary>Configuration for one <see cref="RefreshWorker"/> instance's cycle/selection/write-back behaviour.</summary>
 /// <param name="Enabled">Global on/off for proactive refresh (<see cref="Settings.SettingKey.WorkerEnabled"/>).</param>
