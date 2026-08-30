@@ -206,10 +206,10 @@ app.MapGet("/torznab/api", async (
         recentSearchLog,
         request,
         cancellationToken,
-        tvdbid,
-        tmdbid,
-        season,
-        ep).ConfigureAwait(false);
+        IdParamClamp.ClampProviderId(tvdbid),
+        IdParamClamp.ClampProviderId(tmdbid),
+        IdParamClamp.ClampSeason(season),
+        IdParamClamp.ClampEpisode(ep)).ConfigureAwait(false);
 })
     .WithClassification(RouteClassification.PublicRead);
 
@@ -258,10 +258,10 @@ app.MapGet("/newznab/api", async (
         recentSearchLog,
         request,
         cancellationToken,
-        tvdbid,
-        tmdbid,
-        season,
-        ep).ConfigureAwait(false);
+        IdParamClamp.ClampProviderId(tvdbid),
+        IdParamClamp.ClampProviderId(tmdbid),
+        IdParamClamp.ClampSeason(season),
+        IdParamClamp.ClampEpisode(ep)).ConfigureAwait(false);
 })
     .WithClassification(RouteClassification.PublicRead);
 
@@ -284,6 +284,11 @@ static IReadOnlyList<int> ParseCategories(string? cat) =>
             .Select(v => int.TryParse(v, out var id) ? id : (int?)null)
             .Where(v => v.HasValue)
             .Select(v => v!.Value)
+            // Security-m3 LOW #5: an unbounded cat= list is embedded verbatim in the cache key
+            // (via SearchCacheKeyBuilder's category component) -- cap it before it reaches the
+            // key, same rationale as PagingClamp/IdParamClamp above.
+            .Distinct()
+            .Take(64)
             .ToArray();
 
 // Exposes the top-level-statement entry point as a named type so integration tests can host
