@@ -92,6 +92,11 @@ builder.Services.AddScoped<RefreshFetcher>(sp =>
     (_, entry, cancellationToken) => sp.GetRequiredService<SearchResultRefresher>().RefreshAsync(entry, cancellationToken));
 builder.Services.AddScoped<PaginationSnapshotService>();
 
+// M7-7/R20: worker-health snapshot, singleton so both the hosted RefreshWorker (writer) and
+// StatusEndpoint (reader) share the same instance across the app's lifetime.
+builder.Services.AddSingleton<RefreshWorkerHealthTracker>(_ => new RefreshWorkerHealthTracker(RefreshWorkerDefaults.WorkerEnabled));
+builder.Services.AddSingleton<IRefreshWorkerHealth>(sp => sp.GetRequiredService<RefreshWorkerHealthTracker>());
+
 builder.Services.AddHostedService(sp => new RefreshWorker(
     sp.GetRequiredService<IServiceScopeFactory>(),
     sp.GetRequiredService<TimeProvider>(),
@@ -105,7 +110,8 @@ builder.Services.AddHostedService(sp => new RefreshWorker(
         RefreshWorkerDefaults.RepopulationSpreadWindow,
         RefreshWorkerDefaults.MaxConcurrentRefreshes),
     builder.Configuration["Arbitarr:Sources:NzbHydra:SourceName"] ?? "NZBHydra2",
-    logger: sp.GetRequiredService<ILogger<RefreshWorker>>()));
+    logger: sp.GetRequiredService<ILogger<RefreshWorker>>(),
+    health: sp.GetRequiredService<IRefreshWorkerHealth>()));
 builder.Services.AddSingleton<InMemoryReleaseLookup>();
 builder.Services.AddSingleton<IReleaseLookup>(sp => sp.GetRequiredService<InMemoryReleaseLookup>());
 

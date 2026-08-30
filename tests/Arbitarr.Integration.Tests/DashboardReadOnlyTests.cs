@@ -107,16 +107,24 @@ public sealed class DashboardReadOnlyTests : IClassFixture<ArbitarrWebApplicatio
     }
 
     [Fact]
-    public async Task Status_worker_status_is_restricted_to_documented_enumerated_values_before_M3()
+    public async Task Status_worker_health_reports_real_snapshot_shape()
     {
         using var client = _factory.CreateClient();
 
         var response = await client.GetFromJsonAsync<StatusResponse>("/api/status");
 
-        // M2-7: before M3 implements the proactive-refresh worker, WorkerStatus must never read as
-        // healthy/running — "not-implemented" is the only value StatusEndpoint may emit right now.
-        Assert.Equal(StatusEndpoint.WorkerNotImplemented, response!.WorkerStatus);
-        Assert.DoesNotContain(response.WorkerStatus, new[] { "ok", "healthy", "running" });
+        // M7-7/R20: the pre-M3 "not-implemented" placeholder is gone — /api/status now reports the
+        // real RefreshWorkerHealth snapshot. The hosted RefreshWorker runs live against this test
+        // host, so by the time this request lands a cycle may already have started/completed; this
+        // asserts the shape and that no cycle-level fault occurred, not "no cycle has run yet".
+        Assert.NotNull(response);
+        var worker = response!.Worker;
+        Assert.NotNull(worker);
+        Assert.Null(worker.LastError);
+        Assert.Equal(0, worker.ConsecutiveFailedCycles);
+        Assert.True(worker.LastCycleCandidates >= 0);
+        Assert.True(worker.LastCycleRefreshed >= 0);
+        Assert.True(worker.LastCycleFailed >= 0);
     }
 
     [Theory]
