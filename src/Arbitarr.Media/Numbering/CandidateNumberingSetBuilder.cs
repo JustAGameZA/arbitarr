@@ -116,18 +116,21 @@ public static class CandidateNumberingSetBuilder
         }
 
         // Step 3 (docs/step3b-observed-failures.md section 5, "Sennen Kessen hen" row): a release may
-        // render an arc's own scene season number under a known alternate convention with no
-        // corresponding arc-title token in its own title at all (e.g. the Japanese-language "Sennen
-        // Kessen hen" release group renders TYBW as scene season 1, not season 17, and its arc-title
-        // token doesn't match TybwBinding's English AlternateArcTitles). Binding by scene season here
-        // still requires the season to be a *known* alternate for some binding — an unrecognized
-        // season 1 with no title-token match still falls through to the season==1 exclusion below.
+        // render an arc under a known alternate scene-season convention with no corresponding
+        // arc-title token in its own title at all (the Japanese-language "Sennen Kessen hen" group
+        // renders TYBW as scene season 1, not 17, and its arc-title token matches nothing in
+        // TybwBinding's English AlternateArcTitles). This tier resolves ONLY through a declared
+        // AlternateSceneSeasons alias, never through a binding's own Season, and only when exactly
+        // one binding claims the alias and no binding owns that season outright - see
+        // ArcSeasonMap.FindBySceneSeasonAlias. A scene season that merely equals some binding's own
+        // Season is not an alias match: it falls through and is carried through as-is below (no
+        // fabricated absolute), and an unrecognized season 1 still hits the season==1 exclusion.
         if (raw.SceneSeason is { } sceneSeasonForAlias)
         {
-            var bySceneSeason = arcMap.FindBySceneSeason(sceneSeasonForAlias);
-            if (bySceneSeason is not null)
+            var byAlias = arcMap.FindBySceneSeasonAlias(sceneSeasonForAlias);
+            if (byAlias is not null)
             {
-                return bySceneSeason;
+                return byAlias;
             }
         }
 

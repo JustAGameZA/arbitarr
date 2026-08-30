@@ -30,8 +30,28 @@ public class FixtureCorpusRankingTests
     private static RankingContext BleachContext(ArcSeasonMap? arcMap, IReadOnlyList<string>? degradations = null) =>
         new(Bleach, [Bleach], arcMap, degradations);
 
-    private static RankingContext GitsContext(SeriesIdentity requested) =>
-        new(requested, [Arise, StandAloneComplex, Sac2045], ArcMap: null);
+    private static RankingContext GitsContext(SeriesIdentity requested, ArcSeasonMap? arcMap) =>
+        new(requested, [Arise, StandAloneComplex, Sac2045], arcMap);
+
+    /// <summary>
+    /// Stand Alone Complex arc map (XEM-shaped: the 2004 sequel airs as scene season 2, absolute
+    /// 27-52). "Stand Alone Complex" itself is the series title, never an arc title - using it as one
+    /// would bind every S02 release to season 1 through the title-token tier.
+    /// </summary>
+    private static ArcSeasonMap GitsArcMap => new(
+    [
+        new ArcSeasonBinding("1st GIG", [], Season: 1, AbsoluteRangeStart: 1, AbsoluteRangeEnd: 26),
+        new ArcSeasonBinding("2nd GIG", ["Second GIG"], Season: 2, AbsoluteRangeStart: 27, AbsoluteRangeEnd: 52),
+    ]);
+
+    /// <summary>
+    /// No captured GitS fixture names an arc ("GIG"), so the positive control and its SAC_2045 sibling
+    /// twin are injected into every GitS corpus page. The sibling carries identical numbering
+    /// evidence and must still fall below threshold through the sibling penalty alone.
+    /// </summary>
+    private const string GitsPositiveControlTitle = "Ghost in the Shell Stand Alone Complex 2nd GIG S02E01 1080p BluRay x264";
+    private const string GitsSiblingTwinTitle = "Ghost in the Shell SAC 2045 2nd GIG S02E01 1080p WEB x264";
+    private static readonly string[] InjectedGitsTitles = [GitsPositiveControlTitle, GitsSiblingTwinTitle];
 
     /// <summary>
     /// Titles docs/step3b-observed-failures.md names as known-wrong for a TYBW query. None appears
@@ -68,16 +88,16 @@ public class FixtureCorpusRankingTests
         Assert.True(FixtureFiles().Count() >= 8, "expected every docs/fixtures/nzbhydra capture to be copied next to the tests");
     }
 
-    /// <summary>M6-4: ranking every fixture at threshold 0.9 never throws and never admits a known-wrong title.</summary>
+    /// <summary>M6-5: ranking every fixture at threshold 0.9 never throws and never admits a known-wrong title.</summary>
     [Theory]
     [MemberData(nameof(AllFixtures))]
-    public void M6_4_EveryFixture_RanksWithoutThrowing_AndNoKnownWrongTitleMeetsThreshold(string fixture)
+    public void M6_5_EveryFixture_RanksWithoutThrowing_AndNoKnownWrongTitleMeetsThreshold(string fixture)
     {
         var titles = GhostInTheShellDeRankingTests.LoadFixtureTitles(fixture);
         var isGits = fixture.StartsWith("ghost-in-the-shell", StringComparison.Ordinal);
 
-        var corpus = titles.Concat(KnownWrongBleachTitles).ToArray();
-        var context = isGits ? GitsContext(StandAloneComplex) : BleachContext(new ArcSeasonMap([TybwBinding]));
+        var corpus = titles.Concat(KnownWrongBleachTitles).Concat(isGits ? InjectedGitsTitles : []).ToArray();
+        var context = isGits ? GitsContext(StandAloneComplex, GitsArcMap) : BleachContext(new ArcSeasonMap([TybwBinding]));
 
         var result = ReleaseRanking.Rank(corpus, context);
 
@@ -94,11 +114,19 @@ public class FixtureCorpusRankingTests
         Assert.DoesNotContain(
             result.Ranked,
             r => r.MeetsAcceptanceThreshold && r.Release.Title.Contains("2045", StringComparison.Ordinal));
+
+        if (isGits)
+        {
+            var control = Assert.Single(result.Ranked, r => r.Release.Title == GitsPositiveControlTitle);
+            Assert.True(control.MeetsAcceptanceThreshold, $"GitS positive control scored {control.Confidence:F2} in {fixture}");
+            var twin = Assert.Single(result.Ranked, r => r.Release.Title == GitsSiblingTwinTitle);
+            Assert.False(twin.MeetsAcceptanceThreshold, $"SAC_2045 sibling twin reached {twin.Confidence:F2} in {fixture}");
+        }
     }
 
-    /// <summary>M6-4 positive control: the threshold is reachable by a genuinely corroborated TYBW release.</summary>
+    /// <summary>M6-5 positive control: the threshold is reachable by a genuinely corroborated TYBW release.</summary>
     [Fact]
-    public void M6_4_PositiveControl_CorroboratedTybwRelease_MeetsThreshold()
+    public void M6_5_PositiveControl_CorroboratedTybwRelease_MeetsThreshold()
     {
         var titles = GhostInTheShellDeRankingTests.LoadFixtureTitles("bleach-tvsearch.xml");
         var aliasRelease = titles.First(t => t.Contains("Sennen Kessen hen S01E", StringComparison.OrdinalIgnoreCase));
@@ -111,9 +139,34 @@ public class FixtureCorpusRankingTests
         Assert.Equal(17, entry.BestNumbering!.Candidate.Season);
     }
 
-    /// <summary>M6-5: the honest zero-result One Piece capture yields a clean empty ranking, no synthetic entries.</summary>
+    /// <summary>
+    /// M6-5 GitS positive control: with the arc map present the threshold is reachable for a real
+    /// Stand Alone Complex release that names its arc, and the SAC_2045 twin with identical numbering
+    /// evidence lands at exactly the sibling-penalised value below it.
+    /// </summary>
     [Fact]
-    public void M6_5_OnePieceZeroResults_YieldsCleanEmptyRanking()
+    public void M6_5_PositiveControl_Corroborated2ndGigRelease_MeetsThreshold_AndSiblingTwinDoesNot()
+    {
+        var titles = GhostInTheShellDeRankingTests.LoadFixtureTitles("ghost-in-the-shell-stand-alone-complex.xml");
+
+        var result = ReleaseRanking.Rank(titles.Concat(InjectedGitsTitles).ToArray(), GitsContext(StandAloneComplex, GitsArcMap));
+
+        var control = Assert.Single(result.Ranked, r => r.Release.Title == GitsPositiveControlTitle);
+        Assert.True(control.MeetsAcceptanceThreshold, $"{GitsPositiveControlTitle} scored {control.Confidence:F2}");
+        Assert.Equal(0.95, control.Confidence, precision: 10);
+        Assert.Equal(2, control.BestNumbering!.Candidate.Season);
+        Assert.Equal(27, control.BestNumbering.Candidate.Absolute);
+        Assert.Equal(control, result.Ranked[0]);
+
+        var twin = Assert.Single(result.Ranked, r => r.Release.Title == GitsSiblingTwinTitle);
+        Assert.Equal(ReleaseSeriesRelation.Sibling, twin.Release.Relation);
+        Assert.Equal(0.95 * new ScoringWeights().SiblingSeriesPenalty, twin.Confidence, precision: 10);
+        Assert.False(twin.MeetsAcceptanceThreshold);
+    }
+
+    /// <summary>M6-4: the honest zero-result One Piece capture yields a clean empty ranking, no synthetic entries.</summary>
+    [Fact]
+    public void M6_4_OnePieceZeroResults_YieldsCleanEmptyRanking()
     {
         var onePiece = new SeriesIdentity(81797, null, "One Piece", []);
         var titles = GhostInTheShellDeRankingTests.LoadFixtureTitles("ac10-sweep-onepiece-zero-results.xml");

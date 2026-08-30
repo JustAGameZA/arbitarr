@@ -70,19 +70,15 @@ public static class NumberingCandidateScoring
             ? arcMap.FindByTitleToken(arcTitleToken)
             : null;
 
-        // Whether this release's own scene season is a known scene-season-alias for some binding in
-        // the map (docs row: `BLEACH Sennen Kessen hen S01E36...` - scene season 1 is a declared
-        // AlternateSceneSeasons entry for the TYBW binding even though the release's own arc-title
-        // token matches nothing in AlternateArcTitles). Deliberately checks AlternateSceneSeasons
-        // directly rather than ArcSeasonMap.FindBySceneSeason/ArcSeasonBinding.MatchesSceneSeason,
-        // which also match a binding's own declared Season - that broader match is only meaningful
-        // when the builder actually resolved the candidate that way (already captured by
-        // ArcTitleTokenMatched, or by the candidate simply carrying that season through directly);
-        // reusing it here would wrongly credit any bare carry-through candidate whose scene season
-        // happens to numerically equal some unrelated binding's Season (e.g. an ambiguous-absolute
-        // fallthrough) as if it had been alias-resolved.
+        // Whether this release's own scene season is an unambiguous scene-season alias for some
+        // binding in the map (docs row: `BLEACH Sennen Kessen hen S01E36...` - scene season 1 is a
+        // declared AlternateSceneSeasons entry for the TYBW binding even though the release's own
+        // arc-title token matches nothing in AlternateArcTitles). Uses the same alias-only,
+        // ambiguity-rejecting lookup the builder resolves through, so a candidate is only ever
+        // credited as alias-matched when it could actually have been built that way - never for a
+        // bare carry-through candidate whose scene season happens to equal some binding's own Season.
         var aliasMatchedBinding = arcMap is not null && sceneSeason is { } season
-            ? arcMap.Bindings.FirstOrDefault(b => b.AlternateSceneSeasons?.Contains(season) ?? false)
+            ? arcMap.FindBySceneSeasonAlias(season)
             : null;
 
         var result = new List<NumberingCandidateCorroboration>(candidates.Candidates.Count);
