@@ -18,9 +18,9 @@ namespace Arbitarr.Core.Identity.Scoring;
 /// 3's <c>ArcSeasonBinding.AlternateSceneSeasons</c>, docs row: `BLEACH Sennen Kessen hen
 /// S01E36...` - a release whose own arc-title token doesn't match the binding's
 /// <c>AlternateArcTitles</c> at all, but whose scene season is a known alternate rendering of the
-/// same arc). Weaker corroboration than an exact title-token match — the release's own title didn't
-/// name the arc in a way this data recognizes — but still meaningfully stronger than an unresolved
-/// carry-through, since a real binding (not a guess) was found. Mutually exclusive with
+/// same arc). The release's own title didn't name the arc in a way this data recognizes, but a real
+/// binding (not a guess) was still found, so this scores at the same tier as a title-token match
+/// (see <see cref="ScoringWeights.ArcSceneSeasonAliasMatch"/>). Mutually exclusive with
 /// <see cref="ArcTitleTokenMatched"/> in practice (title-token match is tried first).
 /// </param>
 /// <param name="AbsoluteWithinDeclaredRange">

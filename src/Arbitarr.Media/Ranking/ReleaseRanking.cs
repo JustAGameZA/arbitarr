@@ -140,9 +140,11 @@ public static class ReleaseRanking
             return (ReleaseSeriesRelation.Unknown, "unknown series: title matches no known identity");
         }
 
-        if (bestSimilarity - runnerUpSimilarity < MinResolutionMargin)
+        // runnerUp is non-null whenever runnerUpSimilarity > 0; a zero runner-up can only close the
+        // margin if the winner is itself below MinResolutionSimilarity, which returned above.
+        if (runnerUp is not null && bestSimilarity - runnerUpSimilarity < MinResolutionMargin)
         {
-            return (ReleaseSeriesRelation.Unknown, $"unknown series: ambiguous between '{resolved.PrimaryTitle}' and '{runnerUp!.PrimaryTitle}'");
+            return (ReleaseSeriesRelation.Unknown, $"unknown series: ambiguous between '{resolved.PrimaryTitle}' and '{runnerUp.PrimaryTitle}'");
         }
 
         var classification = FranchiseClassifier.Classify(context.Requested, resolved);
