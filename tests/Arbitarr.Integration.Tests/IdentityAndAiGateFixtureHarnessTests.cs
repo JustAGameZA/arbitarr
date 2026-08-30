@@ -2,6 +2,7 @@ using System.Text;
 using System.Xml.Linq;
 using Arbitarr.Ai;
 using Arbitarr.Core.Identity;
+using Arbitarr.Core.Identity.Titles;
 using Arbitarr.Core.Releases;
 using Arbitarr.Media.Identity;
 using Xunit;
@@ -11,11 +12,12 @@ namespace Arbitarr.Integration.Tests;
 
 /// <summary>
 /// M6 prep rework (team-lead review of 9d82fea / PR #14), item 1: a real, executable harness
-/// proving that the identity-context side (<see cref="AlternateTitleMatcher"/>,
-/// <see cref="FranchiseClassifier"/>) and the AI adjudicator (<see cref="ReleaseClassifier"/>) can
-/// in fact be run against the raw fixture titles under docs/fixtures/nzbhydra/, contrary to the
-/// hand-traced doc's blanket "nothing can be run" framing (which is only true for the numbering
-/// side - see docs/step3b-observed-failures.md's synthetic section).
+/// proving that the identity-context side (<see cref="SeriesNameExtractor"/> feeding
+/// <see cref="AlternateTitleMatcher"/>, <see cref="FranchiseClassifier"/>) and the AI adjudicator
+/// (<see cref="ReleaseClassifier"/>) can in fact be run against the raw fixture titles under
+/// docs/fixtures/nzbhydra/, contrary to the hand-traced doc's blanket "nothing can be run" framing
+/// (which is only true for the numbering side - see docs/step3b-observed-failures.md's synthetic
+/// section).
 ///
 /// This harness makes NO correctness assertions. It only proves it actually executed: the per-file
 /// item count it processed must equal the fixture's real item count, and it emits a per-fixture
@@ -124,9 +126,13 @@ public class IdentityAndAiGateFixtureHarnessTests
             var title = titles[i];
             processedCount++;
 
-            // (a) AlternateTitleMatcher.FindMatchingTitles against every known SeriesIdentity.
+            // (a) SeriesNameExtractor.Extract(title) first, per M6-2: AlternateTitleMatcher does
+            // only exact trim+ordinal-equality and was never meant to run against a raw,
+            // unstripped release title directly (see docs/step3b-observed-failures.md's (a)
+            // section). Falls back to the raw title only when Extract finds nothing but noise.
+            var seriesName = SeriesNameExtractor.Extract(title) ?? title;
             var identityMatches = AllKnownIdentities
-                .Where(identity => AlternateTitleMatcher.Matches(identity, title))
+                .Where(identity => AlternateTitleMatcher.Matches(identity, seriesName))
                 .Select(identity => identity.PrimaryTitle)
                 .ToArray();
 
