@@ -425,4 +425,183 @@ public class SettingsValidationTests
         var ex = Record.Exception(() => SettingsValidator.ValidateMaintenanceJobInterval(TimeSpan.FromHours(24)));
         Assert.Null(ex);
     }
+
+    // ---------- ValidateChange: reverse-direction cross-field re-validation (M3-6) ----------
+    //
+    // These prove the gap the per-field Validate* methods above cannot see: each one only checks a
+    // proposed value against whichever *other* current value it depends on (forward direction). None
+    // of them can also catch the *reverse* case, where changing a field that other fields' bounds
+    // depend on would strand one of those other fields below its own floor or above its own ceiling.
+    // Every [[Rejects*]] test below builds a snapshot where the dependent field is already pinned
+    // exactly at its bound relative to the anchor's current value, then proposes moving the anchor in
+    // the direction that would push the dependent out of bounds -- and asserts the whole change is
+    // rejected (keyed to the *anchor* being changed, not the dependent). Every [[Accepts*]] test
+    // proposes a change that keeps every dependent within bounds, proving ValidateChange does not
+    // over-reject on top of a merely-tightened-but-still-valid state.
+
+    private static SettingsSnapshot BaselineSnapshot() => SettingsSnapshot.Defaults(ArrSyncInterval);
+
+    [Fact]
+    public void ValidateChange_RejectsLoweringFreshUntil_BelowCurrentServeUntilFloor()
+    {
+        // ServeUntil pinned exactly at the current FreshUntil (its floor). Lowering FreshUntil
+        // leaves ServeUntil (unchanged) above its own floor, which is FINE -- floor violations need
+        // ServeUntil to be below the *new* floor, which can't happen since the floor only drops.
+        // The real hazard is the ceiling side: RefreshLead pinned exactly at current FreshUntil
+        // (its ceiling) becomes invalid once FreshUntil drops below it.
+        var baseline = BaselineSnapshot();
+        var current = baseline with { RefreshLead = baseline.FreshUntil };
+        var lowered = current.FreshUntil - TimeSpan.FromMinutes(1);
+
+        var ex = Assert.Throws<SettingsValidationException>(
+            () => SettingsValidator.ValidateChange(current, SettingKey.FreshUntil, lowered, ArrSyncInterval));
+        Assert.Equal(SettingKey.RefreshLead, ex.Key);
+    }
+
+    [Fact]
+    public void ValidateChange_AcceptsLoweringFreshUntil_WhenDependentsStayInBounds()
+    {
+        // RefreshLead and ServeUntil both stay comfortably within bounds of the lowered FreshUntil.
+        var current = BaselineSnapshot() with { RefreshLead = TimeSpan.FromMinutes(1) };
+        var lowered = TimeSpan.FromMinutes(2);
+        Assert.True(lowered < current.FreshUntil);
+        Assert.True(lowered >= current.RefreshLead); // RefreshLead's ceiling (lowered) is not breached
+
+        var ex = Record.Exception(
+            () => SettingsValidator.ValidateChange(current, SettingKey.FreshUntil, lowered, ArrSyncInterval));
+        Assert.Null(ex);
+    }
+
+    [Fact]
+    public void ValidateChange_RejectsRaisingFreshUntil_AboveArrSyncCeiling_EvenIfDependentsWouldBeFine()
+    {
+        // The forward-direction check on the field itself must still apply: FreshUntil's own ceiling
+        // is min(30m, arrSyncInterval). Proposing above that must reject keyed to FreshUntil itself,
+        // never mind the dependents.
+        var current = BaselineSnapshot();
+        var ex = Assert.Throws<SettingsValidationException>(
+            () => SettingsValidator.ValidateChange(
+                current, SettingKey.FreshUntil, ArrSyncInterval + TimeSpan.FromMinutes(1), ArrSyncInterval));
+        Assert.Equal(SettingKey.FreshUntil, ex.Key);
+    }
+
+    [Fact]
+    public void ValidateChange_RejectsLoweringServeUntil_BelowCurrentFreshUntilFloor()
+    {
+        // Forward-direction: ServeUntil's own floor is the current FreshUntil. Proposing a ServeUntil
+        // below it must reject keyed to ServeUntil.
+        var current = BaselineSnapshot();
+        var lowered = current.FreshUntil - TimeSpan.FromMinutes(1);
+
+        var ex = Assert.Throws<SettingsValidationException>(
+            () => SettingsValidator.ValidateChange(current, SettingKey.ServeUntil, lowered, ArrSyncInterval));
+        Assert.Equal(SettingKey.ServeUntil, ex.Key);
+    }
+
+    [Fact]
+    public void ValidateChange_RejectsLoweringServeUntil_BelowCurrentActiveWindowCeiling()
+    {
+        // ActiveWindow pinned exactly at the current ServeUntil (its ceiling, since ServeUntil here
+        // is below the flat 7d cap). Lowering ServeUntil below that stranded ActiveWindow value.
+        var current = BaselineSnapshot() with
+        {
+            ServeUntil = TimeSpan.FromDays(3),
+            ActiveWindow = TimeSpan.FromDays(3),
+        };
+        var lowered = TimeSpan.FromDays(2);
+
+        var ex = Assert.Throws<SettingsValidationException>(
+            () => SettingsValidator.ValidateChange(current, SettingKey.ServeUntil, lowered, ArrSyncInterval));
+        Assert.Equal(SettingKey.ActiveWindow, ex.Key);
+    }
+
+    [Fact]
+    public void ValidateChange_AcceptsLoweringServeUntil_WhenDependentsStayInBounds()
+    {
+        var current = BaselineSnapshot() with
+        {
+            ServeUntil = TimeSpan.FromDays(3),
+            ActiveWindow = TimeSpan.FromDays(1),
+        };
+        var lowered = TimeSpan.FromDays(2);
+
+        var ex = Record.Exception(
+            () => SettingsValidator.ValidateChange(current, SettingKey.ServeUntil, lowered, ArrSyncInterval));
+        Assert.Null(ex);
+    }
+
+    [Fact]
+    public void ValidateChange_RejectsLoweringRefreshLead_BelowCurrentWorkerCycleIntervalCeiling()
+    {
+        // WorkerCycleInterval pinned exactly at the current RefreshLead (its ceiling). Lowering
+        // RefreshLead below that strands WorkerCycleInterval above its own new ceiling.
+        var current = BaselineSnapshot() with
+        {
+            RefreshLead = TimeSpan.FromMinutes(5),
+            WorkerCycleInterval = TimeSpan.FromMinutes(5),
+        };
+        var lowered = TimeSpan.FromMinutes(4);
+
+        var ex = Assert.Throws<SettingsValidationException>(
+            () => SettingsValidator.ValidateChange(current, SettingKey.RefreshLead, lowered, ArrSyncInterval));
+        Assert.Equal(SettingKey.WorkerCycleInterval, ex.Key);
+    }
+
+    [Fact]
+    public void ValidateChange_AcceptsLoweringRefreshLead_WhenWorkerCycleIntervalStaysInBounds()
+    {
+        var current = BaselineSnapshot() with
+        {
+            RefreshLead = TimeSpan.FromMinutes(5),
+            WorkerCycleInterval = TimeSpan.FromMinutes(1),
+        };
+        var lowered = TimeSpan.FromMinutes(2);
+
+        var ex = Record.Exception(
+            () => SettingsValidator.ValidateChange(current, SettingKey.RefreshLead, lowered, ArrSyncInterval));
+        Assert.Null(ex);
+    }
+
+    [Fact]
+    public void ValidateChange_RejectsRaisingWorkerCycleInterval_AboveCurrentRefreshLeadCeiling()
+    {
+        // Forward direction on WorkerCycleInterval itself: its own ceiling is the current RefreshLead.
+        var current = BaselineSnapshot() with { RefreshLead = TimeSpan.FromMinutes(5) };
+        var raised = current.RefreshLead + TimeSpan.FromMinutes(1);
+
+        var ex = Assert.Throws<SettingsValidationException>(
+            () => SettingsValidator.ValidateChange(current, SettingKey.WorkerCycleInterval, raised, ArrSyncInterval));
+        Assert.Equal(SettingKey.WorkerCycleInterval, ex.Key);
+    }
+
+    [Fact]
+    public void ValidateChange_RejectsLoweringActiveWindow_BelowArrSyncFloor()
+    {
+        // Forward-direction ActiveWindow floor check still applies via ValidateChange.
+        var current = BaselineSnapshot();
+        var lowered = ArrSyncInterval - TimeSpan.FromMinutes(1);
+
+        var ex = Assert.Throws<SettingsValidationException>(
+            () => SettingsValidator.ValidateChange(current, SettingKey.ActiveWindow, lowered, ArrSyncInterval));
+        Assert.Equal(SettingKey.ActiveWindow, ex.Key);
+    }
+
+    [Fact]
+    public void ValidateChange_AcceptsWorkerEnabledToggle_Unbounded()
+    {
+        var current = BaselineSnapshot();
+        var ex = Record.Exception(
+            () => SettingsValidator.ValidateChange(current, SettingKey.WorkerEnabled, !current.WorkerEnabled, ArrSyncInterval));
+        Assert.Null(ex);
+    }
+
+    [Fact]
+    public void ValidateChange_RejectsAiVerdictCacheRowCeiling_BelowFloor_ViaSingleFieldPath()
+    {
+        // No cross-field dependents for this key; ValidateChange must still apply its own bound.
+        var current = BaselineSnapshot();
+        var ex = Assert.Throws<SettingsValidationException>(
+            () => SettingsValidator.ValidateChange(current, SettingKey.AiVerdictCacheRowCeiling, 1, ArrSyncInterval));
+        Assert.Equal(SettingKey.AiVerdictCacheRowCeiling, ex.Key);
+    }
 }

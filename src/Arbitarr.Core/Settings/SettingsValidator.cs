@@ -276,4 +276,111 @@ public static class SettingsValidator
                 $"maintenance job interval must be <= {ceiling}, got {proposed}.");
         }
     }
+
+    /// <summary>
+    /// Validates a proposed single-field change against the rest of a live <see cref="SettingsSnapshot"/>,
+    /// in both directions of every cross-field bound (M3-6).
+    ///
+    /// <para>
+    /// The per-field <c>Validate*</c> methods above only check the proposed value against whichever
+    /// <em>other</em> current values it directly depends on (e.g. <see cref="ValidateServeUntil"/> checks
+    /// the proposal against the current <see cref="SettingsSnapshot.FreshUntil"/>). That is the forward
+    /// direction and is necessary, but not sufficient: several bounds run the other way too —
+    /// <see cref="SettingsSnapshot.FreshUntil"/> is the floor <see cref="SettingsSnapshot.ServeUntil"/>
+    /// depends on, so lowering <c>FreshUntil</c> without touching <c>ServeUntil</c> can silently strand
+    /// the already-persisted <c>ServeUntil</c> below its own floor. Same shape for
+    /// <c>FreshUntil</c> → <c>RefreshLead</c>'s ceiling, <c>ServeUntil</c> → <c>ActiveWindow</c>'s ceiling,
+    /// and <c>RefreshLead</c> → <c>WorkerCycleInterval</c>'s ceiling. A single-field validator call can
+    /// never see this because it is never handed the field that depends on it.
+    /// </para>
+    ///
+    /// <para>
+    /// This method closes that gap: it first validates <paramref name="proposed"/> against
+    /// <paramref name="current"/> using the normal forward-direction per-field validator, then — for
+    /// every other setting whose bound depends on <paramref name="key"/> — re-runs that dependent
+    /// setting's own validator with its own current value against the proposed change, rejecting the
+    /// whole change (not clamping either side) if the dependent would end up violating its own bound.
+    /// A caller wanting to move both settings needs two calls: first move the dependent field to a
+    /// value compatible with both its old and new anchor, then move the anchor field itself, so no
+    /// intermediate snapshot is ever out of bounds.
+    /// </para>
+    /// </summary>
+    /// <param name="current">The live snapshot before the change.</param>
+    /// <param name="key">Which setting <paramref name="proposed"/> is a new value for.</param>
+    /// <param name="proposed">
+    /// The proposed new value, boxed: a <see cref="TimeSpan"/> for every key except
+    /// <see cref="SettingKey.AiVerdictCacheRowCeiling"/> (<see cref="int"/>) and
+    /// <see cref="SettingKey.WorkerEnabled"/> (<see cref="bool"/>, never bounded — accepted as-is).
+    /// </param>
+    /// <param name="arrSyncInterval">
+    /// The AC0c-measured *arr RSS sync interval, same as every other caller of
+    /// <see cref="ValidateFreshUntil"/>/<see cref="ValidateActiveWindow"/> already supplies explicitly.
+    /// This is measured environment data, not a <see cref="SettingsSnapshot"/> field, and is never
+    /// derived from <see cref="SettingsSnapshot.ActiveWindow"/> — an operator is free to raise
+    /// <c>ActiveWindow</c> above its floor for their own reasons, so back-solving the interval from it
+    /// would silently drift once that happens.
+    /// </param>
+    public static void ValidateChange(SettingsSnapshot current, SettingKey key, object proposed, TimeSpan arrSyncInterval)
+    {
+        switch (key)
+        {
+            case SettingKey.FreshUntil:
+            {
+                var value = (TimeSpan)proposed;
+                ValidateFreshUntil(value, arrSyncInterval);
+                // Dependents: ServeUntil's floor and RefreshLead's ceiling are both "current FreshUntil".
+                ValidateServeUntil(current.ServeUntil, value);
+                ValidateRefreshLead(current.RefreshLead, value);
+                break;
+            }
+            case SettingKey.ServeUntil:
+            {
+                var value = (TimeSpan)proposed;
+                ValidateServeUntil(value, current.FreshUntil);
+                // Dependent: ActiveWindow's ceiling is min(7d, current ServeUntil).
+                ValidateActiveWindow(current.ActiveWindow, arrSyncInterval, value);
+                break;
+            }
+            case SettingKey.ActiveWindow:
+                ValidateActiveWindow((TimeSpan)proposed, arrSyncInterval, current.ServeUntil);
+                break;
+            case SettingKey.RefreshLead:
+            {
+                var value = (TimeSpan)proposed;
+                ValidateRefreshLead(value, current.FreshUntil);
+                // Dependent: WorkerCycleInterval's ceiling is current RefreshLead.
+                ValidateWorkerCycleInterval(current.WorkerCycleInterval, value);
+                break;
+            }
+            case SettingKey.WorkerCycleInterval:
+                ValidateWorkerCycleInterval((TimeSpan)proposed, current.RefreshLead);
+                break;
+            case SettingKey.WorkerEnabled:
+                _ = (bool)proposed; // unbounded; presence of the cast documents the expected shape.
+                break;
+            case SettingKey.AiVerdictCacheTtl:
+                ValidateAiVerdictCacheTtl((TimeSpan)proposed);
+                break;
+            case SettingKey.AiVerdictCacheRowCeiling:
+                ValidateAiVerdictCacheRowCeiling((int)proposed);
+                break;
+            case SettingKey.MetadataRefreshCadence:
+                ValidateMetadataRefreshCadence((TimeSpan)proposed);
+                break;
+            case SettingKey.MetadataNegativeTtl:
+                ValidateMetadataNegativeTtl((TimeSpan)proposed);
+                break;
+            case SettingKey.SuppressionAuditRetention:
+                ValidateSuppressionAuditRetention((TimeSpan)proposed);
+                break;
+            case SettingKey.QuerySnapshotTtl:
+                ValidateQuerySnapshotTtl((TimeSpan)proposed);
+                break;
+            case SettingKey.MaintenanceJobInterval:
+                ValidateMaintenanceJobInterval((TimeSpan)proposed);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(key), key, "Unknown setting key.");
+        }
+    }
 }
