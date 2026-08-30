@@ -178,8 +178,10 @@ fixture it loads every `<item><title>`, then for each item runs:
   `accept`/1.0, one fixed to `reject`/0.0.
 
 The harness asserts only `processedCount == fixture item count` per file — it makes zero
-correctness assertions. Run: `dotnet test tests/Arbitarr.Integration.Tests` under build-lock →
-**Test Run Successful. Total tests: 6. Passed: 6.** (5 fixture theory cases + 1 placeholder test.)
+correctness assertions. Run (pre-M6-2, before the fix below): `dotnet test
+tests/Arbitarr.Integration.Tests` under build-lock → **Test Run Successful. Total tests: 6. Passed:
+6.** (5 fixture theory cases + 1 placeholder test.) Post-M6-2 (see below), the project gained one
+more test elsewhere (unrelated to this change): **Total tests: 7. Passed: 7.**
 
 ### Per-fixture item counts (all asserted count == fixture item count)
 
@@ -224,6 +226,52 @@ sections above claimed otherwise (they are entirely about the numbering side), b
 recording explicitly since it is exactly the kind of "identity context still gets results wrong"
 finding plan step 1 asks for, and it generalizes beyond the two franchise fixtures to every fixture
 in the corpus.
+
+### M6-2 update: `SeriesNameExtractor.Extract` wired ahead of `AlternateTitleMatcher.Matches` in the harness
+
+Per the (a) root-cause finding above, the harness's step (a) has been changed from matching the
+**raw** release title directly to first calling `SeriesNameExtractor.Extract(title)` (falling back
+to the raw title only when `Extract` returns `null`), then matching the extracted series name. This
+is a harness-only change (`tests/Arbitarr.Integration.Tests/IdentityAndAiGateFixtureHarnessTests.cs`
+lines ~129-137) — no `Arbitarr.Media`/`Arbitarr.Core.Identity` production code changed, consistent
+with `AlternateTitleMatcher`'s deliberately caller-side-composition design (see
+`SeriesNameExtractorMatcherIntegrationTests.cs`).
+
+**Before → after, re-running `dotnet test tests/Arbitarr.Integration.Tests
+--logger "console;verbosity=detailed"`:**
+
+| Fixture | Items | `(none)` before | `(none)` after | Delta |
+|---|---|---|---|---|
+| `ghost-in-the-shell-arise-alternative-architecture.xml` | 0 | 0 | 0 | — (empty fixture) |
+| `ac10-sweep-onepiece-zero-results.xml` | 0 | 0 | 0 | — (empty fixture) |
+| `ghost-in-the-shell-stand-alone-complex.xml` | 3 | 3 | 3 | no change |
+| `ghost-in-the-shell-generic.xml` | 27 | 27 | 27 | no change |
+| `bleach-tvsearch.xml` | 90 | 90 | 7 | **83 items now match `Bleach`** |
+| **Total (non-empty fixtures)** | **120** | **120** | **37** | **83 gained, 0 regressed** |
+
+83 of the 90 `bleach-tvsearch.xml` items now correctly resolve to identity `Bleach` (extracted
+series names like `"Bleach"` and `"BLEACH"` now exact-match the `Bleach` identity's `PrimaryTitle`
+post-extraction, where the raw release title never could). This is a real, positive, non-regressing
+improvement: every item that matched `(none)` before still does now (37 residual `(none)` results
+are a strict subset of the prior 120), and nothing that used to match now fails to.
+
+**Residual `(none)` results (37 total) are a known, out-of-scope-for-M6 gap, not a regression** —
+all trace to a colon-punctuation mismatch between `SeriesNameExtractor`'s output (which strips
+punctuation it doesn't recognize as a title separator) and the declared `SeriesIdentity`
+titles/alternates (which retain the colon):
+
+- `ghost-in-the-shell-generic.xml` (27/27 still `(none)`): extracted series names such as `"Ghost In
+  The Shell SAC 2045"`/`"...SAC2045"` (no colon) don't exact-match `Sac2045`'s
+  `PrimaryTitle: "Ghost in the Shell: SAC_2045"` (has colon) or its empty `AlternateTitles`.
+- `ghost-in-the-shell-stand-alone-complex.xml` (3/3 still `(none)`): extracted `"Ghost In The Shell
+  Stand Alone Complex"` (no colon) doesn't exact-match `StandAloneComplex`'s
+  `PrimaryTitle: "Ghost in the Shell: Stand Alone Complex"` (has colon).
+- `bleach-tvsearch.xml` residual (7/90 still `(none)`): all extract to `"BLEACH Thousand-Year Blood
+  War"` (no colon), which doesn't exact-match `Bleach`'s alternate
+  `"Bleach: Thousand-Year Blood War"` (has colon).
+
+Per explicit instruction, `SeriesNameExtractor` is **not** being tuned in this M6 pass to close this
+gap — it is recorded here as evidence for a future pass, same as the pre-existing findings above.
 
 ### (b) `FranchiseClassifier.Classify` result — confirms the hand-trace's sibling framing, executed
 
