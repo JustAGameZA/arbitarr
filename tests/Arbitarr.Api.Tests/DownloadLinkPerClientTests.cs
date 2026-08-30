@@ -1,6 +1,11 @@
 using Arbitarr.Api.Search;
 using Arbitarr.Core.Sources;
+using Arbitarr.Data;
+using Arbitarr.Data.Filtering;
+using Arbitarr.Data.Settings;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -13,9 +18,29 @@ namespace Arbitarr.Api.Tests;
 /// pins that two different callers searching for the same release get back two distinct rendered
 /// links, each carrying its own apikey.
 /// </summary>
-public class DownloadLinkPerClientTests
+public sealed class DownloadLinkPerClientTests : IDisposable
 {
-    private static async Task<string> RenderWithCallerKeyAsync(string callerApiKey)
+    private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"arbitarr-downloadlink-test-{Guid.NewGuid():N}.db");
+
+    public void Dispose()
+    {
+        SqliteConnection.ClearAllPools();
+        if (File.Exists(_dbPath))
+        {
+            File.Delete(_dbPath);
+        }
+    }
+
+    private ArbitarrDbContext CreateContext()
+    {
+        var optionsBuilder = new DbContextOptionsBuilder<ArbitarrDbContext>();
+        optionsBuilder.UseSqlite($"Data Source={_dbPath}");
+        var context = new ArbitarrDbContext(optionsBuilder.Options);
+        context.Database.Migrate();
+        return context;
+    }
+
+    private async Task<string> RenderWithCallerKeyAsync(string callerApiKey)
     {
         var source = new FakeUpstreamSource("eztv", searchResults: new[] { TestReleases.Torrent().Candidate });
         var mergeStage = new UpstreamMergeStage(new[] { (IUpstreamSource)source });
@@ -23,6 +48,13 @@ public class DownloadLinkPerClientTests
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var snapshotService = new PaginationSnapshotService(mergeStage, store, time);
         var releaseLookup = new InMemoryReleaseLookup();
+
+        using var context = CreateContext();
+        var filterStage = new FilterStage(
+            new FilterProfileLoader(context),
+            new SettingsReader(context),
+            context,
+            time);
 
         var services = new ServiceCollection();
         services.AddLogging();
@@ -41,6 +73,7 @@ public class DownloadLinkPerClientTests
             0,
             callerApiKey,
             snapshotService,
+            filterStage,
             releaseLookup,
             httpContext.Request,
             CancellationToken.None);

@@ -1,7 +1,12 @@
 using Arbitarr.Api.Rendering;
 using Arbitarr.Api.Search;
 using Arbitarr.Core.Sources;
+using Arbitarr.Data;
+using Arbitarr.Data.Filtering;
+using Arbitarr.Data.Settings;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -11,8 +16,28 @@ namespace Arbitarr.Api.Tests;
 /// Golden-XML tests for search-result rendering (M1-4): pure passthrough of title/size/
 /// category/guid, correct family-specific namespace prefix and enclosure MIME type.
 /// </summary>
-public class SearchXmlGoldenTests
+public sealed class SearchXmlGoldenTests : IDisposable
 {
+    private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"arbitarr-searchxmlgolden-test-{Guid.NewGuid():N}.db");
+
+    public void Dispose()
+    {
+        SqliteConnection.ClearAllPools();
+        if (File.Exists(_dbPath))
+        {
+            File.Delete(_dbPath);
+        }
+    }
+
+    private ArbitarrDbContext CreateContext()
+    {
+        var optionsBuilder = new DbContextOptionsBuilder<ArbitarrDbContext>();
+        optionsBuilder.UseSqlite($"Data Source={_dbPath}");
+        var context = new ArbitarrDbContext(optionsBuilder.Options);
+        context.Database.Migrate();
+        return context;
+    }
+
     [Fact]
     public void Torznab_search_results_render_expected_namespace_and_enclosure()
     {
@@ -90,6 +115,13 @@ public class SearchXmlGoldenTests
         httpContext.Request.Scheme = "http";
         httpContext.Request.Host = new HostString("localhost");
 
+        using var context = CreateContext();
+        var filterStage = new FilterStage(
+            new FilterProfileLoader(context),
+            new SettingsReader(context),
+            context,
+            time);
+
         var result = await SearchEndpoint.HandleTorznabAsync(
             "search",
             null,
@@ -98,6 +130,7 @@ public class SearchXmlGoldenTests
             0,
             "caller-api-key",
             snapshotService,
+            filterStage,
             releaseLookup,
             httpContext.Request,
             CancellationToken.None);

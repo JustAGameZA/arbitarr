@@ -3,6 +3,11 @@ using Arbitarr.Api.Search;
 using Arbitarr.Core.Releases;
 using Arbitarr.Core.Security;
 using Arbitarr.Core.Sources;
+using Arbitarr.Data;
+using Arbitarr.Data.Filtering;
+using Arbitarr.Data.Settings;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -27,8 +32,28 @@ internal sealed class SingleKeyResolver : IClientApiKeyResolver
 /// rate-limit code path never surfaces as a 5xx (that behavior is exercised end-to-end in
 /// Arbitarr.Api's SearchEndpoint; here we confirm the rendered XML shape it produces).
 /// </summary>
-public class ErrorXmlGoldenTests
+public sealed class ErrorXmlGoldenTests : IDisposable
 {
+    private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"arbitarr-errorxmlgolden-test-{Guid.NewGuid():N}.db");
+
+    public void Dispose()
+    {
+        SqliteConnection.ClearAllPools();
+        if (File.Exists(_dbPath))
+        {
+            File.Delete(_dbPath);
+        }
+    }
+
+    private ArbitarrDbContext CreateContext()
+    {
+        var optionsBuilder = new DbContextOptionsBuilder<ArbitarrDbContext>();
+        optionsBuilder.UseSqlite($"Data Source={_dbPath}");
+        var context = new ArbitarrDbContext(optionsBuilder.Options);
+        context.Database.Migrate();
+        return context;
+    }
+
     [Fact]
     public void Torznab_error_renders_code_and_description()
     {
@@ -136,6 +161,13 @@ public class ErrorXmlGoldenTests
         httpContext.Request.Scheme = "http";
         httpContext.Request.Host = new Microsoft.AspNetCore.Http.HostString("localhost");
 
+        using var context = CreateContext();
+        var filterStage = new FilterStage(
+            new FilterProfileLoader(context),
+            new SettingsReader(context),
+            context,
+            time);
+
         var result = await SearchEndpoint.HandleTorznabAsync(
             "search",
             null,
@@ -144,6 +176,7 @@ public class ErrorXmlGoldenTests
             0,
             "correct-key",
             snapshotService,
+            filterStage,
             releaseLookup,
             httpContext.Request,
             CancellationToken.None);
