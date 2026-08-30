@@ -175,3 +175,25 @@ th {
   cursor: pointer;
   font: inherit;
 }
+
+.explain-button {
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel-bg);
+  color: var(--fg);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+}
+
+.explain-detail-row td {
+  white-space: normal;
+}
+
+.explain-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+}

@@ -43,7 +43,7 @@ function renderResults(releases) {
 
   const rows = releases
     .map(
-      (r) => `<tr>
+      (r, i) => `<tr>
         <td>${escapeHtml(r.title)}</td>
         <td>${escapeHtml(r.guid)}</td>
         <td>${r.size}</td>
@@ -51,14 +51,48 @@ function renderResults(releases) {
         <td>${escapeHtml(r.sourceName)}</td>
         <td>${escapeHtml(new Date(r.pubDate).toLocaleString())}</td>
         <td>${escapeHtml(r.aiVerdict || "—")}</td>
-      </tr>`,
+        <td><button type="button" class="explain-button" data-guid="${escapeHtml(r.guid)}" data-row="${i}">Explain</button></td>
+      </tr>
+      <tr id="explain-row-${i}" class="explain-detail-row" hidden><td colspan="8"></td></tr>`,
     )
     .join("");
 
   body.innerHTML = `<table>
-    <thead><tr><th>Title</th><th>Guid</th><th>Size</th><th>Category</th><th>Source</th><th>Published</th><th>AI Verdict</th></tr></thead>
+    <thead><tr><th>Title</th><th>Guid</th><th>Size</th><th>Category</th><th>Source</th><th>Published</th><th>AI Verdict</th><th></th></tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
+
+  body.querySelectorAll(".explain-button").forEach((button) => {
+    button.addEventListener("click", () => handleExplainClick(button));
+  });
+}
+
+// AC26a/AC-M7b (M7-9 UI half): per-result "Explain" action calling
+// GET /api/admin/search/{proxyGuid}/explanation, showing the upstream-reported title
+// (OriginalTitle) side by side with the title actually used for matching (Title), so an operator
+// auditing a wrong match can see whether normalization altered what the source sent.
+async function handleExplainClick(button) {
+  const guid = button.getAttribute("data-guid");
+  const rowIndex = button.getAttribute("data-row");
+  const detailRow = document.getElementById(`explain-row-${rowIndex}`);
+  const detailCell = detailRow.querySelector("td");
+  const adminKey = document.getElementById("admin-key").value;
+
+  detailRow.hidden = false;
+  detailCell.innerHTML = "<em>Loading…</em>";
+
+  try {
+    const explanation = await fetchJson(
+      `/api/admin/search/${encodeURIComponent(guid)}/explanation`,
+      adminKey,
+    );
+    detailCell.innerHTML = `<div class="explain-detail">
+      <span><strong>Title used for matching:</strong> ${escapeHtml(explanation.title)}</span>
+      <span><strong>Original upstream title:</strong> ${escapeHtml(explanation.originalTitle)}</span>
+    </div>`;
+  } catch (err) {
+    detailCell.innerHTML = `<p class="error-text">Explanation failed: ${escapeHtml(err.message)}</p>`;
+  }
 }
 
 function renderError(err) {
