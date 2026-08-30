@@ -56,7 +56,7 @@ function renderSearches(entries) {
         <td>${e.resolvedIdentity ? escapeHtml(e.resolvedIdentity) : ""}</td>
         <td>${e.resultCount}</td>
         <td>${e.elapsedMilliseconds}ms</td>
-        <td>${escapeHtml(e.band)}</td>
+        <td>${e.band ? escapeHtml(e.band) : ""}</td>
       </tr>`,
     )
     .join("");
