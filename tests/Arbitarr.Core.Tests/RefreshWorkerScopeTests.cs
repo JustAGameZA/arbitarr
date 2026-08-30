@@ -198,13 +198,22 @@ public sealed class RefreshWorkerScopeTests
 
         // Drive several cycles: each throws out of the store, and each must be swallowed and retried
         // rather than faulting the BackgroundService (which would otherwise take the host down).
-        for (var i = 0; i < 3; i++)
+        // Advancing the fake clock releases the worker's Task.Delay, but its continuation is
+        // scheduled rather than run inline, so wait for the attempt count to actually move instead
+        // of assuming a single yield hands control over (which is racy on a loaded CI runner).
+        for (var cycle = 2; cycle <= 3; cycle++)
         {
-            clock.Advance(Options().WorkerCycleInterval);
-            await Task.Yield();
-        }
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+            while (Volatile.Read(ref store.SelectionAttempts) < cycle && DateTime.UtcNow < deadline)
+            {
+                clock.Advance(Options().WorkerCycleInterval);
+                await Task.Delay(10);
+            }
 
-        Assert.True(store.SelectionAttempts > 1, $"expected repeated retries, saw {store.SelectionAttempts}");
+            Assert.True(
+                Volatile.Read(ref store.SelectionAttempts) >= cycle,
+                $"expected at least {cycle} retries, saw {store.SelectionAttempts}");
+        }
         Assert.NotEqual(TaskStatus.Faulted, worker.ExecuteTask?.Status);
         Assert.Null(worker.ExecuteTask?.Exception);
 
