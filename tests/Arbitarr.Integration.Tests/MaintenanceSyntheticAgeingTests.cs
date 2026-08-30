@@ -20,12 +20,10 @@ namespace Arbitarr.Integration.Tests;
 ///      delete cycle that only grows the file would fail this test;
 ///   3. no audit-log entry inside its retention window is ever evicted.
 ///
-/// Scope note: only <see cref="SuppressionAuditLogEntry"/> is exercised here. Of the plan's four
-/// accumulating tables, this is the one that is both (a) already pruned by <see cref="MaintenanceJob"/>
-/// today and (b) unambiguously on master already (not part of the not-yet-merged M3/PR#17 work).
-/// TODO(M3 follow-up): once PR #17 (M3, SearchResultCacheEntries' proactive-refresh path) reaches
-/// master, extend this synthetic-ageing test to also drive SearchResultCacheEntries through the
-/// same insert/prune/vacuum cycle — do NOT merge m3 into m7-full-ui to get early access to it.
+/// Both the suppression audit log (retention-window pruning) and the search-result cache
+/// (strict <c>age &gt; serve_until</c> pruning, M3) are driven through the same insert/prune/vacuum
+/// cycle, so the steady-state and page-reclaim assertions cover the two tables that accumulate
+/// fastest in production.
 /// </summary>
 public sealed class MaintenanceSyntheticAgeingTests : IDisposable
 {
@@ -65,7 +63,20 @@ public sealed class MaintenanceSyntheticAgeingTests : IDisposable
         => new(ArbitarrDbContextOptionsFactory.Create(_connectionFactory));
 
     private static SettingsSnapshot SettingsWithRetention(TimeSpan retention)
-        => SettingsSnapshot.Defaults(TimeSpan.FromMinutes(15)) with { SuppressionAuditRetention = retention };
+        => SettingsSnapshot.Defaults(TimeSpan.FromMinutes(15)) with { SuppressionAuditRetention = retention, ServeUntil = retention };
+
+    /// <summary>
+    /// Size of the main database file after forcing a WAL checkpoint. In WAL mode, unflushed pages
+    /// live in the <c>-wal</c> sidecar, so sampling the main file alone mid-run under-reports (it can
+    /// sit at a single page for the whole run and then jump on the final checkpoint, which reads as
+    /// false growth). Checkpoint first so every sample measures the same thing.
+    /// </summary>
+    private long MeasureCheckpointedFileSize()
+    {
+        QueryScalarLong("PRAGMA wal_checkpoint(TRUNCATE);");
+        SqliteConnection.ClearAllPools();
+        return new FileInfo(_databasePath).Length;
+    }
 
     private long QueryScalarLong(string pragmaSql)
     {
@@ -98,6 +109,19 @@ public sealed class MaintenanceSyntheticAgeingTests : IDisposable
                 });
             }
 
+            for (var i = 0; i < rowsToInsertThisCycle; i++)
+            {
+                context.SearchResultCacheEntries.Add(new SearchResultCacheEntry
+                {
+                    QueryKey = $"synthetic-ageing-query-{now.Ticks}-{i}",
+                    PayloadJson = "[]",
+                    FetchedAt = now,
+                    FreshUntil = now + TimeSpan.FromMinutes(15),
+                    ServeUntil = now + Retention,
+                    LastRequestedAt = now,
+                });
+            }
+
             await context.SaveChangesAsync();
         }
 
@@ -113,6 +137,7 @@ public sealed class MaintenanceSyntheticAgeingTests : IDisposable
         const int cycles = 8;
 
         var rowCountsAfterEachCycle = new List<int>();
+        var cacheRowCountsAfterEachCycle = new List<int>();
         var fileSizesAfterEachCycle = new List<long>();
 
         for (var cycle = 0; cycle < cycles; cycle++)
@@ -127,10 +152,10 @@ public sealed class MaintenanceSyntheticAgeingTests : IDisposable
             using (var context = CreateContext())
             {
                 rowCountsAfterEachCycle.Add(await context.SuppressionAuditLogEntries.CountAsync());
+                cacheRowCountsAfterEachCycle.Add(await context.SearchResultCacheEntries.CountAsync());
             }
 
-            SqliteConnection.ClearAllPools();
-            fileSizesAfterEachCycle.Add(new FileInfo(_databasePath).Length);
+            fileSizesAfterEachCycle.Add(MeasureCheckpointedFileSize());
         }
 
         // One more cycle to prune everything aged past retention from the final insert batch too,
@@ -148,14 +173,21 @@ public sealed class MaintenanceSyntheticAgeingTests : IDisposable
             var finalRowCount = await context.SuppressionAuditLogEntries.CountAsync();
             Assert.True(finalRowCount < rowsPerCycle,
                 $"Expected row count to stabilise below one cycle's insert batch ({rowsPerCycle}), but was {finalRowCount} — rows are accumulating instead of being pruned.");
+
+            // Same steady-state bound for the search-result cache: its prune predicate is strictly
+            // age > serve_until (pinned to Retention above), so every prior cycle's rows are past it.
+            var finalCacheRowCount = await context.SearchResultCacheEntries.CountAsync();
+            Assert.True(finalCacheRowCount < rowsPerCycle,
+                $"Expected search-result cache row count to stabilise below one cycle's insert batch ({rowsPerCycle}), but was {finalCacheRowCount} — SearchResultCacheEntries are accumulating instead of being pruned.");
+            Assert.True(cacheRowCountsAfterEachCycle.Max() <= 2 * rowsPerCycle,
+                $"Search-result cache peaked at {cacheRowCountsAfterEachCycle.Max()} rows mid-run; it must never hold more than two cycles' worth.");
         }
 
         // (2) File size stabilises rather than growing monotonically across cycles: compare the
         // last recorded size against the largest size seen mid-run. A VACUUM-less delete cycle
         // (rows logically removed but pages never reclaimed) would keep growing the file every
         // cycle, so the final size would exceed the max of all prior cycles instead of levelling.
-        SqliteConnection.ClearAllPools();
-        var finalFileSize = new FileInfo(_databasePath).Length;
+        var finalFileSize = MeasureCheckpointedFileSize();
         var maxObservedFileSize = fileSizesAfterEachCycle.Max();
         Assert.True(finalFileSize <= maxObservedFileSize,
             $"Expected on-disk file size to stabilise/shrink after pruning (final {finalFileSize} bytes, max observed {maxObservedFileSize} bytes) — the file is still growing, which means pruning is not reclaiming space.");
@@ -206,6 +238,56 @@ public sealed class MaintenanceSyntheticAgeingTests : IDisposable
         using (var context = CreateContext())
         {
             Assert.Single(context.SuppressionAuditLogEntries, e => e.ReleaseIdentifier == "still-within-retention");
+        }
+    }
+
+    /// <summary>
+    /// The search-result cache counterpart of the audit-log survival check: a row younger than
+    /// serve_until is legitimately valid fallback data (P1) and must survive every maintenance
+    /// pass — pruning it early is the D3 anti-pattern <see cref="PrunePredicates"/> guards against.
+    /// </summary>
+    [Fact]
+    public async Task No_search_result_cache_entry_inside_serve_until_is_evicted()
+    {
+        var serveUntil = TimeSpan.FromDays(30);
+
+        using (var context = CreateContext())
+        {
+            var now = _timeProvider.GetUtcNow();
+            context.SearchResultCacheEntries.Add(new SearchResultCacheEntry
+            {
+                QueryKey = "still-within-serve-until",
+                PayloadJson = "[]",
+                FetchedAt = now,
+                FreshUntil = now + TimeSpan.FromMinutes(15),
+                ServeUntil = now + serveUntil,
+                LastRequestedAt = now,
+            });
+            await context.SaveChangesAsync();
+        }
+
+        for (var i = 0; i < 5; i++)
+        {
+            _timeProvider.Advance(serveUntil / 10);
+
+            using var context = CreateContext();
+            var job = new MaintenanceJob(context, _timeProvider);
+            var result = await job.RunAsync(SettingsWithRetention(serveUntil));
+
+            Assert.Equal(0, result.SearchResultCacheRowsPruned);
+        }
+
+        using (var context = CreateContext())
+        {
+            Assert.Single(context.SearchResultCacheEntries, e => e.QueryKey == "still-within-serve-until");
+        }
+
+        // One step past serve_until and the same row is pruned: the predicate is strict age > serve_until.
+        _timeProvider.Advance(serveUntil);
+        using (var context = CreateContext())
+        {
+            var result = await new MaintenanceJob(context, _timeProvider).RunAsync(SettingsWithRetention(serveUntil));
+            Assert.Equal(1, result.SearchResultCacheRowsPruned);
         }
     }
 }
