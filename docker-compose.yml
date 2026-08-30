@@ -1,0 +1,24 @@
+# M7-9: reference compose file for running Arbitarr as a container.
+#
+# Every value below is a placeholder (RFC 5737/2606 example addresses, "REDACTED" secrets) — copy
+# this file and replace them with your real NZBHydra2 endpoint, API keys, and desired admin key
+# before use. Never commit real hosts or keys here (AC21/D2).
+services:
+  arbitarr:
+    build: .
+    image: arbitarr:latest
+    container_name: arbitarr
+    ports:
+      - "8080:8080"
+    volumes:
+      # Runtime state: SQLite database, per-instance HMAC secret, fetched datasets (AC21).
+      - ./config:/config
+    environment:
+      # Upstream NZBHydra2 instance Arbitarr queries. Replace with your real host/port.
+      ARBITARR__SOURCES__NZBHYDRA__BASEURL: "http://nzbhydra2.example.invalid:5076"
+      # NZBHydra2's own API key (distinct from Arbitarr's client/admin keys below).
+      ARBITARR__SOURCES__NZBHYDRA__APIKEY: "REDACTED"
+      # Inbound Torznab/Newznab client apikey(s) *arr apps authenticate to Arbitarr with (M1-9).
+      # A single key is simplest; ARBITARR__CLIENTAPIKEYS__0__NAME / __KEY supports naming multiple.
+      ARBITARR__APIKEY: "REDACTED"
+    restart: unless-stopped
