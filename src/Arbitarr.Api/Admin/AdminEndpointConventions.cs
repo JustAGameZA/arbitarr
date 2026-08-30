@@ -11,8 +11,7 @@ namespace Arbitarr.Api.Admin;
 /// </summary>
 public static class AdminEndpointConventions
 {
-    public static TBuilder RequireAdminApiKey<TBuilder>(this TBuilder builder)
-        where TBuilder : IEndpointConventionBuilder
+    public static RouteHandlerBuilder RequireAdminApiKey(this RouteHandlerBuilder builder)
     {
         builder.WithClassification(RouteClassification.AdminMutating);
         builder.AddEndpointFilter<AdminApiKeyFilter>();
