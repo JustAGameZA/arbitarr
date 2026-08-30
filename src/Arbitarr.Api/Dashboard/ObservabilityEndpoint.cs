@@ -37,10 +37,21 @@ public static class ObservabilityEndpoint
         ArbitarrDbContext db,
         CancellationToken cancellationToken)
     {
-        var entries = await db.MetadataCacheEntries.LongCountAsync(cancellationToken);
-        var negative = await db.MetadataCacheEntries.LongCountAsync(e => e.IsNegative, cancellationToken);
+        // Total and negative-entry counts collapse into a single scan via a conditional sum. The
+        // distinct-series count stays its own query: EF Core cannot translate a nested Distinct()
+        // inside a grouped projection, so folding it in would force client-side evaluation.
+        var totals = await db.MetadataCacheEntries
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                Entries = g.LongCount(),
+                Negative = g.LongCount(e => e.IsNegative),
+            })
+            .SingleOrDefaultAsync(cancellationToken);
         var series = await db.MetadataCacheEntries.Select(e => e.SeriesKey).Distinct().LongCountAsync(cancellationToken);
 
-        return new ObservabilityResponse(counters.Snapshot(), new MetadataCacheCoverage(entries, negative, series));
+        var coverage = new MetadataCacheCoverage(totals?.Entries ?? 0, totals?.Negative ?? 0, series);
+
+        return new ObservabilityResponse(counters.Snapshot(), coverage);
     }
 }

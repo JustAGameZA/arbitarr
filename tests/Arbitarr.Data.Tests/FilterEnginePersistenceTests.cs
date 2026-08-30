@@ -1,3 +1,5 @@
+using System.Globalization;
+using Arbitarr.Core.Settings;
 using Arbitarr.Core.Filtering;
 using Arbitarr.Core.Releases;
 using Arbitarr.Data.Entities;
@@ -232,6 +234,70 @@ public sealed class FilterEnginePersistenceTests : IDisposable
 
         Assert.Equal(0.9, threshold);
     }
+
+    /// <summary>
+    /// Behaviour lock for every <see cref="SettingsReader"/> key: a well-formed stored row is
+    /// honoured. Two of the five keys were previously covered only on the no-row default path, so
+    /// the stored-value branch went unverified.
+    /// </summary>
+    [Theory]
+    [InlineData(SettingKey.ShadowMode, "false")]
+    [InlineData(SettingKey.AiConfidenceThreshold, "0.55")]
+    [InlineData(SettingKey.TitleNormalizationEnabled, "true")]
+    [InlineData(SettingKey.ClassifierPollInterval, "00:02:30")]
+    [InlineData(SettingKey.SyncArbitrationBudget, "00:00:07")]
+    public async Task SettingsReader_StoredValue_IsHonoured(SettingKey key, string stored)
+    {
+        using var context = CreateContext();
+        context.Database.Migrate();
+        context.Settings.Add(new SettingEntry { Name = key.ToString(), Value = stored });
+        await context.SaveChangesAsync();
+
+        var reader = new SettingsReader(context);
+
+        Assert.Equal(stored, Stringify(await ReadAsync(reader, key)));
+    }
+
+    /// <summary>
+    /// Behaviour lock: an unparseable stored value falls back to the catalog default rather than
+    /// throwing. This is the branch a shared parse helper must preserve for all five keys.
+    /// </summary>
+    [Theory]
+    [InlineData(SettingKey.ShadowMode)]
+    [InlineData(SettingKey.AiConfidenceThreshold)]
+    [InlineData(SettingKey.TitleNormalizationEnabled)]
+    [InlineData(SettingKey.ClassifierPollInterval)]
+    [InlineData(SettingKey.SyncArbitrationBudget)]
+    public async Task SettingsReader_MalformedStoredValue_FallsBackToCatalogDefault(SettingKey key)
+    {
+        using var context = CreateContext();
+        context.Database.Migrate();
+        context.Settings.Add(new SettingEntry { Name = key.ToString(), Value = "not-a-valid-value" });
+        await context.SaveChangesAsync();
+
+        var reader = new SettingsReader(context);
+
+        Assert.Equal(SettingsCatalog.GetDefault(key), await ReadAsync(reader, key));
+    }
+
+    private static async Task<object> ReadAsync(SettingsReader reader, SettingKey key) => key switch
+    {
+        SettingKey.ShadowMode => await reader.GetShadowModeAsync(),
+        SettingKey.AiConfidenceThreshold => await reader.GetAiConfidenceThresholdAsync(),
+        SettingKey.TitleNormalizationEnabled => await reader.GetTitleNormalizationEnabledAsync(),
+        SettingKey.ClassifierPollInterval => await reader.GetClassifierPollIntervalAsync(),
+        SettingKey.SyncArbitrationBudget => await reader.GetSyncArbitrationBudgetAsync(),
+        _ => throw new ArgumentOutOfRangeException(nameof(key), key, "key is not served by SettingsReader"),
+    };
+
+    /// <summary>Renders a read value the same way the reader's own parsers accept it.</summary>
+    private static string Stringify(object value) => value switch
+    {
+        bool b => b ? "true" : "false",
+        double d => d.ToString(CultureInfo.InvariantCulture),
+        TimeSpan t => t.ToString(null, CultureInfo.InvariantCulture),
+        _ => value.ToString()!,
+    };
 
     private static FilterProfile ToProfile(string name, List<FilterRuleEntry> entries)
     {

@@ -23,72 +23,45 @@ public sealed class SettingsReader
     }
 
     /// <summary>Resolves <see cref="SettingKey.ShadowMode"/>, defaulting to ON (D3) when no row exists.</summary>
-    public async Task<bool> GetShadowModeAsync(CancellationToken cancellationToken = default)
-    {
-        var raw = await GetRawAsync(SettingKey.ShadowMode, cancellationToken).ConfigureAwait(false);
-        if (raw is null)
-        {
-            return (bool)SettingsCatalog.GetDefault(SettingKey.ShadowMode);
-        }
-
-        return bool.TryParse(raw, out var value) ? value : (bool)SettingsCatalog.GetDefault(SettingKey.ShadowMode);
-    }
+    public Task<bool> GetShadowModeAsync(CancellationToken cancellationToken = default) =>
+        ReadAsync<bool>(SettingKey.ShadowMode, bool.TryParse, cancellationToken);
 
     /// <summary>Resolves <see cref="SettingKey.AiConfidenceThreshold"/>, defaulting to 0.9 (D3) when no row exists.</summary>
-    public async Task<double> GetAiConfidenceThresholdAsync(CancellationToken cancellationToken = default)
-    {
-        var raw = await GetRawAsync(SettingKey.AiConfidenceThreshold, cancellationToken).ConfigureAwait(false);
-        if (raw is null)
-        {
-            return (double)SettingsCatalog.GetDefault(SettingKey.AiConfidenceThreshold);
-        }
-
-        return double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
-            ? value
-            : (double)SettingsCatalog.GetDefault(SettingKey.AiConfidenceThreshold);
-    }
+    public Task<double> GetAiConfidenceThresholdAsync(CancellationToken cancellationToken = default) =>
+        ReadAsync<double>(
+            SettingKey.AiConfidenceThreshold,
+            static (string raw, out double value) => double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out value),
+            cancellationToken);
 
     /// <summary>Resolves <see cref="SettingKey.TitleNormalizationEnabled"/>, defaulting to OFF (AC26b) when no row exists.</summary>
-    public async Task<bool> GetTitleNormalizationEnabledAsync(CancellationToken cancellationToken = default)
-    {
-        var raw = await GetRawAsync(SettingKey.TitleNormalizationEnabled, cancellationToken).ConfigureAwait(false);
-        if (raw is null)
-        {
-            return (bool)SettingsCatalog.GetDefault(SettingKey.TitleNormalizationEnabled);
-        }
-
-        return bool.TryParse(raw, out var value) ? value : (bool)SettingsCatalog.GetDefault(SettingKey.TitleNormalizationEnabled);
-    }
+    public Task<bool> GetTitleNormalizationEnabledAsync(CancellationToken cancellationToken = default) =>
+        ReadAsync<bool>(SettingKey.TitleNormalizationEnabled, bool.TryParse, cancellationToken);
 
     /// <summary>Resolves <see cref="SettingKey.ClassifierPollInterval"/>, defaulting to 1 minute when no row exists.</summary>
-    public async Task<TimeSpan> GetClassifierPollIntervalAsync(CancellationToken cancellationToken = default)
-    {
-        var raw = await GetRawAsync(SettingKey.ClassifierPollInterval, cancellationToken).ConfigureAwait(false);
-        if (raw is null)
-        {
-            return (TimeSpan)SettingsCatalog.GetDefault(SettingKey.ClassifierPollInterval);
-        }
-
-        return TimeSpan.TryParse(raw, CultureInfo.InvariantCulture, out var value)
-            ? value
-            : (TimeSpan)SettingsCatalog.GetDefault(SettingKey.ClassifierPollInterval);
-    }
+    public Task<TimeSpan> GetClassifierPollIntervalAsync(CancellationToken cancellationToken = default) =>
+        ReadAsync<TimeSpan>(SettingKey.ClassifierPollInterval, ParseTimeSpan, cancellationToken);
 
     /// <summary>
     /// AC14b: resolves <see cref="SettingKey.SyncArbitrationBudget"/>, defaulting to 5s when no row
     /// exists. Consumed by the ad-hoc search endpoint to bound its synchronous-AI opt-in.
     /// </summary>
-    public async Task<TimeSpan> GetSyncArbitrationBudgetAsync(CancellationToken cancellationToken = default)
-    {
-        var raw = await GetRawAsync(SettingKey.SyncArbitrationBudget, cancellationToken).ConfigureAwait(false);
-        if (raw is null)
-        {
-            return (TimeSpan)SettingsCatalog.GetDefault(SettingKey.SyncArbitrationBudget);
-        }
+    public Task<TimeSpan> GetSyncArbitrationBudgetAsync(CancellationToken cancellationToken = default) =>
+        ReadAsync<TimeSpan>(SettingKey.SyncArbitrationBudget, ParseTimeSpan, cancellationToken);
 
-        return TimeSpan.TryParse(raw, CultureInfo.InvariantCulture, out var value)
-            ? value
-            : (TimeSpan)SettingsCatalog.GetDefault(SettingKey.SyncArbitrationBudget);
+    private delegate bool TryParse<T>(string raw, out T value);
+
+    private static bool ParseTimeSpan(string raw, out TimeSpan value) =>
+        TimeSpan.TryParse(raw, CultureInfo.InvariantCulture, out value);
+
+    /// <summary>
+    /// Single read path for every key: a missing row and an unparseable stored value both resolve to
+    /// <see cref="SettingsCatalog.GetDefault"/>, so a bad row can never fault the live filtering path.
+    /// </summary>
+    private async Task<T> ReadAsync<T>(SettingKey key, TryParse<T> tryParse, CancellationToken cancellationToken)
+    {
+        var raw = await GetRawAsync(key, cancellationToken).ConfigureAwait(false);
+
+        return raw is not null && tryParse(raw, out var value) ? value : (T)SettingsCatalog.GetDefault(key);
     }
 
     private async Task<string?> GetRawAsync(SettingKey key, CancellationToken cancellationToken)
