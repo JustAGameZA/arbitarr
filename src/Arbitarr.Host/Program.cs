@@ -95,10 +95,20 @@ builder.Services.AddScoped<SearchResultCacheStage>();
 builder.Services.AddScoped<SearchResultRefresher>();
 builder.Services.AddScoped<RefreshFetcher>(sp =>
     (_, entry, cancellationToken) => sp.GetRequiredService<SearchResultRefresher>().RefreshAsync(entry, cancellationToken));
-builder.Services.AddScoped<PaginationSnapshotService>();
 builder.Services.AddScoped<FilterProfileLoader>();
 builder.Services.AddScoped<ApiKeyProfileResolver>();
 builder.Services.AddScoped<SettingsReader>();
+
+// M7-8c/AC24: resolved via an explicit factory (rather than relying on DI's constructor
+// selection between PaginationSnapshotService's fixed-TTL and live-TTL overloads) so the
+// live-TTL ctor is always the one the Host wires up.
+builder.Services.AddScoped<ISnapshotTtlSource, SettingsSnapshotTtlSource>();
+builder.Services.AddScoped(sp => new PaginationSnapshotService(
+    sp.GetRequiredService<UpstreamMergeStage>(),
+    sp.GetRequiredService<SearchResultCacheStage>(),
+    sp.GetRequiredService<IQuerySnapshotStore>(),
+    sp.GetRequiredService<TimeProvider>(),
+    sp.GetRequiredService<ISnapshotTtlSource>()));
 
 // M7-7/R20: worker-health snapshot, singleton so both the hosted RefreshWorker (writer) and
 // StatusEndpoint (reader) share the same instance across the app's lifetime.
