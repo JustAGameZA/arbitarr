@@ -99,7 +99,8 @@ public class ClassifierWorkerLoadTests
     {
         public Task PutAsync(
             string releaseKeyHash, string modelName, string modelDigest, string promptVersion,
-            Verdict verdict, double confidence, CancellationToken cancellationToken = default) =>
+            Verdict verdict, double confidence, string? rewrittenTitle = null,
+            CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
     }
 }

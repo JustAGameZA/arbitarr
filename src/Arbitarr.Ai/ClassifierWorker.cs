@@ -60,6 +60,6 @@ public sealed class ClassifierWorker
             _modelIdentity.PromptVersion,
             verdict,
             result.Confidence,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 }

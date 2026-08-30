@@ -24,7 +24,12 @@ public interface IVerdictCacheReader
 /// <summary>A cached AI verdict as read by <see cref="IVerdictCacheReader"/>.</summary>
 /// <param name="Verdict">The cached verdict (<see cref="Filtering.Verdict.Accept"/> or <see cref="Filtering.Verdict.Reject"/>).</param>
 /// <param name="Confidence">Model-reported confidence in [0,1].</param>
-public sealed record CachedVerdict(Verdict Verdict, double Confidence);
+/// <param name="RewrittenTitle">
+/// Worker-produced, cached title rewrite (M5-8/AC26b, R17), or <see langword="null"/> when no
+/// rewrite was produced (normalization disabled at classify time, or the differential-parse guard
+/// rejected it). Never computed inline on the render path — only ever consumed here.
+/// </param>
+public sealed record CachedVerdict(Verdict Verdict, double Confidence, string? RewrittenTitle = null);
 
 /// <summary>
 /// Write-side counterpart of <see cref="IVerdictCacheReader"/>, used only by background
@@ -41,6 +46,11 @@ public interface IVerdictCacheWriter
     /// <paramref name="promptVersion"/> naturally produces a different key (R17) rather than
     /// overwriting a prior model's verdict in place.
     /// </summary>
+    /// <param name="rewrittenTitle">
+    /// Worker-produced title rewrite to cache alongside the verdict (M5-8/AC26b, R17), or
+    /// <see langword="null"/> when no rewrite applies. Defaulted so existing callers/fakes that
+    /// predate title normalization keep compiling unchanged.
+    /// </param>
     Task PutAsync(
         string releaseKeyHash,
         string modelName,
@@ -48,5 +58,6 @@ public interface IVerdictCacheWriter
         string promptVersion,
         Verdict verdict,
         double confidence,
+        string? rewrittenTitle = null,
         CancellationToken cancellationToken = default);
 }

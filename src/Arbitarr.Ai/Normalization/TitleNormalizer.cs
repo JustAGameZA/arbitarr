@@ -58,7 +58,7 @@ public sealed class TitleNormalizer
             return candidate;
         }
 
-        return CloneWithTitle(candidate, normalized, original);
+        return candidate.WithTitle(normalized, original);
     }
 
     private string StripDenyListedTokens(string title)
@@ -67,25 +67,4 @@ public sealed class TitleNormalizer
         var kept = tokens.Where(token => !_denyList.Contains(Regex.Replace(token, @"[\[\]().]", string.Empty)));
         return string.Join(' ', kept);
     }
-
-    private static ReleaseCandidate CloneWithTitle(ReleaseCandidate candidate, string normalizedTitle, string originalTitle) => new()
-    {
-        Title = normalizedTitle,
-        OriginalTitleRaw = originalTitle,
-        Guid = candidate.Guid,
-        PubDate = candidate.PubDate,
-        Size = candidate.Size,
-        Link = candidate.Link,
-        Category = candidate.Category,
-        Protocol = candidate.Protocol,
-        InfoHash = candidate.InfoHash,
-        Seeders = candidate.Seeders,
-        Peers = candidate.Peers,
-        MinimumRatio = candidate.MinimumRatio,
-        MinimumSeedTime = candidate.MinimumSeedTime,
-        UsenetGroup = candidate.UsenetGroup,
-        PasswordProtected = candidate.PasswordProtected,
-        Files = candidate.Files,
-        Grabs = candidate.Grabs,
-    };
 }

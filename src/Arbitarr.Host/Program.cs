@@ -15,6 +15,7 @@ using Arbitarr.Data.Caching;
 using Arbitarr.Data.CircuitBreaker;
 using Arbitarr.Data.Filtering;
 using Arbitarr.Data.Settings;
+using Arbitarr.Host;
 using Arbitarr.Host.Security;
 using Arbitarr.Sources.NzbHydra;
 using Microsoft.EntityFrameworkCore;
@@ -162,6 +163,21 @@ builder.Services.AddScoped<FilterStage>(sp => new FilterStage(
     sp.GetRequiredService<IVerdictCacheReader>(),
     sp.GetRequiredService<AiModelIdentity>()));
 builder.Services.AddSingleton<InMemoryReleaseLookup>();
+
+// verify-m5 (HIGH): ClassifierWorker.ClassifyAndCacheAsync was previously never invoked anywhere in
+// the running Host. ClassifierPollingWorker is a wrapping BackgroundService (ClassifierWorker itself
+// stays a plain Scoped type — its fixed 4-arg constructor is used directly by
+// ClassifierWorkerLoadTests) that snapshots InMemoryReleaseLookup each cycle and drives
+// classification + (AC26b/R17) worker-side title-rewrite caching. AC24: the poll interval is
+// re-read from settings at the top of every cycle via the scope factory, so a live settings change
+// takes effect without a restart.
+builder.Services.AddHostedService(sp => new ClassifierPollingWorker(
+    sp.GetRequiredService<IServiceScopeFactory>(),
+    sp.GetRequiredService<InMemoryReleaseLookup>(),
+    sp.GetRequiredService<AiModelIdentity>(),
+    sp.GetRequiredService<TimeProvider>(),
+    sourceName: "Ollama",
+    logger: sp.GetRequiredService<ILogger<ClassifierPollingWorker>>()));
 builder.Services.AddSingleton<IReleaseLookup>(sp => sp.GetRequiredService<InMemoryReleaseLookup>());
 
 // Inbound Torznab/Newznab client apikey (M1-9, security-hardened). Distinct from

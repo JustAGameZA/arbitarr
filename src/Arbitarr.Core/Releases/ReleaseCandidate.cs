@@ -24,6 +24,33 @@ public sealed class ReleaseCandidate
     /// <summary>The title as originally reported by the source, before any normalization.</summary>
     public string OriginalTitle => OriginalTitleRaw ?? Title;
 
+    /// <summary>
+    /// Returns a copy of this release with <see cref="Title"/> replaced and <see cref="OriginalTitleRaw"/>
+    /// set to <paramref name="originalTitleRaw"/>; every other attribute (size, category, guid, ...) is
+    /// carried over untouched. The single clone site for title rewrites, so the normalizer, the render
+    /// path, and the background worker cannot drift on which attributes survive a rewrite.
+    /// </summary>
+    public ReleaseCandidate WithTitle(string title, string? originalTitleRaw) => new()
+    {
+        Title = title,
+        OriginalTitleRaw = originalTitleRaw,
+        Guid = Guid,
+        PubDate = PubDate,
+        Size = Size,
+        Link = Link,
+        Category = Category,
+        Protocol = Protocol,
+        InfoHash = InfoHash,
+        Seeders = Seeders,
+        Peers = Peers,
+        MinimumRatio = MinimumRatio,
+        MinimumSeedTime = MinimumSeedTime,
+        UsenetGroup = UsenetGroup,
+        PasswordProtected = PasswordProtected,
+        Files = Files,
+        Grabs = Grabs,
+    };
+
     /// <summary>Source-provided unique identifier (Torznab/Newznab &lt;guid&gt;).</summary>
     public required string Guid { get; init; }
 

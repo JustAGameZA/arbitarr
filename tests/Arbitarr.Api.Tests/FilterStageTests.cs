@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Arbitarr.Api.Rendering;
 using Arbitarr.Api.Search;
+using Arbitarr.Core.Filtering;
 using Arbitarr.Core.Releases;
 using Arbitarr.Data;
 using Arbitarr.Data.Entities;
@@ -364,5 +365,132 @@ public sealed class FilterStageTests : IDisposable
         // is only bounded by the separate schema max-length (512, see MigrationTests/ArbitarrDbContext).
         var auditEntry = await context.SuppressionAuditLogEntries.SingleAsync();
         Assert.Equal(longQuery, auditEntry.QueryKey);
+    }
+
+    private static async Task SetTitleNormalizationEnabledAsync(ArbitarrDbContext context, bool enabled)
+    {
+        context.Settings.Add(new SettingEntry
+        {
+            Name = nameof(Core.Settings.SettingKey.TitleNormalizationEnabled),
+            Value = enabled.ToString(),
+            UpdatedAt = Now,
+        });
+        await context.SaveChangesAsync();
+    }
+
+    private static RenderedRelease CleanRelease(string title, string guid) => new(
+        "TestSource",
+        new ReleaseCandidate
+        {
+            Title = title,
+            Guid = guid,
+            PubDate = Now,
+            Size = 789,
+            Link = new Uri("https://example.invalid/3"),
+        });
+
+    /// <summary>
+    /// M5-8/AC26b: with the kill-switch OFF (the default), the render path must never apply a
+    /// title rewrite even when one is cached for the release — the rendered title is byte-identical
+    /// to the original.
+    /// </summary>
+    [Fact]
+    public async Task ApplyAsync_TitleNormalizationDisabled_TitleIsByteIdentical()
+    {
+        using var context = CreateContext();
+        var modelIdentity = new AiModelIdentity("test-model", "digest-1", "v1");
+        var release = CleanRelease("Some.Movie.2026.1080p.BluRay.x264", "guid-norm-1");
+        var key = VerdictCacheKey.Compute(release.Candidate, release.SourceName, modelIdentity.ModelName, modelIdentity.ModelDigest, modelIdentity.PromptVersion);
+        var cacheReader = new StubVerdictCacheReader(new Dictionary<string, CachedVerdict>
+        {
+            [key] = new CachedVerdict(Verdict.Accept, 0.99, "Some Movie 2026 1080p BluRay x264"),
+        });
+
+        var stage = new FilterStage(
+            new ApiKeyProfileResolver(context, new FilterProfileLoader(context)),
+            new SettingsReader(context),
+            context,
+            new FakeTimeProvider(Now),
+            cacheReader,
+            modelIdentity);
+
+        var output = await stage.ApplyAsync(new[] { release }, "query-1");
+
+        var rendered = Assert.Single(output);
+        Assert.Equal("Some.Movie.2026.1080p.BluRay.x264", rendered.Candidate.Title);
+    }
+
+    /// <summary>
+    /// M5-8/AC26b/R17: with the kill-switch ON and a cached, worker-produced rewrite present for the
+    /// release, the render path applies the rewritten title while preserving
+    /// <see cref="ReleaseCandidate.OriginalTitle"/> (AC26a).
+    /// </summary>
+    [Fact]
+    public async Task ApplyAsync_TitleNormalizationEnabled_CachedRewritePresent_AppliesRewrite_PreservesOriginalTitle()
+    {
+        using var context = CreateContext();
+        await SetTitleNormalizationEnabledAsync(context, enabled: true);
+        var modelIdentity = new AiModelIdentity("test-model", "digest-1", "v1");
+        const string originalTitle = "Some.Movie.2026.1080p.BluRay.x264";
+        const string rewrittenTitle = "Some Movie 2026 1080p BluRay x264";
+        var release = CleanRelease(originalTitle, "guid-norm-2");
+        var key = VerdictCacheKey.Compute(release.Candidate, release.SourceName, modelIdentity.ModelName, modelIdentity.ModelDigest, modelIdentity.PromptVersion);
+        var cacheReader = new StubVerdictCacheReader(new Dictionary<string, CachedVerdict>
+        {
+            [key] = new CachedVerdict(Verdict.Accept, 0.99, rewrittenTitle),
+        });
+
+        var stage = new FilterStage(
+            new ApiKeyProfileResolver(context, new FilterProfileLoader(context)),
+            new SettingsReader(context),
+            context,
+            new FakeTimeProvider(Now),
+            cacheReader,
+            modelIdentity);
+
+        var output = await stage.ApplyAsync(new[] { release }, "query-1");
+
+        var rendered = Assert.Single(output);
+        Assert.Equal(rewrittenTitle, rendered.Candidate.Title);
+        Assert.Equal(originalTitle, rendered.Candidate.OriginalTitle);
+    }
+
+    /// <summary>
+    /// M5-8/AC26b (P1 fail-open): with the kill-switch ON but no cache entry for the release (not
+    /// yet classified by the background worker), the render path falls back to the original title
+    /// rather than failing or blocking.
+    /// </summary>
+    [Fact]
+    public async Task ApplyAsync_TitleNormalizationEnabled_NoCacheEntry_FallsBackToOriginalTitle()
+    {
+        using var context = CreateContext();
+        await SetTitleNormalizationEnabledAsync(context, enabled: true);
+        var modelIdentity = new AiModelIdentity("test-model", "digest-1", "v1");
+        const string originalTitle = "Some.Movie.2026.1080p.BluRay.x264";
+        var release = CleanRelease(originalTitle, "guid-norm-3");
+        var cacheReader = new StubVerdictCacheReader(new Dictionary<string, CachedVerdict>());
+
+        var stage = new FilterStage(
+            new ApiKeyProfileResolver(context, new FilterProfileLoader(context)),
+            new SettingsReader(context),
+            context,
+            new FakeTimeProvider(Now),
+            cacheReader,
+            modelIdentity);
+
+        var output = await stage.ApplyAsync(new[] { release }, "query-1");
+
+        var rendered = Assert.Single(output);
+        Assert.Equal(originalTitle, rendered.Candidate.Title);
+    }
+
+    private sealed class StubVerdictCacheReader : IVerdictCacheReader
+    {
+        private readonly IReadOnlyDictionary<string, CachedVerdict> _entries;
+
+        public StubVerdictCacheReader(IReadOnlyDictionary<string, CachedVerdict> entries) => _entries = entries;
+
+        public CachedVerdict? TryGet(string releaseKeyHash) =>
+            _entries.TryGetValue(releaseKeyHash, out var value) ? value : null;
     }
 }

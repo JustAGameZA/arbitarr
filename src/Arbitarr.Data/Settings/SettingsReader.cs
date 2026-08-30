@@ -48,6 +48,32 @@ public sealed class SettingsReader
             : (double)SettingsCatalog.GetDefault(SettingKey.AiConfidenceThreshold);
     }
 
+    /// <summary>Resolves <see cref="SettingKey.TitleNormalizationEnabled"/>, defaulting to OFF (AC26b) when no row exists.</summary>
+    public async Task<bool> GetTitleNormalizationEnabledAsync(CancellationToken cancellationToken = default)
+    {
+        var raw = await GetRawAsync(SettingKey.TitleNormalizationEnabled, cancellationToken).ConfigureAwait(false);
+        if (raw is null)
+        {
+            return (bool)SettingsCatalog.GetDefault(SettingKey.TitleNormalizationEnabled);
+        }
+
+        return bool.TryParse(raw, out var value) ? value : (bool)SettingsCatalog.GetDefault(SettingKey.TitleNormalizationEnabled);
+    }
+
+    /// <summary>Resolves <see cref="SettingKey.ClassifierPollInterval"/>, defaulting to 1 minute when no row exists.</summary>
+    public async Task<TimeSpan> GetClassifierPollIntervalAsync(CancellationToken cancellationToken = default)
+    {
+        var raw = await GetRawAsync(SettingKey.ClassifierPollInterval, cancellationToken).ConfigureAwait(false);
+        if (raw is null)
+        {
+            return (TimeSpan)SettingsCatalog.GetDefault(SettingKey.ClassifierPollInterval);
+        }
+
+        return TimeSpan.TryParse(raw, CultureInfo.InvariantCulture, out var value)
+            ? value
+            : (TimeSpan)SettingsCatalog.GetDefault(SettingKey.ClassifierPollInterval);
+    }
+
     private async Task<string?> GetRawAsync(SettingKey key, CancellationToken cancellationToken)
     {
         var entry = await _dbContext.Settings

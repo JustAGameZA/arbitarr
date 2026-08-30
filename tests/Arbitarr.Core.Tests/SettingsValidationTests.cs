@@ -426,6 +426,31 @@ public class SettingsValidationTests
         Assert.Null(ex);
     }
 
+    // ---------- classifier poll interval (M5, AC24) ----------
+
+    [Fact]
+    public void ClassifierPollInterval_RejectsValueBelowFloor()
+    {
+        var ex = Assert.Throws<SettingsValidationException>(
+            () => SettingsValidator.ValidateClassifierPollInterval(TimeSpan.FromSeconds(14)));
+        Assert.Equal(SettingKey.ClassifierPollInterval, ex.Key);
+    }
+
+    [Fact]
+    public void ClassifierPollInterval_AcceptsFloorValue()
+    {
+        var ex = Record.Exception(() => SettingsValidator.ValidateClassifierPollInterval(TimeSpan.FromSeconds(15)));
+        Assert.Null(ex);
+    }
+
+    [Fact]
+    public void ClassifierPollInterval_Validate_DispatchesByKey()
+    {
+        var ex = Assert.Throws<SettingsValidationException>(
+            () => SettingsValidator.ValidateChange(BaselineSnapshot(), SettingKey.ClassifierPollInterval, TimeSpan.FromSeconds(1), ArrSyncInterval));
+        Assert.Equal(SettingKey.ClassifierPollInterval, ex.Key);
+    }
+
     // ---------- ValidateChange: reverse-direction cross-field re-validation (M3-6) ----------
     //
     // These prove the gap the per-field Validate* methods above cannot see: each one only checks a

@@ -38,4 +38,12 @@ public sealed class VerdictCacheEntry
 
     /// <summary>When this row was last read (drives LRU eviction against the row ceiling).</summary>
     public DateTimeOffset LastAccessedAt { get; set; }
+
+    /// <summary>
+    /// Worker-produced, cached title rewrite (M5-8/AC26b, R17), or <see langword="null"/> when no
+    /// rewrite was produced. Consumed only by the render path when
+    /// <see cref="Arbitarr.Core.Settings.SettingKey.TitleNormalizationEnabled"/> is on; never
+    /// computed inline there.
+    /// </summary>
+    public string? RewrittenTitle { get; set; }
 }

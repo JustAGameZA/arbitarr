@@ -45,6 +45,6 @@ public sealed class VerdictCacheReader : IVerdictCacheReader
             .Where(e => e.Id == entry.Id)
             .ExecuteUpdate(setters => setters.SetProperty(e => e.LastAccessedAt, _timeProvider.GetUtcNow()));
 
-        return new CachedVerdict((Verdict)entry.Verdict, entry.Confidence);
+        return new CachedVerdict((Verdict)entry.Verdict, entry.Confidence, entry.RewrittenTitle);
     }
 }

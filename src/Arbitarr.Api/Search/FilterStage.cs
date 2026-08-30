@@ -82,6 +82,7 @@ public sealed class FilterStage
         var profile = await _profileResolver.ResolveAsync(clientName, cancellationToken).ConfigureAwait(false);
         var shadowMode = await _settingsReader.GetShadowModeAsync(cancellationToken).ConfigureAwait(false);
         var aiConfidenceThreshold = await _settingsReader.GetAiConfidenceThresholdAsync(cancellationToken).ConfigureAwait(false);
+        var titleNormalizationEnabled = await _settingsReader.GetTitleNormalizationEnabledAsync(cancellationToken).ConfigureAwait(false);
         var now = _timeProvider.GetUtcNow();
 
         var output = new List<RenderedRelease>(releases.Count);
@@ -99,7 +100,7 @@ public sealed class FilterStage
 
             if (chainResult.Verdict != Verdict.Reject)
             {
-                output.Add(release with { SuppressionAnnotation = null });
+                output.Add(ApplyCachedTitleRewrite(release, titleNormalizationEnabled) with { SuppressionAnnotation = null });
                 continue;
             }
 
@@ -129,7 +130,7 @@ public sealed class FilterStage
             if (shadowMode)
             {
                 // AC12/D3: shadow mode re-admits the release, annotated, rather than withholding it.
-                output.Add(release with { SuppressionAnnotation = reason });
+                output.Add(ApplyCachedTitleRewrite(release, titleNormalizationEnabled) with { SuppressionAnnotation = reason });
             }
             // else: enforced — the release is withheld entirely (M4-7 "with shadow OFF, absent").
         }
@@ -141,6 +142,40 @@ public sealed class FilterStage
         }
 
         return output;
+    }
+
+    /// <summary>
+    /// M5-8/AC26b (title normalization, R17): applies a worker-produced, cached title rewrite to
+    /// <paramref name="release"/> when the kill-switch is on and a cached rewrite exists for it.
+    /// The rewrite is never computed inline here — only ever looked up (R17: rewrites are
+    /// worker-produced and cached, keyed the same way as verdicts). P1 fail-open: kill-switch off,
+    /// no cache entry, no cache reader/model identity wired, or no rewrite cached all fall through
+    /// to the original, untouched release. <see cref="ReleaseCandidate.OriginalTitle"/> (AC26a) and
+    /// size/category/guid are always preserved — only <see cref="ReleaseCandidate.Title"/> changes.
+    /// </summary>
+    private RenderedRelease ApplyCachedTitleRewrite(RenderedRelease release, bool titleNormalizationEnabled)
+    {
+        if (!titleNormalizationEnabled || _verdictCacheReader is null || _modelIdentity is null)
+        {
+            return release;
+        }
+
+        var key = VerdictCacheKey.Compute(
+            release.Candidate,
+            release.SourceName,
+            _modelIdentity.ModelName,
+            _modelIdentity.ModelDigest,
+            _modelIdentity.PromptVersion);
+
+        var cached = _verdictCacheReader.TryGet(key);
+        if (cached?.RewrittenTitle is null)
+        {
+            return release;
+        }
+
+        var rewrittenCandidate = release.Candidate.WithTitle(cached.RewrittenTitle, release.Candidate.OriginalTitle);
+
+        return release with { Candidate = rewrittenCandidate };
     }
 
     /// <summary>

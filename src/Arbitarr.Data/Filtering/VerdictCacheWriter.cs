@@ -26,6 +26,7 @@ public sealed class VerdictCacheWriter : IVerdictCacheWriter
         string promptVersion,
         Verdict verdict,
         double confidence,
+        string? rewrittenTitle = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(releaseKeyHash);
@@ -51,6 +52,7 @@ public sealed class VerdictCacheWriter : IVerdictCacheWriter
                 Confidence = confidence,
                 CreatedAt = now,
                 LastAccessedAt = now,
+                RewrittenTitle = rewrittenTitle,
             };
             _dbContext.VerdictCacheEntries.Add(entry);
         }
@@ -62,6 +64,13 @@ public sealed class VerdictCacheWriter : IVerdictCacheWriter
             entry.Verdict = (int)verdict;
             entry.Confidence = confidence;
             entry.LastAccessedAt = now;
+            if (rewrittenTitle is not null)
+            {
+                // Additive: a follow-up PutAsync call that only attaches a rewrite (this worker's
+                // pattern) must not clobber a previously cached rewrite with null when re-called
+                // without one.
+                entry.RewrittenTitle = rewrittenTitle;
+            }
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
