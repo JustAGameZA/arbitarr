@@ -81,6 +81,13 @@ public static class RuleImporter
             rules.Add(new FilterRule(fields[0], isAllow, precedence, fields[3]));
         }
 
+        // M4 security review (MEDIUM): reject an over-large profile outright at the import
+        // boundary rather than accept it and let aggregate evaluation time balloon at query time.
+        // This is the write-time half of the fix; FilterProfile.TotalEvaluationBudget is the
+        // runtime half. Checked after parsing (whole-profile count), never at load time, so an
+        // already-persisted profile that predates this bound keeps loading/evaluating normally.
+        SettingsValidator.ValidateRuleCount(rules.Count);
+
         return rules;
     }
 

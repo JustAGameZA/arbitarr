@@ -447,4 +447,32 @@ public static class SettingsValidator
                 nameof(pattern));
         }
     }
+
+    /// <summary>Max rules a single profile may contain (M4 security review, MEDIUM: unbounded
+    /// aggregate rule-evaluation time). This is the write-time half of the fix — the runtime half
+    /// is <c>FilterProfile.TotalEvaluationBudget</c>, which bounds evaluation time regardless of
+    /// rule count and fails open on a cutoff. This bound instead stops an over-large profile from
+    /// being written in the first place, at the same import boundary as
+    /// <see cref="ValidateFilterRulePattern"/>. Deliberately NOT enforced at load time: an
+    /// already-persisted profile that exceeds this count (e.g. grandfathered before this bound
+    /// existed) must keep loading and evaluating normally — the time budget covers that case — so
+    /// this can never fail-closed on existing data.</summary>
+    public const int MaxRulesPerProfile = 500;
+
+    /// <summary>
+    /// Validates a proposed rule count for a single profile (M4 security review, MEDIUM). Not tied
+    /// to a <see cref="SettingKey"/> — like <see cref="ValidateFilterRulePattern"/>, this rejects
+    /// with a plain <see cref="ArgumentException"/> rather than <see cref="SettingsValidationException"/>.
+    /// Callers apply this at the write/import boundary (see <see cref="Filtering.RuleImporter.Import"/>),
+    /// never when loading an existing persisted profile.
+    /// </summary>
+    public static void ValidateRuleCount(int ruleCount)
+    {
+        if (ruleCount > MaxRulesPerProfile)
+        {
+            throw new ArgumentException(
+                $"A profile must contain <= {MaxRulesPerProfile} rules, got {ruleCount}.",
+                nameof(ruleCount));
+        }
+    }
 }
