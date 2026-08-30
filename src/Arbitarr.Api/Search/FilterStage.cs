@@ -85,6 +85,9 @@ public sealed class FilterStage
             // Audit identity uses ProxyGuid (source name + upstream guid) as the release's globally
             // unique identifier — Candidate.Guid alone is only unique within one upstream source (M1).
             var identity = new ReleaseIdentity(release.SourceName, release.ProxyGuid);
+            // M4 review finding (LOW): `reason` (and `queryKey`, embedded below) contains raw
+            // user-supplied search query text. This is fine for the local audit DB, but neither
+            // value must ever be forwarded to an external log sink verbatim.
             var reason = chainResult.RuleName is not null
                 ? $"Suppressed by {chainResult.Source} '{chainResult.RuleName}' (profile '{profile.Name}', query '{queryKey}')."
                 : $"Suppressed by {chainResult.Source} (profile '{profile.Name}', query '{queryKey}').";

@@ -35,9 +35,12 @@ public sealed class ApiKeyProfileResolver
             return await _profileLoader.LoadDefaultProfileAsync(cancellationToken).ConfigureAwait(false);
         }
 
+        // M4 review finding (LOW): FirstOrDefaultAsync rather than SingleOrDefaultAsync — the
+        // ApiKeyName unique index should prevent duplicates, but if one somehow exists (e.g. a
+        // manual DB edit) this fails open (picks one) instead of 500ing the whole search request.
         var mapping = await _dbContext.ApiKeyProfiles
             .AsNoTracking()
-            .SingleOrDefaultAsync(m => m.ApiKeyName == clientName, cancellationToken)
+            .FirstOrDefaultAsync(m => m.ApiKeyName == clientName, cancellationToken)
             .ConfigureAwait(false);
 
         if (mapping is null)

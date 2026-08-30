@@ -59,9 +59,12 @@ public sealed class FilterRule : IFilterRule
         {
             // Pattern uses a construct NonBacktracking rejects (backreferences, lookaround, ...).
             // Fall back to the backtracking engine; MatchTimeout is the only ReDoS guard for these.
+            // M4 review finding (LOW): no RegexOptions.Compiled here — compiling generates IL at
+            // runtime per user-supplied pattern, adding cost/attack surface for no ReDoS benefit
+            // (MatchTimeout is what actually bounds a hostile pattern, not Compiled).
             _pattern = new Regex(
                 pattern,
-                RegexOptions.Compiled | RegexOptions.IgnoreCase,
+                RegexOptions.IgnoreCase,
                 MatchTimeout);
         }
     }
