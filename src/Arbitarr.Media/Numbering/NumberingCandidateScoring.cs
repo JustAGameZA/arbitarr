@@ -57,7 +57,7 @@ public static class NumberingCandidateScoring
         return TokenWeightedScorer.ScoreBest(corroborations, weights ?? new ScoringWeights());
     }
 
-    private static IReadOnlyList<NumberingCandidateCorroboration> BuildCorroborations(
+    public static IReadOnlyList<NumberingCandidateCorroboration> BuildCorroborations(
         CandidateNumberingSet candidates,
         ArcSeasonMap? arcMap,
         string? arcTitleToken,

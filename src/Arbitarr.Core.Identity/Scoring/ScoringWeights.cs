@@ -1,8 +1,9 @@
 namespace Arbitarr.Core.Identity.Scoring;
 
 /// <summary>
-/// Named weights the <see cref="TokenWeightedScorer"/> applies when scoring a single
-/// <see cref="NumberingCandidate"/> against a release's title tokens. Each weight below cites the
+/// Named weights <see cref="TokenWeightedScorer"/> applies when scoring a single
+/// <see cref="NumberingCandidate"/> against a release title, plus the relation and similarity factors
+/// <see cref="ReleaseRanker"/> applies per release. Each numbering weight below cites the
 /// specific docs/step3b-observed-failures.md section 5 row it addresses.
 /// </summary>
 /// <remarks>
@@ -68,11 +69,26 @@ public sealed record ScoringWeights
     public double BareAbsoluteOnly { get; init; } = 0.05;
 
     /// <summary>
-    /// Multiplicative penalty (0..1, applied as a factor) for a release title matching a different
-    /// series' title family entirely — reserved for future franchise-adjacent de-ranking (M6-2 GitS
-    /// de-ranking, explicitly out of scope for this pass per plan step 6). Present here only so
-    /// <see cref="ScoringWeights"/>'s shape does not need to change again when that pass lands;
-    /// unused by <see cref="TokenWeightedScorer"/> today (always 1.0 - no penalty).
+    /// Multiplicative factor (0..1) <see cref="ReleaseRanker"/> applies to a release whose resolved
+    /// series is a franchise sibling of the requested one (M6-2 GitS de-ranking: a SAC_2045 release
+    /// answering a 2002 Stand Alone Complex query). A de-rank, never a gate: the release stays in
+    /// the ranked list, it just cannot outrank a same-series release with equal evidence.
     /// </summary>
-    public double UnrelatedSeriesPenalty { get; init; } = 1.0;
+    public double SiblingSeriesPenalty { get; init; } = 0.5;
+
+    /// <summary>
+    /// Multiplicative factor (0..1) <see cref="ReleaseRanker"/> applies to a release whose resolved
+    /// series is unrelated to the requested one (no shared TVDB/TMDB id and no shared franchise lead
+    /// phrase). Stronger than <see cref="SiblingSeriesPenalty"/>, still not a gate.
+    /// </summary>
+    public double UnrelatedSeriesPenalty { get; init; } = 0.25;
+
+    /// <summary>
+    /// Weight <see cref="ReleaseRanker"/> multiplies a release's 0..1 title similarity by when no
+    /// numbering corroboration is available (P1 fail-open / P3 degraded path: XEM and Anime-Lists
+    /// unreachable, or a series with no arc map at all). Capped below the acceptance threshold by
+    /// construction: <c>ToConfidence(1.0 * 0.5) = 0.6</c>, so similarity alone can order results
+    /// but can never satisfy <see cref="ConfidenceCalibration.MeetsAcceptanceThreshold"/>.
+    /// </summary>
+    public double SimilarityOnly { get; init; } = 0.5;
 }
