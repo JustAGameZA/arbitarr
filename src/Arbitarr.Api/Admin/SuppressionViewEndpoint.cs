@@ -31,6 +31,12 @@ public sealed record SuppressionViewEntryResponse(
 /// <see cref="Arbitarr.Api.Search.FilterStage"/> already writes one row per suppression to (M4-5) —
 /// no new suppression logic runs here, and this endpoint (Arbitarr.Api) must never reference
 /// Arbitarr.Ai (AC6a).
+/// <para>
+/// <see cref="SuppressionViewEntryResponse.Reason"/> is returned as-is from the audit log; no
+/// separate reflection bound is applied here. Reason text is already bounded at write time by
+/// <c>FilterStage.ClampForReflection</c> (120 chars + "…") once this branch is rebased onto master
+/// at or after commit 5af8200, which landed that clamp after this branch's base (67775e4).
+/// </para>
 /// </summary>
 public static class SuppressionViewEndpoint
 {
