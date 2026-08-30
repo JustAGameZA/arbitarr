@@ -160,12 +160,15 @@ public sealed class RefreshWorkerHealthTests
         public Task TouchLastRequestedAsync(string queryKey, DateTimeOffset requestedAt, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
 
+        public Func<Exception> ExceptionFactory { get; init; } =
+            () => new InvalidOperationException("no such table: SearchResultCacheEntries");
+
         public Task<IReadOnlyList<CachedSearchResult>> GetRefreshCandidatesAsync(DateTimeOffset now, TimeSpan activeWindow, TimeSpan refreshLead, CancellationToken cancellationToken = default)
-            => throw new InvalidOperationException("no such table: SearchResultCacheEntries");
+            => throw ExceptionFactory();
     }
 
     [Fact]
-    public async Task ExecuteAsync_ThrowingCycle_RecordsCycleFault_MessageOnly()
+    public async Task ExecuteAsync_ThrowingCycle_RecordsCycleFault_SanitizedDescriptionOnly()
     {
         var clock = new FakeTimeProvider(Start);
         var store = new ThrowingStore();
@@ -187,7 +190,52 @@ public sealed class RefreshWorkerHealthTests
         await worker.StopAsync(CancellationToken.None);
 
         var snapshot = health.Snapshot;
-        Assert.Equal("no such table: SearchResultCacheEntries", snapshot.LastError);
+        // The raw message is never surfaced: /api/status is unauthenticated, so only the
+        // sanitized type-name description reaches the worker health snapshot.
+        Assert.Equal(nameof(InvalidOperationException), snapshot.LastError);
+        Assert.DoesNotContain("no such table", snapshot.LastError!, StringComparison.Ordinal);
         Assert.True(snapshot.ConsecutiveFailedCycles >= 1);
+    }
+
+    /// <summary>
+    /// Regression: a cycle fault whose exception message embeds the upstream host (the shape
+    /// HttpRequestException takes on a DNS/connect failure) must never reach the worker health
+    /// snapshot, which <c>GET /api/status</c> serves unauthenticated. Leaking it would disclose
+    /// LAN topology to any caller that can reach the dashboard.
+    /// </summary>
+    [Fact]
+    public async Task ExecuteAsync_CycleFaultWithHostBearingMessage_DoesNotLeakUpstreamHost()
+    {
+        const string HostBearingMessage = "No such host is known. (nzbhydra.internal:5076)";
+
+        var clock = new FakeTimeProvider(Start);
+        var store = new ThrowingStore
+        {
+            ExceptionFactory = () => new HttpRequestException(HostBearingMessage, inner: null, System.Net.HttpStatusCode.BadGateway),
+        };
+        var breaker = new FakeBreaker();
+        var health = new RefreshWorkerHealthTracker();
+        RefreshFetcher fetcher = (_, _, _) => Task.FromResult<string?>("new");
+
+        var worker = new RefreshWorker(store, new SearchResultCache(store, clock), breaker, fetcher, clock, Options(), SourceName, health: health);
+
+        await worker.StartAsync(CancellationToken.None);
+
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (health.Snapshot.LastError is null && DateTime.UtcNow < deadline)
+        {
+            clock.Advance(Options().WorkerCycleInterval);
+            await Task.Delay(10);
+        }
+
+        await worker.StopAsync(CancellationToken.None);
+
+        var lastError = health.Snapshot.LastError;
+        Assert.NotNull(lastError);
+        Assert.DoesNotContain("nzbhydra.internal", lastError!, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("5076", lastError!, StringComparison.Ordinal);
+        Assert.DoesNotContain("No such host", lastError!, StringComparison.Ordinal);
+        // The status code survives sanitization; it is diagnostic without being topological.
+        Assert.Equal("HttpRequestException (502 BadGateway)", lastError);
     }
 }

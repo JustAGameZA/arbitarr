@@ -1,3 +1,4 @@
+using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Sources.CircuitBreaker;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -176,7 +177,7 @@ public sealed class RefreshWorker : BackgroundService
                     // BackgroundService faults propagate to the host by default. Log and retry on
                     // the next tick; the breaker already governs per-source upstream failures.
                     _logger.LogError(ex, "Search-result refresh cycle for source {SourceName} failed; will retry next cycle.", _sourceName);
-                    _health.CycleFaulted(_timeProvider.GetUtcNow(), ex.Message);
+                    _health.CycleFaulted(_timeProvider.GetUtcNow(), SanitizedErrorDescription.Describe(ex));
                 }
             }
 
