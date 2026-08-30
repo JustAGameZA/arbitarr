@@ -1,3 +1,4 @@
+using Arbitarr.Core.Filtering;
 using Arbitarr.Data.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -148,8 +149,9 @@ public sealed class ArbitarrDbContext : DbContext
             entity.Property(e => e.ModelName).IsRequired().HasMaxLength(256);
             entity.Property(e => e.ModelDigest).IsRequired().HasMaxLength(256);
             entity.Property(e => e.PromptVersion).IsRequired().HasMaxLength(256);
-            // M5 R17: rewritten title cached alongside the verdict; bounded like the other text columns.
-            entity.Property(e => e.RewrittenTitle).HasMaxLength(1024);
+            // M5 R17: rewritten title cached alongside the verdict. The bound is advisory on SQLite; it is
+            // enforced in code by VerdictCacheLimits (producer + writer), which this must match.
+            entity.Property(e => e.RewrittenTitle).HasMaxLength(VerdictCacheLimits.MaxRewrittenTitleLength);
         });
     }
 }

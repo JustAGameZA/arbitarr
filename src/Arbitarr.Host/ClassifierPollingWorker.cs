@@ -46,7 +46,6 @@ public sealed class ClassifierPollingWorker : BackgroundService
 {
     private readonly Func<(ClassifierPollingWorkerDependencies Dependencies, IDisposable? Scope)> _resolveDependencies;
     private readonly TimeProvider _timeProvider;
-    private readonly string _sourceName;
     private readonly TitleNormalizer _titleNormalizer;
     private readonly ILogger _logger;
 
@@ -60,7 +59,6 @@ public sealed class ClassifierPollingWorker : BackgroundService
         Func<CancellationToken, Task<TimeSpan>> getPollInterval,
         Func<CancellationToken, Task<bool>> getTitleNormalizationEnabled,
         TimeProvider timeProvider,
-        string sourceName,
         TitleNormalizer? titleNormalizer = null,
         ILogger? logger = null)
         : this(
@@ -68,7 +66,6 @@ public sealed class ClassifierPollingWorker : BackgroundService
                 classifierWorker, releaseLookup, verdictCacheReader, verdictCacheWriter, modelIdentity,
                 getPollInterval, getTitleNormalizationEnabled), null),
             timeProvider,
-            sourceName,
             titleNormalizer,
             logger)
     {
@@ -91,7 +88,6 @@ public sealed class ClassifierPollingWorker : BackgroundService
         InMemoryReleaseLookup releaseLookup,
         AiModelIdentity modelIdentity,
         TimeProvider timeProvider,
-        string sourceName,
         TitleNormalizer? titleNormalizer = null,
         ILogger<ClassifierPollingWorker>? logger = null)
         : this(
@@ -119,7 +115,6 @@ public sealed class ClassifierPollingWorker : BackgroundService
                 }
             },
             timeProvider,
-            sourceName,
             titleNormalizer,
             logger)
     {
@@ -131,13 +126,11 @@ public sealed class ClassifierPollingWorker : BackgroundService
     private ClassifierPollingWorker(
         Func<(ClassifierPollingWorkerDependencies Dependencies, IDisposable? Scope)> resolveDependencies,
         TimeProvider timeProvider,
-        string sourceName,
         TitleNormalizer? titleNormalizer,
         ILogger? logger)
     {
         _resolveDependencies = resolveDependencies;
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
-        _sourceName = sourceName ?? throw new ArgumentNullException(nameof(sourceName));
         _titleNormalizer = titleNormalizer ?? new TitleNormalizer();
         _logger = logger ?? NullLogger.Instance;
     }
@@ -158,7 +151,7 @@ public sealed class ClassifierPollingWorker : BackgroundService
             {
                 // P1 fail-open: a failed classification cycle must never take the Host down. Log
                 // and retry on the next tick.
-                _logger.LogError(ex, "Classifier polling cycle for source {SourceName} failed; will retry next cycle.", _sourceName);
+                _logger.LogError(ex, "Classifier polling cycle failed; will retry next cycle.");
             }
 
             TimeSpan delay;
@@ -242,11 +235,11 @@ public sealed class ClassifierPollingWorker : BackgroundService
             var normalized = _titleNormalizer.Normalize(candidate, titleNormalizationEnabled);
             var rewrittenTitle = string.Equals(normalized.Title, candidate.Title, StringComparison.Ordinal)
                 ? null
-                : normalized.Title;
+                : VerdictCacheLimits.TruncateRewrittenTitle(normalized.Title);
 
             if (cached is null)
             {
-                await deps.ClassifierWorker.ClassifyAndCacheAsync(candidate, cancellationToken).ConfigureAwait(false);
+                await deps.ClassifierWorker.ClassifyAndCacheAsync(candidate, rendered.SourceName, cancellationToken).ConfigureAwait(false);
                 // Re-read rather than assume: a fail-open classification writes nothing, and an
                 // orphaned rewrite must never be attached to a verdict that was never cached.
                 cached = deps.VerdictCacheReader.TryGet(key);

@@ -152,8 +152,7 @@ builder.Services.AddScoped<IVerdictCacheWriter, VerdictCacheWriter>();
 builder.Services.AddScoped(sp => new ClassifierWorker(
     sp.GetRequiredService<ReleaseClassifier>(),
     sp.GetRequiredService<IVerdictCacheWriter>(),
-    sp.GetRequiredService<AiModelIdentity>(),
-    sourceName: "Ollama"));
+    sp.GetRequiredService<AiModelIdentity>()));
 
 builder.Services.AddScoped<FilterStage>(sp => new FilterStage(
     sp.GetRequiredService<ApiKeyProfileResolver>(),
@@ -176,7 +175,6 @@ builder.Services.AddHostedService(sp => new ClassifierPollingWorker(
     sp.GetRequiredService<InMemoryReleaseLookup>(),
     sp.GetRequiredService<AiModelIdentity>(),
     sp.GetRequiredService<TimeProvider>(),
-    sourceName: "Ollama",
     logger: sp.GetRequiredService<ILogger<ClassifierPollingWorker>>()));
 builder.Services.AddSingleton<IReleaseLookup>(sp => sp.GetRequiredService<InMemoryReleaseLookup>());
 

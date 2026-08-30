@@ -30,14 +30,14 @@ public class ClassifierWorkerLoadTests
         var idleClient = new DelayedFakeOllamaClient(simulatedInferenceMs);
         var idleWorker = new ClassifierWorker(
             new ReleaseClassifier(idleClient), new NullVerdictCacheWriter(),
-            new AiModelIdentity("test-model", "digest-1", "v1"), "TestSource");
+            new AiModelIdentity("test-model", "digest-1", "v1"));
 
         var idleSample = await TimeSingleCallAsync(idleWorker, Candidate("Idle"));
 
         var loadedClient = new DelayedFakeOllamaClient(simulatedInferenceMs);
         var loadedWorker = new ClassifierWorker(
             new ReleaseClassifier(loadedClient), new NullVerdictCacheWriter(),
-            new AiModelIdentity("test-model", "digest-1", "v1"), "TestSource");
+            new AiModelIdentity("test-model", "digest-1", "v1"));
 
         const int concurrentRequests = 20;
         var tasks = Enumerable.Range(0, concurrentRequests)
@@ -61,7 +61,7 @@ public class ClassifierWorkerLoadTests
     private static async Task<double> TimeSingleCallAsync(ClassifierWorker worker, ReleaseCandidate candidate)
     {
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        await worker.ClassifyAndCacheAsync(candidate);
+        await worker.ClassifyAndCacheAsync(candidate, "TestSource");
         stopwatch.Stop();
         return stopwatch.Elapsed.TotalMilliseconds;
     }

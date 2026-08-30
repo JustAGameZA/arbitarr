@@ -179,8 +179,52 @@ public sealed class ClassifierPollingWorkerTests
         Assert.NotNull(harness.Cache.TryGet(KeyFor(NoisyTitle, "g1")));
     }
 
-    private static string KeyFor(string title, string guid) =>
-        VerdictCacheKey.Compute(Release(title, guid).Candidate, SourceName, Identity.ModelName, Identity.ModelDigest, Identity.PromptVersion);
+    /// <summary>
+    /// The EF HasMaxLength bound is advisory on SQLite, so the producer must cap the rewrite
+    /// itself: an upstream title of arbitrary length must never persist an unbounded rewrite.
+    /// </summary>
+    [Fact]
+    public async Task RunCycle_NormalizationOn_OversizedTitle_CachesRewriteCappedAtLimit()
+    {
+        var harness = new Harness(normalizationEnabled: true);
+        var oversized = new string('a', VerdictCacheLimits.MaxRewrittenTitleLength + 500) + " RARBG";
+        harness.Lookup.Record(Release(oversized, "g1"));
+
+        await harness.Worker.RunCycleAsync();
+
+        var cached = harness.Cache.TryGet(KeyFor(oversized, "g1"));
+        Assert.NotNull(cached);
+        Assert.NotNull(cached.RewrittenTitle);
+        Assert.Equal(VerdictCacheLimits.MaxRewrittenTitleLength, cached.RewrittenTitle.Length);
+    }
+
+    /// <summary>
+    /// architect-m5-r3 blocker: the worker must key each verdict under the release's own upstream
+    /// <see cref="RenderedRelease.SourceName"/> (what FilterStage reads with), not a fixed name of
+    /// its own. Two releases with identical candidates but different sources get distinct entries,
+    /// and a second cycle finds the first cycle's writes instead of re-classifying.
+    /// </summary>
+    [Fact]
+    public async Task RunCycle_KeysVerdictUnderEachReleasesOwnSourceName()
+    {
+        const string otherSource = "NZBHydra2";
+        var harness = new Harness(normalizationEnabled: false);
+        harness.Lookup.Record(Release(NoisyTitle, "g1"));
+        harness.Lookup.Record(new RenderedRelease(otherSource, Release(NoisyTitle, "g1").Candidate));
+
+        await harness.Worker.RunCycleAsync();
+
+        Assert.Equal(2, harness.Client.Calls);
+        Assert.NotNull(harness.Cache.TryGet(KeyFor(NoisyTitle, "g1")));
+        Assert.NotNull(harness.Cache.TryGet(KeyFor(NoisyTitle, "g1", otherSource)));
+
+        await harness.Worker.RunCycleAsync();
+
+        Assert.Equal(2, harness.Client.Calls);
+    }
+
+    private static string KeyFor(string title, string guid, string sourceName = SourceName) =>
+        VerdictCacheKey.Compute(Release(title, guid).Candidate, sourceName, Identity.ModelName, Identity.ModelDigest, Identity.PromptVersion);
 
     private static RenderedRelease Release(string title, string guid) => new(
         SourceName,
@@ -198,7 +242,7 @@ public sealed class ClassifierPollingWorkerTests
         public Harness(bool normalizationEnabled, bool clientThrows = false, TimeSpan? pollInterval = null)
         {
             Client = new CountingOllamaClient(clientThrows);
-            var classifierWorker = new ClassifierWorker(new ReleaseClassifier(Client), Cache, Identity, SourceName);
+            var classifierWorker = new ClassifierWorker(new ReleaseClassifier(Client), Cache, Identity);
             Worker = new ClassifierPollingWorker(
                 classifierWorker,
                 Lookup,
@@ -211,8 +255,7 @@ public sealed class ClassifierPollingWorkerTests
                     NormalizationReads++;
                     return Task.FromResult(normalizationEnabled);
                 },
-                TimeProvider.System,
-                SourceName);
+                TimeProvider.System);
         }
 
         public InMemoryReleaseLookup Lookup { get; } = new();

@@ -34,6 +34,10 @@ public sealed class VerdictCacheWriter : IVerdictCacheWriter
         ArgumentNullException.ThrowIfNull(modelDigest);
         ArgumentNullException.ThrowIfNull(promptVersion);
 
+        // Defense in depth: HasMaxLength is not enforced by SQLite, so clamp here as well so any
+        // future producer is bounded even if it forgets to truncate.
+        rewrittenTitle = VerdictCacheLimits.TruncateRewrittenTitle(rewrittenTitle);
+
         var now = DateTimeOffset.UtcNow;
 
         var entry = await _dbContext.VerdictCacheEntries
