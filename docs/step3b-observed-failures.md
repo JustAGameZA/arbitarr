@@ -153,6 +153,111 @@ independently defeat resolution.
 
 ---
 
+---
+
+## EXECUTED (harness: `IdentityAndAiGateFixtureHarnessTests.Run_FixtureFile_IdentityAndAiGate_ProcessesEveryItem`)
+
+Everything above this heading is hand-traced/synthetic reasoning, as stated in the SYNTHETIC
+banner at the top of this document. That banner's "nothing can be run" framing is only true for
+the numbering side (`CandidateNumberingSetBuilder`, which has no title parser feeding it). It is
+**not true** for the identity-context side (`AlternateTitleMatcher`, `FranchiseClassifier`) or the
+AI adjudicator (`ReleaseClassifier`) — both run today against raw fixture titles, with no parser
+required, using `SeriesIdentity` objects and a fake `IOllamaClient`. This section reports the
+result of an actual xUnit run, not reasoning.
+
+Harness: `tests/Arbitarr.Integration.Tests/IdentityAndAiGateFixtureHarnessTests.cs`. For each named
+fixture it loads every `<item><title>`, then for each item runs:
+- (a) `AlternateTitleMatcher.FindMatchingTitles`/`Matches` against 4 known `SeriesIdentity` objects:
+  the three GitS identities reused verbatim from `GhostInTheShellFranchiseClassificationTests`
+  (Arise, Stand Alone Complex, SAC_2045) plus a Bleach identity defined locally in the harness (no
+  `SeriesIdentity` for Bleach exists anywhere in the codebase — `BleachArcRelativeNumberingTests`
+  only has arc/season numbering bindings, not an identity object).
+- (b) `FranchiseClassifier.Classify` pairwise over the three GitS identities (SAC vs SAC_2045, SAC
+  vs Arise, SAC_2045 vs Arise).
+- (c) `ReleaseClassifier.TryClassifyAsync` against two fake `IOllamaClient`s: one fixed to
+  `accept`/1.0, one fixed to `reject`/0.0.
+
+The harness asserts only `processedCount == fixture item count` per file — it makes zero
+correctness assertions. Run: `dotnet test tests/Arbitarr.Integration.Tests` under build-lock →
+**Test Run Successful. Total tests: 6. Passed: 6.** (5 fixture theory cases + 1 placeholder test.)
+
+### Per-fixture item counts (all asserted count == fixture item count)
+
+| Fixture | Items processed |
+|---|---|
+| `ghost-in-the-shell-arise-alternative-architecture.xml` | 0 |
+| `ac10-sweep-onepiece-zero-results.xml` | 0 |
+| `ghost-in-the-shell-stand-alone-complex.xml` | 3 |
+| `ghost-in-the-shell-generic.xml` | 27 |
+| `bleach-tvsearch.xml` | 90 |
+
+Both zero-item fixtures are **genuinely empty channels** (no `<item>` elements at all) — confirmed
+by reading the raw XML, not a harness bug. Notably, `ghost-in-the-shell-arise-alternative-
+architecture.xml` has zero items despite its filename, which was not expected going in; this
+document's own item 1 above already recorded this as "no data — zero results" for the numbering
+side, and the executed run confirms the same is true for the identity/AI side: there is nothing to
+run identity matching or AI-gating against for this fixture at all, full stop.
+
+### (a) `AlternateTitleMatcher` result — CONTRADICTS an implicit assumption in the hand-traced sections above
+
+**Every single processed item across all three non-empty fixtures (120 items total: 3 + 27 + 90)
+returned `(none)` — zero identity matches, for every fixture, including the GitS Stand Alone
+Complex fixture matched against its own `StandAloneComplex` identity.** Representative row (from
+`ghost-in-the-shell-stand-alone-complex.xml`):
+
+| title | identity matches |
+|---|---|
+| `Ghost In The Shell Stand Alone Complex S02E01 Di Reactivation Reembody EAC3 5 1 1080p Bluray x265-iVy` | (none) |
+
+Root cause, confirmed by reading `src/Arbitarr.Media/Identity/AlternateTitleMatcher.cs`:
+`Matches`/`FindMatchingTitles` require **exact full-string equality** (trimmed, ordinal
+case-insensitive) between the entire release title and the entire `PrimaryTitle` or one entire
+`AlternateTitles` entry — there is no substring, token, or fuzzy match. A raw Torznab release
+title (which always carries season/episode markers, resolution, codec, release group, etc. appended
+to the series name) can never equal a bare canonical series title like `"Ghost in the Shell: Stand
+Alone Complex"` under this comparison. This is a real, executable finding, not a hand-traced
+inference: **`AlternateTitleMatcher` as it exists today cannot be used directly against raw release
+titles at all** — it requires a title-extraction/normalization step upstream (presumably
+`TitleNormalizer`, per M5) to first isolate the series-name portion of the release title before
+comparison, and no such wiring exists yet anywhere in the codebase. None of the hand-traced
+sections above claimed otherwise (they are entirely about the numbering side), but this is worth
+recording explicitly since it is exactly the kind of "identity context still gets results wrong"
+finding plan step 1 asks for, and it generalizes beyond the two franchise fixtures to every fixture
+in the corpus.
+
+### (b) `FranchiseClassifier.Classify` result — confirms the hand-trace's sibling framing, executed
+
+All three pairwise GitS classifications returned `Sibling` for every processed item (the pairwise
+result is identity-vs-identity, so it is constant per fixture, not per title):
+
+- `Stand Alone Complex` vs `SAC_2045` → **Sibling**
+- `Stand Alone Complex` vs `Arise` → **Sibling**
+- `SAC_2045` vs `Arise` → **Sibling**
+
+This matches this document's existing framing (item 4's "Cross-series note") that these are
+distinct-but-related series requiring franchise disambiguation upstream of numbering — now
+confirmed by actually running the classifier rather than assuming its behavior.
+
+### (c) `ReleaseClassifier.TryClassifyAsync` result — both gate extremes behave as expected, executed
+
+For every one of the 120 processed items, the accept-fixed fake client produced `accept/1` and the
+reject-fixed fake client produced `reject/0` — i.e. `TryClassifyAsync`'s fail-open wrapper passes
+the fake client's verdict straight through unmodified in both directions, with no items silently
+dropped to null. This confirms the AI-adjudicator gate itself does not need a live Ollama instance
+to exercise its plumbing end-to-end (construction → per-candidate call → verdict passthrough); only
+the model's actual judgment is unavailable without a live instance, exactly as this document's
+banner already stated.
+
+### Mismatch-class table (executed, subset — full 120-row output reproducible via `dotnet test
+tests/Arbitarr.Integration.Tests --logger "console;verbosity=detailed"`)
+
+| title | identity-context result | AI-gate result | expected | mismatch class |
+|---|---|---|---|---|
+| `Ghost In The Shell Stand Alone Complex S02E01 Di Reactivation Reembody EAC3 5 1 1080p Bluray x265-iVy` | (none) — see (a) root cause above | accept/1 (accept-gate), reject/0 (reject-gate) — gate passthrough correct | Should positively identify as *Stand Alone Complex* via alternate-title matching | **identity-matcher input-shape gap**: exact-string matcher fed a raw release title it can never equal |
+| `Ghost in the Shell SAC 2045 S01E01 720p WEB H264-CONFRONT` | (none) — same root cause | accept/1, reject/0 | Should positively identify as *SAC_2045* | Same as above |
+| `BLEACH Sennen Kessen hen S01E36 2024 1080p Baha WEB-DL x264 AAC-ADWeb` | (none) — same root cause (also independently noted in this doc's item 5 hand-trace as failing arc-title-token matching for numbering, for an unrelated reason) | accept/1, reject/0 | Should positively identify as *Bleach* | Same identity-matcher gap, additionally already known to fail numbering for a separate reason (arc-title vocabulary gap, see item 5 above) |
+| `Bleach S17E45 DEFEND YOU 1080p DSNP WEB-DL AAC2 0 H 264-playWEB` | (none) — same root cause | accept/1, reject/0 | Should positively identify as *Bleach* | Same identity-matcher gap |
+
 ## Confirmed: no secrets or non-documentation-range IPs introduced
 
 All titles/links quoted above are copied verbatim from already-redacted/rewritten fixture files
