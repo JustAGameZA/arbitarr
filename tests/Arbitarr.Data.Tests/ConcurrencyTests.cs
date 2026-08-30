@@ -1,7 +1,12 @@
 using System.Diagnostics;
 using System.Linq;
+using Arbitarr.Core.Caching;
+using Arbitarr.Core.Sources.CircuitBreaker;
 using Arbitarr.Data;
+using Arbitarr.Data.Caching;
 using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Arbitarr.Data.Tests;
 
@@ -236,90 +241,125 @@ public sealed class ConcurrencyTests : IDisposable
     /// <see cref="ConcurrentWriteWhileRead_WithWalAndBusyTimeout_ReaderNeverStalls"/> only catches
     /// gross stalls. This test proves the tighter, quantitative claim: reader latency under
     /// sustained writer contention must stay close to its own uncontended baseline, not merely
-    /// "under some absolute ceiling." Both phases run back-to-back in this same test execution
-    /// (same machine, same process, same moment) so the comparison is never confounded by
-    /// run-to-run environment noise — a separate baseline run captured yesterday would prove
-    /// nothing about today's hardware/load.
+    /// "under some absolute ceiling."
+    ///
+    /// <para>
+    /// M3-7 rework: the contended-phase writer is the real production writer,
+    /// <see cref="RefreshWorker.RunCycleAsync"/> — driven directly in a tight loop (not via the
+    /// <c>BackgroundService</c> host) at its most aggressive legal pacing (near-zero
+    /// <c>WorkerCycleInterval</c>/<c>RepopulationSpreadWindow</c>, real wall-clock
+    /// <see cref="TimeProvider.System"/>) — rather than generic <c>BEGIN IMMEDIATE</c> writers.
+    /// Reads go through the real read path, <see cref="SearchResultCache.GetAsync"/>, over a
+    /// pre-seeded dataset that stays continuously eligible for
+    /// <see cref="ISearchResultCacheStore.GetRefreshCandidatesAsync"/> so the writer is kept
+    /// genuinely busy for the whole contended phase. Both phases run back-to-back in this same
+    /// test execution (same machine, same process, same moment) so the comparison is never
+    /// confounded by run-to-run environment noise, and a warm-up phase (discarded) precedes the
+    /// measured baseline so JIT/first-connection costs don't pollute it.
+    /// </para>
     /// </summary>
     [Fact]
-    public void ReaderLatency_P95UnderContention_StaysWithinTwentyPercentOfUncontendedBaseline()
+    public async Task ReaderLatency_P95UnderContention_StaysWithinTwentyPercentOfUncontendedBaseline()
     {
+        const int seededKeyCount = 25;
+        const int readerCount = 4;
+
+        // Touch the file once via the production connection factory so WAL mode is set and
+        // verified before EF Core opens the same file.
         var factory = new SqliteConnectionFactory(new SqliteConnectionOptions
         {
             DatabasePath = _dbPath,
             BusyTimeoutMilliseconds = SqliteConnectionOptions.DefaultBusyTimeoutMilliseconds,
         });
-
-        using (var setupConnection = factory.OpenConnection())
-        using (var createCommand = setupConnection.CreateCommand())
+        using (factory.OpenConnection())
         {
-            createCommand.CommandText =
-                "CREATE TABLE IF NOT EXISTS concurrency_probe (id INTEGER PRIMARY KEY, value TEXT NOT NULL);";
-            createCommand.ExecuteNonQuery();
         }
 
-        // Baseline phase: readers alone, no writers running, same connection factory/config as
-        // the contended phase. This is the "same run" comparison point -- captured immediately
-        // before contention starts, on the same machine load, so the 20% tolerance is not
-        // swamped by unrelated environment variance.
-        var baselineLatencies = RunReaderLatencyProbe(factory, TimeSpan.FromMilliseconds(1500), readerCount: 4);
-
-        // Contended phase: identical reader probe, now racing 3 continuous BEGIN IMMEDIATE
-        // writers -- the same writer shape as the existing WAL contention test.
-        using var stopSignal = new CancellationTokenSource();
-        var writerTasks = Enumerable.Range(0, 3).Select(writerIndex => Task.Run(() =>
+        using (var migrationContext = CreateContext())
         {
-            using var writerConnection = factory.OpenConnection();
-            var row = writerIndex * 1000;
+            migrationContext.Database.Migrate();
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var queryKeys = Enumerable.Range(0, seededKeyCount).Select(i => $"m3-7-contention-key-{i}").ToArray();
+
+        // Seed rows that are "active" (recently requested) but already past FreshUntil - so
+        // RefreshWorker.RunCycleAsync's GetRefreshCandidatesAsync selection predicate
+        // (LastRequestedAt > now - activeWindow AND now >= FreshUntil - refreshLead) keeps
+        // re-selecting every one of them each cycle, keeping the writer continuously busy.
+        using (var seedContext = CreateContext())
+        {
+            var seedStore = new SearchResultCacheStore(seedContext);
+            foreach (var key in queryKeys)
+            {
+                await seedStore.SaveAsync(
+                    key,
+                    payloadJson: "{\"results\":[]}",
+                    fetchedAt: now - TimeSpan.FromMinutes(10),
+                    freshUntil: now - TimeSpan.FromMinutes(5),
+                    serveUntil: now + TimeSpan.FromHours(1));
+                await seedStore.TouchLastRequestedAsync(key, now);
+            }
+        }
+
+        // Warm-up phase (discarded): pays for JIT/first-connection costs so they don't pollute
+        // the measured baseline.
+        await RunReaderLatencyProbeAsync(queryKeys, TimeSpan.FromMilliseconds(500), readerCount, minSamples: 1);
+
+        // Baseline phase: readers alone via the real SearchResultCache.GetAsync path, no writer
+        // running.
+        var baselineLatencies = await RunReaderLatencyProbeAsync(queryKeys, TimeSpan.FromSeconds(3), readerCount, minSamples: 200);
+
+        // Contended phase: identical reader probe, now racing the real RefreshWorker driven at
+        // its most aggressive legal pacing (RepopulationSpreadWindow must stay > 0 ticks per
+        // RepopulationPacer.Plan, so use the smallest legal value rather than exactly Zero).
+        var workerOptions = new RefreshWorkerOptions(
+            Enabled: true,
+            WorkerCycleInterval: TimeSpan.FromTicks(1),
+            ActiveWindow: TimeSpan.FromHours(1),
+            RefreshLead: TimeSpan.FromHours(1),
+            FreshUntilAge: TimeSpan.FromMinutes(5),
+            ServeUntilAge: TimeSpan.FromHours(1),
+            RepopulationSpreadWindow: TimeSpan.FromTicks(1),
+            MaxConcurrentRefreshes: 4);
+
+        using var writerContext = CreateContext();
+        var writerStore = new SearchResultCacheStore(writerContext);
+        var writerCache = new SearchResultCache(writerStore, TimeProvider.System);
+        var worker = new RefreshWorker(
+            writerStore,
+            writerCache,
+            new AlwaysAllowCircuitBreaker(),
+            fetcher: (_, _, _) => Task.FromResult<string?>("{\"results\":[]}"),
+            TimeProvider.System,
+            workerOptions,
+            sourceName: "m3-7-contention-source");
+
+        using var stopSignal = new CancellationTokenSource();
+        var writerTask = Task.Run(async () =>
+        {
             while (!stopSignal.IsCancellationRequested)
             {
                 try
                 {
-                    using (var beginCommand = writerConnection.CreateCommand())
-                    {
-                        beginCommand.CommandTimeout = 10;
-                        beginCommand.CommandText = "BEGIN IMMEDIATE;";
-                        beginCommand.ExecuteNonQuery();
-                    }
-
-                    using (var insertCommand = writerConnection.CreateCommand())
-                    {
-                        insertCommand.CommandTimeout = 10;
-                        insertCommand.CommandText =
-                            "INSERT INTO concurrency_probe (id, value) VALUES ($id, $value) " +
-                            "ON CONFLICT(id) DO UPDATE SET value = excluded.value;";
-                        insertCommand.Parameters.AddWithValue("$id", row % 50);
-                        insertCommand.Parameters.AddWithValue("$value", Guid.NewGuid().ToString());
-                        insertCommand.ExecuteNonQuery();
-                    }
-
-                    Thread.Sleep(5);
-
-                    using (var commitCommand = writerConnection.CreateCommand())
-                    {
-                        commitCommand.CommandTimeout = 10;
-                        commitCommand.CommandText = "COMMIT;";
-                        commitCommand.ExecuteNonQuery();
-                    }
-
-                    row++;
+                    await worker.RunCycleAsync(stopSignal.Token);
                 }
-                catch
+                catch (OperationCanceledException)
                 {
-                    TryRollback(writerConnection);
+                    // Expected once the contended phase stops the writer.
                 }
             }
-        })).ToArray();
+        });
 
         List<double> contendedLatencies;
         try
         {
-            contendedLatencies = RunReaderLatencyProbe(factory, TimeSpan.FromMilliseconds(1500), readerCount: 4);
+            contendedLatencies = await RunReaderLatencyProbeAsync(queryKeys, TimeSpan.FromSeconds(3), readerCount, minSamples: 200);
         }
         finally
         {
             stopSignal.Cancel();
-            Task.WaitAll(writerTasks);
+            await writerTask;
         }
 
         var baselineP95 = Percentile(baselineLatencies, 0.95);
@@ -335,33 +375,59 @@ public sealed class ConcurrencyTests : IDisposable
     }
 
     /// <summary>
-    /// Runs trivial COUNT(*) reads back-to-back across <paramref name="readerCount"/> concurrent
-    /// tasks for <paramref name="duration"/>, returning every individual query's wall-clock
-    /// latency in milliseconds.
+    /// A circuit breaker fake that always permits calls and records nothing -- the breaker's own
+    /// behavior is not under test here; only <see cref="RefreshWorker.RunCycleAsync"/>'s real
+    /// store/cache/pacer interaction is.
     /// </summary>
-    private static List<double> RunReaderLatencyProbe(SqliteConnectionFactory factory, TimeSpan duration, int readerCount)
+    private sealed class AlwaysAllowCircuitBreaker : IAsyncCircuitBreaker
+    {
+        public Task<bool> CanCallAsync(string sourceName, CancellationToken cancellationToken = default) => Task.FromResult(true);
+
+        public Task RecordSuccessAsync(string sourceName, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task RecordFailureAsync(string sourceName, Exception exception, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private ArbitarrDbContext CreateContext()
+    {
+        var optionsBuilder = new DbContextOptionsBuilder<ArbitarrDbContext>();
+        optionsBuilder.UseSqlite($"Data Source={_dbPath}");
+        return new ArbitarrDbContext(optionsBuilder.Options);
+    }
+
+    /// <summary>
+    /// Runs <see cref="SearchResultCache.GetAsync"/> reads back-to-back across
+    /// <paramref name="readerCount"/> concurrent tasks (each with its own
+    /// <see cref="ArbitarrDbContext"/>/<see cref="SearchResultCacheStore"/>, since EF Core
+    /// contexts are not thread-safe to share) for <paramref name="duration"/>, cycling through
+    /// <paramref name="queryKeys"/>, returning every individual query's wall-clock latency in
+    /// milliseconds.
+    /// </summary>
+    private async Task<List<double>> RunReaderLatencyProbeAsync(string[] queryKeys, TimeSpan duration, int readerCount, int minSamples)
     {
         using var stopSignal = new CancellationTokenSource(duration);
         var latencies = new System.Collections.Concurrent.ConcurrentBag<double>();
 
-        var readerTasks = Enumerable.Range(0, readerCount).Select(_ => Task.Run(() =>
+        var readerTasks = Enumerable.Range(0, readerCount).Select(readerIndex => Task.Run(async () =>
         {
-            using var readerConnection = factory.OpenConnection();
+            using var readerContext = CreateContext();
+            var readerCache = new SearchResultCache(new SearchResultCacheStore(readerContext), TimeProvider.System);
+            var i = readerIndex;
             while (!stopSignal.IsCancellationRequested)
             {
+                var key = queryKeys[i % queryKeys.Length];
+                i++;
                 var stopwatch = Stopwatch.StartNew();
-                using var selectCommand = readerConnection.CreateCommand();
-                selectCommand.CommandTimeout = 10;
-                selectCommand.CommandText = "SELECT COUNT(*) FROM concurrency_probe;";
-                selectCommand.ExecuteScalar();
+                await readerCache.GetAsync(key, refreshTrigger: null);
                 stopwatch.Stop();
                 latencies.Add(stopwatch.Elapsed.TotalMilliseconds);
             }
         })).ToArray();
 
-        Task.WaitAll(readerTasks);
+        await Task.WhenAll(readerTasks);
 
-        Assert.True(latencies.Count > 10, "Reader latency probe collected too few samples to compute a meaningful p95.");
+        Assert.True(latencies.Count >= minSamples,
+            $"Reader latency probe collected {latencies.Count} samples, fewer than the required {minSamples}.");
         return latencies.ToList();
     }
 
