@@ -14,10 +14,26 @@ namespace Arbitarr.Data.Filtering;
 public static class SuppressionAuditLogMapper
 {
     /// <summary>
+    /// Matches <see cref="ArbitarrDbContext"/>'s <c>HasMaxLength(512)</c> on
+    /// <see cref="SuppressionAuditLogEntry.QueryKey"/> (M4 review finding, LOW).
+    /// </summary>
+    private const int QueryKeyMaxLength = 512;
+
+    /// <summary>
+    /// Matches <see cref="ArbitarrDbContext"/>'s <c>HasMaxLength(1024)</c> on
+    /// <see cref="SuppressionAuditLogEntry.Reason"/> (M4 review finding, LOW).
+    /// </summary>
+    private const int ReasonMaxLength = 1024;
+
+    /// <summary>
     /// Maps a single <see cref="SuppressionRecord"/> to a <see cref="SuppressionAuditLogEntry"/>.
     /// <paramref name="ruleName"/> is the specific rule/layer identifier the record's <c>Reason</c>
     /// text is attributed to (P3: "naming the layer and the specific rule id"); pass a stable
     /// non-rule label (e.g. "ai", "pass") for suppression sources with no named rule.
+    ///
+    /// M4 review finding (LOW): <see cref="SuppressionAuditLogEntry.QueryKey"/>/<c>Reason</c> are
+    /// schema-bound (<see cref="ArbitarrDbContext"/>); an over-length value here is truncated
+    /// rather than left to throw at <c>SaveChangesAsync</c> time.
     /// </summary>
     public static SuppressionAuditLogEntry ToEntry(
         SuppressionRecord record,
@@ -33,12 +49,15 @@ public static class SuppressionAuditLogMapper
         {
             OccurredAt = record.SuppressedAt,
             ReleaseIdentifier = record.Release.Guid,
-            QueryKey = queryKey,
+            QueryKey = Truncate(queryKey, QueryKeyMaxLength),
             RuleName = ruleName,
-            Reason = record.Reason,
+            Reason = Truncate(record.Reason, ReasonMaxLength),
             ShadowMode = shadowMode,
         };
     }
+
+    private static string Truncate(string value, int maxLength)
+        => value.Length <= maxLength ? value : value[..maxLength];
 
     /// <summary>
     /// Maps a <see cref="ShadowTaggedSuppression"/> (already carrying its own shadow-mode flag) to

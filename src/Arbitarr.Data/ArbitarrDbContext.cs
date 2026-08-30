@@ -91,9 +91,16 @@ public sealed class ArbitarrDbContext : DbContext
             entity.HasIndex(e => e.OccurredAt);
             entity.HasIndex(e => e.QueryKey);
             entity.Property(e => e.ReleaseIdentifier).IsRequired();
-            entity.Property(e => e.QueryKey).IsRequired();
+            // M4 review finding (LOW): bound QueryKey/Reason length at the schema level, matching
+            // FilterRuleEntry.Pattern's HasMaxLength(1024) precedent — QueryKey mirrors the raw
+            // search query (bounded generously above any realistic query), Reason is a generated
+            // sentence that itself now clamps the reflected query text (see
+            // Arbitarr.Api.Search.FilterStage), so 1024 is comfortable headroom for it. Writers
+            // truncate rather than throw (SuppressionAuditLogMapper), so an over-length value is
+            // never surfaced as a runtime failure.
+            entity.Property(e => e.QueryKey).IsRequired().HasMaxLength(512);
             entity.Property(e => e.RuleName).IsRequired();
-            entity.Property(e => e.Reason).IsRequired();
+            entity.Property(e => e.Reason).IsRequired().HasMaxLength(1024);
         });
 
         modelBuilder.Entity<SettingEntry>(entity =>

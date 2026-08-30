@@ -330,4 +330,39 @@ public sealed class FilterStageTests : IDisposable
         // bound plus survival — the pipeline did not stall or error on it.
         Assert.DoesNotContain(auditEntries, e => e.RuleName.Contains("hazard"));
     }
+
+    /// <summary>
+    /// M4 security review (MEDIUM): a raw, attacker-controlled <c>q=</c> value must not be reflected
+    /// verbatim into the suppression annotation (rendered as an XML attribute in the Torznab
+    /// response) — only a clamped copy is interpolated into the reason text. The audit trail's own
+    /// <c>QueryKey</c> column is untouched by this clamp (separate concern, LOW finding below).
+    /// </summary>
+    [Fact]
+    public async Task ApplyAsync_ShadowModeOn_LongQueryKey_ReasonIsClamped_AuditQueryKeyUnaffected()
+    {
+        using var context = CreateContext();
+        await SeedDenyRuleProfileAsync(context);
+        await SetShadowModeAsync(context, shadowMode: true);
+
+        var stage = new FilterStage(
+            new ApiKeyProfileResolver(context, new FilterProfileLoader(context)),
+            new SettingsReader(context),
+            context,
+            new FakeTimeProvider(Now));
+
+        var longQuery = new string('q', 500);
+        var input = new[] { DenyMatchedRelease() };
+        var output = await stage.ApplyAsync(input, longQuery);
+
+        var release = Assert.Single(output);
+        Assert.NotNull(release.SuppressionAnnotation);
+        // Reflected copy is clamped to 120 chars + the "…" marker.
+        Assert.DoesNotContain(longQuery, release.SuppressionAnnotation);
+        Assert.Contains(new string('q', 120) + "…", release.SuppressionAnnotation);
+
+        // Audit QueryKey semantics are unaffected by the reflection clamp itself — the stored value
+        // is only bounded by the separate schema max-length (512, see MigrationTests/ArbitarrDbContext).
+        var auditEntry = await context.SuppressionAuditLogEntries.SingleAsync();
+        Assert.Equal(longQuery, auditEntry.QueryKey);
+    }
 }

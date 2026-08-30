@@ -16,18 +16,50 @@ public static class RuleEvaluator
     /// <summary>
     /// Evaluates <paramref name="candidate"/> against every rule in <paramref name="profile"/>,
     /// returning the winning verdict and the rule that produced it (or null if no rule matched,
-    /// in which case the verdict is <see cref="Verdict.Accept"/>).
+    /// in which case the verdict is <see cref="Verdict.Accept"/>). Uses <see cref="TimeProvider.System"/>
+    /// to enforce <see cref="FilterProfile.TotalEvaluationBudget"/>; see the
+    /// <see cref="Evaluate(FilterProfile, ReleaseCandidate, TimeProvider)"/> overload to inject a
+    /// fake clock for tests.
     /// </summary>
     public static (Verdict Verdict, IFilterRule? MatchedRule) Evaluate(FilterProfile profile, ReleaseCandidate candidate)
+        => Evaluate(profile, candidate, TimeProvider.System);
+
+    /// <summary>
+    /// Evaluates <paramref name="candidate"/> against every rule in <paramref name="profile"/>,
+    /// returning the winning verdict and the rule that produced it (or null if no rule matched,
+    /// in which case the verdict is <see cref="Verdict.Accept"/>).
+    ///
+    /// M4 security review (MEDIUM): each rule already bounds itself via
+    /// <see cref="FilterRule.MatchTimeout"/>, but a profile with many rules has no whole-request
+    /// budget without this check. Once elapsed wall-clock time (measured via
+    /// <paramref name="timeProvider"/>) exceeds <see cref="FilterProfile.TotalEvaluationBudget"/>,
+    /// evaluation of remaining rules stops immediately and the candidate resolves using whatever
+    /// verdict has won so far (fail open, P1: never suppress on a budget cutoff — a candidate no
+    /// rule has yet rejected still defaults to <see cref="Verdict.Accept"/>, exactly like the
+    /// per-rule ReDoS timeout in <see cref="FilterRule.Evaluate"/>).
+    /// </summary>
+    public static (Verdict Verdict, IFilterRule? MatchedRule) Evaluate(
+        FilterProfile profile,
+        ReleaseCandidate candidate,
+        TimeProvider timeProvider)
     {
         ArgumentNullException.ThrowIfNull(profile);
         ArgumentNullException.ThrowIfNull(candidate);
+        ArgumentNullException.ThrowIfNull(timeProvider);
 
         IFilterRule? winningRule = null;
         var winningVerdict = Verdict.Unknown;
+        var startedAt = timeProvider.GetTimestamp();
 
         foreach (var rule in profile.Rules)
         {
+            if (timeProvider.GetElapsedTime(startedAt) >= profile.TotalEvaluationBudget)
+            {
+                // Aggregate budget exhausted: stop evaluating further rules and fail open with
+                // whatever verdict has won so far (Accept/no-rule-matched if none has).
+                break;
+            }
+
             var verdict = rule.Evaluate(candidate);
             if (verdict == Verdict.Unknown)
             {

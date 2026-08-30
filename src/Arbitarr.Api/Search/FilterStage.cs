@@ -88,9 +88,17 @@ public sealed class FilterStage
             // M4 review finding (LOW): `reason` (and `queryKey`, embedded below) contains raw
             // user-supplied search query text. This is fine for the local audit DB, but neither
             // value must ever be forwarded to an external log sink verbatim.
+            //
+            // M4 security review (MEDIUM): `reason` is rendered into the Torznab response as an
+            // XML attribute (the suppression annotation), so an attacker-controlled `q=` value
+            // reflected here verbatim is unbounded output amplification. Clamp only the *reflected*
+            // copy of the query text — the audit trail's own `QueryKey` field (stored separately via
+            // SuppressionAuditLogMapper.ToEntry below) keeps the untruncated value, so audit
+            // semantics are unaffected.
+            var reflectedQueryKey = ClampForReflection(queryKey);
             var reason = chainResult.RuleName is not null
-                ? $"Suppressed by {chainResult.Source} '{chainResult.RuleName}' (profile '{profile.Name}', query '{queryKey}')."
-                : $"Suppressed by {chainResult.Source} (profile '{profile.Name}', query '{queryKey}').";
+                ? $"Suppressed by {chainResult.Source} '{chainResult.RuleName}' (profile '{profile.Name}', query '{reflectedQueryKey}')."
+                : $"Suppressed by {chainResult.Source} (profile '{profile.Name}', query '{reflectedQueryKey}').";
             var record = new SuppressionRecord(identity, reason, now);
             var tagged = new ShadowTaggedSuppression(record, shadowMode);
 
@@ -112,5 +120,27 @@ public sealed class FilterStage
         }
 
         return output;
+    }
+
+    /// <summary>
+    /// Upper bound on how much of a raw query string is reflected into the suppression <c>reason</c>
+    /// text (see the M4 security review comment above). Chosen generously above any realistic
+    /// legitimate query length while bounding the worst case.
+    /// </summary>
+    private const int ReflectedQueryMaxLength = 120;
+
+    /// <summary>
+    /// Clamps <paramref name="queryKey"/> to <see cref="ReflectedQueryMaxLength"/> characters
+    /// (appending "…" when truncated) before it is interpolated into output text. Does not affect
+    /// the untruncated value stored as the audit trail's <c>QueryKey</c> field.
+    /// </summary>
+    private static string ClampForReflection(string queryKey)
+    {
+        if (queryKey.Length <= ReflectedQueryMaxLength)
+        {
+            return queryKey;
+        }
+
+        return string.Concat(queryKey.AsSpan(0, ReflectedQueryMaxLength), "…");
     }
 }
