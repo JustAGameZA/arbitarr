@@ -21,11 +21,6 @@
     <ProjectReference Include="..\..\src\Arbitarr.Api\Arbitarr.Api.csproj" />
     <ProjectReference Include="..\..\src\Arbitarr.Data\Arbitarr.Data.csproj" />
     <ProjectReference Include="..\..\src\Arbitarr.Core\Arbitarr.Core.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\..\src\Arbitarr.Core\Arbitarr.Core.csproj" />
-    <ProjectReference Include="..\..\src\Arbitarr.Api\Arbitarr.Api.csproj" />
     <ProjectReference Include="..\..\src\Arbitarr.Core.Identity\Arbitarr.Core.Identity.csproj" />
     <ProjectReference Include="..\..\src\Arbitarr.Media\Arbitarr.Media.csproj" />
     <ProjectReference Include="..\..\src\Arbitarr.Ai\Arbitarr.Ai.csproj" />
