@@ -63,4 +63,12 @@ public enum SettingKey
     /// Minimum AI verdict confidence required to suppress a release (D3). Default 0.9.
     /// </summary>
     AiConfidenceThreshold,
+
+    /// <summary>
+    /// Kill-switch for AI title normalization (M5-8/AC26b). Defaults <b>OFF</b>: normalization
+    /// (allow-list, deny-list, differential-parse guard) only runs when an operator explicitly
+    /// enables it, so a fresh install never risks altering titles the *arr apps rely on to parse
+    /// releases until reviewed.
+    /// </summary>
+    TitleNormalizationEnabled,
 }
