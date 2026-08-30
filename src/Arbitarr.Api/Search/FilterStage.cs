@@ -1,4 +1,5 @@
 using Arbitarr.Api.Rendering;
+using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Filtering;
 using Arbitarr.Core.Releases;
 using Arbitarr.Data;
@@ -33,6 +34,7 @@ public sealed class FilterStage
     private readonly TimeProvider _timeProvider;
     private readonly IVerdictCacheReader? _verdictCacheReader;
     private readonly AiModelIdentity? _modelIdentity;
+    private readonly ObservabilityCounters? _counters;
 
     /// <param name="verdictCacheReader">
     /// Cache-only AI slot (Q1-B) consulted by <see cref="SuppressionPrecedenceChain"/>. Optional
@@ -49,7 +51,8 @@ public sealed class FilterStage
         ArbitarrDbContext dbContext,
         TimeProvider timeProvider,
         IVerdictCacheReader? verdictCacheReader = null,
-        AiModelIdentity? modelIdentity = null)
+        AiModelIdentity? modelIdentity = null,
+        ObservabilityCounters? counters = null)
     {
         _profileResolver = profileResolver ?? throw new ArgumentNullException(nameof(profileResolver));
         _settingsReader = settingsReader ?? throw new ArgumentNullException(nameof(settingsReader));
@@ -57,6 +60,7 @@ public sealed class FilterStage
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         _verdictCacheReader = verdictCacheReader;
         _modelIdentity = modelIdentity;
+        _counters = counters;
     }
 
     /// <summary>
@@ -85,6 +89,7 @@ public sealed class FilterStage
         var titleNormalizationEnabled = await _settingsReader.GetTitleNormalizationEnabledAsync(cancellationToken).ConfigureAwait(false);
         var now = _timeProvider.GetUtcNow();
 
+        _counters?.RecordResultsIn(releases.Count);
         var output = new List<RenderedRelease>(releases.Count);
         var auditEntries = new List<SuppressionAuditLogEntry>();
 
@@ -125,6 +130,7 @@ public sealed class FilterStage
             var tagged = new ShadowTaggedSuppression(record, shadowMode);
 
             var ruleName = chainResult.RuleName ?? chainResult.Source.ToString().ToLowerInvariant();
+            _counters?.RecordSuppressed(chainResult.Source.ToString(), ruleName);
             auditEntries.Add(SuppressionAuditLogMapper.ToEntry(tagged, queryKey, ruleName));
 
             if (shadowMode)
@@ -168,6 +174,7 @@ public sealed class FilterStage
             _modelIdentity.PromptVersion);
 
         var cached = _verdictCacheReader.TryGet(key);
+        _counters?.RecordVerdictCacheLookup(cached is not null);
         if (cached?.RewrittenTitle is null)
         {
             return release;

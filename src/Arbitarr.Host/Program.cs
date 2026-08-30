@@ -52,6 +52,7 @@ builder.Services.AddScoped<ICapsCacheStore, CapsCacheStore>();
 builder.Services.AddScoped<CapsAggregator>();
 
 builder.Services.AddSingleton<RecentSearchLog>();
+builder.Services.AddSingleton<ObservabilityCounters>();
 
 // 15 minutes: the AC0c-measured *arr RSS sync interval used as the settings floor/ceiling anchor
 // (docs/step0-measurements.md §3 — Sonarr's 15m is the more conservative of Sonarr/Radarr).
@@ -167,7 +168,8 @@ builder.Services.AddScoped<IVerdictCacheWriter, VerdictCacheWriter>();
 builder.Services.AddScoped(sp => new ClassifierWorker(
     sp.GetRequiredService<ReleaseClassifier>(),
     sp.GetRequiredService<IVerdictCacheWriter>(),
-    sp.GetRequiredService<AiModelIdentity>()));
+    sp.GetRequiredService<AiModelIdentity>(),
+    sp.GetRequiredService<ObservabilityCounters>()));
 
 // AC14b: the ad-hoc search endpoint's synchronous-AI opt-in. Registered here (Host, sole
 // composition root) against Arbitarr.Core.Arbitration.ISyncReleaseArbiter so Arbitarr.Api never
@@ -181,7 +183,8 @@ builder.Services.AddScoped<FilterStage>(sp => new FilterStage(
     sp.GetRequiredService<ArbitarrDbContext>(),
     sp.GetRequiredService<TimeProvider>(),
     sp.GetRequiredService<IVerdictCacheReader>(),
-    sp.GetRequiredService<AiModelIdentity>()));
+    sp.GetRequiredService<AiModelIdentity>(),
+    sp.GetRequiredService<ObservabilityCounters>()));
 
 builder.Services.AddSingleton<InMemoryReleaseLookup>();
 
@@ -290,6 +293,7 @@ RecentSearchesEndpoint.Map(app);
 EffectiveConfigEndpoint.Map(app);
 HealthStalenessEndpoint.Map(app);
 AdminPingEndpoint.Map(app);
+ObservabilityEndpoint.Map(app);
 AdminSettingsEndpoints.Map(app);
 AdminRuleEndpoints.Map(app);
 AdHocSearchEndpoint.Map(app);
