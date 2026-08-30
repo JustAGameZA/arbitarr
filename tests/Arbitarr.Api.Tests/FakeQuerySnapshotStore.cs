@@ -11,6 +11,9 @@ internal sealed class FakeQuerySnapshotStore : IQuerySnapshotStore
 
     public int SaveCallCount { get; private set; }
 
+    /// <summary>The <c>ttl</c> argument passed to each <see cref="SaveAsync"/> call, in call order.</summary>
+    public List<TimeSpan> ObservedTtls { get; } = new();
+
     public Task<string?> GetAsync(string snapshotToken, DateTimeOffset asOf, CancellationToken cancellationToken = default)
     {
         if (_entries.TryGetValue(snapshotToken, out var entry) && entry.ExpiresAt > asOf)
@@ -24,6 +27,7 @@ internal sealed class FakeQuerySnapshotStore : IQuerySnapshotStore
     public Task SaveAsync(string snapshotToken, string payloadJson, DateTimeOffset createdAt, TimeSpan ttl, CancellationToken cancellationToken = default)
     {
         SaveCallCount++;
+        ObservedTtls.Add(ttl);
         _entries[snapshotToken] = new Entry(payloadJson, createdAt + ttl);
         return Task.CompletedTask;
     }

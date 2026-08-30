@@ -47,10 +47,10 @@ namespace Arbitarr.Api.Search;
 public sealed class PaginationSnapshotService
 {
     /// <summary>
-    /// Default query-snapshot TTL (300s), matching <c>SettingKey.QuerySnapshotTtl</c>'s
-    /// documented default. M1 does not yet wire the settings-persistence pipeline into the Host,
-    /// so this constant stands in for it; once settings persistence lands, this should read the
-    /// live <c>SettingsSnapshot.QuerySnapshotTtl</c> value instead.
+    /// Default query-snapshot TTL (300s), matching <c>SettingKey.QuerySnapshotTtl</c>'s documented
+    /// default. Used as the fallback inside <see cref="StaticSnapshotTtlSource"/> when a caller
+    /// (tests, or a future non-Host caller) does not supply an explicit <paramref name="ttl"/> nor
+    /// an <see cref="ISnapshotTtlSource"/> — see the two-ctor split below (M7-8c/AC24).
     /// </summary>
     public static readonly TimeSpan DefaultTtl = TimeSpan.FromSeconds(300);
 
@@ -58,20 +58,44 @@ public sealed class PaginationSnapshotService
     private readonly SearchResultCacheStage _cacheStage;
     private readonly IQuerySnapshotStore _snapshotStore;
     private readonly TimeProvider _timeProvider;
-    private readonly TimeSpan _ttl;
+    private readonly ISnapshotTtlSource _ttlSource;
 
+    /// <summary>
+    /// Fixed-TTL constructor: wraps <paramref name="ttl"/> (or <see cref="DefaultTtl"/> when null)
+    /// in a <see cref="StaticSnapshotTtlSource"/>. Used directly by tests and by any caller that
+    /// wants a TTL fixed for the service's lifetime — existing call sites and their semantics are
+    /// unchanged.
+    /// </summary>
     public PaginationSnapshotService(
         UpstreamMergeStage mergeStage,
         SearchResultCacheStage cacheStage,
         IQuerySnapshotStore snapshotStore,
         TimeProvider timeProvider,
         TimeSpan? ttl = null)
+        : this(mergeStage, cacheStage, snapshotStore, timeProvider, new StaticSnapshotTtlSource(ttl ?? DefaultTtl))
+    {
+    }
+
+    /// <summary>
+    /// Live-TTL constructor (M7-8c/AC24): reads the snapshot TTL from <paramref name="ttlSource"/>
+    /// on every <see cref="GetAsync"/> call instead of capturing a fixed value at construction, so
+    /// a <c>QuerySnapshotTtl</c> setting changed via the admin API takes effect on the very next
+    /// request. This is the ctor the Host wires up (see <c>Program.cs</c>); DI resolves
+    /// <see cref="ISnapshotTtlSource"/> from the same per-request scope as everything else this
+    /// service depends on.
+    /// </summary>
+    public PaginationSnapshotService(
+        UpstreamMergeStage mergeStage,
+        SearchResultCacheStage cacheStage,
+        IQuerySnapshotStore snapshotStore,
+        TimeProvider timeProvider,
+        ISnapshotTtlSource ttlSource)
     {
         _mergeStage = mergeStage ?? throw new ArgumentNullException(nameof(mergeStage));
         _cacheStage = cacheStage ?? throw new ArgumentNullException(nameof(cacheStage));
         _snapshotStore = snapshotStore ?? throw new ArgumentNullException(nameof(snapshotStore));
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
-        _ttl = ttl ?? DefaultTtl;
+        _ttlSource = ttlSource ?? throw new ArgumentNullException(nameof(ttlSource));
     }
 
     /// <summary>
@@ -120,9 +144,10 @@ public sealed class PaginationSnapshotService
         // performed) always persists — it carries no rate-limit signal to withhold on.
         if (stageResult.Releases.Count > 0 || rateLimitedSources.Count == 0)
         {
+            var ttl = await _ttlSource.GetAsync(cancellationToken).ConfigureAwait(false);
             var payload = new SnapshotPayload(stageResult.Releases, stageResult.Age, stageResult.Band);
             var payloadJson = JsonSerializer.Serialize(payload);
-            await _snapshotStore.SaveAsync(snapshotToken, payloadJson, now, _ttl, cancellationToken).ConfigureAwait(false);
+            await _snapshotStore.SaveAsync(snapshotToken, payloadJson, now, ttl, cancellationToken).ConfigureAwait(false);
         }
 
         return new PagedMergeResult(Slice(stageResult.Releases, query.Offset, query.Limit), rateLimitedSources, stageResult.Age, stageResult.Band);
@@ -172,4 +197,28 @@ public sealed record PagedMergeResult(
 public sealed record SnapshotPayload(IReadOnlyList<RenderedRelease> Releases, TimeSpan? Age, CacheBand Band)
 {
     public static readonly SnapshotPayload Empty = new(Array.Empty<RenderedRelease>(), null, CacheBand.Expired);
+}
+
+/// <summary>
+/// M7-8c/AC24: abstracts how <see cref="PaginationSnapshotService"/> obtains its snapshot TTL, so
+/// the live implementation (over <c>SettingsRepository</c>/<c>SettingKey.QuerySnapshotTtl</c>) can
+/// be read fresh on every <see cref="PaginationSnapshotService.GetAsync"/> call — a setting changed
+/// through the admin API takes effect on the very next request, with no restart.
+/// </summary>
+public interface ISnapshotTtlSource
+{
+    ValueTask<TimeSpan> GetAsync(CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// Wraps a fixed TTL value for the lifetime of the owning <see cref="PaginationSnapshotService"/>.
+/// Used by the service's fixed-TTL constructor (tests, and any caller that wants the old
+/// capture-once-at-construction behavior) so existing call sites and tests keep their exact
+/// semantics unaffected by the live-TTL path (M7-8c).
+/// </summary>
+public sealed class StaticSnapshotTtlSource(TimeSpan ttl) : ISnapshotTtlSource
+{
+    private readonly TimeSpan _ttl = ttl;
+
+    public ValueTask<TimeSpan> GetAsync(CancellationToken cancellationToken) => ValueTask.FromResult(_ttl);
 }
