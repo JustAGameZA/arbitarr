@@ -27,6 +27,15 @@ Sonarr/Radarr ──Torznab──▶ Arbitarr ──Torznab──▶ NZBHydra2 �
 
 Identity metadata is resolved through a fixed provider order — the *arr instance's own API (authoritative), then TheXEM's mapping endpoints, then the Anime-Lists dataset (fetched at runtime, rate-limited, never vendored) — and cached with source-snapshot versioning so upstream edits invalidate stale entries.
 
+### Torznab caps aggregation
+
+When Arbitarr fronts more than one upstream source, the Torznab `caps` response it advertises is a merge of each source's own caps, not a simple passthrough:
+
+- **Categories** are unioned across all sources, so a category is offered if any source supports it. **Anime search is included in that union** — `SupportsAnimeSearch` is advertised as `true` if *any* contributing source reports anime support, even if the others don't, so anime stays selectable rather than being narrowed to the intersection.
+- **Book categories are always excluded**, unconditionally, regardless of what any individual upstream advertises.
+- **Search params** (e.g. `season`, `ep`, `imdbid`) are intersected — a param is only advertised if every source supports it.
+- If fetching a source's caps fails, Arbitarr falls back to that source's last-known-good cached caps rather than letting a single dead upstream shrink the merged result.
+
 ## Repository layout
 
 | Project | Role |
