@@ -31,11 +31,16 @@ public sealed record CircuitBreakerOptions
     public double JitterFraction { get; init; } = 0.2;
 
     /// <summary>
-    /// How long the breaker waits, from when it most recently opened, before allowing a single
-    /// half-open probe call through. Distinct from <see cref="InitialBackoff"/>/<see cref="MaxBackoff"/>
-    /// doubling: the probe interval is the fixed cadence at which retries are *attempted* while
-    /// open; the backoff curve independently tracks how "unhealthy" the source is judged to be and
-    /// grows on repeated failed probes, per AC20's curve. AC20 default: 5 minutes.
+    /// <b>OBSOLETE — no longer gates anything (M3-12).</b> A prior version of
+    /// <see cref="SourceCircuitBreaker"/> used this fixed 5-minute value as the sole open-duration
+    /// gate, independent of the doubling backoff — that made AC20's 5s-to-15min curve compute a
+    /// number nobody ever waited on (every probe was exactly 5 minutes apart regardless of how many
+    /// times it had failed). The breaker now gates purely on
+    /// <c>CircuitBreakerSnapshot.CurrentBackoff</c> (jittered, doubling, capped at
+    /// <see cref="MaxBackoff"/>). Retained only as an inert legacy field in case a caller still
+    /// reads it; do not wire it back into gating — see <c>docs/step0-measurements.md</c> §5, which
+    /// lists "probe interval" and the doubling curve as separate line items without reconciling
+    /// them, and M3-12's commit for the full rationale.
     /// </summary>
     public TimeSpan ProbeInterval { get; init; } = TimeSpan.FromMinutes(5);
 

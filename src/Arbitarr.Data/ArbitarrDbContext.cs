@@ -48,7 +48,7 @@ public sealed class ArbitarrDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.QueryKey).IsUnique();
             entity.HasIndex(e => e.ServeUntil);
-            entity.HasIndex(e => e.LastAccessedAt);
+            entity.HasIndex(e => e.LastRequestedAt);
             entity.Property(e => e.QueryKey).IsRequired();
             entity.Property(e => e.PayloadJson).IsRequired();
         });

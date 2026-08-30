@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Xml.Linq;
+using Arbitarr.Core.Caching;
 using Arbitarr.Core.Releases;
 using Arbitarr.Core.Sources;
 
@@ -30,6 +31,9 @@ internal static class IndexerXmlWriter
     /// <summary>Namespace URI shared by both Torznab and Newznab feeds (Newznab reuses the Torznab schema).</summary>
     public static readonly XNamespace SchemaNs = "http://torznab.com/schemas/2015/feed";
 
+    /// <summary>Namespace URI for Arbitarr-specific channel-level extensions (e.g. two-age cache provenance).</summary>
+    public static readonly XNamespace ArbitarrNs = "https://arbitarr.example/schemas/2026/feed";
+
     private static readonly XNamespace AtomNs = "http://www.w3.org/2005/Atom";
 
     public const string ContentType = "application/rss+xml";
@@ -41,11 +45,20 @@ internal static class IndexerXmlWriter
             ? "application/x-bittorrent"
             : "application/x-nzb";
 
+    private static string BandValue(CacheBand band) => band switch
+    {
+        CacheBand.Fresh => "fresh",
+        CacheBand.StaleButValid => "stale",
+        _ => "expired",
+    };
+
     /// <summary>Renders a search result set (t=search|tvsearch|movie|music).</summary>
     public static XDocument WriteSearchResults(
         IndexerFamily family,
         IReadOnlyList<RenderedRelease> releases,
-        Func<RenderedRelease, Uri> downloadLinkFactory)
+        Func<RenderedRelease, Uri> downloadLinkFactory,
+        TimeSpan? cacheAge = null,
+        CacheBand? cacheBand = null)
     {
         ArgumentNullException.ThrowIfNull(releases);
         ArgumentNullException.ThrowIfNull(downloadLinkFactory);
@@ -55,13 +68,33 @@ internal static class IndexerXmlWriter
 
         var channel = new XElement("channel",
             new XElement("title", "Arbitarr"),
-            new XElement("description", "Arbitarr merged search results"),
-            releases.Select(r => WriteItem(family, ns, prefix, r, downloadLinkFactory(r))));
+            new XElement("description", "Arbitarr merged search results"));
+
+        // Two-age cache provenance (M3-5/AC-M7a-cache): every served response carries this
+        // channel-level element, even an expired band that serves zero items. Never touches
+        // per-item size/category/guid.
+        if (cacheBand is { } band)
+        {
+            var cacheElement = new XElement(ArbitarrNs + "cache",
+                new XAttribute("band", BandValue(band)));
+            if (cacheAge is { } age)
+            {
+                cacheElement.Add(new XAttribute("age", ((long)age.TotalSeconds).ToString(CultureInfo.InvariantCulture)));
+            }
+
+            channel.Add(cacheElement);
+        }
+
+        foreach (var release in releases)
+        {
+            channel.Add(WriteItem(family, ns, prefix, release, downloadLinkFactory(release)));
+        }
 
         var rss = new XElement("rss",
             new XAttribute("version", "2.0"),
             new XAttribute(XNamespace.Xmlns + "atom", AtomNs.NamespaceName),
             new XAttribute(XNamespace.Xmlns + prefix, ns.NamespaceName),
+            new XAttribute(XNamespace.Xmlns + "arbitarr", ArbitarrNs.NamespaceName),
             channel);
 
         return new XDocument(new XDeclaration("1.0", "UTF-8", "yes"), rss);

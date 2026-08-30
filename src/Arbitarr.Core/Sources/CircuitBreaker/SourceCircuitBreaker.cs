@@ -7,10 +7,20 @@ namespace Arbitarr.Core.Sources.CircuitBreaker;
 ///
 /// <para>
 /// States: Closed (healthy) -&gt; Open (after <see cref="CircuitBreakerOptions.ConsecutiveFailuresToOpen"/>
-/// consecutive failures) -&gt; Half-Open (after <see cref="CircuitBreakerOptions.ProbeInterval"/> elapses
-/// since the breaker opened) -&gt; Closed (after <see cref="CircuitBreakerOptions.SuccessesToClose"/>
-/// success(es) while Half-Open) or back to Open (any failure while Half-Open, with backoff continuing
-/// to grow).
+/// consecutive failures) -&gt; Half-Open (once the current jittered, doubling
+/// <see cref="CircuitBreakerSnapshot.CurrentBackoff"/> elapses since the breaker most recently
+/// opened) -&gt; Closed (after <see cref="CircuitBreakerOptions.SuccessesToClose"/> success(es) while
+/// Half-Open) or back to Open (any failure while Half-Open, with the backoff doubling again, capped
+/// at <see cref="CircuitBreakerOptions.MaxBackoff"/>).
+/// </para>
+///
+/// <para>
+/// <b>M3-12 correction:</b> the open-duration gate is <c>CurrentBackoff</c> itself, not a separate
+/// fixed <see cref="CircuitBreakerOptions.ProbeInterval"/> — a prior version set
+/// <c>NextProbeAt = now + ProbeInterval</c> unconditionally, which left every probe exactly 5
+/// minutes apart regardless of <c>CurrentBackoff</c>'s doubling, so AC20's 5s-to-15min curve was
+/// computed but never actually gated a caller's retry cadence. <c>ProbeInterval</c> is kept only as
+/// a legacy config knob (see its own doc comment) and no longer participates in gating.
 /// </para>
 ///
 /// <para>
@@ -105,15 +115,17 @@ public sealed class SourceCircuitBreaker
                 var failures = snapshot.ConsecutiveFailures + 1;
                 if (failures >= _options.ConsecutiveFailuresToOpen)
                 {
-                    var backoff = ApplyJitter(_options.InitialBackoff);
+                    var baseBackoff = _options.InitialBackoff;
+                    var backoff = ApplyJitter(baseBackoff);
                     _bySource[sourceName] = snapshot with
                     {
                         State = CircuitState.Open,
                         ConsecutiveFailures = failures,
+                        BaseBackoff = baseBackoff,
                         CurrentBackoff = backoff,
                         LastFailureAt = now,
                         LastError = errorMessage,
-                        NextProbeAt = now + _options.ProbeInterval,
+                        NextProbeAt = now + backoff,
                     };
                 }
                 else
@@ -132,17 +144,20 @@ public sealed class SourceCircuitBreaker
             case CircuitState.HalfOpen:
             {
                 // Probe failed: reopen and grow the backoff curve (doubling the pre-jitter base,
-                // capped, then re-jittered).
-                var nextBaseBackoff = DoubleAndCap(snapshot.CurrentBackoff);
+                // capped, then re-jittered). Doubling snapshot.BaseBackoff (not CurrentBackoff,
+                // which already carries jitter) keeps jitter from compounding multiplicatively
+                // across successive steps.
+                var nextBaseBackoff = DoubleAndCap(snapshot.BaseBackoff);
                 var jittered = ApplyJitter(nextBaseBackoff);
                 _bySource[sourceName] = snapshot with
                 {
                     State = CircuitState.Open,
                     ConsecutiveFailures = snapshot.ConsecutiveFailures + 1,
+                    BaseBackoff = nextBaseBackoff,
                     CurrentBackoff = jittered,
                     LastFailureAt = now,
                     LastError = errorMessage,
-                    NextProbeAt = now + _options.ProbeInterval,
+                    NextProbeAt = now + jittered,
                 };
                 break;
             }

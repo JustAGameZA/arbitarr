@@ -57,6 +57,7 @@ public sealed class SourceHealthRepositoryTests : IDisposable
         var snapshot = new CircuitBreakerSnapshot(
             State: CircuitState.Open,
             ConsecutiveFailures: 3,
+            BaseBackoff: TimeSpan.FromSeconds(5),
             CurrentBackoff: TimeSpan.FromSeconds(5),
             LastFailureAt: Now,
             LastSuccessAt: null,
@@ -74,6 +75,7 @@ public sealed class SourceHealthRepositoryTests : IDisposable
             var repository = new SourceHealthRepository(context);
             var loaded = await repository.LoadAsync("nzbhydra2");
             Assert.Equal(snapshot, loaded);
+            Assert.Equal(TimeSpan.FromSeconds(5), loaded.BaseBackoff);
         }
     }
 

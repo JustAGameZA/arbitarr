@@ -21,7 +21,14 @@ public sealed class SourceHealthRecord
     /// <summary>Consecutive failure count observed since the breaker last closed.</summary>
     public int ConsecutiveFailures { get; set; }
 
-    /// <summary>Current backoff duration in seconds (doubling curve, capped at a ceiling).</summary>
+    /// <summary>
+    /// Un-jittered doubling-curve base backoff duration in seconds (capped at a ceiling). Kept
+    /// separately from <see cref="CurrentBackoffSeconds"/> so restarts resume the doubling curve
+    /// from the pure base rather than re-doubling an already-jittered value (M3-12).
+    /// </summary>
+    public double BaseBackoffSeconds { get; set; }
+
+    /// <summary>Current (jittered) backoff duration in seconds (doubling curve, capped at a ceiling).</summary>
     public double CurrentBackoffSeconds { get; set; }
 
     /// <summary>Timestamp of the most recent failure, if any.</summary>

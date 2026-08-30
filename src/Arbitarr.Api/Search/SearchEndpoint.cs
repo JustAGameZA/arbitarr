@@ -35,16 +35,20 @@ public static class SearchEndpoint
         InMemoryReleaseLookup releaseLookup,
         RecentSearchLog recentSearchLog,
         HttpRequest request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? tvdbId = null,
+        int? tmdbId = null,
+        int? season = null,
+        int? episode = null)
     {
-        var (result, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, snapshotService, releaseLookup, recentSearchLog, cancellationToken).ConfigureAwait(false);
+        var (result, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, releaseLookup, recentSearchLog, cancellationToken).ConfigureAwait(false);
         if (rateLimited)
         {
             var errorXml = TorznabXmlWriter.WriteError(RateLimitErrorCode, "Request limit reached");
             return Results.Text(XmlDocumentRendering.ToXmlString(errorXml), TorznabXmlWriter.ContentType);
         }
 
-        var xml = TorznabXmlWriter.WriteSearchResults(result!.Releases, r => DownloadLink(request, r, callerApiKey));
+        var xml = TorznabXmlWriter.WriteSearchResults(result!.Releases, r => DownloadLink(request, r, callerApiKey), result.CacheAge, result.CacheBand);
         return Results.Text(XmlDocumentRendering.ToXmlString(xml), TorznabXmlWriter.ContentType);
     }
 
@@ -59,16 +63,20 @@ public static class SearchEndpoint
         InMemoryReleaseLookup releaseLookup,
         RecentSearchLog recentSearchLog,
         HttpRequest request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? tvdbId = null,
+        int? tmdbId = null,
+        int? season = null,
+        int? episode = null)
     {
-        var (result, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, snapshotService, releaseLookup, recentSearchLog, cancellationToken).ConfigureAwait(false);
+        var (result, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, releaseLookup, recentSearchLog, cancellationToken).ConfigureAwait(false);
         if (rateLimited)
         {
             var errorXml = NewznabXmlWriter.WriteError(RateLimitErrorCode, "Request limit reached");
             return Results.Text(XmlDocumentRendering.ToXmlString(errorXml), NewznabXmlWriter.ContentType);
         }
 
-        var xml = NewznabXmlWriter.WriteSearchResults(result!.Releases, r => DownloadLink(request, r, callerApiKey));
+        var xml = NewznabXmlWriter.WriteSearchResults(result!.Releases, r => DownloadLink(request, r, callerApiKey), result.CacheAge, result.CacheBand);
         return Results.Text(XmlDocumentRendering.ToXmlString(xml), NewznabXmlWriter.ContentType);
     }
 
@@ -78,13 +86,17 @@ public static class SearchEndpoint
         IReadOnlyList<int> categories,
         int limit,
         int offset,
+        int? tvdbId,
+        int? tmdbId,
+        int? season,
+        int? episode,
         PaginationSnapshotService snapshotService,
         InMemoryReleaseLookup releaseLookup,
         RecentSearchLog recentSearchLog,
         CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
-        var query = new SearchQuery(queryText, categories, limit, offset);
+        var query = new SearchQuery(queryText, categories, limit, offset, tvdbId, tmdbId, season, episode);
         var result = await snapshotService.GetPageAsync(searchType ?? "search", query, cancellationToken).ConfigureAwait(false);
 
         releaseLookup.RecordRange(result.Releases);

@@ -33,6 +33,13 @@ public sealed class SearchResultCacheEntry
     /// </summary>
     public DateTimeOffset ServeUntil { get; set; }
 
-    /// <summary>When this entry was last read, used to scope the proactive worker's active window.</summary>
-    public DateTimeOffset LastAccessedAt { get; set; }
+    /// <summary>
+    /// When this entry was last actually served to a caller (Fresh or Stale-but-valid band),
+    /// used to scope the proactive worker's <c>active_window</c> selection predicate. This is
+    /// stamped only on a serve, never on mere request arrival, and MUST NOT be stamped when a
+    /// request falls in the Expired band (nothing is served there) — otherwise dead queries would
+    /// stay inside <c>active_window</c> forever and the proactive worker would keep refreshing
+    /// entries nobody consumes, defeating the "keep a sick upstream off the critical path" goal.
+    /// </summary>
+    public DateTimeOffset LastRequestedAt { get; set; }
 }

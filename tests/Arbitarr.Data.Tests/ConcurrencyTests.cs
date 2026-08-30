@@ -1,7 +1,12 @@
 using System.Diagnostics;
 using System.Linq;
+using Arbitarr.Core.Caching;
+using Arbitarr.Core.Sources.CircuitBreaker;
 using Arbitarr.Data;
+using Arbitarr.Data.Caching;
 using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Arbitarr.Data.Tests;
 
@@ -229,6 +234,209 @@ public sealed class ConcurrencyTests : IDisposable
                 "with busy_timeout configured — AC15a violated.",
                 failures);
         }
+    }
+
+    /// <summary>
+    /// M3-7/AC15a refinement: the >1s stall threshold in
+    /// <see cref="ConcurrentWriteWhileRead_WithWalAndBusyTimeout_ReaderNeverStalls"/> only catches
+    /// gross stalls. This test proves the tighter, quantitative claim: reader latency under
+    /// sustained writer contention must stay close to its own uncontended baseline, not merely
+    /// "under some absolute ceiling."
+    ///
+    /// <para>
+    /// M3-7 rework: the contended-phase writer is the real production writer,
+    /// <see cref="RefreshWorker.RunCycleAsync"/> — driven directly in a tight loop (not via the
+    /// <c>BackgroundService</c> host) at its most aggressive legal pacing (near-zero
+    /// <c>WorkerCycleInterval</c>/<c>RepopulationSpreadWindow</c>, real wall-clock
+    /// <see cref="TimeProvider.System"/>) — rather than generic <c>BEGIN IMMEDIATE</c> writers.
+    /// Reads go through the real read path, <see cref="SearchResultCache.GetAsync"/>, over a
+    /// pre-seeded dataset that stays continuously eligible for
+    /// <see cref="ISearchResultCacheStore.GetRefreshCandidatesAsync"/> so the writer is kept
+    /// genuinely busy for the whole contended phase. Both phases run back-to-back in this same
+    /// test execution (same machine, same process, same moment) so the comparison is never
+    /// confounded by run-to-run environment noise, and a warm-up phase (discarded) precedes the
+    /// measured baseline so JIT/first-connection costs don't pollute it.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task ReaderLatency_P95UnderContention_StaysWithinTwentyPercentOfUncontendedBaseline()
+    {
+        const int seededKeyCount = 25;
+        const int readerCount = 4;
+
+        // Touch the file once via the production connection factory so WAL mode is set and
+        // verified before EF Core opens the same file.
+        var factory = new SqliteConnectionFactory(new SqliteConnectionOptions
+        {
+            DatabasePath = _dbPath,
+            BusyTimeoutMilliseconds = SqliteConnectionOptions.DefaultBusyTimeoutMilliseconds,
+        });
+        using (factory.OpenConnection())
+        {
+        }
+
+        using (var migrationContext = CreateContext())
+        {
+            migrationContext.Database.Migrate();
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var queryKeys = Enumerable.Range(0, seededKeyCount).Select(i => $"m3-7-contention-key-{i}").ToArray();
+
+        // Seed rows that are "active" (recently requested) but already past FreshUntil - so
+        // RefreshWorker.RunCycleAsync's GetRefreshCandidatesAsync selection predicate
+        // (LastRequestedAt > now - activeWindow AND now >= FreshUntil - refreshLead) keeps
+        // re-selecting every one of them each cycle, keeping the writer continuously busy.
+        using (var seedContext = CreateContext())
+        {
+            var seedStore = new SearchResultCacheStore(seedContext);
+            foreach (var key in queryKeys)
+            {
+                await seedStore.SaveAsync(
+                    key,
+                    payloadJson: "{\"results\":[]}",
+                    fetchedAt: now - TimeSpan.FromMinutes(10),
+                    freshUntil: now - TimeSpan.FromMinutes(5),
+                    serveUntil: now + TimeSpan.FromHours(1));
+                await seedStore.TouchLastRequestedAsync(key, now);
+            }
+        }
+
+        // Warm-up phase (discarded): pays for JIT/first-connection costs so they don't pollute
+        // the measured baseline.
+        await RunReaderLatencyProbeAsync(queryKeys, TimeSpan.FromMilliseconds(500), readerCount, minSamples: 1);
+
+        // Baseline phase: readers alone via the real SearchResultCache.GetAsync path, no writer
+        // running.
+        var baselineLatencies = await RunReaderLatencyProbeAsync(queryKeys, TimeSpan.FromSeconds(3), readerCount, minSamples: 200);
+
+        // Contended phase: identical reader probe, now racing the real RefreshWorker driven at
+        // its most aggressive legal pacing (RepopulationSpreadWindow must stay > 0 ticks per
+        // RepopulationPacer.Plan, so use the smallest legal value rather than exactly Zero).
+        var workerOptions = new RefreshWorkerOptions(
+            Enabled: true,
+            WorkerCycleInterval: TimeSpan.FromTicks(1),
+            ActiveWindow: TimeSpan.FromHours(1),
+            RefreshLead: TimeSpan.FromHours(1),
+            FreshUntilAge: TimeSpan.FromMinutes(5),
+            ServeUntilAge: TimeSpan.FromHours(1),
+            RepopulationSpreadWindow: TimeSpan.FromTicks(1),
+            MaxConcurrentRefreshes: 4);
+
+        using var writerContext = CreateContext();
+        var writerStore = new SearchResultCacheStore(writerContext);
+        var writerCache = new SearchResultCache(writerStore, TimeProvider.System);
+        var worker = new RefreshWorker(
+            writerStore,
+            writerCache,
+            new AlwaysAllowCircuitBreaker(),
+            fetcher: (_, _, _) => Task.FromResult<string?>("{\"results\":[]}"),
+            TimeProvider.System,
+            workerOptions,
+            sourceName: "m3-7-contention-source");
+
+        using var stopSignal = new CancellationTokenSource();
+        var writerTask = Task.Run(async () =>
+        {
+            while (!stopSignal.IsCancellationRequested)
+            {
+                try
+                {
+                    await worker.RunCycleAsync(stopSignal.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Expected once the contended phase stops the writer.
+                }
+            }
+        });
+
+        List<double> contendedLatencies;
+        try
+        {
+            contendedLatencies = await RunReaderLatencyProbeAsync(queryKeys, TimeSpan.FromSeconds(3), readerCount, minSamples: 200);
+        }
+        finally
+        {
+            stopSignal.Cancel();
+            await writerTask;
+        }
+
+        var baselineP95 = Percentile(baselineLatencies, 0.95);
+        var contendedP95 = Percentile(contendedLatencies, 0.95);
+        var ceiling = baselineP95 * 1.20;
+
+        Assert.True(
+            contendedP95 <= ceiling,
+            $"Contended p95 reader latency ({contendedP95:F2}ms) exceeded 120% of the same-run " +
+            $"uncontended baseline p95 ({baselineP95:F2}ms, ceiling {ceiling:F2}ms) -- AC15a " +
+            "requires WAL-mode reads to remain effectively unaffected by concurrent writers, not " +
+            "merely avoid multi-second stalls.");
+    }
+
+    /// <summary>
+    /// A circuit breaker fake that always permits calls and records nothing -- the breaker's own
+    /// behavior is not under test here; only <see cref="RefreshWorker.RunCycleAsync"/>'s real
+    /// store/cache/pacer interaction is.
+    /// </summary>
+    private sealed class AlwaysAllowCircuitBreaker : IAsyncCircuitBreaker
+    {
+        public Task<bool> CanCallAsync(string sourceName, CancellationToken cancellationToken = default) => Task.FromResult(true);
+
+        public Task RecordSuccessAsync(string sourceName, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task RecordFailureAsync(string sourceName, Exception exception, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private ArbitarrDbContext CreateContext()
+    {
+        var optionsBuilder = new DbContextOptionsBuilder<ArbitarrDbContext>();
+        optionsBuilder.UseSqlite($"Data Source={_dbPath}");
+        return new ArbitarrDbContext(optionsBuilder.Options);
+    }
+
+    /// <summary>
+    /// Runs <see cref="SearchResultCache.GetAsync"/> reads back-to-back across
+    /// <paramref name="readerCount"/> concurrent tasks (each with its own
+    /// <see cref="ArbitarrDbContext"/>/<see cref="SearchResultCacheStore"/>, since EF Core
+    /// contexts are not thread-safe to share) for <paramref name="duration"/>, cycling through
+    /// <paramref name="queryKeys"/>, returning every individual query's wall-clock latency in
+    /// milliseconds.
+    /// </summary>
+    private async Task<List<double>> RunReaderLatencyProbeAsync(string[] queryKeys, TimeSpan duration, int readerCount, int minSamples)
+    {
+        using var stopSignal = new CancellationTokenSource(duration);
+        var latencies = new System.Collections.Concurrent.ConcurrentBag<double>();
+
+        var readerTasks = Enumerable.Range(0, readerCount).Select(readerIndex => Task.Run(async () =>
+        {
+            using var readerContext = CreateContext();
+            var readerCache = new SearchResultCache(new SearchResultCacheStore(readerContext), TimeProvider.System);
+            var i = readerIndex;
+            while (!stopSignal.IsCancellationRequested)
+            {
+                var key = queryKeys[i % queryKeys.Length];
+                i++;
+                var stopwatch = Stopwatch.StartNew();
+                await readerCache.GetAsync(key, refreshTrigger: null);
+                stopwatch.Stop();
+                latencies.Add(stopwatch.Elapsed.TotalMilliseconds);
+            }
+        })).ToArray();
+
+        await Task.WhenAll(readerTasks);
+
+        Assert.True(latencies.Count >= minSamples,
+            $"Reader latency probe collected {latencies.Count} samples, fewer than the required {minSamples}.");
+        return latencies.ToList();
+    }
+
+    private static double Percentile(List<double> samples, double percentile)
+    {
+        var sorted = samples.OrderBy(x => x).ToList();
+        var index = (int)Math.Ceiling(percentile * sorted.Count) - 1;
+        index = Math.Clamp(index, 0, sorted.Count - 1);
+        return sorted[index];
     }
 
     private static void TryRollback(SqliteConnection connection)

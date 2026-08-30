@@ -126,7 +126,7 @@ namespace Arbitarr.Data.Migrations
                     b.Property<DateTimeOffset>("FreshUntil")
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset>("LastAccessedAt")
+                    b.Property<DateTimeOffset>("LastRequestedAt")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("PayloadJson")
@@ -142,7 +142,7 @@ namespace Arbitarr.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("LastAccessedAt");
+                    b.HasIndex("LastRequestedAt");
 
                     b.HasIndex("QueryKey")
                         .IsUnique();
@@ -180,6 +180,9 @@ namespace Arbitarr.Data.Migrations
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
+
+                    b.Property<double>("BaseBackoffSeconds")
+                        .HasColumnType("REAL");
 
                     b.Property<int>("ConsecutiveFailures")
                         .HasColumnType("INTEGER");

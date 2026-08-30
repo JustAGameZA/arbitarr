@@ -14,21 +14,26 @@ internal sealed class SecondFakeUpstreamSource : IUpstreamSource
 {
     private readonly IReadOnlyList<ReleaseCandidate> _searchResults;
     private readonly bool _throwsRequestLimitReached;
+    private readonly Action<SearchQuery>? _onSearch;
 
     public SecondFakeUpstreamSource(
         string name,
         IReadOnlyList<ReleaseCandidate>? searchResults = null,
-        bool throwsRequestLimitReached = false)
+        bool throwsRequestLimitReached = false,
+        Action<SearchQuery>? onSearch = null)
     {
         Name = name;
         _searchResults = searchResults ?? Array.Empty<ReleaseCandidate>();
         _throwsRequestLimitReached = throwsRequestLimitReached;
+        _onSearch = onSearch;
     }
 
     public string Name { get; }
 
     public Task<IReadOnlyList<ReleaseCandidate>> SearchAsync(SearchQuery query, CancellationToken cancellationToken = default)
     {
+        _onSearch?.Invoke(query);
+
         if (_throwsRequestLimitReached)
         {
             throw new RequestLimitReachedException(Name);
