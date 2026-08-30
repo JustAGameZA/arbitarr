@@ -142,7 +142,7 @@ public class FixtureCorpusRankingTests
     /// <summary>
     /// M6-5 GitS positive control: with the arc map present the threshold is reachable for a real
     /// Stand Alone Complex release that names its arc, and the SAC_2045 twin with identical numbering
-    /// evidence lands at exactly the sibling-penalised value below it.
+    /// evidence is denied the arc map entirely and lands far below it.
     /// </summary>
     [Fact]
     public void M6_5_PositiveControl_Corroborated2ndGigRelease_MeetsThreshold_AndSiblingTwinDoesNot()
@@ -160,7 +160,9 @@ public class FixtureCorpusRankingTests
 
         var twin = Assert.Single(result.Ranked, r => r.Release.Title == GitsSiblingTwinTitle);
         Assert.Equal(ReleaseSeriesRelation.Sibling, twin.Release.Relation);
-        Assert.Equal(0.95 * new ScoringWeights().SiblingSeriesPenalty, twin.Confidence, precision: 10);
+        // A sibling never sees the requested series' arc map, so its "2nd GIG S02E01" earns no
+        // corroboration: it is capped at the similarity-only ceiling times the sibling penalty.
+        Assert.True(twin.Confidence <= 0.6 * new ScoringWeights().SiblingSeriesPenalty, $"twin reached {twin.Confidence:F3}");
         Assert.False(twin.MeetsAcceptanceThreshold);
     }
 

@@ -91,11 +91,15 @@ public static class ReleaseRanker
             // title match below the similarity-only floor.
             var baseConfidence = Math.Max(bestNumbering?.Confidence ?? 0, similarityConfidence);
 
+            // Identity is a precondition for acceptance: every relation other than Same is scaled
+            // by a factor below the threshold, so numbering evidence alone can never admit a
+            // release that was not positively resolved to the requested series (M6 architect B1/B2).
             var (factor, reason) = release.Relation switch
             {
+                ReleaseSeriesRelation.Same => (1.0, (string?)null),
                 ReleaseSeriesRelation.Sibling => (w.SiblingSeriesPenalty, release.RelationReason ?? "sibling series"),
                 ReleaseSeriesRelation.Unrelated => (w.UnrelatedSeriesPenalty, release.RelationReason ?? "unrelated series"),
-                _ => (1.0, (string?)null),
+                _ => (w.UnknownSeriesPenalty, release.RelationReason ?? "unknown series"),
             };
 
             var confidence = Math.Clamp(baseConfidence * factor, 0, 1);

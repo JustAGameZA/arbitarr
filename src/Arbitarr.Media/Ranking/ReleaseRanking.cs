@@ -22,15 +22,33 @@ public sealed record RankingContext(
     ScoringWeights? Weights = null);
 
 /// <summary>
-/// M6 step 5 composition: builds each release's <see cref="CandidateNumberingSet"/>, resolves its
-/// series against the known <see cref="SeriesIdentity"/> set, feeds the
+/// M6 step 5 composition: resolves each release's series against the known
+/// <see cref="SeriesIdentity"/> set FIRST, builds its <see cref="CandidateNumberingSet"/> against
+/// the requested series' arc map only when it resolved to that series, feeds the
 /// <see cref="FranchiseClassifier"/> verdict into the sibling/unrelated penalty, and hands the
 /// result to <see cref="ReleaseRanker"/>. Sibling classification only de-ranks; nothing is dropped.
 /// </summary>
+/// <remarks>
+/// Identity is a precondition for numbering, not a parallel signal. An arc title such as
+/// "Thousand-Year Blood War" is only meaningful for the series whose arc map declares it; a
+/// foreign release that happens to carry the same words (or a scene season that happens to be a
+/// declared alias) must never earn corroboration credit from the requested series' map. So the
+/// arc map is withheld entirely for any release that did not resolve to the requested series, and
+/// the arc-title token is stripped from the release's series name before resolution so the arc
+/// words themselves cannot pull a foreign series onto the requested identity via a
+/// franchise-style alternate title (e.g. "Bleach: Thousand-Year Blood War").
+/// </remarks>
 public static class ReleaseRanking
 {
-    /// <summary>Minimum title similarity for a release to resolve to a known identity at all.</summary>
+    /// <summary>Minimum series-name similarity for a release to resolve to a known identity at all.</summary>
     private const double MinResolutionSimilarity = 0.5;
+
+    /// <summary>
+    /// Minimum lead the best-matching identity must hold over the runner-up. A release whose series
+    /// name sits between two known identities (a tie, or near enough) is <see cref="ReleaseSeriesRelation.Unknown"/>
+    /// rather than silently awarded to whichever identity happened to be enumerated first.
+    /// </summary>
+    private const double MinResolutionMargin = 0.05;
 
     public static RankingResult Rank(IReadOnlyList<string> releaseTitles, RankingContext context)
     {
@@ -48,13 +66,23 @@ public static class ReleaseRanking
 
     private static RankableRelease ToRankable(string title, RankingContext context)
     {
-        var seriesName = SeriesNameExtractor.Extract(title) ?? title;
-
         var raw = RawReleaseNumberingParser.Parse(title, context.ArcMap);
-        var candidates = CandidateNumberingSetBuilder.Build(raw, context.ArcMap);
-        var evidence = NumberingCandidateScoring.BuildCorroborations(candidates, context.ArcMap, raw.ArcTitleToken, raw.SceneSeason);
+        var seriesName = SeriesNameWithoutArcTitle(title, raw.ArcTitleToken);
 
         var (relation, reason) = Resolve(seriesName, context);
+
+        // Numbering can only be corroborated against the requested series' own arc map, and only
+        // for a release that is actually that series. Everything else keeps its bare parsed
+        // numbering (uncorroborated carry-through) and is ranked on title similarity plus the
+        // relation penalty alone.
+        var arcMap = relation == ReleaseSeriesRelation.Same ? context.ArcMap : null;
+        if (arcMap is null)
+        {
+            raw = raw with { ArcTitleToken = null };
+        }
+
+        var candidates = CandidateNumberingSetBuilder.Build(raw, arcMap);
+        var evidence = NumberingCandidateScoring.BuildCorroborations(candidates, arcMap, raw.ArcTitleToken, raw.SceneSeason);
 
         return new RankableRelease(
             title,
@@ -64,24 +92,57 @@ public static class ReleaseRanking
             TitleSimilarity.Score(seriesName, context.Requested));
     }
 
+    /// <summary>
+    /// The release's series-name portion with the matched arc title removed. Arc words are
+    /// evidence about the arc, not the series: leaving them in lets a foreign release share tokens
+    /// with an arc-bearing alternate title of the requested series. A title that consists of
+    /// nothing but the arc name has no series evidence at all and yields an empty name.
+    /// </summary>
+    private static string SeriesNameWithoutArcTitle(string title, string? arcTitleToken)
+    {
+        var seriesName = SeriesNameExtractor.Extract(title) ?? title;
+        if (arcTitleToken is null)
+        {
+            return seriesName;
+        }
+
+        return seriesName
+            .Replace(arcTitleToken, " ", StringComparison.OrdinalIgnoreCase)
+            .Trim(' ', '-', ':');
+    }
+
     private static (ReleaseSeriesRelation Relation, string? Reason) Resolve(string seriesName, RankingContext context)
     {
         SeriesIdentity? resolved = null;
+        SeriesIdentity? runnerUp = null;
         var bestSimilarity = 0.0;
+        var runnerUpSimilarity = 0.0;
 
         foreach (var identity in context.KnownIdentities)
         {
             var similarity = TitleSimilarity.Score(seriesName, identity);
             if (similarity > bestSimilarity)
             {
-                bestSimilarity = similarity;
+                runnerUp = resolved;
+                runnerUpSimilarity = bestSimilarity;
                 resolved = identity;
+                bestSimilarity = similarity;
+            }
+            else if (similarity > runnerUpSimilarity)
+            {
+                runnerUp = identity;
+                runnerUpSimilarity = similarity;
             }
         }
 
         if (resolved is null || bestSimilarity < MinResolutionSimilarity)
         {
-            return (ReleaseSeriesRelation.Unknown, null);
+            return (ReleaseSeriesRelation.Unknown, "unknown series: title matches no known identity");
+        }
+
+        if (bestSimilarity - runnerUpSimilarity < MinResolutionMargin)
+        {
+            return (ReleaseSeriesRelation.Unknown, $"unknown series: ambiguous between '{resolved.PrimaryTitle}' and '{runnerUp!.PrimaryTitle}'");
         }
 
         var classification = FranchiseClassifier.Classify(context.Requested, resolved);

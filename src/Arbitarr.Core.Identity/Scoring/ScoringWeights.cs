@@ -84,6 +84,19 @@ public sealed record ScoringWeights
     public double UnrelatedSeriesPenalty { get; init; } = 0.25;
 
     /// <summary>
+    /// Multiplicative factor (0..1) <see cref="ReleaseRanker"/> applies to a release whose series
+    /// could not be resolved to any known identity at all (no identity clears the similarity floor,
+    /// or two identities tie within the resolution margin). Sits between
+    /// <see cref="SiblingSeriesPenalty"/> and <see cref="UnrelatedSeriesPenalty"/>: an unidentified
+    /// release is more suspect than a known franchise sibling but has not been positively shown to
+    /// be a different series. Below the acceptance threshold by construction, so even fully
+    /// corroborated numbering (calibrated 1.0) cannot clear 0.9 without a resolved identity:
+    /// identity is a precondition for acceptance, never something numbering can substitute for.
+    /// Still a de-rank, never a gate (P1 fail-open): the release remains in the ranked list.
+    /// </summary>
+    public double UnknownSeriesPenalty { get; init; } = 0.4;
+
+    /// <summary>
     /// Weight <see cref="ReleaseRanker"/> multiplies a release's 0..1 title similarity by when no
     /// numbering corroboration is available (P1 fail-open / P3 degraded path: XEM and Anime-Lists
     /// unreachable, or a series with no arc map at all). Capped below the acceptance threshold by

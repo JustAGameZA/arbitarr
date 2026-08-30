@@ -1,6 +1,7 @@
 using Arbitarr.Core.Identity;
 using Arbitarr.Core.Identity.Scoring;
 using Arbitarr.Media.Numbering;
+using Arbitarr.Media.Ranking;
 using Xunit;
 
 namespace Arbitarr.Media.Tests;
@@ -160,5 +161,62 @@ public class BleachNumberingScorerTests
         Assert.NotNull(tokenMatchedScore);
         Assert.True(bareScore!.Confidence > 0);
         Assert.True(bareScore.Confidence < tokenMatchedScore!.Confidence);
+    }
+
+    private static SeriesIdentity Bleach => new(74796, null, "Bleach", ["BLEACH Sennen Kessen hen", "Bleach: Thousand-Year Blood War"]);
+
+    /// <summary>
+    /// M6-1 end to end over the literal titles from docs/step3b-observed-failures.md, through
+    /// <see cref="ReleaseRanking.Rank"/> (parser → identity resolution → candidate set → scorer →
+    /// ranker) rather than hand-built <see cref="RawReleaseNumbering"/> records: the TYBW releases
+    /// clear the 0.9 threshold and rank first, the three known-wrong Bleach titles stay below it,
+    /// and a foreign series that borrows the arc words never resolves to Bleach at all.
+    /// </summary>
+    [Fact]
+    public void LiteralTitles_ThroughReleaseRanking_TybwMeetsThreshold_KnownWrongAndForeignSeriesDoNot()
+    {
+        const string toonsHub = "[ToonsHub] BLEACH Thousand-Year Blood War S01E36 1080p WEB-DL AAC x264";
+        const string sennenKessenHen = "BLEACH Sennen Kessen hen S01E36 1080p WEB-DL x264";
+        string[] knownWrong = ["Bleach.S16E19", "[TESHI]Bleach-236", "Bleach - 329 [SGKK]"];
+        string[] foreign =
+        [
+            "Naruto Shippuden Thousand-Year Blood War S17E10 1080p",
+            "Attack on Titan TYBW S17E20 1080p",
+            "Thousand-Year Blood War S17E10 1080p",
+        ];
+
+        string[] titles = [.. knownWrong, .. foreign, toonsHub, sennenKessenHen];
+        var result = ReleaseRanking.Rank(titles, new RankingContext(Bleach, [Bleach], BleachArcMap));
+
+        Assert.Equal(titles.Length, result.Ranked.Count);
+        Assert.Empty(result.Degradations);
+
+        foreach (var title in new[] { toonsHub, sennenKessenHen })
+        {
+            var entry = Assert.Single(result.Ranked, r => r.Release.Title == title);
+            Assert.True(entry.MeetsAcceptanceThreshold, $"{title} scored {entry.Confidence:F3}");
+            Assert.Equal(ReleaseSeriesRelation.Same, entry.Release.Relation);
+            Assert.Equal(17, entry.BestNumbering!.Candidate.Season);
+            Assert.Equal(402, entry.BestNumbering.Candidate.Absolute);
+        }
+
+        Assert.Contains(result.Ranked[0].Release.Title, new[] { toonsHub, sennenKessenHen });
+        Assert.Contains(result.Ranked[1].Release.Title, new[] { toonsHub, sennenKessenHen });
+
+        foreach (var title in knownWrong)
+        {
+            var entry = Assert.Single(result.Ranked, r => r.Release.Title == title);
+            Assert.False(entry.MeetsAcceptanceThreshold, $"{title} reached {entry.Confidence:F3}");
+        }
+
+        foreach (var title in foreign)
+        {
+            var entry = Assert.Single(result.Ranked, r => r.Release.Title == title);
+            Assert.Equal(ReleaseSeriesRelation.Unknown, entry.Release.Relation);
+            Assert.NotNull(entry.DeRankReason);
+            Assert.False(entry.MeetsAcceptanceThreshold, $"{title} reached {entry.Confidence:F3}");
+            // Withheld arc map: the borrowed arc words earn no corroboration for a foreign series.
+            Assert.True(entry.Confidence < new ScoringWeights().UnknownSeriesPenalty, $"{title} reached {entry.Confidence:F3}");
+        }
     }
 }

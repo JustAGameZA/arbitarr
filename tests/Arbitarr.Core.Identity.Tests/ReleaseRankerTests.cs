@@ -97,7 +97,7 @@ public class ReleaseRankerTests
     }
 
     [Fact]
-    public void UnrelatedPenalty_IsConsumed_AndStrongerThanSibling()
+    public void RelationPenalties_AreConsumed_AndOrdered_SiblingAboveUnknownAboveUnrelated()
     {
         var result = ReleaseRanker.Rank(
         [
@@ -107,13 +107,40 @@ public class ReleaseRankerTests
         ]);
 
         var w = new ScoringWeights();
-        Assert.Equal(["unknown", "sibling", "unrelated"], result.Ranked.Select(r => r.Release.Title));
-        Assert.Equal(0.6, result.Ranked[0].Confidence, precision: 10);
-        Assert.Equal(0.6 * w.SiblingSeriesPenalty, result.Ranked[1].Confidence, precision: 10);
+        Assert.Equal(["sibling", "unknown", "unrelated"], result.Ranked.Select(r => r.Release.Title));
+        Assert.Equal(0.6 * w.SiblingSeriesPenalty, result.Ranked[0].Confidence, precision: 10);
+        Assert.Equal(0.6 * w.UnknownSeriesPenalty, result.Ranked[1].Confidence, precision: 10);
         Assert.Equal(0.6 * w.UnrelatedSeriesPenalty, result.Ranked[2].Confidence, precision: 10);
-        Assert.Equal("sibling series", result.Ranked[1].DeRankReason);
+        Assert.Equal("sibling series", result.Ranked[0].DeRankReason);
+        Assert.Equal("unknown series", result.Ranked[1].DeRankReason);
         Assert.Equal("unrelated series", result.Ranked[2].DeRankReason);
-        Assert.Null(result.Ranked[0].DeRankReason);
+    }
+
+    /// <summary>
+    /// Identity is a precondition for acceptance: no relation other than Same can clear the
+    /// threshold, even with the strongest possible numbering evidence and a perfect title match.
+    /// The release is still ranked and returned (P1 fail-open), just never accepted.
+    /// </summary>
+    [Theory]
+    [InlineData(ReleaseSeriesRelation.Unknown)]
+    [InlineData(ReleaseSeriesRelation.Sibling)]
+    [InlineData(ReleaseSeriesRelation.Unrelated)]
+    public void NonSameRelation_CannotMeetThreshold_EvenWithFullyCorroboratedNumbering(ReleaseSeriesRelation relation)
+    {
+        var result = ReleaseRanker.Rank([Release("foreign", [Corroborated(17, 3, 369)], relation, reason: null, similarity: 1.0)]);
+
+        var entry = Assert.Single(result.Ranked);
+        Assert.False(entry.MeetsAcceptanceThreshold, $"{relation} reached {entry.Confidence:F3}");
+        Assert.NotNull(entry.DeRankReason);
+        Assert.NotNull(entry.BestNumbering);
+    }
+
+    [Fact]
+    public void UnknownRelation_UsesRelationReason_WhenSupplied()
+    {
+        var result = ReleaseRanker.Rank([Release("x", relation: ReleaseSeriesRelation.Unknown, reason: "unknown series: ambiguous")]);
+
+        Assert.Equal("unknown series: ambiguous", Assert.Single(result.Ranked).DeRankReason);
     }
 
     [Fact]
