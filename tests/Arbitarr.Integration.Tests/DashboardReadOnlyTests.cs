@@ -153,12 +153,14 @@ public sealed class DashboardReadOnlyTests : IClassFixture<ArbitarrWebApplicatio
 
         // D1: 7-lite is dashboard + recent-searches log + read-only config viewer only — no
         // interactive/ad-hoc search trigger for the *unauthenticated* dashboard surface. M7-1 adds
-        // exactly one exception: an admin-gated (D2, AdminApiKeyFilter) ad-hoc search route for the
-        // admin-only dashboard extension — it is not reachable without the admin API key, so it does
-        // not weaken D1's read-only/no-auth guarantee for the public 7-lite routes. Any other
+        // one exception: an admin-gated (D2, AdminApiKeyFilter) ad-hoc search route for the
+        // admin-only dashboard extension. M7-9 adds a second, equally admin-gated exception: the
+        // match-explanation lookup for a single previously rendered release (AC-M7b), keyed off the
+        // same ad-hoc-search route. Neither is reachable without the admin API key, so neither
+        // weakens D1's read-only/no-auth guarantee for the public 7-lite routes. Any other
         // "search"-named surface remains disallowed.
         Assert.DoesNotContain(routes, r => r is not null && r.Contains("search", StringComparison.OrdinalIgnoreCase)
-            && r != "/api/searches/recent" && r != "/api/admin/search");
+            && r != "/api/searches/recent" && r != "/api/admin/search" && r != "/api/admin/search/{proxyGuid}/explanation");
     }
 
     public static IEnumerable<object[]> DashboardRoutesAndDisallowedMethods()
