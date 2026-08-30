@@ -60,9 +60,14 @@ public class MaxLengthStreamTests
         await Assert.ThrowsAsync<DownloadTooLargeException>(async () =>
         {
             // MaxBytes is 10 MiB; 11 reads of 1 MiB pushes the running total past it.
+            // Each read's count is asserted rather than discarded (CA2022): the budget is only
+            // genuinely exceeded if every read really did yield a full chunk, so a short read
+            // would otherwise let this loop finish without ever crossing MaxBytes and leave the
+            // ThrowsAsync assertion vacuous.
             for (var i = 0; i < 11; i++)
             {
-                await stream.ReadAsync(chunk.AsMemory());
+                var read = await stream.ReadAsync(chunk.AsMemory());
+                Assert.Equal(chunk.Length, read);
             }
         });
     }
