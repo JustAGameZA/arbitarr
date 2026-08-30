@@ -1,5 +1,6 @@
 using Arbitarr.Api.Rendering;
 using Arbitarr.Api.Search;
+using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Releases;
 using Arbitarr.Core.Security;
 using Arbitarr.Core.Sources;
@@ -145,6 +146,7 @@ public class ErrorXmlGoldenTests
             "correct-key",
             snapshotService,
             releaseLookup,
+            new RecentSearchLog(),
             httpContext.Request,
             CancellationToken.None);
 

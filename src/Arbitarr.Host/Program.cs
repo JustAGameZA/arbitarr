@@ -146,6 +146,7 @@ app.MapGet("/torznab/api", async (
     CapsAggregator capsAggregator,
     PaginationSnapshotService snapshotService,
     InMemoryReleaseLookup releaseLookup,
+    RecentSearchLog recentSearchLog,
     IReadOnlyList<IUpstreamSource> sources,
     HttpRequest request,
     CancellationToken cancellationToken) =>
@@ -171,6 +172,7 @@ app.MapGet("/torznab/api", async (
         apikey!,
         snapshotService,
         releaseLookup,
+        recentSearchLog,
         request,
         cancellationToken).ConfigureAwait(false);
 })
@@ -188,6 +190,7 @@ app.MapGet("/newznab/api", async (
     CapsAggregator capsAggregator,
     PaginationSnapshotService snapshotService,
     InMemoryReleaseLookup releaseLookup,
+    RecentSearchLog recentSearchLog,
     IReadOnlyList<IUpstreamSource> sources,
     HttpRequest request,
     CancellationToken cancellationToken) =>
@@ -213,6 +216,7 @@ app.MapGet("/newznab/api", async (
         apikey!,
         snapshotService,
         releaseLookup,
+        recentSearchLog,
         request,
         cancellationToken).ConfigureAwait(false);
 })

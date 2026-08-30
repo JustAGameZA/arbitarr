@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using Arbitarr.Api.Rendering;
+using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Sources;
 using Microsoft.AspNetCore.Http;
 
@@ -31,10 +33,11 @@ public static class SearchEndpoint
         string callerApiKey,
         PaginationSnapshotService snapshotService,
         InMemoryReleaseLookup releaseLookup,
+        RecentSearchLog recentSearchLog,
         HttpRequest request,
         CancellationToken cancellationToken)
     {
-        var (result, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, snapshotService, releaseLookup, cancellationToken).ConfigureAwait(false);
+        var (result, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, snapshotService, releaseLookup, recentSearchLog, cancellationToken).ConfigureAwait(false);
         if (rateLimited)
         {
             var errorXml = TorznabXmlWriter.WriteError(RateLimitErrorCode, "Request limit reached");
@@ -54,10 +57,11 @@ public static class SearchEndpoint
         string callerApiKey,
         PaginationSnapshotService snapshotService,
         InMemoryReleaseLookup releaseLookup,
+        RecentSearchLog recentSearchLog,
         HttpRequest request,
         CancellationToken cancellationToken)
     {
-        var (result, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, snapshotService, releaseLookup, cancellationToken).ConfigureAwait(false);
+        var (result, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, snapshotService, releaseLookup, recentSearchLog, cancellationToken).ConfigureAwait(false);
         if (rateLimited)
         {
             var errorXml = NewznabXmlWriter.WriteError(RateLimitErrorCode, "Request limit reached");
@@ -76,8 +80,10 @@ public static class SearchEndpoint
         int offset,
         PaginationSnapshotService snapshotService,
         InMemoryReleaseLookup releaseLookup,
+        RecentSearchLog recentSearchLog,
         CancellationToken cancellationToken)
     {
+        var stopwatch = Stopwatch.StartNew();
         var query = new SearchQuery(queryText, categories, limit, offset);
         var result = await snapshotService.GetPageAsync(searchType ?? "search", query, cancellationToken).ConfigureAwait(false);
 
@@ -87,6 +93,21 @@ public static class SearchEndpoint
         // RequestLimitReachedException and none contributed any results — a partially degraded
         // merge (some sources rate-limited, others succeeded) still renders normally.
         var rateLimited = result.Releases.Count == 0 && result.RateLimitedSources.Count > 0;
+
+        stopwatch.Stop();
+
+        // Record SearchQuery.QueryText (the parsed query term), never the raw HttpRequest — the
+        // client's apikey travels on the request's query string, and RecentSearchLog feeds the
+        // unauthenticated /api/searches/recent dashboard (M2-5). Band/ResolvedIdentity stay null
+        // until M5/M3 wire cache-band and identity resolution into this path.
+        recentSearchLog.Record(new RecentSearchEntry(
+            ReceivedAt: DateTimeOffset.UtcNow,
+            Query: query.QueryText ?? string.Empty,
+            ResolvedIdentity: null,
+            ResultCount: result.Releases.Count,
+            ElapsedMilliseconds: stopwatch.Elapsed.TotalMilliseconds,
+            Band: null));
+
         return (result, rateLimited);
     }
 
