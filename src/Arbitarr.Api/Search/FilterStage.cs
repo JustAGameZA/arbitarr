@@ -31,17 +31,32 @@ public sealed class FilterStage
     private readonly SettingsReader _settingsReader;
     private readonly ArbitarrDbContext _dbContext;
     private readonly TimeProvider _timeProvider;
+    private readonly IVerdictCacheReader? _verdictCacheReader;
+    private readonly AiModelIdentity? _modelIdentity;
 
+    /// <param name="verdictCacheReader">
+    /// Cache-only AI slot (Q1-B) consulted by <see cref="SuppressionPrecedenceChain"/>. Optional
+    /// and defaults to <see langword="null"/> (AI slot stays an abstain-only no-op) so existing
+    /// callers/tests that construct a <see cref="FilterStage"/> without an AI layer keep compiling
+    /// and behaving exactly as before M5. Per-release <see cref="RenderedRelease.SourceName"/> is
+    /// used as the cache key's source name — not a fixed constructor value — since one
+    /// <see cref="FilterStage"/> instance evaluates releases from multiple upstream sources.
+    /// </param>
+    /// <param name="modelIdentity">Model/prompt identity used in the verdict cache key; the AI slot stays inert unless both this and <paramref name="verdictCacheReader"/> are supplied.</param>
     public FilterStage(
         ApiKeyProfileResolver profileResolver,
         SettingsReader settingsReader,
         ArbitarrDbContext dbContext,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IVerdictCacheReader? verdictCacheReader = null,
+        AiModelIdentity? modelIdentity = null)
     {
         _profileResolver = profileResolver ?? throw new ArgumentNullException(nameof(profileResolver));
         _settingsReader = settingsReader ?? throw new ArgumentNullException(nameof(settingsReader));
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+        _verdictCacheReader = verdictCacheReader;
+        _modelIdentity = modelIdentity;
     }
 
     /// <summary>
@@ -74,7 +89,13 @@ public sealed class FilterStage
 
         foreach (var release in releases)
         {
-            var chainResult = SuppressionPrecedenceChain.Evaluate(profile, release.Candidate, aiConfidenceThreshold);
+            var chainResult = SuppressionPrecedenceChain.Evaluate(
+                profile,
+                release.Candidate,
+                aiConfidenceThreshold,
+                _verdictCacheReader,
+                release.SourceName,
+                _modelIdentity);
 
             if (chainResult.Verdict != Verdict.Reject)
             {
