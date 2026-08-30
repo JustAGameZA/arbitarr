@@ -177,6 +177,7 @@ EffectiveConfigEndpoint.Map(app);
 HealthStalenessEndpoint.Map(app);
 AdminPingEndpoint.Map(app);
 AdminSettingsEndpoints.Map(app);
+AdHocSearchEndpoint.Map(app);
 
 // Torznab family (torrent-oriented: namespace prefix "torznab", enclosure MIME application/x-bittorrent).
 app.MapGet("/torznab/api", async (
