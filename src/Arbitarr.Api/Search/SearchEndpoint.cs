@@ -32,6 +32,7 @@ public static class SearchEndpoint
         int offset,
         string callerApiKey,
         PaginationSnapshotService snapshotService,
+        FilterStage filterStage,
         InMemoryReleaseLookup releaseLookup,
         RecentSearchLog recentSearchLog,
         HttpRequest request,
@@ -41,7 +42,7 @@ public static class SearchEndpoint
         int? season = null,
         int? episode = null)
     {
-        var (result, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, releaseLookup, recentSearchLog, cancellationToken).ConfigureAwait(false);
+        var (result, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, cancellationToken).ConfigureAwait(false);
         if (rateLimited)
         {
             var errorXml = TorznabXmlWriter.WriteError(RateLimitErrorCode, "Request limit reached");
@@ -60,6 +61,7 @@ public static class SearchEndpoint
         int offset,
         string callerApiKey,
         PaginationSnapshotService snapshotService,
+        FilterStage filterStage,
         InMemoryReleaseLookup releaseLookup,
         RecentSearchLog recentSearchLog,
         HttpRequest request,
@@ -69,7 +71,7 @@ public static class SearchEndpoint
         int? season = null,
         int? episode = null)
     {
-        var (result, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, releaseLookup, recentSearchLog, cancellationToken).ConfigureAwait(false);
+        var (result, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, cancellationToken).ConfigureAwait(false);
         if (rateLimited)
         {
             var errorXml = NewznabXmlWriter.WriteError(RateLimitErrorCode, "Request limit reached");
@@ -91,6 +93,7 @@ public static class SearchEndpoint
         int? season,
         int? episode,
         PaginationSnapshotService snapshotService,
+        FilterStage filterStage,
         InMemoryReleaseLookup releaseLookup,
         RecentSearchLog recentSearchLog,
         CancellationToken cancellationToken)
@@ -99,28 +102,40 @@ public static class SearchEndpoint
         var query = new SearchQuery(queryText, categories, limit, offset, tvdbId, tmdbId, season, episode);
         var result = await snapshotService.GetPageAsync(searchType ?? "search", query, cancellationToken).ConfigureAwait(false);
 
-        releaseLookup.RecordRange(result.Releases);
-
         // Only surface the rate-limit element when every configured source failed with
         // RequestLimitReachedException and none contributed any results — a partially degraded
         // merge (some sources rate-limited, others succeeded) still renders normally.
         var rateLimited = result.Releases.Count == 0 && result.RateLimitedSources.Count > 0;
+        if (rateLimited)
+        {
+            return (null, true);
+        }
+
+        // Filter before anything downstream sees the set (M4-7): the recorded result count, the
+        // download-proxy registrations and the rendered XML must all agree on the post-filter view.
+        var filtered = await filterStage.ApplyAsync(result.Releases, queryText ?? string.Empty, cancellationToken).ConfigureAwait(false);
+
+        // Register only the post-filter set: an enforced-mode (shadow OFF) suppression is a deny,
+        // full stop, so a withheld release must not remain resolvable via /download/{proxyGuid}.
+        // Shadow-mode-suppressed releases stay in `filtered` (annotated), so they stay
+        // downloadable.
+        releaseLookup.RecordRange(filtered);
 
         stopwatch.Stop();
 
         // Record SearchQuery.QueryText (the parsed query term), never the raw HttpRequest — the
         // client's apikey travels on the request's query string, and RecentSearchLog feeds the
-        // unauthenticated /api/searches/recent dashboard (M2-5). Band/ResolvedIdentity stay null
-        // until M5/M3 wire cache-band and identity resolution into this path.
+        // unauthenticated /api/searches/recent dashboard (M2-5). ResolvedIdentity stays null until
+        // M5 wires identity resolution into this path.
         recentSearchLog.Record(new RecentSearchEntry(
             ReceivedAt: DateTimeOffset.UtcNow,
             Query: query.QueryText ?? string.Empty,
             ResolvedIdentity: null,
-            ResultCount: result.Releases.Count,
+            ResultCount: filtered.Count,
             ElapsedMilliseconds: stopwatch.Elapsed.TotalMilliseconds,
-            Band: null));
+            Band: result.CacheBand.ToString().ToLowerInvariant()));
 
-        return (result, rateLimited);
+        return (result with { Releases = filtered }, false);
     }
 
     // The proxy guid alone only prevents enumeration of releases; it is not an authorization
