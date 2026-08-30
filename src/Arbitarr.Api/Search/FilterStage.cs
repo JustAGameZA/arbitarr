@@ -27,18 +27,18 @@ namespace Arbitarr.Api.Search;
 /// </summary>
 public sealed class FilterStage
 {
-    private readonly FilterProfileLoader _profileLoader;
+    private readonly ApiKeyProfileResolver _profileResolver;
     private readonly SettingsReader _settingsReader;
     private readonly ArbitarrDbContext _dbContext;
     private readonly TimeProvider _timeProvider;
 
     public FilterStage(
-        FilterProfileLoader profileLoader,
+        ApiKeyProfileResolver profileResolver,
         SettingsReader settingsReader,
         ArbitarrDbContext dbContext,
         TimeProvider timeProvider)
     {
-        _profileLoader = profileLoader ?? throw new ArgumentNullException(nameof(profileLoader));
+        _profileResolver = profileResolver ?? throw new ArgumentNullException(nameof(profileResolver));
         _settingsReader = settingsReader ?? throw new ArgumentNullException(nameof(settingsReader));
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
@@ -46,12 +46,15 @@ public sealed class FilterStage
 
     /// <summary>
     /// Applies the filter engine to <paramref name="releases"/> for one search request
-    /// (<paramref name="queryKey"/> identifies it in the audit trail). Returns the releases that
-    /// should be rendered, in original order, each annotated when a suppression source matched it.
+    /// (<paramref name="queryKey"/> identifies it in the audit trail). <paramref name="clientName"/>
+    /// is the resolved caller identity (M4-3, A3) — null/blank/unknown resolves to the default
+    /// profile via <see cref="ApiKeyProfileResolver"/>. Returns the releases that should be
+    /// rendered, in original order, each annotated when a suppression source matched it.
     /// </summary>
     public async Task<IReadOnlyList<RenderedRelease>> ApplyAsync(
         IReadOnlyList<RenderedRelease> releases,
         string queryKey,
+        string? clientName = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(releases);
@@ -61,7 +64,7 @@ public sealed class FilterStage
             return releases;
         }
 
-        var profile = await _profileLoader.LoadDefaultProfileAsync(cancellationToken).ConfigureAwait(false);
+        var profile = await _profileResolver.ResolveAsync(clientName, cancellationToken).ConfigureAwait(false);
         var shadowMode = await _settingsReader.GetShadowModeAsync(cancellationToken).ConfigureAwait(false);
         var aiConfidenceThreshold = await _settingsReader.GetAiConfidenceThresholdAsync(cancellationToken).ConfigureAwait(false);
         var now = _timeProvider.GetUtcNow();

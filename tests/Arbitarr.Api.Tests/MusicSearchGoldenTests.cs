@@ -66,7 +66,7 @@ public class MusicSearchGoldenTests : IDisposable
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var snapshotService = new PaginationSnapshotService(mergeStage, store, time);
-        var filterStage = new FilterStage(new FilterProfileLoader(context), new SettingsReader(context), context, time);
+        var filterStage = new FilterStage(new ApiKeyProfileResolver(context, new FilterProfileLoader(context)), new SettingsReader(context), context, time);
         var releaseLookup = new InMemoryReleaseLookup();
 
         var services = new ServiceCollection();
@@ -113,7 +113,7 @@ public class MusicSearchGoldenTests : IDisposable
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var snapshotService = new PaginationSnapshotService(mergeStage, store, time);
-        var filterStage = new FilterStage(new FilterProfileLoader(context), new SettingsReader(context), context, time);
+        var filterStage = new FilterStage(new ApiKeyProfileResolver(context, new FilterProfileLoader(context)), new SettingsReader(context), context, time);
         var releaseLookup = new InMemoryReleaseLookup();
 
         var services = new ServiceCollection();

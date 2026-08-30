@@ -124,7 +124,7 @@ public sealed class SearchEndpointFilterResolvabilityTests : IDisposable
         var snapshotStore = new QuerySnapshotStore(context);
         var snapshotService = new PaginationSnapshotService(mergeStage, snapshotStore, new FakeTimeProvider(Now));
         var filterStage = new FilterStage(
-            new FilterProfileLoader(context),
+            new ApiKeyProfileResolver(context, new FilterProfileLoader(context)),
             new SettingsReader(context),
             context,
             new FakeTimeProvider(Now));

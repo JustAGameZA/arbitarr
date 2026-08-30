@@ -33,9 +33,10 @@ public static class SearchEndpoint
         FilterStage filterStage,
         InMemoryReleaseLookup releaseLookup,
         HttpRequest request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? clientName = null)
     {
-        var (releases, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, snapshotService, filterStage, releaseLookup, cancellationToken).ConfigureAwait(false);
+        var (releases, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, snapshotService, filterStage, releaseLookup, clientName, cancellationToken).ConfigureAwait(false);
         if (rateLimited)
         {
             var errorXml = TorznabXmlWriter.WriteError(RateLimitErrorCode, "Request limit reached");
@@ -57,9 +58,10 @@ public static class SearchEndpoint
         FilterStage filterStage,
         InMemoryReleaseLookup releaseLookup,
         HttpRequest request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? clientName = null)
     {
-        var (releases, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, snapshotService, filterStage, releaseLookup, cancellationToken).ConfigureAwait(false);
+        var (releases, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, snapshotService, filterStage, releaseLookup, clientName, cancellationToken).ConfigureAwait(false);
         if (rateLimited)
         {
             var errorXml = NewznabXmlWriter.WriteError(RateLimitErrorCode, "Request limit reached");
@@ -79,6 +81,7 @@ public static class SearchEndpoint
         PaginationSnapshotService snapshotService,
         FilterStage filterStage,
         InMemoryReleaseLookup releaseLookup,
+        string? clientName,
         CancellationToken cancellationToken)
     {
         var query = new SearchQuery(queryText, categories, limit, offset);
@@ -94,7 +97,7 @@ public static class SearchEndpoint
         }
 
         var queryKey = queryText ?? string.Empty;
-        var filtered = await filterStage.ApplyAsync(result.Releases, queryKey, cancellationToken).ConfigureAwait(false);
+        var filtered = await filterStage.ApplyAsync(result.Releases, queryKey, clientName, cancellationToken).ConfigureAwait(false);
 
         // Register only the post-filter set: an enforced-mode (shadow OFF) suppression is a deny,
         // full stop, so a withheld release must not remain resolvable via /download/{proxyGuid}.

@@ -66,6 +66,7 @@ builder.Services.AddScoped<UpstreamMergeStage>();
 builder.Services.AddScoped<IQuerySnapshotStore, QuerySnapshotStore>();
 builder.Services.AddScoped<PaginationSnapshotService>();
 builder.Services.AddScoped<FilterProfileLoader>();
+builder.Services.AddScoped<ApiKeyProfileResolver>();
 builder.Services.AddScoped<SettingsReader>();
 builder.Services.AddScoped<FilterStage>();
 builder.Services.AddSingleton<InMemoryReleaseLookup>();
@@ -129,7 +130,7 @@ app.MapGet("/torznab/api", async (
     HttpRequest request,
     CancellationToken cancellationToken) =>
 {
-    var (_, apiKeyError) = ApiKeyValidator.Validate(apikey, apiKeyResolver, isTorznab: true);
+    var (clientContext, apiKeyError) = ApiKeyValidator.Validate(apikey, apiKeyResolver, isTorznab: true);
     if (apiKeyError is not null)
     {
         return apiKeyError;
@@ -152,7 +153,8 @@ app.MapGet("/torznab/api", async (
         filterStage,
         releaseLookup,
         request,
-        cancellationToken).ConfigureAwait(false);
+        cancellationToken,
+        clientContext?.Name).ConfigureAwait(false);
 });
 
 // Newznab family (Usenet-oriented: namespace prefix "newznab", enclosure MIME application/x-nzb).
@@ -172,7 +174,7 @@ app.MapGet("/newznab/api", async (
     HttpRequest request,
     CancellationToken cancellationToken) =>
 {
-    var (_, apiKeyError) = ApiKeyValidator.Validate(apikey, apiKeyResolver, isTorznab: false);
+    var (clientContext, apiKeyError) = ApiKeyValidator.Validate(apikey, apiKeyResolver, isTorznab: false);
     if (apiKeyError is not null)
     {
         return apiKeyError;
@@ -195,7 +197,8 @@ app.MapGet("/newznab/api", async (
         filterStage,
         releaseLookup,
         request,
-        cancellationToken).ConfigureAwait(false);
+        cancellationToken,
+        clientContext?.Name).ConfigureAwait(false);
 });
 
 app.MapGet("/download/{proxyGuid}", async (

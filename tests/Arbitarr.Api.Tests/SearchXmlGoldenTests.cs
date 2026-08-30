@@ -117,7 +117,7 @@ public sealed class SearchXmlGoldenTests : IDisposable
 
         using var context = CreateContext();
         var filterStage = new FilterStage(
-            new FilterProfileLoader(context),
+            new ApiKeyProfileResolver(context, new FilterProfileLoader(context)),
             new SettingsReader(context),
             context,
             time);
