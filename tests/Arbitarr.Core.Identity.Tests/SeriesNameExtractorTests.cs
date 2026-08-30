@@ -37,6 +37,13 @@ public class SeriesNameExtractorTests
             new object?[] { "Ghost in the Shell SAC 2045 S02E13 1080p WEB H264-SUGOI", "Ghost in the Shell SAC 2045" },
             new object?[] { "Ghost in the Shell SAC2045 S01 JAPANESE 1080p WEBRip x265", "Ghost in the Shell SAC2045" },
 
+            // Additional required fixture forms.
+            new object?[] { "[ToonsHub] BLEACH Thousand-Year Blood War S01E36 1080p WEB H264-EMBER", "BLEACH Thousand-Year Blood War" },
+            new object?[] { "Second.Release.1080p.WEB-DL.x264-GROUP", "Second Release" },
+            new object?[] { "[SubsPlease] One Piece - 1085 (1080p) [ABCD1234].mkv", "One Piece" },
+            new object?[] { "Ghost in the Shell 5x12 1080p WEB H264-GROUP", "Ghost in the Shell" },
+            new object?[] { "Ghost in the Shell (1995) 1080p BluRay x265-GROUP", "Ghost in the Shell" },
+
             // Edge cases.
             new object?[] { "  Bleach  ", "Bleach" },
             new object?[] { "   ", null },
