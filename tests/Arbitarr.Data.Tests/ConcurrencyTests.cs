@@ -11,6 +11,16 @@ using Microsoft.Extensions.Time.Testing;
 namespace Arbitarr.Data.Tests;
 
 /// <summary>
+/// Serialises this class against the rest of Arbitarr.Data.Tests. These are wall-clock timing
+/// assertions: a sibling test class running on the same box during the measurement window steals
+/// CPU from the reader threads and inflates the tail. Scoped deliberately to this one class via a
+/// collection rather than an xunit.runner.json, so every other test in the project keeps running in
+/// parallel and the project's execution semantics (and the test-count floor) are unchanged.
+/// </summary>
+[CollectionDefinition(ConcurrencyTests.SerialTimingCollection, DisableParallelization = true)]
+public sealed class SerialTimingCollectionDefinition;
+
+/// <summary>
 /// Proves AC15a: with WAL journal mode and an explicit busy_timeout, a background writer
 /// continuously inserting/updating rows (simulating the classifier) never causes a concurrent
 /// foreground reader to stall, time out, or throw a SQLITE_BUSY-style exception during a
@@ -37,8 +47,11 @@ namespace Arbitarr.Data.Tests;
 /// <see cref="SqliteCommand.CommandTimeout"/> so a genuine SQLITE_BUSY surfaces as a fast exception
 /// instead of blocking the test for the full busy_timeout/command-timeout ceiling.
 /// </summary>
+[Collection(ConcurrencyTests.SerialTimingCollection)]
 public sealed class ConcurrencyTests : IDisposable
 {
+    internal const string SerialTimingCollection = "data-serial-timing";
+
     private readonly string _dbPath;
 
     public ConcurrencyTests()
