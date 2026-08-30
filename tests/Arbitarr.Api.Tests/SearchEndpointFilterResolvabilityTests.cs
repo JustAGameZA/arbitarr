@@ -1,5 +1,6 @@
 using Arbitarr.Api.Rendering;
 using Arbitarr.Api.Search;
+using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Releases;
 using Arbitarr.Core.Sources;
 using Arbitarr.Data;
@@ -122,12 +123,13 @@ public sealed class SearchEndpointFilterResolvabilityTests : IDisposable
         var source = new SingleReleaseUpstreamSource(candidate);
         var mergeStage = new UpstreamMergeStage(new[] { (IUpstreamSource)source });
         var snapshotStore = new QuerySnapshotStore(context);
-        var snapshotService = new PaginationSnapshotService(mergeStage, snapshotStore, new FakeTimeProvider(Now));
+        var time = new FakeTimeProvider(Now);
+        var snapshotService = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), snapshotStore, time);
         var filterStage = new FilterStage(
             new ApiKeyProfileResolver(context, new FilterProfileLoader(context)),
             new SettingsReader(context),
             context,
-            new FakeTimeProvider(Now));
+            time);
         var lookup = new InMemoryReleaseLookup();
 
         var httpContext = new DefaultHttpContext();
@@ -146,6 +148,7 @@ public sealed class SearchEndpointFilterResolvabilityTests : IDisposable
             snapshotService,
             filterStage,
             lookup,
+            new RecentSearchLog(),
             httpContext.Request,
             CancellationToken.None);
 
