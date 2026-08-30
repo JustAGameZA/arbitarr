@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
-    <RootNamespace>Arbitarr.Integration.Tests</RootNamespace>
+    <RootNamespace>Arbitarr.Host.Tests</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,8 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Arbitarr.Core\Arbitarr.Core.csproj" />
-    <ProjectReference Include="..\..\src\Arbitarr.Api\Arbitarr.Api.csproj" />
+    <ProjectReference Include="..\..\src\Arbitarr.Host\Arbitarr.Host.csproj" />
   </ItemGroup>
 
 </Project>
