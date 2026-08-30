@@ -105,4 +105,35 @@ public class RuleExportImportTests
         var rule = Assert.Single(imported);
         Assert.Equal(pattern, rule.PatternText);
     }
+
+    /// <summary>
+    /// M4 security review (MEDIUM, follow-up): unbounded aggregate rule-evaluation time is fixed in
+    /// two halves — <see cref="FilterProfile.TotalEvaluationBudget"/> bounds evaluation time at
+    /// query time for any profile (including ones grandfathered before this bound existed), and
+    /// this write-time bound stops a new over-large profile from being imported in the first place.
+    /// A profile one rule over <see cref="Settings.SettingsValidator.MaxRulesPerProfile"/> is
+    /// rejected outright, matching the file's "reject the whole import" convention.
+    /// </summary>
+    [Fact]
+    public void Import_RuleCountOverMax_ThrowsArgumentException()
+    {
+        var text = string.Concat(Enumerable.Repeat(
+            "name|false|Normal|pattern\n",
+            Settings.SettingsValidator.MaxRulesPerProfile + 1));
+
+        Assert.Throws<ArgumentException>(() => RuleImporter.Import(text, ImportIntent.UserInitiated));
+    }
+
+    /// <summary>Boundary companion to the above: exactly the max rule count is accepted.</summary>
+    [Fact]
+    public void Import_RuleCountAtMax_IsAccepted()
+    {
+        var text = string.Concat(Enumerable.Repeat(
+            "name|false|Normal|pattern\n",
+            Settings.SettingsValidator.MaxRulesPerProfile));
+
+        var imported = RuleImporter.Import(text, ImportIntent.UserInitiated);
+
+        Assert.Equal(Settings.SettingsValidator.MaxRulesPerProfile, imported.Count);
+    }
 }
