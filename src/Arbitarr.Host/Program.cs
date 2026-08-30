@@ -112,7 +112,7 @@ builder.Services.AddScoped(sp => new ClassifierWorker(
     sourceName: "Ollama"));
 
 builder.Services.AddScoped<FilterStage>(sp => new FilterStage(
-    sp.GetRequiredService<FilterProfileLoader>(),
+    sp.GetRequiredService<ApiKeyProfileResolver>(),
     sp.GetRequiredService<SettingsReader>(),
     sp.GetRequiredService<ArbitarrDbContext>(),
     sp.GetRequiredService<TimeProvider>(),
