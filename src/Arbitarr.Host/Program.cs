@@ -167,6 +167,7 @@ app.MapGet("/health", () => Results.Json(new
 StatusEndpoint.Map(app);
 RecentSearchesEndpoint.Map(app);
 EffectiveConfigEndpoint.Map(app);
+HealthStalenessEndpoint.Map(app);
 AdminPingEndpoint.Map(app);
 
 // Torznab family (torrent-oriented: namespace prefix "torznab", enclosure MIME application/x-bittorrent).
