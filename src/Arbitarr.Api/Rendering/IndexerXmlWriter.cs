@@ -125,6 +125,15 @@ internal static class IndexerXmlWriter
             item.Add(new XElement(ns + "attr", new XAttribute("name", "peers"), new XAttribute("value", peers)));
         }
 
+        // M4-7: additive-only annotation. Never present unless a suppression source matched this
+        // release; rendering it never touches title/size/category/guid above (M1-4).
+        if (release.SuppressionAnnotation is not null)
+        {
+            item.Add(new XElement(ns + "attr",
+                new XAttribute("name", "arbitarr-suppressed"),
+                new XAttribute("value", release.SuppressionAnnotation)));
+        }
+
         return item;
     }
 
