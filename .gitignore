@@ -33,3 +33,6 @@ infra.env
 *.db
 *.sqlite
 *.sqlite3
+
+# Test result artifacts (.trx logger output)
+TestResults/
