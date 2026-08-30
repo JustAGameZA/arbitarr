@@ -3,6 +3,11 @@ using Arbitarr.Api.Search;
 using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Releases;
 using Arbitarr.Core.Sources;
+using Arbitarr.Data;
+using Arbitarr.Data.Filtering;
+using Arbitarr.Data.Settings;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -18,8 +23,29 @@ namespace Arbitarr.Api.Tests;
 /// query-type-driven), so this still exercises the real code path end-to-end without silently
 /// skipping the AC2 requirement.
 /// </summary>
-public class MusicSearchGoldenTests
+public class MusicSearchGoldenTests : IDisposable
 {
+    private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"arbitarr-music-golden-test-{Guid.NewGuid():N}.db");
+
+    public void Dispose()
+    {
+        SqliteConnection.ClearAllPools();
+        if (File.Exists(_dbPath))
+        {
+            File.Delete(_dbPath);
+        }
+    }
+
+    private ArbitarrDbContext CreateContext()
+    {
+        var optionsBuilder = new DbContextOptionsBuilder<ArbitarrDbContext>();
+        optionsBuilder.UseSqlite($"Data Source={_dbPath}");
+        var context = new ArbitarrDbContext(optionsBuilder.Options);
+        context.Database.Migrate();
+        return context;
+    }
+
+
     // SYNTHETIC fixture — hand-authored, not captured from a live upstream (see class remarks).
     private static ReleaseCandidate SyntheticMusicRelease() => new()
     {
@@ -35,11 +61,13 @@ public class MusicSearchGoldenTests
     [Fact]
     public async Task T_music_renders_search_results_through_the_torznab_wrapper()
     {
+        using var context = CreateContext();
         var source = new FakeUpstreamSource("synthsrc", searchResults: new[] { SyntheticMusicRelease() });
         var mergeStage = new UpstreamMergeStage(new[] { (IUpstreamSource)source });
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var snapshotService = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);
+        var filterStage = new FilterStage(new FilterProfileLoader(context), new SettingsReader(context), context, time);
         var releaseLookup = new InMemoryReleaseLookup();
 
         var services = new ServiceCollection();
@@ -58,6 +86,7 @@ public class MusicSearchGoldenTests
             0,
             "secret-api-key",
             snapshotService,
+            filterStage,
             releaseLookup,
             new RecentSearchLog(),
             httpContext.Request,
@@ -80,11 +109,13 @@ public class MusicSearchGoldenTests
     [Fact]
     public async Task T_music_renders_identically_through_the_newznab_wrapper()
     {
+        using var context = CreateContext();
         var source = new FakeUpstreamSource("synthsrc", searchResults: new[] { SyntheticMusicRelease() });
         var mergeStage = new UpstreamMergeStage(new[] { (IUpstreamSource)source });
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var snapshotService = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);
+        var filterStage = new FilterStage(new FilterProfileLoader(context), new SettingsReader(context), context, time);
         var releaseLookup = new InMemoryReleaseLookup();
 
         var services = new ServiceCollection();
@@ -103,6 +134,7 @@ public class MusicSearchGoldenTests
             0,
             "secret-api-key",
             snapshotService,
+            filterStage,
             releaseLookup,
             new RecentSearchLog(),
             httpContext.Request,
