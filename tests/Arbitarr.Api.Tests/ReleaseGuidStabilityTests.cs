@@ -8,7 +8,11 @@ namespace Arbitarr.Api.Tests;
 /// A stable <see cref="RenderedRelease.ProxyGuid"/> is required for the download-proxy path to
 /// keep resolving the same release across requests/snapshots. These tests pin that stability
 /// and its dependence on both source name and upstream guid.
+///
+/// Shares the "ReleaseGuidSecret" collection with <c>ReleaseGuidSecretSwapTests</c> so it never
+/// runs concurrently with tests that reconfigure <see cref="ReleaseGuid"/>'s shared static secret.
 /// </summary>
+[Collection("ReleaseGuidSecret")]
 public class ReleaseGuidStabilityTests
 {
     [Fact]

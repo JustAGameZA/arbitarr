@@ -1,9 +1,23 @@
 using Arbitarr.Api.Rendering;
 using Arbitarr.Api.Search;
+using Arbitarr.Core.Security;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Arbitarr.Api.Tests;
+
+/// <summary>Minimal single-key resolver double for exercising <see cref="ApiKeyValidator"/> in isolation.</summary>
+internal sealed class SingleKeyResolver : IClientApiKeyResolver
+{
+    private readonly string? _expectedKey;
+
+    public SingleKeyResolver(string? expectedKey) => _expectedKey = expectedKey;
+
+    public ClientKeyContext? Resolve(string? apikey) =>
+        !string.IsNullOrEmpty(_expectedKey) && string.Equals(apikey, _expectedKey, StringComparison.Ordinal)
+            ? new ClientKeyContext("default")
+            : null;
+}
 
 /// <summary>
 /// Golden-XML tests for error rendering (M1-9): both protocol families render the same
@@ -41,10 +55,11 @@ public class ErrorXmlGoldenTests
     [Fact]
     public void Missing_apikey_renders_code_100_in_torznab_wrapper()
     {
-        var result = ApiKeyValidator.Validate(providedApiKey: null, expectedApiKey: "correct-key", isTorznab: true);
+        var (context, error) = ApiKeyValidator.Validate(providedApiKey: null, new SingleKeyResolver("correct-key"), isTorznab: true);
 
-        Assert.NotNull(result);
-        var body = RenderedBody(result!);
+        Assert.Null(context);
+        Assert.NotNull(error);
+        var body = RenderedBody(error!);
         Assert.Contains("<error code=\"100\" description=\"Incorrect user credentials\" />", body);
         Assert.DoesNotContain("newznab", body);
     }
@@ -52,27 +67,30 @@ public class ErrorXmlGoldenTests
     [Fact]
     public void Wrong_apikey_renders_code_100_in_newznab_wrapper()
     {
-        var result = ApiKeyValidator.Validate(providedApiKey: "wrong-key", expectedApiKey: "correct-key", isTorznab: false);
+        var (context, error) = ApiKeyValidator.Validate(providedApiKey: "wrong-key", new SingleKeyResolver("correct-key"), isTorznab: false);
 
-        Assert.NotNull(result);
-        var body = RenderedBody(result!);
+        Assert.Null(context);
+        Assert.NotNull(error);
+        var body = RenderedBody(error!);
         Assert.Contains("<error code=\"100\" description=\"Incorrect user credentials\" />", body);
     }
 
     [Fact]
     public void Correct_apikey_returns_no_error_result()
     {
-        var result = ApiKeyValidator.Validate(providedApiKey: "correct-key", expectedApiKey: "correct-key", isTorznab: true);
+        var (context, error) = ApiKeyValidator.Validate(providedApiKey: "correct-key", new SingleKeyResolver("correct-key"), isTorznab: true);
 
-        Assert.Null(result);
+        Assert.NotNull(context);
+        Assert.Null(error);
     }
 
     [Fact]
     public void Empty_configured_apikey_never_authenticates_any_request()
     {
-        var result = ApiKeyValidator.Validate(providedApiKey: "anything", expectedApiKey: string.Empty, isTorznab: true);
+        var (context, error) = ApiKeyValidator.Validate(providedApiKey: "anything", new SingleKeyResolver(null), isTorznab: true);
 
-        Assert.NotNull(result);
+        Assert.Null(context);
+        Assert.NotNull(error);
     }
 
     private static string RenderedBody(Microsoft.AspNetCore.Http.IResult result)

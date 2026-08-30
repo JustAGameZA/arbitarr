@@ -1,9 +1,12 @@
 using System.Reflection;
+using Arbitarr.Api.Rendering;
 using Arbitarr.Api.Search;
+using Arbitarr.Core.Security;
 using Arbitarr.Core.Sources;
 using Arbitarr.Core.Sources.CircuitBreaker;
 using Arbitarr.Data;
 using Arbitarr.Data.CircuitBreaker;
+using Arbitarr.Host.Security;
 using Arbitarr.Sources.NzbHydra;
 using Microsoft.EntityFrameworkCore;
 
@@ -38,7 +41,11 @@ builder.Services.AddScoped<IAsyncCircuitBreaker, PersistentSourceCircuitBreaker>
 builder.Services.AddScoped<ICapsCacheStore, CapsCacheStore>();
 builder.Services.AddScoped<CapsAggregator>();
 
-builder.Services.AddHttpClient<NzbHydraSource>();
+// SEC-M1 (SSRF): the source adapter validates <link> origins itself, but disabling automatic
+// redirect-following here is defense in depth — an upstream response could otherwise 30x us to an
+// arbitrary host and we'd fetch it before the origin check ever saw the real target.
+builder.Services.AddHttpClient<NzbHydraSource>()
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddScoped<IUpstreamSource>(sp =>
 {
     var section = builder.Configuration.GetSection("Arbitarr:Sources:NzbHydra");
@@ -59,16 +66,39 @@ builder.Services.AddScoped<PaginationSnapshotService>();
 builder.Services.AddSingleton<InMemoryReleaseLookup>();
 builder.Services.AddSingleton<IReleaseLookup>(sp => sp.GetRequiredService<InMemoryReleaseLookup>());
 
+// Inbound Torznab/Newznab client apikey (M1-9, security-hardened). Distinct from
+// Arbitarr:Sources:NzbHydra:ApiKey (the upstream NZBHydra2 credential Arbitarr uses to call out)
+// and from SettingKey.AdminApiKey (a separate M4/M7 concept). "Arbitarr:ClientApiKeys:<n>:Name"/
+// "...:Key" configures named keys; a single legacy "Arbitarr:ApiKey" value collapses to one named
+// key, "default", for backward compatibility.
+builder.Services.AddSingleton<IClientApiKeyResolver>(_ =>
+{
+    var namedKeys = builder.Configuration
+        .GetSection("Arbitarr:ClientApiKeys")
+        .Get<NamedClientApiKey[]>() ?? Array.Empty<NamedClientApiKey>();
+
+    var legacyKey = builder.Configuration["Arbitarr:ApiKey"];
+    var keys = namedKeys.Length > 0
+        ? namedKeys
+        : string.IsNullOrEmpty(legacyKey)
+            ? Array.Empty<NamedClientApiKey>()
+            : new[] { new NamedClientApiKey("default", legacyKey) };
+
+    return new ConfiguredClientApiKeyResolver(keys);
+});
+
 var app = builder.Build();
+
+// SEC-L2: load (or generate, on first run) the per-instance HMAC secret used to compute proxy
+// guids, persisted under the configured config directory so it survives restarts. Must run before
+// any request is handled, since ReleaseGuid.Compute is called from request handlers.
+var configDirectory = builder.Configuration["Arbitarr:ConfigDirectory"]
+    ?? Path.Combine(AppContext.BaseDirectory, "config");
+ReleaseGuid.Configure(ReleaseGuidSecretFile.LoadOrCreate(configDirectory));
 
 var version = Assembly.GetExecutingAssembly()
     .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
     ?? "dev";
-
-// Inbound Torznab/Newznab client apikey (M1-9) — authenticates *arr clients calling into
-// Arbitarr. Distinct from Arbitarr:Sources:NzbHydra:ApiKey, which is the upstream NZBHydra2
-// credential Arbitarr uses to call out.
-var inboundApiKey = builder.Configuration["Arbitarr:ApiKey"] ?? string.Empty;
 
 app.MapGet("/health", () => Results.Json(new
 {
@@ -84,6 +114,8 @@ app.MapGet("/torznab/api", async (
     string? cat,
     int? limit,
     int? offset,
+    string? apikey,
+    IClientApiKeyResolver apiKeyResolver,
     CapsAggregator capsAggregator,
     PaginationSnapshotService snapshotService,
     InMemoryReleaseLookup releaseLookup,
@@ -91,7 +123,8 @@ app.MapGet("/torznab/api", async (
     HttpRequest request,
     CancellationToken cancellationToken) =>
 {
-    if (ApiKeyValidator.Validate(request.Query["apikey"], inboundApiKey, isTorznab: true) is { } apiKeyError)
+    var (_, apiKeyError) = ApiKeyValidator.Validate(apikey, apiKeyResolver, isTorznab: true);
+    if (apiKeyError is not null)
     {
         return apiKeyError;
     }
@@ -106,8 +139,9 @@ app.MapGet("/torznab/api", async (
         t,
         q,
         categories,
-        limit ?? 100,
-        offset ?? 0,
+        PagingClamp.ClampLimit(limit),
+        PagingClamp.ClampOffset(offset),
+        apikey!,
         snapshotService,
         releaseLookup,
         request,
@@ -121,6 +155,8 @@ app.MapGet("/newznab/api", async (
     string? cat,
     int? limit,
     int? offset,
+    string? apikey,
+    IClientApiKeyResolver apiKeyResolver,
     CapsAggregator capsAggregator,
     PaginationSnapshotService snapshotService,
     InMemoryReleaseLookup releaseLookup,
@@ -128,7 +164,8 @@ app.MapGet("/newznab/api", async (
     HttpRequest request,
     CancellationToken cancellationToken) =>
 {
-    if (ApiKeyValidator.Validate(request.Query["apikey"], inboundApiKey, isTorznab: false) is { } apiKeyError)
+    var (_, apiKeyError) = ApiKeyValidator.Validate(apikey, apiKeyResolver, isTorznab: false);
+    if (apiKeyError is not null)
     {
         return apiKeyError;
     }
@@ -143,8 +180,9 @@ app.MapGet("/newznab/api", async (
         t,
         q,
         categories,
-        limit ?? 100,
-        offset ?? 0,
+        PagingClamp.ClampLimit(limit),
+        PagingClamp.ClampOffset(offset),
+        apikey!,
         snapshotService,
         releaseLookup,
         request,
@@ -153,10 +191,12 @@ app.MapGet("/newznab/api", async (
 
 app.MapGet("/download/{proxyGuid}", async (
     string proxyGuid,
+    string? apikey,
+    IClientApiKeyResolver apiKeyResolver,
     IReleaseLookup releaseLookup,
     IReadOnlyList<IUpstreamSource> sources,
     CancellationToken cancellationToken) =>
-    await DownloadProxyEndpoint.HandleAsync(proxyGuid, releaseLookup, sources, cancellationToken).ConfigureAwait(false));
+    await DownloadProxyEndpoint.HandleAsync(proxyGuid, apikey, apiKeyResolver, releaseLookup, sources, cancellationToken).ConfigureAwait(false));
 
 app.Run();
 

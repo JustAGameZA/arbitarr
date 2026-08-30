@@ -77,9 +77,10 @@ public sealed class NzbHydraSource : IUpstreamSource
                 }
 
                 using var response = await _httpClient.GetAsync(pageUri, cancellationToken).ConfigureAwait(false);
+                ThrowIfRateLimited(response);
                 response.EnsureSuccessStatusCode();
                 var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-                page = ParseTorznabResponse(body);
+                page = ParseTorznabResponse(body, _options.BaseUrl);
                 await _circuitBreaker.RecordSuccessAsync(Name, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -117,6 +118,7 @@ public sealed class NzbHydraSource : IUpstreamSource
             await _rateLimiter.WaitForTokenAsync(cancellationToken).ConfigureAwait(false);
 
             using var response = await _httpClient.GetAsync(uri, cancellationToken).ConfigureAwait(false);
+            ThrowIfRateLimited(response);
             response.EnsureSuccessStatusCode();
             var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             var caps = ParseCapsResponse(body);
@@ -144,6 +146,7 @@ public sealed class NzbHydraSource : IUpstreamSource
             await _rateLimiter.WaitForTokenAsync(cancellationToken).ConfigureAwait(false);
 
             var response = await _httpClient.GetAsync(release.Link, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            ThrowIfRateLimited(response);
             response.EnsureSuccessStatusCode();
             var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
             await _circuitBreaker.RecordSuccessAsync(Name, cancellationToken).ConfigureAwait(false);
@@ -153,6 +156,23 @@ public sealed class NzbHydraSource : IUpstreamSource
         {
             await _circuitBreaker.RecordFailureAsync(Name, ex, cancellationToken).ConfigureAwait(false);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// SEC-M2: translates an upstream 429 (Too Many Requests) or 503 (Service Unavailable) into
+    /// the designed <see cref="RequestLimitReachedException"/> signal before
+    /// <c>EnsureSuccessStatusCode()</c> would otherwise turn it into a bare
+    /// <see cref="HttpRequestException"/> — that path was previously dead, so a real upstream
+    /// rate limit surfaced as an unhandled 500 on the proxy and a silently-empty search result
+    /// instead of the Torznab/Newznab rate-limit element.
+    /// </summary>
+    private void ThrowIfRateLimited(HttpResponseMessage response)
+    {
+        if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests
+            || response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable)
+        {
+            throw new RequestLimitReachedException(Name);
         }
     }
 
@@ -190,7 +210,40 @@ public sealed class NzbHydraSource : IUpstreamSource
         return builder.Uri;
     }
 
-    private static List<ReleaseCandidate> ParseTorznabResponse(string xml)
+    /// <summary>
+    /// SEC-M1 (SSRF): validates an upstream-supplied <c>&lt;link&gt;</c> against the configured
+    /// NZBHydra <paramref name="allowedOrigin"/> (scheme + host + port) before it is trusted as a
+    /// download target. Without this, a compromised/malicious upstream feed could point
+    /// <c>&lt;link&gt;</c> at an arbitrary LAN host and have Arbitarr fetch and stream it back to
+    /// the caller via DownloadProxyEndpoint. Non-conforming links cause the whole item to be
+    /// dropped (never defaulted to a placeholder URI, which would still be a valid, fetchable
+    /// target).
+    /// </summary>
+    private static bool TryValidateOriginPinnedLink(string? link, Uri allowedOrigin, out Uri validated)
+    {
+        validated = null!;
+
+        if (!Uri.TryCreate(link, UriKind.Absolute, out var parsedLink))
+        {
+            return false;
+        }
+
+        if (parsedLink.Scheme != Uri.UriSchemeHttp && parsedLink.Scheme != Uri.UriSchemeHttps)
+        {
+            return false;
+        }
+
+        if (!string.Equals(parsedLink.Host, allowedOrigin.Host, StringComparison.OrdinalIgnoreCase)
+            || parsedLink.Port != allowedOrigin.Port)
+        {
+            return false;
+        }
+
+        validated = parsedLink;
+        return true;
+    }
+
+    private static List<ReleaseCandidate> ParseTorznabResponse(string xml, Uri allowedOrigin)
     {
         var doc = XDocument.Parse(xml);
         var items = doc.Descendants("item");
@@ -203,10 +256,14 @@ public sealed class NzbHydraSource : IUpstreamSource
             var link = item.Element("link")?.Value;
             var pubDateRaw = item.Element("pubDate")?.Value;
 
+            if (!TryValidateOriginPinnedLink(link, allowedOrigin, out var linkUri))
+            {
+                // Drop the item rather than defaulting to a placeholder URI: a placeholder would
+                // still be a well-formed, fetchable target, defeating the point of the check.
+                continue;
+            }
+
             var pubDate = TryParseDate(pubDateRaw) ?? DateTimeOffset.UtcNow;
-            var linkUri = Uri.TryCreate(link, UriKind.Absolute, out var parsedLink)
-                ? parsedLink
-                : new Uri("about:blank");
 
             long size = 0;
             var sizeAttr = item.Elements(TorznabNs + "attr")

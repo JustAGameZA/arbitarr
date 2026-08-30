@@ -27,7 +27,7 @@ public class NzbHydraSourceTests
             sb.Append("<item>");
             sb.Append($"<title>Release {idx}</title>");
             sb.Append($"<guid>guid-{idx}</guid>");
-            sb.Append("<link>http://hydra.example.test/download/" + idx + "</link>");
+            sb.Append("<link>http://hydra.example.test:5076/download/" + idx + "</link>");
             sb.Append("<pubDate>Thu, 27 Aug 2026 12:00:00 +0000</pubDate>");
             sb.Append("<torznab:attr name=\"size\" value=\"12345\" />");
             sb.Append("<torznab:attr name=\"category\" value=\"5000\" />");
@@ -215,5 +215,73 @@ public class NzbHydraSourceTests
 
         Assert.Empty(caps.SupportedCategories);
         Assert.Empty(handler.RequestedUris);
+    }
+
+    // SEC-M1 (SSRF): an item whose <link> does not match the configured NZBHydra origin
+    // (scheme+host+port) must be dropped entirely rather than parsed with a placeholder/blank URI.
+    [Fact]
+    public async Task SearchAsync_DropsItems_WhenLinkOriginDoesNotMatchConfiguredBaseUrl()
+    {
+        var xml = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <rss xmlns:torznab="http://torznab.com/schemas/2015/feed"><channel>
+            <item>
+              <title>Legit release</title>
+              <guid>guid-legit</guid>
+              <link>http://hydra.example.test:5076/download/legit</link>
+              <pubDate>Thu, 27 Aug 2026 12:00:00 +0000</pubDate>
+              <torznab:attr name="size" value="12345" />
+              <torznab:attr name="category" value="5000" />
+              <torznab:attr name="protocol" value="torrent" />
+            </item>
+            <item>
+              <title>SSRF attempt</title>
+              <guid>guid-evil</guid>
+              <link>http://192.0.2.99:9999/internal/secrets</link>
+              <pubDate>Thu, 27 Aug 2026 12:00:00 +0000</pubDate>
+              <torznab:attr name="size" value="12345" />
+              <torznab:attr name="category" value="5000" />
+              <torznab:attr name="protocol" value="torrent" />
+            </item>
+            </channel></rss>
+            """;
+        var handler = new FakeHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(xml, Encoding.UTF8, "application/xml"),
+        });
+        var breaker = new FakeCircuitBreaker();
+        var source = new NzbHydraSource(MakeOptions(), MakeHttpClient(handler), breaker);
+
+        var results = await source.SearchAsync(new SearchQuery("bleach", Array.Empty<int>(), Limit: 5));
+
+        var single = Assert.Single(results);
+        Assert.Equal("Legit release", single.Title);
+    }
+
+    // SEC-M2: an upstream 429/503 must surface as RequestLimitReachedException, not a bare
+    // HttpRequestException from EnsureSuccessStatusCode (which the proxy would otherwise turn into
+    // an unhandled 5xx instead of the designed rate-limit signal).
+    [Fact]
+    public async Task SearchAsync_On429_ThrowsRequestLimitReachedException()
+    {
+        var handler = new FakeHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.TooManyRequests));
+        var breaker = new FakeCircuitBreaker();
+        var source = new NzbHydraSource(MakeOptions(), MakeHttpClient(handler), breaker);
+
+        await Assert.ThrowsAsync<RequestLimitReachedException>(() =>
+            source.SearchAsync(new SearchQuery("bleach", Array.Empty<int>(), Limit: 5)));
+
+        Assert.Single(breaker.Failures);
+    }
+
+    [Fact]
+    public async Task SearchAsync_On503_ThrowsRequestLimitReachedException()
+    {
+        var handler = new FakeHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+        var breaker = new FakeCircuitBreaker();
+        var source = new NzbHydraSource(MakeOptions(), MakeHttpClient(handler), breaker);
+
+        await Assert.ThrowsAsync<RequestLimitReachedException>(() =>
+            source.SearchAsync(new SearchQuery("bleach", Array.Empty<int>(), Limit: 5)));
     }
 }

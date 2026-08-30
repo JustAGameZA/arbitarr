@@ -28,6 +28,7 @@ public static class SearchEndpoint
         IReadOnlyList<int> categories,
         int limit,
         int offset,
+        string callerApiKey,
         PaginationSnapshotService snapshotService,
         InMemoryReleaseLookup releaseLookup,
         HttpRequest request,
@@ -40,7 +41,7 @@ public static class SearchEndpoint
             return Results.Text(XmlDocumentRendering.ToXmlString(errorXml), TorznabXmlWriter.ContentType);
         }
 
-        var xml = TorznabXmlWriter.WriteSearchResults(result!.Releases, r => DownloadLink(request, r));
+        var xml = TorznabXmlWriter.WriteSearchResults(result!.Releases, r => DownloadLink(request, r, callerApiKey));
         return Results.Text(XmlDocumentRendering.ToXmlString(xml), TorznabXmlWriter.ContentType);
     }
 
@@ -50,6 +51,7 @@ public static class SearchEndpoint
         IReadOnlyList<int> categories,
         int limit,
         int offset,
+        string callerApiKey,
         PaginationSnapshotService snapshotService,
         InMemoryReleaseLookup releaseLookup,
         HttpRequest request,
@@ -62,7 +64,7 @@ public static class SearchEndpoint
             return Results.Text(XmlDocumentRendering.ToXmlString(errorXml), NewznabXmlWriter.ContentType);
         }
 
-        var xml = NewznabXmlWriter.WriteSearchResults(result!.Releases, r => DownloadLink(request, r));
+        var xml = NewznabXmlWriter.WriteSearchResults(result!.Releases, r => DownloadLink(request, r, callerApiKey));
         return Results.Text(XmlDocumentRendering.ToXmlString(xml), NewznabXmlWriter.ContentType);
     }
 
@@ -88,9 +90,16 @@ public static class SearchEndpoint
         return (result, rateLimited);
     }
 
-    private static Uri DownloadLink(HttpRequest request, RenderedRelease release)
+    // The proxy guid alone only prevents enumeration of releases; it is not an authorization
+    // credential. Embedding the caller's own resolved apikey here means DownloadProxyEndpoint can
+    // re-check it before streaming, so a link copied/leaked from one client's response cannot be
+    // used by a party who never had that client's key.
+    private static Uri DownloadLink(HttpRequest request, RenderedRelease release, string callerApiKey)
     {
         var baseUri = $"{request.Scheme}://{request.Host}";
-        return new Uri($"{baseUri}/download/{Uri.EscapeDataString(release.ProxyGuid)}", UriKind.Absolute);
+        var apikeyQuery = Uri.EscapeDataString(callerApiKey);
+        return new Uri(
+            $"{baseUri}/download/{Uri.EscapeDataString(release.ProxyGuid)}?apikey={apikeyQuery}",
+            UriKind.Absolute);
     }
 }
