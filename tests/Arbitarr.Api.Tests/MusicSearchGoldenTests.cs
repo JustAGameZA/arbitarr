@@ -1,5 +1,6 @@
 using Arbitarr.Api.Rendering;
 using Arbitarr.Api.Search;
+using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Releases;
 using Arbitarr.Core.Sources;
 using Microsoft.Extensions.DependencyInjection;
@@ -58,6 +59,7 @@ public class MusicSearchGoldenTests
             "secret-api-key",
             snapshotService,
             releaseLookup,
+            new RecentSearchLog(),
             httpContext.Request,
             CancellationToken.None);
 
@@ -102,6 +104,7 @@ public class MusicSearchGoldenTests
             "secret-api-key",
             snapshotService,
             releaseLookup,
+            new RecentSearchLog(),
             httpContext.Request,
             CancellationToken.None);
 

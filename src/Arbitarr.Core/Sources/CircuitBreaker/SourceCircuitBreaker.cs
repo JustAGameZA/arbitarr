@@ -96,7 +96,7 @@ public sealed class SourceCircuitBreaker
     {
         var snapshot = GetSnapshot(sourceName);
         var now = _timeProvider.GetUtcNow();
-        var errorMessage = ex.Message;
+        var errorMessage = DescribeSanitized(ex);
 
         switch (snapshot.State)
         {
@@ -174,6 +174,21 @@ public sealed class SourceCircuitBreaker
     /// </summary>
     public void Seed(string sourceName, CircuitBreakerSnapshot snapshot)
         => _bySource[sourceName] = snapshot;
+
+    /// <summary>
+    /// Reduces an exception to a topology-safe description: exception type name, plus the HTTP
+    /// status code when the exception carries one. <see cref="Exception.Message"/> is never
+    /// surfaced here — for an <see cref="HttpRequestException"/> raised by a DNS/connect failure
+    /// or <c>EnsureSuccessStatusCode</c>, the message text routinely embeds the upstream host
+    /// (e.g. "No such host is known. (host:5076)"), which would otherwise leak LAN topology
+    /// through <see cref="CircuitBreakerSnapshot.LastError"/> into both persistence
+    /// (<c>SourceHealthRecord</c>) and the unauthenticated <c>/api/status</c> dashboard.
+    /// </summary>
+    private static string DescribeSanitized(Exception ex) => ex switch
+    {
+        HttpRequestException { StatusCode: { } statusCode } => $"{nameof(HttpRequestException)} ({(int)statusCode} {statusCode})",
+        _ => ex.GetType().Name,
+    };
 
     private TimeSpan DoubleAndCap(TimeSpan currentBackoff)
     {

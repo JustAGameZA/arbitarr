@@ -1,6 +1,9 @@
 using System.Reflection;
+using Arbitarr.Api.Dashboard;
 using Arbitarr.Api.Rendering;
+using Arbitarr.Api.Routing;
 using Arbitarr.Api.Search;
+using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Security;
 using Arbitarr.Core.Sources;
 using Arbitarr.Core.Sources.CircuitBreaker;
@@ -15,16 +18,13 @@ using Microsoft.EntityFrameworkCore;
 // other steps extend DI wiring and config binding here.
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddSingleton(_ =>
-{
-    var configured = builder.Configuration["Arbitarr:Database:Path"];
-    return new SqliteConnectionOptions
-    {
-        DatabasePath = string.IsNullOrWhiteSpace(configured)
-            ? Path.Combine(AppContext.BaseDirectory, "arbitarr.db")
-            : configured,
-    };
-});
+// Runtime state lives under /config (AC21), overridable via ARBITARR_CONFIG_DIR for local
+// dev/test so a real /config directory is never required outside the production container.
+var configDirectory = Environment.GetEnvironmentVariable("ARBITARR_CONFIG_DIR") ?? "/config";
+Directory.CreateDirectory(configDirectory);
+var databasePath = Path.Combine(configDirectory, "arbitarr.db");
+
+builder.Services.AddSingleton(new SqliteConnectionOptions { DatabasePath = databasePath });
 builder.Services.AddSingleton<SqliteConnectionFactory>();
 builder.Services.AddScoped(sp =>
 {
@@ -41,6 +41,24 @@ builder.Services.AddScoped<IAsyncCircuitBreaker, PersistentSourceCircuitBreaker>
 builder.Services.AddScoped<ICapsCacheStore, CapsCacheStore>();
 builder.Services.AddScoped<CapsAggregator>();
 
+builder.Services.AddSingleton<RecentSearchLog>();
+
+// 15 minutes: the AC0c-measured *arr RSS sync interval used as the settings floor/ceiling anchor
+// (docs/step0-measurements.md §3 — Sonarr's 15m is the more conservative of Sonarr/Radarr).
+// Scoped (not singleton): EffectiveSettingsReader captures ArbitarrDbContext, itself scoped.
+builder.Services.AddScoped(sp => new EffectiveSettingsReader(
+    sp.GetRequiredService<ArbitarrDbContext>(),
+    TimeSpan.FromMinutes(15)));
+
+var nzbHydraSection = builder.Configuration.GetSection("Arbitarr:Sources:NzbHydra");
+var nzbHydraBaseUrlRaw = nzbHydraSection["BaseUrl"] ?? "http://127.0.0.1:5076";
+var nzbHydraApiKey = nzbHydraSection["ApiKey"] ?? string.Empty;
+var nzbHydraSourceName = nzbHydraSection["SourceName"] ?? "NZBHydra2";
+
+// "Configured" means an API key is present (M1 wiring); the dashboard's effective-config view
+// (M2 §2, D1 surface 3) reports this without ever exposing the key itself.
+builder.Services.AddSingleton(new NzbHydraConfigurationStatus(IsConfigured: !string.IsNullOrWhiteSpace(nzbHydraApiKey)));
+
 // SEC-M1 (SSRF): the source adapter validates <link> origins itself, but disabling automatic
 // redirect-following here is defense in depth — an upstream response could otherwise 30x us to an
 // arbitrary host and we'd fetch it before the origin check ever saw the real target.
@@ -48,12 +66,7 @@ builder.Services.AddHttpClient<NzbHydraSource>()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddScoped<IUpstreamSource>(sp =>
 {
-    var section = builder.Configuration.GetSection("Arbitarr:Sources:NzbHydra");
-    var baseUrlRaw = section["BaseUrl"] ?? "http://127.0.0.1:5076";
-    var apiKey = section["ApiKey"] ?? string.Empty;
-    var sourceName = section["SourceName"] ?? "NZBHydra2";
-
-    var options = new NzbHydraSourceOptions(new Uri(baseUrlRaw), apiKey, sourceName);
+    var options = new NzbHydraSourceOptions(new Uri(nzbHydraBaseUrlRaw), nzbHydraApiKey, nzbHydraSourceName);
     var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
     var httpClient = httpClientFactory.CreateClient(nameof(NzbHydraSource));
     var circuitBreaker = sp.GetRequiredService<IAsyncCircuitBreaker>();
@@ -92,9 +105,18 @@ var app = builder.Build();
 // SEC-L2: load (or generate, on first run) the per-instance HMAC secret used to compute proxy
 // guids, persisted under the configured config directory so it survives restarts. Must run before
 // any request is handled, since ReleaseGuid.Compute is called from request handlers.
-var configDirectory = builder.Configuration["Arbitarr:ConfigDirectory"]
-    ?? Path.Combine(AppContext.BaseDirectory, "config");
 ReleaseGuid.Configure(ReleaseGuidSecretFile.LoadOrCreate(configDirectory));
+
+// Apply pending migrations on startup so a fresh /config volume gets a usable schema
+// before any endpoint (dashboard included) tries to query it.
+using (var scope = app.Services.CreateScope())
+{
+    var dbContext = scope.ServiceProvider.GetRequiredService<ArbitarrDbContext>();
+    dbContext.Database.Migrate();
+}
+
+app.UseDefaultFiles();
+app.UseStaticFiles();
 
 var version = Assembly.GetExecutingAssembly()
     .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
@@ -105,7 +127,12 @@ app.MapGet("/health", () => Results.Json(new
     status = "ok",
     name = "Arbitarr",
     version,
-}));
+}))
+    .WithClassification(RouteClassification.PublicRead);
+
+StatusEndpoint.Map(app);
+RecentSearchesEndpoint.Map(app);
+EffectiveConfigEndpoint.Map(app);
 
 // Torznab family (torrent-oriented: namespace prefix "torznab", enclosure MIME application/x-bittorrent).
 app.MapGet("/torznab/api", async (
@@ -119,6 +146,7 @@ app.MapGet("/torznab/api", async (
     CapsAggregator capsAggregator,
     PaginationSnapshotService snapshotService,
     InMemoryReleaseLookup releaseLookup,
+    RecentSearchLog recentSearchLog,
     IReadOnlyList<IUpstreamSource> sources,
     HttpRequest request,
     CancellationToken cancellationToken) =>
@@ -144,9 +172,11 @@ app.MapGet("/torznab/api", async (
         apikey!,
         snapshotService,
         releaseLookup,
+        recentSearchLog,
         request,
         cancellationToken).ConfigureAwait(false);
-});
+})
+    .WithClassification(RouteClassification.PublicRead);
 
 // Newznab family (Usenet-oriented: namespace prefix "newznab", enclosure MIME application/x-nzb).
 app.MapGet("/newznab/api", async (
@@ -160,6 +190,7 @@ app.MapGet("/newznab/api", async (
     CapsAggregator capsAggregator,
     PaginationSnapshotService snapshotService,
     InMemoryReleaseLookup releaseLookup,
+    RecentSearchLog recentSearchLog,
     IReadOnlyList<IUpstreamSource> sources,
     HttpRequest request,
     CancellationToken cancellationToken) =>
@@ -185,9 +216,11 @@ app.MapGet("/newznab/api", async (
         apikey!,
         snapshotService,
         releaseLookup,
+        recentSearchLog,
         request,
         cancellationToken).ConfigureAwait(false);
-});
+})
+    .WithClassification(RouteClassification.PublicRead);
 
 app.MapGet("/download/{proxyGuid}", async (
     string proxyGuid,
@@ -196,7 +229,8 @@ app.MapGet("/download/{proxyGuid}", async (
     IReleaseLookup releaseLookup,
     IReadOnlyList<IUpstreamSource> sources,
     CancellationToken cancellationToken) =>
-    await DownloadProxyEndpoint.HandleAsync(proxyGuid, apikey, apiKeyResolver, releaseLookup, sources, cancellationToken).ConfigureAwait(false));
+    await DownloadProxyEndpoint.HandleAsync(proxyGuid, apikey, apiKeyResolver, releaseLookup, sources, cancellationToken).ConfigureAwait(false))
+    .WithClassification(RouteClassification.PublicRead);
 
 app.Run();
 
@@ -208,3 +242,7 @@ static IReadOnlyList<int> ParseCategories(string? cat) =>
             .Where(v => v.HasValue)
             .Select(v => v!.Value)
             .ToArray();
+
+// Exposes the top-level-statement entry point as a named type so integration tests can host
+// this app in-process via WebApplicationFactory<Program> (M2-1/M2-2/M2-3 etc., plan §M2).
+public partial class Program;

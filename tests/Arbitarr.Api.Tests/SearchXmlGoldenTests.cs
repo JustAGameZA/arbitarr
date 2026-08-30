@@ -1,5 +1,6 @@
 using Arbitarr.Api.Rendering;
 using Arbitarr.Api.Search;
+using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Sources;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -99,6 +100,7 @@ public class SearchXmlGoldenTests
             "caller-api-key",
             snapshotService,
             releaseLookup,
+            new RecentSearchLog(),
             httpContext.Request,
             CancellationToken.None);
 
