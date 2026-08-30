@@ -119,20 +119,42 @@ public sealed class ConcurrencyTests : IDisposable
             createCommand.ExecuteNonQuery();
         }
 
-        using var stopSignal = new CancellationTokenSource(durationMilliseconds);
         var failures = new System.Collections.Concurrent.ConcurrentBag<Exception>();
         long readCount = 0;
         long writeCount = 0;
+
+        // Deflake root cause (was: `No reader ever completed a single read — harness setup is
+        // broken`, observed both locally and on CI under parallel test-runner load): the original
+        // harness started the 4-second CancellationTokenSource *before* queuing the writer/reader
+        // work to the thread pool via Task.Run. Under contention for thread-pool worker threads
+        // (e.g. several `dotnet test` processes/projects running concurrently in CI), a queued task
+        // can sit unscheduled for a long tail of milliseconds — occasionally consuming the entire
+        // window before a reader task ever gets a thread to run its first iteration on. That is a
+        // scheduler-latency artifact, not a SQLite locking failure, so widening the 4s duration
+        // would only mask it (still flaky at heavier CI load) rather than fix it.
+        //
+        // Fix: (1) run each worker on a dedicated, non-pooled thread via
+        // TaskCreationOptions.LongRunning, which requests its own OS thread instead of a
+        // potentially-starved thread-pool slot; and (2) use a Barrier — with this test method
+        // itself as one of the participants — so the timed contention window only starts (the
+        // CancellationTokenSource is only constructed) once every writer/reader thread has
+        // actually started running (past its connection-open, the slowest per-thread startup
+        // cost) and is waiting at the barrier. No thread's "first useful iteration" can be
+        // silently swallowed by pre-window scheduler/startup latency.
+        using var startBarrier = new Barrier(writerCount + readerCount + 1);
+        var stopFlag = 0;
+        bool ShouldStop() => Volatile.Read(ref stopFlag) != 0;
 
         // Multiple concurrent writers: this is the realistic AC15a shape (the background
         // classifier's continuous writes contending with each other and with reads), and it is
         // also what makes lock contention reliably observable — see the class-level note on why
         // a single lone writer against a passive reader rarely contends at all.
-        var writerTasks = Enumerable.Range(0, writerCount).Select(writerIndex => Task.Run(() =>
+        var writerTasks = Enumerable.Range(0, writerCount).Select(writerIndex => Task.Factory.StartNew(() =>
         {
             using var writerConnection = openWriterConnection();
             var row = writerIndex * 1000;
-            while (!stopSignal.IsCancellationRequested)
+            startBarrier.SignalAndWait();
+            while (!ShouldStop())
             {
                 try
                 {
@@ -177,12 +199,13 @@ public sealed class ConcurrencyTests : IDisposable
                     TryRollback(writerConnection);
                 }
             }
-        })).ToArray();
+        }, TaskCreationOptions.LongRunning)).ToArray();
 
-        var readerTasks = Enumerable.Range(0, readerCount).Select(_ => Task.Run(() =>
+        var readerTasks = Enumerable.Range(0, readerCount).Select(_ => Task.Factory.StartNew(() =>
         {
             using var readerConnection = openReaderConnection();
-            while (!stopSignal.IsCancellationRequested)
+            startBarrier.SignalAndWait();
+            while (!ShouldStop())
             {
                 var stopwatch = Stopwatch.StartNew();
                 try
@@ -206,7 +229,16 @@ public sealed class ConcurrencyTests : IDisposable
                     failures.Add(e);
                 }
             }
-        })).ToArray();
+        }, TaskCreationOptions.LongRunning)).ToArray();
+
+        // This test thread is the final barrier participant: SignalAndWait() here only returns
+        // once every writer/reader thread has opened its connection and reached its own
+        // SignalAndWait() call — i.e. the timed contention window below starts only once all
+        // workers are actually running, eliminating pre-window scheduler/startup latency as a
+        // source of "no reader/writer ever ran an iteration" flakiness.
+        startBarrier.SignalAndWait();
+        Thread.Sleep(durationMilliseconds);
+        Volatile.Write(ref stopFlag, 1);
 
         Task.WaitAll(writerTasks.Concat(readerTasks).ToArray());
 
