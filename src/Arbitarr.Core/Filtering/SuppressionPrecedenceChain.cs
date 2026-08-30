@@ -35,8 +35,19 @@ public static class SuppressionPrecedenceChain
     /// outright (even over a deny-rule or AI match), a deny-rule match wins over an AI match, and
     /// an AI match (once M5 supplies one) wins over no match at all ("pass"). Returns the winning
     /// verdict together with which source produced it, for attribution in the audit trail (P3).
+    ///
+    /// The AI slot is cache-only (Q1-B): <paramref name="verdictCacheReader"/> is consulted for an
+    /// already-computed verdict; a miss passes through unjudged rather than triggering a live model
+    /// call on the request path. Passing <see langword="null"/> for <paramref name="verdictCacheReader"/>
+    /// (the default) keeps the AI slot an abstain-only no-op, e.g. for pre-M5 callers/tests.
     /// </summary>
-    public static ChainResult Evaluate(FilterProfile profile, ReleaseCandidate candidate, double aiConfidenceThreshold)
+    public static ChainResult Evaluate(
+        FilterProfile profile,
+        ReleaseCandidate candidate,
+        double aiConfidenceThreshold,
+        IVerdictCacheReader? verdictCacheReader = null,
+        string sourceName = "",
+        AiModelIdentity? modelIdentity = null)
     {
         ArgumentNullException.ThrowIfNull(profile);
         ArgumentNullException.ThrowIfNull(candidate);
@@ -52,7 +63,7 @@ public static class SuppressionPrecedenceChain
             return new ChainResult(Verdict.Reject, SuppressionSource.DenyRule, matchedRule?.Name);
         }
 
-        var aiVerdict = EvaluateAi(candidate, aiConfidenceThreshold);
+        var aiVerdict = EvaluateAi(candidate, aiConfidenceThreshold, verdictCacheReader, sourceName, modelIdentity);
         if (aiVerdict == Verdict.Reject)
         {
             return new ChainResult(Verdict.Reject, SuppressionSource.Ai, null);
@@ -73,7 +84,10 @@ public static class SuppressionPrecedenceChain
         IReadOnlyList<ReleaseCandidate> candidates,
         double aiConfidenceThreshold,
         string queryKey,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        IVerdictCacheReader? verdictCacheReader = null,
+        string sourceName = "",
+        AiModelIdentity? modelIdentity = null)
     {
         ArgumentNullException.ThrowIfNull(profile);
         ArgumentNullException.ThrowIfNull(candidates);
@@ -83,7 +97,7 @@ public static class SuppressionPrecedenceChain
 
         foreach (var candidate in candidates)
         {
-            var result = Evaluate(profile, candidate, aiConfidenceThreshold);
+            var result = Evaluate(profile, candidate, aiConfidenceThreshold, verdictCacheReader, sourceName, modelIdentity);
             if (result.Verdict == Verdict.Reject)
             {
                 var identity = new ReleaseIdentity(profile.Name, candidate.Guid);
@@ -101,17 +115,52 @@ public static class SuppressionPrecedenceChain
     }
 
     /// <summary>
-    /// No-op AI stub for M4: always abstains (<see cref="Verdict.Unknown"/>). M5 replaces this with
-    /// a call into the real classifier/verdict cache; the <paramref name="aiConfidenceThreshold"/>
-    /// parameter is threaded through now so the chain's signature does not change when M5 lands.
+    /// AI slot (M5): cache-only lookup (Q1-B) — never calls the model inline. A miss (no
+    /// <paramref name="verdictCacheReader"/>, or no cache entry for this release) abstains
+    /// (<see cref="Verdict.Unknown"/>), letting the candidate pass through unjudged exactly like
+    /// the M4 no-op stub did. A cache hit only suppresses when the cached verdict is
+    /// <see cref="Verdict.Reject"/> AND its confidence meets <paramref name="aiConfidenceThreshold"/>
+    /// (D3); a low-confidence reject also abstains rather than suppressing.
     /// </summary>
-    private static Verdict EvaluateAi(ReleaseCandidate candidate, double aiConfidenceThreshold)
+    private static Verdict EvaluateAi(
+        ReleaseCandidate candidate,
+        double aiConfidenceThreshold,
+        IVerdictCacheReader? verdictCacheReader,
+        string sourceName,
+        AiModelIdentity? modelIdentity)
     {
-        _ = candidate;
-        _ = aiConfidenceThreshold;
+        if (verdictCacheReader is null || modelIdentity is null)
+        {
+            return Verdict.Unknown;
+        }
+
+        var key = VerdictCacheKey.Compute(
+            candidate, sourceName, modelIdentity.ModelName, modelIdentity.ModelDigest, modelIdentity.PromptVersion);
+
+        var cached = verdictCacheReader.TryGet(key);
+        if (cached is null)
+        {
+            return Verdict.Unknown;
+        }
+
+        if (cached.Verdict == Verdict.Reject && cached.Confidence >= aiConfidenceThreshold)
+        {
+            return Verdict.Reject;
+        }
+
         return Verdict.Unknown;
     }
 }
+
+/// <summary>
+/// The model/prompt identity used to compute and invalidate AI verdict cache keys (R17: a
+/// model-name or prompt-version change invalidates previously cached verdicts, since they key on
+/// this identity).
+/// </summary>
+/// <param name="ModelName">Ollama model name/tag (e.g. <c>qwen2.5:7b-instruct-q4_K_M</c>).</param>
+/// <param name="ModelDigest">Model content digest, so a same-named model with different weights invalidates too.</param>
+/// <param name="PromptVersion">Version tag of the classification prompt template.</param>
+public sealed record AiModelIdentity(string ModelName, string ModelDigest, string PromptVersion);
 
 /// <summary>Which slot of the <see cref="SuppressionPrecedenceChain"/> produced a decision.</summary>
 public enum SuppressionSource
