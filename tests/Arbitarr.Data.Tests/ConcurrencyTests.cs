@@ -271,45 +271,180 @@ public sealed class ConcurrencyTests : IDisposable
     /// <summary>
     /// M3-7/AC15a refinement: the >1s stall threshold in
     /// <see cref="ConcurrentWriteWhileRead_WithWalAndBusyTimeout_ReaderNeverStalls"/> only catches
-    /// gross stalls. This test proves the tighter, quantitative claim: reader latency under
-    /// sustained writer contention must stay close to its own uncontended baseline, not merely
-    /// "under some absolute ceiling."
+    /// gross stalls, and it drives synthetic <c>BEGIN IMMEDIATE</c> writers against a scratch
+    /// table. This test proves the same AC15a property against the *real* production write path --
+    /// <see cref="RefreshWorker.RunCycleAsync"/> writing back real cache entries -- and asserts a
+    /// tighter tail-latency bound plus a no-starvation property that the sibling has no analogue of.
     ///
     /// <para>
-    /// M3-7 rework: the contended-phase writer is the real production writer,
-    /// <see cref="RefreshWorker.RunCycleAsync"/> — driven directly in a tight loop (not via the
-    /// <c>BackgroundService</c> host) at its most aggressive legal pacing (near-zero
-    /// <c>WorkerCycleInterval</c>/<c>RepopulationSpreadWindow</c>, real wall-clock
-    /// <see cref="TimeProvider.System"/>) — rather than generic <c>BEGIN IMMEDIATE</c> writers.
-    /// Reads go through the real read path, <see cref="SearchResultCache.GetAsync"/>, over a
-    /// pre-seeded dataset that stays continuously eligible for
-    /// <see cref="ISearchResultCacheStore.GetRefreshCandidatesAsync"/> so the writer is kept
-    /// genuinely busy for the whole contended phase. Both phases run back-to-back in this same
-    /// test execution (same machine, same process, same moment) so the comparison is never
-    /// confounded by run-to-run environment noise, and a warm-up phase (discarded) precedes the
-    /// measured baseline so JIT/first-connection costs don't pollute it.
+    /// Flake rework (#21) -- why this no longer compares against an uncontended baseline. The
+    /// original form asserted "contended p95 &lt;= 120% of this run's own uncontended baseline p95".
+    /// That assertion was unsound for two independent reasons, and no amount of estimator
+    /// hardening (more trials, interleaving, median-of-p95) could rescue it:
+    /// </para>
+    ///
+    /// <para>
+    /// (1) The probe was not a reader. <see cref="SearchResultCache.GetAsync"/> stamps
+    /// <c>LastRequestedAt</c> on every servable band, and
+    /// <see cref="ISearchResultCacheStore.TouchLastRequestedAsync"/> issues a real UPDATE. Because
+    /// the seeded rows below are deliberately stale-but-valid (so the writer keeps selecting
+    /// them), every probe iteration performed a write. The "uncontended baseline" was therefore
+    /// already N concurrent writers contending for SQLite's single global write lock -- precisely
+    /// the thing WAL does not eliminate -- so the measurement never exercised AC15a's actual claim
+    /// that readers do not block on writers. This test now probes
+    /// <see cref="ISearchResultCacheStore.GetAsync"/> directly, which is genuinely read-only
+    /// (AsNoTracking, no SaveChanges), and is the exact call
+    /// <see cref="SearchResultCache.GetAsync"/> delegates its read to.
+    /// </para>
+    ///
+    /// <para>
+    /// (2) The ratio had no stable central tendency. Under <c>busy_timeout</c> a blocked writer
+    /// sleeps on SQLite's discrete backoff schedule (1, 2, 5, 10, 15, 20, 25, 50, 100ms...), so the
+    /// latency distribution is bimodal and the p95 index lands on whichever side of a backoff step
+    /// the run happened to fall. Measured under CPU saturation, the contended/baseline ratio
+    /// wandered across 0.29x-3.52x with 12 of 19 runs breaching the 1.20 ceiling; per-trial ratios
+    /// within a single 5-trial run spanned 0.049x to 35.583x. Ratios well below 1.0 -- contended
+    /// reads measuring *faster* than their own baseline -- confirm the quantity was dominated by
+    /// scheduler and lock-queue artifacts rather than by any contention effect. See issue #21 for
+    /// the full dataset.
+    /// </para>
+    ///
+    /// <para>
+    /// What is asserted instead: with a genuinely read-only probe the expected effect size is
+    /// nil -- that is what "WAL works" means -- so the right shape is the absence of a cliff, not
+    /// the smallness of a slope. Two properties are checked while the real writer runs flat out:
+    /// an absolute tail-latency ceiling (a WAL reader takes no lock the writer holds, so blocking
+    /// at all indicates the WAL machinery failed; the gap between a few ms and the
+    /// <c>busy_timeout</c> backoff cliff is orders of magnitude, giving the ceiling enormous margin
+    /// against scheduler jitter on a saturated 2-vCPU runner), and a throughput floor proving reads
+    /// keep making progress rather than being starved behind the writer. Read counts over a fixed
+    /// window concentrate far better than a ratio of two heavy-tailed p95s.
+    /// </para>
+    ///
+    /// <para>
+    /// Non-vacuousness is proved by
+    /// <see cref="ReaderUnderRefreshWorkerContention_UnderMisconfiguredJournalMode_DegradesOrFails"/>,
+    /// which runs this identical shape against a DELETE-journal database and shows these same
+    /// assertions go red -- so a passing run here carries real information.
     /// </para>
     /// </summary>
     [Fact]
-    public async Task ReaderLatency_P95UnderContention_StaysWithinTwentyPercentOfUncontendedBaseline()
+    public async Task ReaderUnderRefreshWorkerContention_StaysFastAndNeverStarves()
+    {
+        var outcome = await RunReaderUnderWriterContentionAsync(useWalMode: true);
+
+        Assert.Empty(outcome.Failures);
+
+        Assert.True(
+            outcome.MaxLatencyMs <= MaxContendedReadLatencyMs,
+            $"Slowest contended read took {outcome.MaxLatencyMs:F1}ms, exceeding the " +
+            $"{MaxContendedReadLatencyMs}ms ceiling (p99 {outcome.P99LatencyMs:F1}ms, median " +
+            $"{outcome.MedianLatencyMs:F2}ms over {outcome.ReadCount} reads against " +
+            $"{outcome.WriteCycleCount} writer cycles) -- AC15a requires a WAL-mode read to take " +
+            "no lock a concurrent writer holds, so any read blocking on this scale indicates the " +
+            "WAL machinery is not in effect.");
+
+        Assert.True(
+            outcome.ReadCount >= MinContendedReads,
+            $"Only {outcome.ReadCount} reads completed while the writer ran (expected at least " +
+            $"{MinContendedReads}) -- readers are being starved behind the writer, which is the " +
+            "AC15a violation this test exists to catch.");
+    }
+
+    /// <summary>
+    /// Non-vacuousness proof for <see cref="ReaderUnderRefreshWorkerContention_StaysFastAndNeverStarves"/>
+    /// (mirrors the <see cref="ConcurrentWriteWhileRead_UnderMisconfiguredJournalMode_ReaderFailsWithBusy"/>
+    /// treatment): the identical reader-vs-RefreshWorker shape against a database forced into
+    /// rollback-journal mode, where a writer's RESERVED/EXCLUSIVE lock genuinely does exclude
+    /// readers. At least one of the two guarded properties -- the tail-latency ceiling or the
+    /// throughput floor -- must break, or an outright SQLITE_BUSY must surface. Without this, a
+    /// green run of the WAL test above would be indistinguishable from a tautology.
+    /// </summary>
+    [Fact]
+    public async Task ReaderUnderRefreshWorkerContention_UnderMisconfiguredJournalMode_DegradesOrFails()
+    {
+        var outcome = await RunReaderUnderWriterContentionAsync(useWalMode: false);
+
+        var stalled = outcome.MaxLatencyMs > MaxContendedReadLatencyMs;
+        var starved = outcome.ReadCount < MinContendedReads;
+        var errored = outcome.Failures.Count > 0;
+
+        Assert.True(
+            stalled || starved || errored,
+            "Expected the rollback-journal run to violate at least one of the guarded properties " +
+            $"(slowest read {outcome.MaxLatencyMs:F1}ms vs {MaxContendedReadLatencyMs}ms ceiling; " +
+            $"{outcome.ReadCount} reads vs {MinContendedReads} floor; {outcome.Failures.Count} " +
+            "errors), proving the WAL-mode assertions are not vacuous. None was violated, so " +
+            "those assertions would pass regardless of journal mode and prove nothing.");
+    }
+
+    /// <summary>
+    /// Absolute ceiling for any single contended read. A WAL-mode reader acquires no lock a writer
+    /// holds, so a correct run sits in the sub-millisecond-to-few-milliseconds range; a reader that
+    /// is actually excluded by a writer lands on SQLite's busy_timeout backoff schedule, orders of
+    /// magnitude above. The ceiling sits in that gap: loose enough to absorb scheduler jitter and
+    /// GC pauses on a saturated 2-vCPU CI runner, still ~4x tighter than the sibling test's 1s.
+    /// </summary>
+    private const double MaxContendedReadLatencyMs = 250.0;
+
+    /// <summary>
+    /// Throughput floor: the anti-starvation property. Deliberately far below what a healthy run
+    /// achieves (thousands of reads in the window) so ordinary CPU steal by the writer can never
+    /// trip it, while a reader genuinely serialized behind the writer -- an order-of-magnitude
+    /// throughput collapse -- does.
+    /// </summary>
+    private const int MinContendedReads = 200;
+
+    private sealed record ContentionOutcome(
+        int ReadCount,
+        int WriteCycleCount,
+        double MedianLatencyMs,
+        double P99LatencyMs,
+        double MaxLatencyMs,
+        IReadOnlyList<Exception> Failures);
+
+    /// <summary>
+    /// Runs the shared reader-vs-RefreshWorker contention shape used by both the WAL test and its
+    /// non-vacuousness twin: seed rows that the worker will keep re-selecting, start the real
+    /// <see cref="RefreshWorker"/> writing continuously, then measure genuinely read-only probes
+    /// against it for a fixed window.
+    /// </summary>
+    private async Task<ContentionOutcome> RunReaderUnderWriterContentionAsync(bool useWalMode)
     {
         const int seededKeyCount = 25;
-        const int readerCount = 4;
+        // Match the runner rather than oversubscribing it: CI is a 2-vCPU box, and extra probe
+        // threads on top of the writer's own concurrency only add run-queue wait to every measured
+        // latency, which is machine scheduling noise rather than anything SQLite did.
+        var readerCount = Math.Max(2, Environment.ProcessorCount / 2);
+        var measureWindow = TimeSpan.FromSeconds(3);
 
-        // Touch the file once via the production connection factory so WAL mode is set and
-        // verified before EF Core opens the same file.
-        var factory = new SqliteConnectionFactory(new SqliteConnectionOptions
+        if (useWalMode)
         {
-            DatabasePath = _dbPath,
-            BusyTimeoutMilliseconds = SqliteConnectionOptions.DefaultBusyTimeoutMilliseconds,
-        });
-        using (factory.OpenConnection())
-        {
+            // Touch the file once via the production connection factory so WAL mode is set and
+            // verified before EF Core opens the same file.
+            var factory = new SqliteConnectionFactory(new SqliteConnectionOptions
+            {
+                DatabasePath = _dbPath,
+                BusyTimeoutMilliseconds = SqliteConnectionOptions.DefaultBusyTimeoutMilliseconds,
+            });
+            using var walConnection = factory.OpenConnection();
         }
 
         using (var migrationContext = CreateContext())
         {
             migrationContext.Database.Migrate();
+        }
+
+        if (!useWalMode)
+        {
+            // Deliberately the opposite of AC15a's requirement. journal_mode is persistent in the
+            // database file, so this must run after Migrate() (which opens its own connection) to
+            // actually take effect for the probes below.
+            using var misconfigured = new SqliteConnection($"Data Source={_dbPath}");
+            misconfigured.Open();
+            using var pragma = misconfigured.CreateCommand();
+            pragma.CommandText = "PRAGMA journal_mode = DELETE; PRAGMA busy_timeout = 1;";
+            pragma.ExecuteNonQuery();
         }
 
         var now = DateTimeOffset.UtcNow;
@@ -334,76 +469,112 @@ public sealed class ConcurrencyTests : IDisposable
             }
         }
 
-        // Warm-up phase (discarded): pays for JIT/first-connection costs so they don't pollute
-        // the measured baseline.
-        await RunReaderLatencyProbeAsync(queryKeys, TimeSpan.FromMilliseconds(500), readerCount, minSamples: 1);
-
-        // Baseline phase: readers alone via the real SearchResultCache.GetAsync path, no writer
-        // running.
-        var baselineLatencies = await RunReaderLatencyProbeAsync(queryKeys, TimeSpan.FromSeconds(3), readerCount, minSamples: 200);
-
-        // Contended phase: identical reader probe, now racing the real RefreshWorker driven at
-        // its most aggressive legal pacing (RepopulationSpreadWindow must stay > 0 ticks per
-        // RepopulationPacer.Plan, so use the smallest legal value rather than exactly Zero).
+        // Pin the writer's cadence instead of letting it emit "as fast as this box can go": an
+        // unbounded cycle rate makes the applied load a function of machine speed, so two runners
+        // would be running two different experiments.
         var workerOptions = new RefreshWorkerOptions(
             Enabled: true,
-            WorkerCycleInterval: TimeSpan.FromTicks(1),
+            WorkerCycleInterval: TimeSpan.FromMilliseconds(10),
             ActiveWindow: TimeSpan.FromHours(1),
             RefreshLead: TimeSpan.FromHours(1),
             FreshUntilAge: TimeSpan.FromMinutes(5),
             ServeUntilAge: TimeSpan.FromHours(1),
             RepopulationSpreadWindow: TimeSpan.FromTicks(1),
-            MaxConcurrentRefreshes: 4);
+            MaxConcurrentRefreshes: 2);
 
-        using var writerContext = CreateContext();
-        var writerStore = new SearchResultCacheStore(writerContext);
-        var writerCache = new SearchResultCache(writerStore, TimeProvider.System);
-        var worker = new RefreshWorker(
-            writerStore,
-            writerCache,
-            new AlwaysAllowCircuitBreaker(),
-            fetcher: (_, _, _) => Task.FromResult<string?>("{\"results\":[]}"),
-            TimeProvider.System,
-            workerOptions,
-            sourceName: "m3-7-contention-source");
+        var failures = new System.Collections.Concurrent.ConcurrentBag<Exception>();
+        var latencies = new System.Collections.Concurrent.ConcurrentBag<double>();
+        var writeCycleCount = 0;
+        var stopFlag = 0;
+        bool ShouldStop() => Volatile.Read(ref stopFlag) != 0;
 
-        using var stopSignal = new CancellationTokenSource();
-        var writerTask = Task.Run(async () =>
+        // LongRunning + Barrier for the same reason documented on RunConcurrentContention above:
+        // pooled tasks can sit unscheduled long enough to swallow their whole measurement window
+        // under parallel test-runner load, which would be a scheduler artifact rather than a
+        // SQLite result.
+        using var startBarrier = new Barrier(readerCount + 2);
+
+        var writerThread = Task.Factory.StartNew(async () =>
         {
-            while (!stopSignal.IsCancellationRequested)
+            using var writerContext = CreateContext();
+            var writerStore = new SearchResultCacheStore(writerContext);
+            var worker = new RefreshWorker(
+                writerStore,
+                new SearchResultCache(writerStore, TimeProvider.System),
+                new AlwaysAllowCircuitBreaker(),
+                fetcher: (_, _, _) => Task.FromResult<string?>("{\"results\":[]}"),
+                TimeProvider.System,
+                workerOptions,
+                sourceName: "m3-7-contention-source");
+
+            startBarrier.SignalAndWait();
+            while (!ShouldStop())
             {
                 try
                 {
-                    await worker.RunCycleAsync(stopSignal.Token);
+                    await worker.RunCycleAsync(CancellationToken.None);
+                    Interlocked.Increment(ref writeCycleCount);
                 }
-                catch (OperationCanceledException)
+                catch (Exception e)
                 {
-                    // Expected once the contended phase stops the writer.
+                    // The writer hitting SQLITE_BUSY is expected in the misconfigured twin and is
+                    // not itself the property under test; only reader-side outcomes are asserted.
+                    if (useWalMode)
+                    {
+                        failures.Add(e);
+                    }
+                }
+
+                await Task.Delay(workerOptions.WorkerCycleInterval);
+            }
+        }, TaskCreationOptions.LongRunning).Unwrap();
+
+        var readerThreads = Enumerable.Range(0, readerCount).Select(readerIndex => Task.Factory.StartNew(async () =>
+        {
+            using var readerContext = CreateContext();
+            // Probe the store directly, NOT SearchResultCache.GetAsync: the latter stamps
+            // LastRequestedAt on every servable band, which would make this "reader" a writer and
+            // turn the measurement into writer-vs-writer lock queueing (see the #21 note above).
+            var readerStore = new SearchResultCacheStore(readerContext);
+            var i = readerIndex;
+
+            startBarrier.SignalAndWait();
+            while (!ShouldStop())
+            {
+                var key = queryKeys[i % queryKeys.Length];
+                i++;
+                var stopwatch = Stopwatch.StartNew();
+                try
+                {
+                    await readerStore.GetAsync(key);
+                    stopwatch.Stop();
+                    latencies.Add(stopwatch.Elapsed.TotalMilliseconds);
+                }
+                catch (Exception e)
+                {
+                    failures.Add(e);
                 }
             }
-        });
+        }, TaskCreationOptions.LongRunning).Unwrap()).ToArray();
 
-        List<double> contendedLatencies;
-        try
-        {
-            contendedLatencies = await RunReaderLatencyProbeAsync(queryKeys, TimeSpan.FromSeconds(3), readerCount, minSamples: 200);
-        }
-        finally
-        {
-            stopSignal.Cancel();
-            await writerTask;
-        }
+        // This test thread is the final barrier participant, so the measurement window opens only
+        // once every reader and the writer are actually running past their connection-open cost.
+        startBarrier.SignalAndWait();
+        await Task.Delay(measureWindow);
+        Volatile.Write(ref stopFlag, 1);
 
-        var baselineP95 = Percentile(baselineLatencies, 0.95);
-        var contendedP95 = Percentile(contendedLatencies, 0.95);
-        var ceiling = baselineP95 * 1.20;
+        await Task.WhenAll(readerThreads.Append(writerThread));
 
-        Assert.True(
-            contendedP95 <= ceiling,
-            $"Contended p95 reader latency ({contendedP95:F2}ms) exceeded 120% of the same-run " +
-            $"uncontended baseline p95 ({baselineP95:F2}ms, ceiling {ceiling:F2}ms) -- AC15a " +
-            "requires WAL-mode reads to remain effectively unaffected by concurrent writers, not " +
-            "merely avoid multi-second stalls.");
+        var samples = latencies.ToList();
+        Assert.True(samples.Count > 0, "No reader ever completed a single read - harness setup is broken.");
+
+        return new ContentionOutcome(
+            ReadCount: samples.Count,
+            WriteCycleCount: Volatile.Read(ref writeCycleCount),
+            MedianLatencyMs: Percentile(samples, 0.50),
+            P99LatencyMs: Percentile(samples, 0.99),
+            MaxLatencyMs: samples.Max(),
+            Failures: failures.ToList());
     }
 
     /// <summary>
@@ -425,42 +596,6 @@ public sealed class ConcurrencyTests : IDisposable
         var optionsBuilder = new DbContextOptionsBuilder<ArbitarrDbContext>();
         optionsBuilder.UseSqlite($"Data Source={_dbPath}");
         return new ArbitarrDbContext(optionsBuilder.Options);
-    }
-
-    /// <summary>
-    /// Runs <see cref="SearchResultCache.GetAsync"/> reads back-to-back across
-    /// <paramref name="readerCount"/> concurrent tasks (each with its own
-    /// <see cref="ArbitarrDbContext"/>/<see cref="SearchResultCacheStore"/>, since EF Core
-    /// contexts are not thread-safe to share) for <paramref name="duration"/>, cycling through
-    /// <paramref name="queryKeys"/>, returning every individual query's wall-clock latency in
-    /// milliseconds.
-    /// </summary>
-    private async Task<List<double>> RunReaderLatencyProbeAsync(string[] queryKeys, TimeSpan duration, int readerCount, int minSamples)
-    {
-        using var stopSignal = new CancellationTokenSource(duration);
-        var latencies = new System.Collections.Concurrent.ConcurrentBag<double>();
-
-        var readerTasks = Enumerable.Range(0, readerCount).Select(readerIndex => Task.Run(async () =>
-        {
-            using var readerContext = CreateContext();
-            var readerCache = new SearchResultCache(new SearchResultCacheStore(readerContext), TimeProvider.System);
-            var i = readerIndex;
-            while (!stopSignal.IsCancellationRequested)
-            {
-                var key = queryKeys[i % queryKeys.Length];
-                i++;
-                var stopwatch = Stopwatch.StartNew();
-                await readerCache.GetAsync(key, refreshTrigger: null);
-                stopwatch.Stop();
-                latencies.Add(stopwatch.Elapsed.TotalMilliseconds);
-            }
-        })).ToArray();
-
-        await Task.WhenAll(readerTasks);
-
-        Assert.True(latencies.Count >= minSamples,
-            $"Reader latency probe collected {latencies.Count} samples, fewer than the required {minSamples}.");
-        return latencies.ToList();
     }
 
     private static double Percentile(List<double> samples, double percentile)
