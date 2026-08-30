@@ -238,6 +238,39 @@ public sealed class SourceCircuitBreakerTests
     }
 
     [Fact]
+    public void RecordFailure_SanitizesLastError_NeverSurfacesRawExceptionMessage()
+    {
+        // A raw HttpRequestException message from a DNS/connect failure routinely embeds the
+        // upstream host:port (e.g. "No such host is known. (example.invalid:5076)"), which would
+        // leak LAN topology through LastError into both persistence (SourceHealthRecord) and the
+        // unauthenticated /api/status dashboard. RecordFailure must never store that raw text.
+        var (breaker, _) = Create();
+        const string leakyMessage = "No such host is known. (example.invalid:5076)";
+
+        breaker.RecordFailure(Source, new HttpRequestException(leakyMessage, null, System.Net.HttpStatusCode.ServiceUnavailable));
+
+        var lastError = breaker.GetSnapshot(Source).LastError;
+        Assert.NotNull(lastError);
+        Assert.DoesNotContain("example.invalid", lastError);
+        Assert.DoesNotContain(leakyMessage, lastError);
+        Assert.Equal("HttpRequestException (503 ServiceUnavailable)", lastError);
+    }
+
+    [Fact]
+    public void RecordFailure_SanitizesLastError_ToExceptionTypeName_WhenNoStatusCode()
+    {
+        // Exceptions without an HTTP status code (e.g. a raw socket/DNS failure surfaced as
+        // InvalidOperationException, or any non-HttpRequestException) fall back to just the
+        // exception type name — still never the raw, potentially host-bearing message text.
+        var (breaker, _) = Create();
+
+        breaker.RecordFailure(Source, new InvalidOperationException("connect failed to example.invalid:5076"));
+
+        var lastError = breaker.GetSnapshot(Source).LastError;
+        Assert.Equal(nameof(InvalidOperationException), lastError);
+    }
+
+    [Fact]
     public void Seed_RestoresPersistedState()
     {
         var (breaker, clock) = Create();
