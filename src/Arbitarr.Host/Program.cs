@@ -152,6 +152,15 @@ builder.Services.AddScoped(sp => new SettingsRepository(
     sp.GetRequiredService<ArbitarrDbContext>(),
     TimeSpan.FromMinutes(15)));
 
+// M7-3a: schedules MaintenanceJob on SettingKey.MaintenanceJobInterval. Unlike the RefreshWorker
+// options above, the interval is the one setting explicitly permitted to require a restart to take
+// effect (see MaintenanceHostedService's doc comment), so it is read once at startup rather than
+// via a live options source.
+builder.Services.AddHostedService(sp => new Arbitarr.Host.Maintenance.MaintenanceHostedService(
+    sp.GetRequiredService<IServiceScopeFactory>(),
+    sp.GetRequiredService<TimeProvider>(),
+    sp.GetRequiredService<ILogger<Arbitarr.Host.Maintenance.MaintenanceHostedService>>()));
+
 var app = builder.Build();
 
 // SEC-L2: load (or generate, on first run) the per-instance HMAC secret used to compute proxy
