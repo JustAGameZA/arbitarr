@@ -142,6 +142,7 @@ public sealed class SearchEndpointFilterResolvabilityTests : IDisposable
             Array.Empty<int>(),
             100,
             0,
+            "caller-api-key",
             snapshotService,
             filterStage,
             lookup,
