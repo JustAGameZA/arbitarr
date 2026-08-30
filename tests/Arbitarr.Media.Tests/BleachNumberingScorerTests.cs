@@ -13,9 +13,11 @@ namespace Arbitarr.Media.Tests;
 /// <c>Bleach - 329 [SGKK]</c> must both fall outside the top 5 AND score below
 /// <see cref="ConfidenceCalibration.AcceptanceThreshold"/> (0.9) — shadow mode OFF, single
 /// non-disjunctive threshold (<see cref="ConfidenceCalibration.MeetsAcceptanceThreshold"/>).
-/// NOTE: the fixture field below has only 4 candidates, so "outside top 5" is vacuously true for
-/// every non-#1 candidate and exercises no real ranking boundary; the below-0.9 confidence assertion
-/// is the actual, non-vacuous gate for the three named non-matches (see the in-test comment).
+/// The fixture field below carries 8 candidates (the 3 named non-matches plus 4 additional decoys)
+/// so the "outside top 5" cut has teeth — with only 4 items in the field it would be vacuously true
+/// for every non-#1 entry the moment TYBW ranks first; with 8 items, there are exactly 3 index slots
+/// (5, 6, 7) outside a top-5 cut, one for each of the 3 named non-matches. The below-0.9 confidence
+/// assertion remains an independent, non-vacuous gate on top of that (see the in-test comment).
 /// </summary>
 public class BleachNumberingScorerTests
 {
@@ -68,12 +70,28 @@ public class BleachNumberingScorerTests
         // "Bleach - 329 [SGKK]" - same shape, a different bare absolute number.
         var anotherBareAbsolute = new RawReleaseNumbering(SceneSeason: null, SceneEpisode: null, Absolute: 329, ArcTitleToken: null);
 
+        // Four additional decoys (not named in the acceptance criteria, added so the "outside top 5"
+        // cut below has teeth in a field larger than 5): legitimate TYBW token-matched candidates
+        // whose derived absolute falls outside the binding's declared range (per the docs'
+        // "range-completeness gap" row), so each scores ArcTitleTokenMatch alone (0.6) - strictly
+        // above the 3 named non-matches' 0.1/0.05 tier, but below TYBW alias's 0.6+0.25 in-range
+        // score - guaranteeing the 3 named non-matches rank last (indices 5-7 of this 8-item field)
+        // regardless of ordering among same-tier ties.
+        var outOfRangeTokenMatch1 = new RawReleaseNumbering(SceneSeason: 17, SceneEpisode: 40, Absolute: null, ArcTitleToken: "Thousand-Year Blood War");
+        var outOfRangeTokenMatch2 = new RawReleaseNumbering(SceneSeason: 17, SceneEpisode: 41, Absolute: null, ArcTitleToken: "Thousand-Year Blood War");
+        var outOfRangeTokenMatch3 = new RawReleaseNumbering(SceneSeason: 17, SceneEpisode: 43, Absolute: null, ArcTitleToken: "Thousand-Year Blood War");
+        var outOfRangeTokenMatch4 = new RawReleaseNumbering(SceneSeason: 17, SceneEpisode: 44, Absolute: null, ArcTitleToken: "Thousand-Year Blood War");
+
         var scored = new[]
         {
             (Label: "SennenKessenHenS01E36", Score: ScoreRelease(tybwAlias)),
             (Label: "UnrelatedSeason16", Score: ScoreRelease(unrelatedSeason16)),
             (Label: "BareAbsoluteOnly236", Score: ScoreRelease(bareAbsoluteOnly)),
             (Label: "AnotherBareAbsolute329", Score: ScoreRelease(anotherBareAbsolute)),
+            (Label: "OutOfRangeTokenMatch1", Score: ScoreRelease(outOfRangeTokenMatch1)),
+            (Label: "OutOfRangeTokenMatch2", Score: ScoreRelease(outOfRangeTokenMatch2)),
+            (Label: "OutOfRangeTokenMatch3", Score: ScoreRelease(outOfRangeTokenMatch3)),
+            (Label: "OutOfRangeTokenMatch4", Score: ScoreRelease(outOfRangeTokenMatch4)),
         };
 
         var tybwScore = scored.Single(s => s.Label == "SennenKessenHenS01E36").Score;
@@ -84,22 +102,25 @@ public class BleachNumberingScorerTests
             .OrderByDescending(s => s.Score!.Confidence)
             .ToArray();
 
-        // Top 5 (of a 4-item field here): TYBW alias must rank #1.
+        // Top 5 of an 8-item field: TYBW alias must rank #1.
         Assert.Equal("SennenKessenHenS01E36", ranked[0].Label);
         Assert.True(ConfidenceCalibration.MeetsAcceptanceThreshold(tybwScore!.Confidence),
             $"Expected TYBW alias confidence >= {ConfidenceCalibration.AcceptanceThreshold}, was {tybwScore.Confidence}");
 
-        // The three named non-matches: outside top 5 AND below 0.9. NOTE - with only 4 candidates in
-        // this field, "outside top 5" is vacuously true for all three the moment TYBW is #1 (there is
-        // no top-5 cut to fail); it is asserted below only because the acceptance criteria's own
-        // wording names it, not because it exercises any real ranking boundary here. The
-        // MeetsAcceptanceThreshold(...) < 0.9 assertion is the actual gate this test enforces - it is
-        // the only check below that can fail independently of the #1-ranking assertion above.
+        var rankedLabels = ranked.Select(r => r.Label).ToArray();
+
+        // The three named non-matches: outside top 5 AND below 0.9. With 8 candidates in the field
+        // (the 3 named non-matches plus 4 additional decoys), "outside top 5" is now a real boundary
+        // a regression could actually fail (index >= 5, not merely != 0) - it is no longer trivially
+        // satisfied just because TYBW is #1, and there are exactly 3 slots (5, 6, 7) for the 3 named
+        // non-matches to occupy. The MeetsAcceptanceThreshold(...) < 0.9 assertion remains an
+        // independent, non-vacuous gate on top of that.
         foreach (var label in new[] { "UnrelatedSeason16", "BareAbsoluteOnly236", "AnotherBareAbsolute329" })
         {
             var nonMatch = scored.Single(s => s.Label == label).Score;
             Assert.NotNull(nonMatch);
-            Assert.NotEqual(0, Array.IndexOf(ranked.Select(r => r.Label).ToArray(), label));
+            Assert.True(Array.IndexOf(rankedLabels, label) >= 5,
+                $"Expected {label} to rank outside the top 5, was at index {Array.IndexOf(rankedLabels, label)}");
             Assert.False(ConfidenceCalibration.MeetsAcceptanceThreshold(nonMatch!.Confidence),
                 $"Expected {label} confidence < {ConfidenceCalibration.AcceptanceThreshold}, was {nonMatch.Confidence}");
         }
