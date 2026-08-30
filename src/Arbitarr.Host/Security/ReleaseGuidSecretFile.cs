@@ -32,7 +32,23 @@ public static class ReleaseGuidSecretFile
         }
 
         var generated = RandomNumberGenerator.GetBytes(32);
-        File.WriteAllBytes(path, generated);
+        if (OperatingSystem.IsWindows())
+        {
+            File.WriteAllBytes(path, generated);
+        }
+        else
+        {
+            // Owner-only (0600): this file is a raw HMAC key, not just config.
+            var options = new FileStreamOptions
+            {
+                Mode = FileMode.Create,
+                Access = FileAccess.Write,
+                UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite,
+            };
+            using var stream = new FileStream(path, options);
+            stream.Write(generated);
+        }
+
         return generated;
     }
 }
