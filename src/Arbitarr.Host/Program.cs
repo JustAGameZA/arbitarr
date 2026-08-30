@@ -11,6 +11,8 @@ using Arbitarr.Core.Sources.CircuitBreaker;
 using Arbitarr.Data;
 using Arbitarr.Data.Caching;
 using Arbitarr.Data.CircuitBreaker;
+using Arbitarr.Data.Filtering;
+using Arbitarr.Data.Settings;
 using Arbitarr.Host.Security;
 using Arbitarr.Sources.NzbHydra;
 using Microsoft.EntityFrameworkCore;
@@ -88,6 +90,10 @@ builder.Services.AddScoped<SearchResultRefresher>();
 builder.Services.AddScoped<RefreshFetcher>(sp =>
     (_, entry, cancellationToken) => sp.GetRequiredService<SearchResultRefresher>().RefreshAsync(entry, cancellationToken));
 builder.Services.AddScoped<PaginationSnapshotService>();
+builder.Services.AddScoped<FilterProfileLoader>();
+builder.Services.AddScoped<ApiKeyProfileResolver>();
+builder.Services.AddScoped<SettingsReader>();
+builder.Services.AddScoped<FilterStage>();
 
 builder.Services.AddHostedService(sp => new RefreshWorker(
     sp.GetRequiredService<IServiceScopeFactory>(),
@@ -176,13 +182,14 @@ app.MapGet("/torznab/api", async (
     IClientApiKeyResolver apiKeyResolver,
     CapsAggregator capsAggregator,
     PaginationSnapshotService snapshotService,
+    FilterStage filterStage,
     InMemoryReleaseLookup releaseLookup,
     RecentSearchLog recentSearchLog,
     IReadOnlyList<IUpstreamSource> sources,
     HttpRequest request,
     CancellationToken cancellationToken) =>
 {
-    var (_, apiKeyError) = ApiKeyValidator.Validate(apikey, apiKeyResolver, isTorznab: true);
+    var (clientContext, apiKeyError) = ApiKeyValidator.Validate(apikey, apiKeyResolver, isTorznab: true);
     if (apiKeyError is not null)
     {
         return apiKeyError;
@@ -202,6 +209,7 @@ app.MapGet("/torznab/api", async (
         PagingClamp.ClampOffset(offset),
         apikey!,
         snapshotService,
+        filterStage,
         releaseLookup,
         recentSearchLog,
         request,
@@ -209,7 +217,8 @@ app.MapGet("/torznab/api", async (
         IdParamClamp.ClampProviderId(tvdbid),
         IdParamClamp.ClampProviderId(tmdbid),
         IdParamClamp.ClampSeason(season),
-        IdParamClamp.ClampEpisode(ep)).ConfigureAwait(false);
+        IdParamClamp.ClampEpisode(ep),
+        clientContext?.Name).ConfigureAwait(false);
 })
     .WithClassification(RouteClassification.PublicRead);
 
@@ -228,13 +237,14 @@ app.MapGet("/newznab/api", async (
     IClientApiKeyResolver apiKeyResolver,
     CapsAggregator capsAggregator,
     PaginationSnapshotService snapshotService,
+    FilterStage filterStage,
     InMemoryReleaseLookup releaseLookup,
     RecentSearchLog recentSearchLog,
     IReadOnlyList<IUpstreamSource> sources,
     HttpRequest request,
     CancellationToken cancellationToken) =>
 {
-    var (_, apiKeyError) = ApiKeyValidator.Validate(apikey, apiKeyResolver, isTorznab: false);
+    var (clientContext, apiKeyError) = ApiKeyValidator.Validate(apikey, apiKeyResolver, isTorznab: false);
     if (apiKeyError is not null)
     {
         return apiKeyError;
@@ -254,6 +264,7 @@ app.MapGet("/newznab/api", async (
         PagingClamp.ClampOffset(offset),
         apikey!,
         snapshotService,
+        filterStage,
         releaseLookup,
         recentSearchLog,
         request,
@@ -261,7 +272,8 @@ app.MapGet("/newznab/api", async (
         IdParamClamp.ClampProviderId(tvdbid),
         IdParamClamp.ClampProviderId(tmdbid),
         IdParamClamp.ClampSeason(season),
-        IdParamClamp.ClampEpisode(ep)).ConfigureAwait(false);
+        IdParamClamp.ClampEpisode(ep),
+        clientContext?.Name).ConfigureAwait(false);
 })
     .WithClassification(RouteClassification.PublicRead);
 

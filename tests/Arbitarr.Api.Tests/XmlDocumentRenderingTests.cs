@@ -1,7 +1,12 @@
 using Arbitarr.Api.Search;
 using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Sources;
+using Arbitarr.Data;
+using Arbitarr.Data.Filtering;
+using Arbitarr.Data.Settings;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -17,8 +22,28 @@ namespace Arbitarr.Api.Tests;
 /// rendered Torznab/Newznab document (caps, search results, and error bodies) must never contain
 /// a carriage return and must use two-space indentation, regardless of the host OS it runs on.
 /// </summary>
-public class XmlDocumentRenderingTests
+public sealed class XmlDocumentRenderingTests : IDisposable
 {
+    private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"arbitarr-xmldocrendering-test-{Guid.NewGuid():N}.db");
+
+    public void Dispose()
+    {
+        SqliteConnection.ClearAllPools();
+        if (File.Exists(_dbPath))
+        {
+            File.Delete(_dbPath);
+        }
+    }
+
+    private ArbitarrDbContext CreateContext()
+    {
+        var optionsBuilder = new DbContextOptionsBuilder<ArbitarrDbContext>();
+        optionsBuilder.UseSqlite($"Data Source={_dbPath}");
+        var context = new ArbitarrDbContext(optionsBuilder.Options);
+        context.Database.Migrate();
+        return context;
+    }
+
     [Fact]
     public async Task Caps_document_never_contains_carriage_return_and_uses_two_space_indent()
     {
@@ -46,7 +71,7 @@ public class XmlDocumentRenderingTests
         Assert.Contains("<error code=", rendered);
     }
 
-    private static async Task<string> RenderCapsAsync()
+    private async Task<string> RenderCapsAsync()
     {
         var caps = new SourceCaps(
             SupportedCategories: new[] { 5000, 2000 },
@@ -66,7 +91,7 @@ public class XmlDocumentRenderingTests
         return await ExecuteAndReadBodyAsync(result);
     }
 
-    private static async Task<string> RenderSearchAsync()
+    private async Task<string> RenderSearchAsync()
     {
         var release = TestReleases.Torrent();
         var source = new FakeUpstreamSource("eztv", searchResults: new[] { release.Candidate });
@@ -78,6 +103,13 @@ public class XmlDocumentRenderingTests
 
         var httpContext = NewHttpContext();
 
+        using var context = CreateContext();
+        var filterStage = new FilterStage(
+            new ApiKeyProfileResolver(context, new FilterProfileLoader(context)),
+            new SettingsReader(context),
+            context,
+            time);
+
         var result = await SearchEndpoint.HandleTorznabAsync(
             "search",
             null,
@@ -86,6 +118,7 @@ public class XmlDocumentRenderingTests
             0,
             "caller-api-key",
             snapshotService,
+            filterStage,
             releaseLookup,
             new RecentSearchLog(),
             httpContext.Request,
@@ -94,7 +127,7 @@ public class XmlDocumentRenderingTests
         return await ExecuteAndReadBodyAsync(result, httpContext);
     }
 
-    private static async Task<string> RenderRateLimitErrorAsync()
+    private async Task<string> RenderRateLimitErrorAsync()
     {
         var source = new FakeUpstreamSource("eztv", searchException: new RequestLimitReachedException("eztv"));
         var mergeStage = new UpstreamMergeStage(new[] { (IUpstreamSource)source });
@@ -105,6 +138,13 @@ public class XmlDocumentRenderingTests
 
         var httpContext = NewHttpContext();
 
+        using var context = CreateContext();
+        var filterStage = new FilterStage(
+            new ApiKeyProfileResolver(context, new FilterProfileLoader(context)),
+            new SettingsReader(context),
+            context,
+            time);
+
         var result = await SearchEndpoint.HandleTorznabAsync(
             "search",
             null,
@@ -113,6 +153,7 @@ public class XmlDocumentRenderingTests
             0,
             "caller-api-key",
             snapshotService,
+            filterStage,
             releaseLookup,
             new RecentSearchLog(),
             httpContext.Request,

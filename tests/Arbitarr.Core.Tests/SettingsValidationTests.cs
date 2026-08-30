@@ -604,4 +604,61 @@ public class SettingsValidationTests
             () => SettingsValidator.ValidateChange(current, SettingKey.AiVerdictCacheRowCeiling, 1, ArrSyncInterval));
         Assert.Equal(SettingKey.AiVerdictCacheRowCeiling, ex.Key);
     }
+
+    // ---------- admin API key (floor only; "none needed" ceiling) ----------
+
+    [Fact]
+    public void AdminApiKey_RejectsValueBelowFloor()
+    {
+        var ex = Assert.Throws<SettingsValidationException>(
+            () => SettingsValidator.ValidateAdminApiKey(new string('a', 15)));
+        Assert.Equal(SettingKey.AdminApiKey, ex.Key);
+    }
+
+    [Fact]
+    public void AdminApiKey_RejectsBlankValue()
+    {
+        var ex = Assert.Throws<SettingsValidationException>(
+            () => SettingsValidator.ValidateAdminApiKey("   "));
+        Assert.Equal(SettingKey.AdminApiKey, ex.Key);
+    }
+
+    [Fact]
+    public void AdminApiKey_AcceptsFloorValue()
+    {
+        var ex = Record.Exception(() => SettingsValidator.ValidateAdminApiKey(new string('a', 16)));
+        Assert.Null(ex);
+    }
+
+    // ---------- AI confidence threshold ----------
+
+    [Fact]
+    public void AiConfidenceThreshold_RejectsZero_AtFloor()
+    {
+        var ex = Assert.Throws<SettingsValidationException>(
+            () => SettingsValidator.ValidateAiConfidenceThreshold(0.0));
+        Assert.Equal(SettingKey.AiConfidenceThreshold, ex.Key);
+    }
+
+    [Fact]
+    public void AiConfidenceThreshold_AcceptsJustAboveFloor()
+    {
+        var ex = Record.Exception(() => SettingsValidator.ValidateAiConfidenceThreshold(0.01));
+        Assert.Null(ex);
+    }
+
+    [Fact]
+    public void AiConfidenceThreshold_RejectsValueAboveCeiling()
+    {
+        var ex = Assert.Throws<SettingsValidationException>(
+            () => SettingsValidator.ValidateAiConfidenceThreshold(1.01));
+        Assert.Equal(SettingKey.AiConfidenceThreshold, ex.Key);
+    }
+
+    [Fact]
+    public void AiConfidenceThreshold_AcceptsCeilingValue()
+    {
+        var ex = Record.Exception(() => SettingsValidator.ValidateAiConfidenceThreshold(1.0));
+        Assert.Null(ex);
+    }
 }

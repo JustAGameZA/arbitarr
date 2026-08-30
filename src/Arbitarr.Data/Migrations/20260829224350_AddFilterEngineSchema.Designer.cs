@@ -3,6 +3,7 @@ using System;
 using Arbitarr.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Arbitarr.Data.Migrations
 {
     [DbContext(typeof(ArbitarrDbContext))]
-    partial class ArbitarrDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260829224350_AddFilterEngineSchema")]
+    partial class AddFilterEngineSchema
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.11");
@@ -120,7 +123,6 @@ namespace Arbitarr.Data.Migrations
 
                     b.Property<string>("Pattern")
                         .IsRequired()
-                        .HasMaxLength(1024)
                         .HasColumnType("TEXT");
 
                     b.Property<int>("Precedence")
@@ -217,7 +219,7 @@ namespace Arbitarr.Data.Migrations
                     b.Property<DateTimeOffset>("FreshUntil")
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset>("LastRequestedAt")
+                    b.Property<DateTimeOffset>("LastAccessedAt")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("PayloadJson")
@@ -233,7 +235,7 @@ namespace Arbitarr.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("LastRequestedAt");
+                    b.HasIndex("LastAccessedAt");
 
                     b.HasIndex("QueryKey")
                         .IsUnique();
@@ -271,9 +273,6 @@ namespace Arbitarr.Data.Migrations
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
-
-                    b.Property<double>("BaseBackoffSeconds")
-                        .HasColumnType("REAL");
 
                     b.Property<int>("ConsecutiveFailures")
                         .HasColumnType("INTEGER");
@@ -319,12 +318,10 @@ namespace Arbitarr.Data.Migrations
 
                     b.Property<string>("QueryKey")
                         .IsRequired()
-                        .HasMaxLength(512)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Reason")
                         .IsRequired()
-                        .HasMaxLength(1024)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("ReleaseIdentifier")
