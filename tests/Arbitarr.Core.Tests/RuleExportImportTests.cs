@@ -77,4 +77,32 @@ public class RuleExportImportTests
 
         Assert.Throws<ArgumentException>(() => RuleImporter.Import(exported, (ImportIntent)0));
     }
+
+    /// <summary>
+    /// M4 review finding (MEDIUM): unbounded regex pattern length. A pattern one character over the
+    /// 1024-char bound (<see cref="Settings.SettingsValidator.FilterRulePatternMaxLength"/>) is
+    /// rejected outright, matching the file's "reject the whole import" convention for malformed
+    /// lines.
+    /// </summary>
+    [Fact]
+    public void Import_PatternOverMaxLength_ThrowsFormatException()
+    {
+        var pattern = new string('a', 1025);
+        var text = $"name|false|Normal|{pattern}\n";
+
+        Assert.Throws<FormatException>(() => RuleImporter.Import(text, ImportIntent.UserInitiated));
+    }
+
+    /// <summary>Boundary companion to the above: exactly 1024 characters is accepted.</summary>
+    [Fact]
+    public void Import_PatternAtMaxLength_IsAccepted()
+    {
+        var pattern = new string('a', 1024);
+        var text = $"name|false|Normal|{pattern}\n";
+
+        var imported = RuleImporter.Import(text, ImportIntent.UserInitiated);
+
+        var rule = Assert.Single(imported);
+        Assert.Equal(pattern, rule.PatternText);
+    }
 }

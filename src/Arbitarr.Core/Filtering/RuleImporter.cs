@@ -1,3 +1,5 @@
+using Arbitarr.Core.Settings;
+
 namespace Arbitarr.Core.Filtering;
 
 /// <summary>
@@ -66,6 +68,14 @@ public static class RuleImporter
             if (!Enum.TryParse<Precedence>(fields[2], out var precedence) || !Enum.IsDefined(precedence))
             {
                 throw new FormatException($"Line {lineNumber}: invalid precedence '{fields[2]}'.");
+            }
+
+            // M4 review finding (MEDIUM): reject an over-length pattern outright rather than accept
+            // it and let it fail later at persistence — matches DbContext's HasMaxLength(1024).
+            if (fields[3].Length > SettingsValidator.FilterRulePatternMaxLength)
+            {
+                throw new FormatException(
+                    $"Line {lineNumber}: pattern must be <= {SettingsValidator.FilterRulePatternMaxLength} characters, found {fields[3].Length}.");
             }
 
             rules.Add(new FilterRule(fields[0], isAllow, precedence, fields[3]));

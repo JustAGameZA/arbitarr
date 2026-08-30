@@ -115,7 +115,10 @@ public sealed class ArbitarrDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.FilterProfileId);
             entity.Property(e => e.Name).IsRequired();
-            entity.Property(e => e.Pattern).IsRequired();
+            // M4 review finding (MEDIUM): bound pattern length at the schema level too, matching
+            // Core.Settings.SettingsValidator.FilterRulePatternMaxLength (defense in depth — Core's
+            // RuleImporter already rejects an over-length pattern before it ever reaches this layer).
+            entity.Property(e => e.Pattern).IsRequired().HasMaxLength(1024);
         });
 
         modelBuilder.Entity<ApiKeyProfileEntry>(entity =>

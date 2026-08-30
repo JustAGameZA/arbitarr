@@ -313,4 +313,31 @@ public static class SettingsValidator
                 $"AI confidence threshold must be <= 1.0, got {proposed}.");
         }
     }
+
+    /// <summary>Max length for a filter rule's regex pattern text (M4 review finding, MEDIUM: unbounded
+    /// regex pattern length). Matches the <c>FilterRuleEntry.Pattern</c> column's
+    /// <c>HasMaxLength(1024)</c> constraint in <c>ArbitarrDbContext</c> — kept here so every entry
+    /// point that accepts a pattern (import, and any future direct-API rule creation) rejects with
+    /// the same bound before it ever reaches persistence.</summary>
+    public const int FilterRulePatternMaxLength = 1024;
+
+    /// <summary>
+    /// Validates a proposed filter-rule pattern's length (M4 review finding, MEDIUM). Not tied to a
+    /// <see cref="SettingKey"/> — a filter rule pattern is per-rule data, not a global setting — so
+    /// this rejects with a plain <see cref="ArgumentException"/> rather than
+    /// <see cref="SettingsValidationException"/>, matching how <see cref="Filtering.RuleImporter"/>
+    /// rejects other malformed rule data. Rejects rather than truncates (this codebase's established
+    /// idiom): silently clamping a pattern could turn a deliberate rule into a different, unintended
+    /// one.
+    /// </summary>
+    public static void ValidateFilterRulePattern(string pattern)
+    {
+        ArgumentNullException.ThrowIfNull(pattern);
+        if (pattern.Length > FilterRulePatternMaxLength)
+        {
+            throw new ArgumentException(
+                $"Filter rule pattern must be <= {FilterRulePatternMaxLength} characters, got {pattern.Length}.",
+                nameof(pattern));
+        }
+    }
 }
