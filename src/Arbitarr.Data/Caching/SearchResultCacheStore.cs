@@ -71,6 +71,9 @@ public sealed class SearchResultCacheStore : ISearchResultCacheStore
         // client-side against the selection predicate documented on
         // ISearchResultCacheStore.GetRefreshCandidatesAsync, rather than re-expressing it as a
         // (potentially divergent) SQL WHERE clause.
+        // TODO(M7 observability): this scan is O(rows) over the whole table every worker cycle.
+        // Revisit with an index-assisted or paginated approach if the table grows large enough for
+        // this to show up in M7's soak/synthetic-ageing metrics.
         var candidates = await _dbContext.SearchResultCacheEntries
             .AsNoTracking()
             .ToListAsync(cancellationToken);
