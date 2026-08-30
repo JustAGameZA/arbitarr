@@ -1,10 +1,12 @@
 using System.Reflection;
+using Arbitarr.Ai;
 using Arbitarr.Api.Dashboard;
 using Arbitarr.Api.Rendering;
 using Arbitarr.Api.Routing;
 using Arbitarr.Api.Search;
 using Arbitarr.Core.Caching;
 using Arbitarr.Core.Diagnostics;
+using Arbitarr.Core.Filtering;
 using Arbitarr.Core.Security;
 using Arbitarr.Core.Sources;
 using Arbitarr.Core.Sources.CircuitBreaker;
@@ -13,6 +15,7 @@ using Arbitarr.Data.Caching;
 using Arbitarr.Data.CircuitBreaker;
 using Arbitarr.Data.Filtering;
 using Arbitarr.Data.Settings;
+using Arbitarr.Host;
 using Arbitarr.Host.Security;
 using Arbitarr.Sources.NzbHydra;
 using Microsoft.EntityFrameworkCore;
@@ -93,8 +96,6 @@ builder.Services.AddScoped<PaginationSnapshotService>();
 builder.Services.AddScoped<FilterProfileLoader>();
 builder.Services.AddScoped<ApiKeyProfileResolver>();
 builder.Services.AddScoped<SettingsReader>();
-builder.Services.AddScoped<FilterStage>();
-
 builder.Services.AddHostedService(sp => new RefreshWorker(
     sp.GetRequiredService<IServiceScopeFactory>(),
     sp.GetRequiredService<TimeProvider>(),
@@ -109,7 +110,70 @@ builder.Services.AddHostedService(sp => new RefreshWorker(
         RefreshWorkerDefaults.MaxConcurrentRefreshes),
     builder.Configuration["Arbitarr:Sources:NzbHydra:SourceName"] ?? "NZBHydra2",
     logger: sp.GetRequiredService<ILogger<RefreshWorker>>()));
+
+// AI layer (M5, Step 6): Arbitarr.Ai has zero references to Arbitarr.Data/Arbitarr.Media (AC6a,
+// enforced by Arbitarr.Architecture.Tests.AiMediaIsolationTests/DependencyDirectionTests) — Host
+// is the sole place that composes it with its persistence-backed cache reader/writer and the
+// shared circuit breaker (keyed by source name "Ollama", same IAsyncCircuitBreaker instance every
+// other adapter uses). Base URL defaults to the in-cluster service name, never a LAN IP; tests use
+// http://ollama.example.invalid.
+builder.Services.AddSingleton(_ =>
+{
+    var section = builder.Configuration.GetSection("Arbitarr:Ai:Ollama");
+    var baseUrlRaw = section["BaseUrl"] ?? "http://ollama:11434";
+    var model = section["Model"] ?? "qwen2.5:7b-instruct-q4_K_M";
+    var keepAlive = section["KeepAlive"] ?? "-1";
+    return new OllamaOptions(new Uri(baseUrlRaw), model, keepAlive);
+});
+builder.Services.AddSingleton(sp =>
+{
+    var section = builder.Configuration.GetSection("Arbitarr:Ai");
+    var modelName = section["ModelName"] ?? sp.GetRequiredService<OllamaOptions>().Model;
+    var modelDigest = section["ModelDigest"] ?? "unknown";
+    var promptVersion = section["PromptVersion"] ?? "v1";
+    return new AiModelIdentity(modelName, modelDigest, promptVersion);
+});
+// SEC-M5 (SSRF): mirrors SEC-M1 above — the Ollama base URL is config-driven, but disabling
+// automatic redirect-following is defense in depth against a compromised/misconfigured endpoint
+// 30x-ing us to an arbitrary host before any origin check could see the real target.
+builder.Services.AddHttpClient(nameof(OllamaClient))
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+builder.Services.AddScoped<IOllamaClient>(sp =>
+{
+    var options = sp.GetRequiredService<OllamaOptions>();
+    var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
+    var httpClient = httpClientFactory.CreateClient(nameof(OllamaClient));
+    var circuitBreaker = sp.GetRequiredService<IAsyncCircuitBreaker>();
+    return new OllamaClient(options, httpClient, circuitBreaker);
+});
+builder.Services.AddScoped<ReleaseClassifier>();
+builder.Services.AddScoped<IVerdictCacheReader, VerdictCacheReader>();
+builder.Services.AddScoped<IVerdictCacheWriter, VerdictCacheWriter>();
+builder.Services.AddScoped(sp => new ClassifierWorker(
+    sp.GetRequiredService<ReleaseClassifier>(),
+    sp.GetRequiredService<IVerdictCacheWriter>(),
+    sp.GetRequiredService<AiModelIdentity>()));
+
+builder.Services.AddScoped<FilterStage>(sp => new FilterStage(
+    sp.GetRequiredService<ApiKeyProfileResolver>(),
+    sp.GetRequiredService<SettingsReader>(),
+    sp.GetRequiredService<ArbitarrDbContext>(),
+    sp.GetRequiredService<TimeProvider>(),
+    sp.GetRequiredService<IVerdictCacheReader>(),
+    sp.GetRequiredService<AiModelIdentity>()));
 builder.Services.AddSingleton<InMemoryReleaseLookup>();
+
+// ClassifierPollingWorker is the BackgroundService that drives ClassifierWorker (a plain Scoped
+// type): it snapshots InMemoryReleaseLookup each cycle and runs classification + (AC26b/R17)
+// worker-side title-rewrite caching. AC24: the poll interval is
+// re-read from settings at the top of every cycle via the scope factory, so a live settings change
+// takes effect without a restart.
+builder.Services.AddHostedService(sp => new ClassifierPollingWorker(
+    sp.GetRequiredService<IServiceScopeFactory>(),
+    sp.GetRequiredService<InMemoryReleaseLookup>(),
+    sp.GetRequiredService<AiModelIdentity>(),
+    sp.GetRequiredService<TimeProvider>(),
+    logger: sp.GetRequiredService<ILogger<ClassifierPollingWorker>>()));
 builder.Services.AddSingleton<IReleaseLookup>(sp => sp.GetRequiredService<InMemoryReleaseLookup>());
 
 // Inbound Torznab/Newznab client apikey (M1-9, security-hardened). Distinct from

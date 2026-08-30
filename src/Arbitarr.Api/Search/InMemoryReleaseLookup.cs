@@ -81,6 +81,26 @@ public sealed class InMemoryReleaseLookup : IReleaseLookup
         return Task.FromResult<RenderedRelease?>(entry.Release);
     }
 
+    /// <summary>
+    /// Returns a point-in-time snapshot of every currently-tracked, non-expired release. Used by the
+    /// classifier polling worker as its candidate source — the worker never talks to
+    /// upstream sources directly, only to whatever this process has recently rendered.
+    /// </summary>
+    public IReadOnlyList<RenderedRelease> Snapshot()
+    {
+        var now = _timeProvider.GetUtcNow();
+        var result = new List<RenderedRelease>(_releases.Count);
+        foreach (var entry in _releases.Values)
+        {
+            if (now - entry.RecordedAt <= EntryTtl)
+            {
+                result.Add(entry.Release);
+            }
+        }
+
+        return result;
+    }
+
     private void EvictWhileOverCapacity()
     {
         while (_releases.Count > MaxEntries && _insertionOrder.TryDequeue(out var oldestKey))

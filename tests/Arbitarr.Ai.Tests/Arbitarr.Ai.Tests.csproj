@@ -16,6 +16,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Arbitarr.Ai\Arbitarr.Ai.csproj" />
   </ItemGroup>
 

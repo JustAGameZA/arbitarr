@@ -21,6 +21,8 @@ public static class SettingsCatalog
     {
         SettingKey.ShadowMode => true,
         SettingKey.AiConfidenceThreshold => 0.9,
+        SettingKey.TitleNormalizationEnabled => false,
+        SettingKey.ClassifierPollInterval => TimeSpan.FromMinutes(1),
         _ => throw new ArgumentOutOfRangeException(
             nameof(key), key, $"No default declared in {nameof(SettingsCatalog)} for '{key}'."),
     };

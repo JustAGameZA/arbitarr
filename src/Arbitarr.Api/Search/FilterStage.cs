@@ -31,17 +31,32 @@ public sealed class FilterStage
     private readonly SettingsReader _settingsReader;
     private readonly ArbitarrDbContext _dbContext;
     private readonly TimeProvider _timeProvider;
+    private readonly IVerdictCacheReader? _verdictCacheReader;
+    private readonly AiModelIdentity? _modelIdentity;
 
+    /// <param name="verdictCacheReader">
+    /// Cache-only AI slot (Q1-B) consulted by <see cref="SuppressionPrecedenceChain"/>. Optional
+    /// and defaults to <see langword="null"/> (AI slot stays an abstain-only no-op) so existing
+    /// callers/tests that construct a <see cref="FilterStage"/> without an AI layer keep compiling
+    /// and behaving exactly as before M5. Per-release <see cref="RenderedRelease.SourceName"/> is
+    /// used as the cache key's source name — not a fixed constructor value — since one
+    /// <see cref="FilterStage"/> instance evaluates releases from multiple upstream sources.
+    /// </param>
+    /// <param name="modelIdentity">Model/prompt identity used in the verdict cache key; the AI slot stays inert unless both this and <paramref name="verdictCacheReader"/> are supplied.</param>
     public FilterStage(
         ApiKeyProfileResolver profileResolver,
         SettingsReader settingsReader,
         ArbitarrDbContext dbContext,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IVerdictCacheReader? verdictCacheReader = null,
+        AiModelIdentity? modelIdentity = null)
     {
         _profileResolver = profileResolver ?? throw new ArgumentNullException(nameof(profileResolver));
         _settingsReader = settingsReader ?? throw new ArgumentNullException(nameof(settingsReader));
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+        _verdictCacheReader = verdictCacheReader;
+        _modelIdentity = modelIdentity;
     }
 
     /// <summary>
@@ -67,6 +82,7 @@ public sealed class FilterStage
         var profile = await _profileResolver.ResolveAsync(clientName, cancellationToken).ConfigureAwait(false);
         var shadowMode = await _settingsReader.GetShadowModeAsync(cancellationToken).ConfigureAwait(false);
         var aiConfidenceThreshold = await _settingsReader.GetAiConfidenceThresholdAsync(cancellationToken).ConfigureAwait(false);
+        var titleNormalizationEnabled = await _settingsReader.GetTitleNormalizationEnabledAsync(cancellationToken).ConfigureAwait(false);
         var now = _timeProvider.GetUtcNow();
 
         var output = new List<RenderedRelease>(releases.Count);
@@ -74,11 +90,17 @@ public sealed class FilterStage
 
         foreach (var release in releases)
         {
-            var chainResult = SuppressionPrecedenceChain.Evaluate(profile, release.Candidate, aiConfidenceThreshold);
+            var chainResult = SuppressionPrecedenceChain.Evaluate(
+                profile,
+                release.Candidate,
+                aiConfidenceThreshold,
+                _verdictCacheReader,
+                release.SourceName,
+                _modelIdentity);
 
             if (chainResult.Verdict != Verdict.Reject)
             {
-                output.Add(release with { SuppressionAnnotation = null });
+                output.Add(ApplyCachedTitleRewrite(release, titleNormalizationEnabled) with { SuppressionAnnotation = null });
                 continue;
             }
 
@@ -108,7 +130,7 @@ public sealed class FilterStage
             if (shadowMode)
             {
                 // AC12/D3: shadow mode re-admits the release, annotated, rather than withholding it.
-                output.Add(release with { SuppressionAnnotation = reason });
+                output.Add(ApplyCachedTitleRewrite(release, titleNormalizationEnabled) with { SuppressionAnnotation = reason });
             }
             // else: enforced — the release is withheld entirely (M4-7 "with shadow OFF, absent").
         }
@@ -120,6 +142,40 @@ public sealed class FilterStage
         }
 
         return output;
+    }
+
+    /// <summary>
+    /// M5-8/AC26b (title normalization, R17): applies a worker-produced, cached title rewrite to
+    /// <paramref name="release"/> when the kill-switch is on and a cached rewrite exists for it.
+    /// The rewrite is never computed inline here — only ever looked up (R17: rewrites are
+    /// worker-produced and cached, keyed the same way as verdicts). P1 fail-open: kill-switch off,
+    /// no cache entry, no cache reader/model identity wired, or no rewrite cached all fall through
+    /// to the original, untouched release. <see cref="ReleaseCandidate.OriginalTitle"/> (AC26a) and
+    /// size/category/guid are always preserved — only <see cref="ReleaseCandidate.Title"/> changes.
+    /// </summary>
+    private RenderedRelease ApplyCachedTitleRewrite(RenderedRelease release, bool titleNormalizationEnabled)
+    {
+        if (!titleNormalizationEnabled || _verdictCacheReader is null || _modelIdentity is null)
+        {
+            return release;
+        }
+
+        var key = VerdictCacheKey.Compute(
+            release.Candidate,
+            release.SourceName,
+            _modelIdentity.ModelName,
+            _modelIdentity.ModelDigest,
+            _modelIdentity.PromptVersion);
+
+        var cached = _verdictCacheReader.TryGet(key);
+        if (cached?.RewrittenTitle is null)
+        {
+            return release;
+        }
+
+        var rewrittenCandidate = release.Candidate.WithTitle(cached.RewrittenTitle, release.Candidate.OriginalTitle);
+
+        return release with { Candidate = rewrittenCandidate };
     }
 
     /// <summary>

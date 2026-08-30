@@ -20,6 +20,14 @@ public static class VerdictCacheKey
     /// key (even with different <see cref="ReleaseCandidate.Guid"/> values); changing
     /// <paramref name="modelName"/>, <paramref name="modelDigest"/>, or <paramref name="promptVersion"/>
     /// changes the key.
+    ///
+    /// <para>
+    /// M5 security review (LOW): keys on <see cref="ReleaseCandidate.OriginalTitle"/> (the
+    /// pre-normalization title), not <see cref="ReleaseCandidate.Title"/> — the normalizer strips
+    /// noise tokens, so two releases differing only by stripped noise would otherwise collide to
+    /// the same key whenever their size also happened to match, silently reusing one release's
+    /// verdict for a different one.
+    /// </para>
     /// </summary>
     public static string Compute(
         ReleaseCandidate candidate,
@@ -34,7 +42,7 @@ public static class VerdictCacheKey
         ArgumentNullException.ThrowIfNull(modelDigest);
         ArgumentNullException.ThrowIfNull(promptVersion);
 
-        var normalizedTitle = Normalize(candidate.Title);
+        var normalizedTitle = Normalize(candidate.OriginalTitle);
         var input = string.Join(
             '',
             normalizedTitle,

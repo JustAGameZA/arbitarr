@@ -137,6 +137,22 @@ public static class SettingsValidator
     }
 
     /// <summary>
+    /// Validates a proposed <see cref="SettingKey.ClassifierPollInterval"/> value.
+    /// Floor: 15s (prevents a hot polling loop against the in-memory release lookup/classifier).
+    /// No ceiling needed - a long poll interval only delays classification, it cannot cause
+    /// silent wrongness.
+    /// </summary>
+    public static void ValidateClassifierPollInterval(TimeSpan proposed)
+    {
+        var floor = TimeSpan.FromSeconds(15);
+        if (proposed < floor)
+        {
+            throw new SettingsValidationException(SettingKey.ClassifierPollInterval,
+                $"classifier_poll_interval must be >= {floor}, got {proposed}.");
+        }
+    }
+
+    /// <summary>
     /// Validates a proposed <see cref="SettingKey.AiVerdictCacheTtl"/> value.
     /// Floor: 24h. No ceiling needed - a long verdict TTL cannot cause silent wrongness
     /// (verdicts are model-version-keyed; the row ceiling bounds size independently).
@@ -378,6 +394,9 @@ public static class SettingsValidator
                 break;
             case SettingKey.MaintenanceJobInterval:
                 ValidateMaintenanceJobInterval((TimeSpan)proposed);
+                break;
+            case SettingKey.ClassifierPollInterval:
+                ValidateClassifierPollInterval((TimeSpan)proposed);
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(key), key, "Unknown setting key.");

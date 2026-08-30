@@ -11,6 +11,46 @@ public sealed class ReleaseCandidate
     /// <summary>Release title, as reported by the upstream source.</summary>
     public required string Title { get; init; }
 
+    /// <summary>
+    /// Backing store for the pre-normalization title. Left <see langword="null"/> at construction
+    /// by every existing call site (so <see cref="OriginalTitle"/> defaults to <see cref="Title"/>
+    /// unchanged); only the title normalizer sets this, after which <see cref="Title"/> holds the
+    /// normalized form and this property preserves what the source actually reported (Architect S3:
+    /// an <c>init</c> accessor cannot read another <c>init</c> member's final value at construction
+    /// time, so the raw value is captured separately rather than derived from <see cref="Title"/>).
+    /// </summary>
+    public string? OriginalTitleRaw { get; init; }
+
+    /// <summary>The title as originally reported by the source, before any normalization.</summary>
+    public string OriginalTitle => OriginalTitleRaw ?? Title;
+
+    /// <summary>
+    /// Returns a copy of this release with <see cref="Title"/> replaced and <see cref="OriginalTitleRaw"/>
+    /// set to <paramref name="originalTitleRaw"/>; every other attribute (size, category, guid, ...) is
+    /// carried over untouched. The single clone site for title rewrites, so the normalizer, the render
+    /// path, and the background worker cannot drift on which attributes survive a rewrite.
+    /// </summary>
+    public ReleaseCandidate WithTitle(string title, string? originalTitleRaw) => new()
+    {
+        Title = title,
+        OriginalTitleRaw = originalTitleRaw,
+        Guid = Guid,
+        PubDate = PubDate,
+        Size = Size,
+        Link = Link,
+        Category = Category,
+        Protocol = Protocol,
+        InfoHash = InfoHash,
+        Seeders = Seeders,
+        Peers = Peers,
+        MinimumRatio = MinimumRatio,
+        MinimumSeedTime = MinimumSeedTime,
+        UsenetGroup = UsenetGroup,
+        PasswordProtected = PasswordProtected,
+        Files = Files,
+        Grabs = Grabs,
+    };
+
     /// <summary>Source-provided unique identifier (Torznab/Newznab &lt;guid&gt;).</summary>
     public required string Guid { get; init; }
 

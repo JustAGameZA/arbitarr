@@ -1,3 +1,4 @@
+using Arbitarr.Core.Filtering;
 using Arbitarr.Data.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -140,10 +141,17 @@ public sealed class ArbitarrDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.ReleaseKeyHash).IsUnique();
             entity.HasIndex(e => e.LastAccessedAt);
-            entity.Property(e => e.ReleaseKeyHash).IsRequired();
-            entity.Property(e => e.ModelName).IsRequired();
-            entity.Property(e => e.ModelDigest).IsRequired();
-            entity.Property(e => e.PromptVersion).IsRequired();
+            // M5 security review (LOW): bound these at the schema level too, matching the
+            // FilterRuleEntry.Pattern/SuppressionAuditLogEntry precedent — ReleaseKeyHash is a
+            // fixed-length SHA-256 hex digest (64 chars), ModelName/ModelDigest/PromptVersion are
+            // short identity strings with generous headroom above any realistic value.
+            entity.Property(e => e.ReleaseKeyHash).IsRequired().HasMaxLength(64);
+            entity.Property(e => e.ModelName).IsRequired().HasMaxLength(256);
+            entity.Property(e => e.ModelDigest).IsRequired().HasMaxLength(256);
+            entity.Property(e => e.PromptVersion).IsRequired().HasMaxLength(256);
+            // M5 R17: rewritten title cached alongside the verdict. The bound is advisory on SQLite; it is
+            // enforced in code by VerdictCacheLimits (producer + writer), which this must match.
+            entity.Property(e => e.RewrittenTitle).HasMaxLength(VerdictCacheLimits.MaxRewrittenTitleLength);
         });
     }
 }
