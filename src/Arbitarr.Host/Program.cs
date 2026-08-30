@@ -294,6 +294,7 @@ AdminSettingsEndpoints.Map(app);
 AdminRuleEndpoints.Map(app);
 AdHocSearchEndpoint.Map(app);
 MatchExplanationEndpoint.Map(app);
+SuppressionViewEndpoint.Map(app);
 
 // Torznab family (torrent-oriented: namespace prefix "torznab", enclosure MIME application/x-bittorrent).
 app.MapGet("/torznab/api", async (
