@@ -114,7 +114,8 @@ public static class AdminRuleEndpoints
 
         try
         {
-            SettingsValidator.ValidateRuleCount(currentCount);
+            // Validate the post-add total: the bound is on the profile's size, not its size before this rule.
+            SettingsValidator.ValidateRuleCount(currentCount + 1);
         }
         catch (ArgumentException ex)
         {
