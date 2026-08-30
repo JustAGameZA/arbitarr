@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Arbitarr.Core\Arbitarr.Core.csproj" />
+    <ProjectReference Include="..\..\src\Arbitarr.Core.Identity\Arbitarr.Core.Identity.csproj" />
   </ItemGroup>
 
 </Project>
