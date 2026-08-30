@@ -50,8 +50,8 @@ public sealed record NumberingCandidateScore(NumberingCandidate Candidate, doubl
 /// <see cref="CandidateNumberingSet"/> plus <see cref="NumberingCandidateCorroboration"/> facts) — it
 /// does not itself resolve arc bindings, parse titles, or reference any <c>Arbitarr.Media</c> type by
 /// name. Composition (building the corroboration facts from an <c>ArcSeasonMap</c> and calling this
-/// scorer) lives in <c>Arbitarr.Media</c>, per team-lead's explicit instruction to keep
-/// <c>Arbitarr.Core.Identity.csproj</c> free of any new project reference.
+/// scorer) lives in <c>Arbitarr.Media</c>, so <c>Arbitarr.Core.Identity.csproj</c> takes no new
+/// project reference (AC6a).
 /// </para>
 /// <para>
 /// R5 (plan lines 798-830): a bare <c>(Season: 1, ...)</c> <see cref="NumberingScheme.ArcRelative"/>
@@ -140,31 +140,30 @@ public static class TokenWeightedScorer
         if (corroboration.ArcTitleTokenMatched)
         {
             score += weights.ArcTitleTokenMatch;
-
-            if (corroboration.AbsoluteWithinDeclaredRange == true)
-            {
-                score += weights.AbsoluteWithinDeclaredRange;
-            }
-            // AbsoluteWithinDeclaredRange == false (out-of-range, e.g. the E42/E45 overshoot rows)
-            // or null (nothing to check) both simply withhold the bonus - neither is penalized
-            // below the plain token-match weight, since the token match itself is still true.
         }
         else if (corroboration.ArcSceneSeasonAliasMatched)
         {
             // Scene-season-alias resolution (docs row: `BLEACH Sennen Kessen hen S01E36...`): a
-            // real binding was found, just not via the release's own arc-title vocabulary. Scored
-            // between an exact title-token match and a bare uncorroborated carry-through.
+            // real binding was found, just not via the release's own arc-title vocabulary.
             score += weights.ArcSceneSeasonAliasMatch;
-
-            if (corroboration.AbsoluteWithinDeclaredRange == true)
-            {
-                score += weights.AbsoluteWithinDeclaredRange;
-            }
         }
         else if (candidate.Scheme == NumberingScheme.ArcRelative)
         {
             // Uncorroborated arc-relative carry-through (docs: bare `Bleach S17E##...` titles).
-            score += weights.UncorroboratedArcRelative;
+            return weights.UncorroboratedArcRelative;
+        }
+        else
+        {
+            return score;
+        }
+
+        // Range corroboration only means anything once a binding was actually resolved.
+        // AbsoluteWithinDeclaredRange == false (out-of-range, e.g. the E42/E45 overshoot rows) or
+        // null (nothing to check) both simply withhold the bonus - neither is penalized below the
+        // plain binding-match weight, since the binding match itself is still true.
+        if (corroboration.AbsoluteWithinDeclaredRange == true)
+        {
+            score += weights.AbsoluteWithinDeclaredRange;
         }
 
         return score;

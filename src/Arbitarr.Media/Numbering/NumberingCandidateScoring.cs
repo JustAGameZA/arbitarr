@@ -12,7 +12,7 @@ namespace Arbitarr.Media.Numbering;
 /// This is deliberately the only place that knows about both <c>Arbitarr.Media</c>'s
 /// <see cref="ArcSeasonMap"/>/<see cref="ArcSeasonBinding"/> types and
 /// <c>Arbitarr.Core.Identity.Scoring</c>'s scorer types — the scorer itself never references
-/// <see cref="ArcSeasonMap"/> by name, per team-lead's layering instruction.
+/// <see cref="ArcSeasonMap"/> by name (AC6a: Core.Identity takes no Media reference).
 /// </remarks>
 public static class NumberingCandidateScoring
 {
