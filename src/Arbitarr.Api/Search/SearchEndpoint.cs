@@ -30,18 +30,19 @@ public static class SearchEndpoint
         int offset,
         string callerApiKey,
         PaginationSnapshotService snapshotService,
+        FilterStage filterStage,
         InMemoryReleaseLookup releaseLookup,
         HttpRequest request,
         CancellationToken cancellationToken)
     {
-        var (result, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, snapshotService, releaseLookup, cancellationToken).ConfigureAwait(false);
+        var (releases, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, snapshotService, filterStage, releaseLookup, cancellationToken).ConfigureAwait(false);
         if (rateLimited)
         {
             var errorXml = TorznabXmlWriter.WriteError(RateLimitErrorCode, "Request limit reached");
             return Results.Text(XmlDocumentRendering.ToXmlString(errorXml), TorznabXmlWriter.ContentType);
         }
 
-        var xml = TorznabXmlWriter.WriteSearchResults(result!.Releases, r => DownloadLink(request, r, callerApiKey));
+        var xml = TorznabXmlWriter.WriteSearchResults(releases!, r => DownloadLink(request, r, callerApiKey));
         return Results.Text(XmlDocumentRendering.ToXmlString(xml), TorznabXmlWriter.ContentType);
     }
 
@@ -53,41 +54,55 @@ public static class SearchEndpoint
         int offset,
         string callerApiKey,
         PaginationSnapshotService snapshotService,
+        FilterStage filterStage,
         InMemoryReleaseLookup releaseLookup,
         HttpRequest request,
         CancellationToken cancellationToken)
     {
-        var (result, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, snapshotService, releaseLookup, cancellationToken).ConfigureAwait(false);
+        var (releases, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, snapshotService, filterStage, releaseLookup, cancellationToken).ConfigureAwait(false);
         if (rateLimited)
         {
             var errorXml = NewznabXmlWriter.WriteError(RateLimitErrorCode, "Request limit reached");
             return Results.Text(XmlDocumentRendering.ToXmlString(errorXml), NewznabXmlWriter.ContentType);
         }
 
-        var xml = NewznabXmlWriter.WriteSearchResults(result!.Releases, r => DownloadLink(request, r, callerApiKey));
+        var xml = NewznabXmlWriter.WriteSearchResults(releases!, r => DownloadLink(request, r, callerApiKey));
         return Results.Text(XmlDocumentRendering.ToXmlString(xml), NewznabXmlWriter.ContentType);
     }
 
-    private static async Task<(PagedMergeResult? Result, bool RateLimited)> ExecuteAsync(
+    private static async Task<(IReadOnlyList<RenderedRelease>? Releases, bool RateLimited)> ExecuteAsync(
         string? searchType,
         string? queryText,
         IReadOnlyList<int> categories,
         int limit,
         int offset,
         PaginationSnapshotService snapshotService,
+        FilterStage filterStage,
         InMemoryReleaseLookup releaseLookup,
         CancellationToken cancellationToken)
     {
         var query = new SearchQuery(queryText, categories, limit, offset);
         var result = await snapshotService.GetPageAsync(searchType ?? "search", query, cancellationToken).ConfigureAwait(false);
 
-        releaseLookup.RecordRange(result.Releases);
-
         // Only surface the rate-limit element when every configured source failed with
         // RequestLimitReachedException and none contributed any results — a partially degraded
         // merge (some sources rate-limited, others succeeded) still renders normally.
         var rateLimited = result.Releases.Count == 0 && result.RateLimitedSources.Count > 0;
-        return (result, rateLimited);
+        if (rateLimited)
+        {
+            return (null, true);
+        }
+
+        var queryKey = queryText ?? string.Empty;
+        var filtered = await filterStage.ApplyAsync(result.Releases, queryKey, cancellationToken).ConfigureAwait(false);
+
+        // Register only the post-filter set: an enforced-mode (shadow OFF) suppression is a deny,
+        // full stop, so a withheld release must not remain resolvable via /download/{proxyGuid}.
+        // Shadow-mode-suppressed releases stay in `filtered` (annotated), so they stay
+        // downloadable.
+        releaseLookup.RecordRange(filtered);
+
+        return (filtered, false);
     }
 
     // The proxy guid alone only prevents enumeration of releases; it is not an authorization

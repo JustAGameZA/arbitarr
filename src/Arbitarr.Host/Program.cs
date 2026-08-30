@@ -6,6 +6,8 @@ using Arbitarr.Core.Sources;
 using Arbitarr.Core.Sources.CircuitBreaker;
 using Arbitarr.Data;
 using Arbitarr.Data.CircuitBreaker;
+using Arbitarr.Data.Filtering;
+using Arbitarr.Data.Settings;
 using Arbitarr.Host.Security;
 using Arbitarr.Sources.NzbHydra;
 using Microsoft.EntityFrameworkCore;
@@ -63,6 +65,9 @@ builder.Services.AddScoped<IReadOnlyList<IUpstreamSource>>(sp => sp.GetServices<
 builder.Services.AddScoped<UpstreamMergeStage>();
 builder.Services.AddScoped<IQuerySnapshotStore, QuerySnapshotStore>();
 builder.Services.AddScoped<PaginationSnapshotService>();
+builder.Services.AddScoped<FilterProfileLoader>();
+builder.Services.AddScoped<SettingsReader>();
+builder.Services.AddScoped<FilterStage>();
 builder.Services.AddSingleton<InMemoryReleaseLookup>();
 builder.Services.AddSingleton<IReleaseLookup>(sp => sp.GetRequiredService<InMemoryReleaseLookup>());
 
@@ -118,6 +123,7 @@ app.MapGet("/torznab/api", async (
     IClientApiKeyResolver apiKeyResolver,
     CapsAggregator capsAggregator,
     PaginationSnapshotService snapshotService,
+    FilterStage filterStage,
     InMemoryReleaseLookup releaseLookup,
     IReadOnlyList<IUpstreamSource> sources,
     HttpRequest request,
@@ -143,6 +149,7 @@ app.MapGet("/torznab/api", async (
         PagingClamp.ClampOffset(offset),
         apikey!,
         snapshotService,
+        filterStage,
         releaseLookup,
         request,
         cancellationToken).ConfigureAwait(false);
@@ -159,6 +166,7 @@ app.MapGet("/newznab/api", async (
     IClientApiKeyResolver apiKeyResolver,
     CapsAggregator capsAggregator,
     PaginationSnapshotService snapshotService,
+    FilterStage filterStage,
     InMemoryReleaseLookup releaseLookup,
     IReadOnlyList<IUpstreamSource> sources,
     HttpRequest request,
@@ -184,6 +192,7 @@ app.MapGet("/newznab/api", async (
         PagingClamp.ClampOffset(offset),
         apikey!,
         snapshotService,
+        filterStage,
         releaseLookup,
         request,
         cancellationToken).ConfigureAwait(false);
