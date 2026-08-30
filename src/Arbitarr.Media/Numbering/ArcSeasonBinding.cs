@@ -22,13 +22,31 @@ namespace Arbitarr.Media.Numbering;
 /// <param name="Season">The scene season number this arc is keyed to.</param>
 /// <param name="AbsoluteRangeStart">First absolute episode number (inclusive) covered by this arc.</param>
 /// <param name="AbsoluteRangeEnd">Last absolute episode number (inclusive) covered by this arc.</param>
+/// <param name="AlternateSceneSeasons">
+/// Other scene season numbers a release might render this arc under (docs/step3b-observed-failures.md
+/// section 5's "BLEACH Sennen Kessen hen S01E##..." row: the same TYBW content is rendered as scene
+/// season 1 by Japanese-audio release groups, season 17 by the dominant English convention, and season
+/// 3 by a third group — none of which is a title-token match, only a scene-season rendering
+/// difference). Empty when an arc has only ever been observed under its own <see cref="Season"/>.
+/// </param>
 public sealed record ArcSeasonBinding(
     string ArcTitle,
     IReadOnlyList<string> AlternateArcTitles,
     int Season,
     int AbsoluteRangeStart,
-    int AbsoluteRangeEnd)
+    int AbsoluteRangeEnd,
+    IReadOnlyList<int>? AlternateSceneSeasons = null)
 {
+    /// <summary>
+    /// Whether <paramref name="sceneSeason"/> is one of this binding's declared
+    /// <see cref="AlternateSceneSeasons"/> renderings. Deliberately does <b>not</b> match the binding's
+    /// own <see cref="Season"/>: a release that simply carries a season number equal to some
+    /// binding's season has not been alias-resolved to that arc, and treating it as if it had lets a
+    /// bare scene season fabricate an absolute number (see <see cref="ArcSeasonMap.FindBySceneSeasonAlias"/>).
+    /// </summary>
+    public bool IsAlternateSceneSeason(int sceneSeason) =>
+        AlternateSceneSeasons?.Contains(sceneSeason) ?? false;
+
     /// <summary>
     /// Whether the given absolute episode number falls within this arc's inclusive range.
     /// </summary>
@@ -70,6 +88,49 @@ public sealed record ArcSeasonMap(IReadOnlyList<ArcSeasonBinding> Bindings)
     /// </summary>
     public ArcSeasonBinding? FindByTitleToken(string token) =>
         Bindings.FirstOrDefault(b => b.MatchesTitleToken(token));
+
+    /// <summary>
+    /// Finds the single binding that declares the given scene season as one of its
+    /// <see cref="ArcSeasonBinding.AlternateSceneSeasons"/>, or <see langword="null"/> when the map
+    /// cannot resolve it unambiguously. Used when a release's scene season is a known alternate
+    /// rendering of an arc that has no matching title-token in the release's own title.
+    /// </summary>
+    /// <remarks>
+    /// Alias-only and order-independent by construction (R5: never admit a confident-but-wrong
+    /// binding). Returns <see langword="null"/> - resolving nothing rather than guessing - when:
+    /// no binding declares the alias; more than one binding declares it; or any binding already owns
+    /// that number as its own <see cref="ArcSeasonBinding.Season"/> (a map that says "season 6 is
+    /// Arrancar" and "season 6 also renders TYBW" is contradictory, and picking either side by list
+    /// position would bind a genuine season-6 release to whichever arc happened to be listed first).
+    /// A binding's own <see cref="ArcSeasonBinding.Season"/> is never matched here: a bare scene
+    /// season equal to some binding's season is carried through as-is by
+    /// <see cref="CandidateNumberingSetBuilder"/>, not promoted to an arc-bound candidate.
+    /// </remarks>
+    public ArcSeasonBinding? FindBySceneSeasonAlias(int sceneSeason)
+    {
+        ArcSeasonBinding? match = null;
+        foreach (var binding in Bindings)
+        {
+            if (binding.Season == sceneSeason)
+            {
+                return null;
+            }
+
+            if (!binding.IsAlternateSceneSeason(sceneSeason))
+            {
+                continue;
+            }
+
+            if (match is not null)
+            {
+                return null;
+            }
+
+            match = binding;
+        }
+
+        return match;
+    }
 
     /// <summary>
     /// Finds every binding whose absolute range covers the given absolute episode number. Returns
