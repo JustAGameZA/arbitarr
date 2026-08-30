@@ -217,12 +217,28 @@ var app = builder.Build();
 // any request is handled, since ReleaseGuid.Compute is called from request handlers.
 ReleaseGuid.Configure(ReleaseGuidSecretFile.LoadOrCreate(configDirectory));
 
-// Apply pending migrations on startup so a fresh /config volume gets a usable schema
-// before any endpoint (dashboard included) tries to query it.
+// M7-11: apply pending migrations on startup so a container starting from a clean /config
+// volume self-provisions its schema before any endpoint (dashboard included) tries to query
+// it. This runs on a dedicated scope (not the app's root scope) so the DbContext is disposed
+// immediately after. A failure here is always fatal to startup — there is no safe way to serve
+// requests against a database that isn't at the expected schema version — so we catch only to
+// wrap the raw EF/SQLite exception in a clear, actionable message before re-throwing, which
+// stops the host loop before app.Run() rather than crashing later on the first request.
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<ArbitarrDbContext>();
-    dbContext.Database.Migrate();
+    try
+    {
+        dbContext.Database.Migrate();
+    }
+    catch (Exception ex)
+    {
+        throw new InvalidOperationException(
+            $"Arbitarr failed to apply database migrations for '{databasePath}' on startup. " +
+            "The container cannot serve requests against a database that is not at the expected " +
+            "schema version. Check that the /config volume is writable and not corrupted, then " +
+            "restart. See the inner exception for the underlying EF Core/SQLite error.", ex);
+    }
 }
 
 app.UseDefaultFiles();
