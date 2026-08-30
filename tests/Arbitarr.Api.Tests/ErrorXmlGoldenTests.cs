@@ -1,6 +1,8 @@
 using Arbitarr.Api.Rendering;
 using Arbitarr.Api.Search;
+using Arbitarr.Core.Releases;
 using Arbitarr.Core.Security;
+using Arbitarr.Core.Sources;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -93,6 +95,66 @@ public class ErrorXmlGoldenTests
         Assert.NotNull(error);
     }
 
+    /// <summary>
+    /// M1-9: the apikey-error XML is a well-formed Torznab/Newznab response body, not a transport-level
+    /// failure — it must render with HTTP 200 (Results.Text with no explicit status code), the same as
+    /// every other search response, so *arr clients parse the &lt;error&gt; element instead of treating
+    /// this as a network failure.
+    /// </summary>
+    [Fact]
+    public void Wrong_apikey_error_result_renders_with_http_status_200()
+    {
+        var (context, error) = ApiKeyValidator.Validate(providedApiKey: "wrong-key", new SingleKeyResolver("correct-key"), isTorznab: true);
+
+        Assert.Null(context);
+        Assert.NotNull(error);
+        var statusCode = RenderedStatusCode(error!);
+        Assert.Equal(200, statusCode);
+    }
+
+    /// <summary>
+    /// M1-9: SearchEndpoint's RequestLimitReached path renders a Torznab &lt;error&gt; body (protocol-level
+    /// error code 500 embedded in the XML), but that must never surface as an HTTP 5xx — the endpoint
+    /// stays reachable/non-erroring at the transport level so *arr clients can read and log the error XML.
+    /// </summary>
+    [Fact]
+    public async Task Rate_limited_search_endpoint_result_does_not_surface_as_http_5xx()
+    {
+        var source = new FakeUpstreamSource("eztv", searchException: new RequestLimitReachedException("eztv"));
+        var mergeStage = new UpstreamMergeStage(new[] { (IUpstreamSource)source });
+        var store = new FakeQuerySnapshotStore();
+        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
+        var snapshotService = new PaginationSnapshotService(mergeStage, store, time);
+        var releaseLookup = new InMemoryReleaseLookup();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var httpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext
+        {
+            RequestServices = services.BuildServiceProvider(),
+        };
+        httpContext.Request.Scheme = "http";
+        httpContext.Request.Host = new Microsoft.AspNetCore.Http.HostString("localhost");
+
+        var result = await SearchEndpoint.HandleTorznabAsync(
+            "search",
+            null,
+            Array.Empty<int>(),
+            50,
+            0,
+            "correct-key",
+            snapshotService,
+            releaseLookup,
+            httpContext.Request,
+            CancellationToken.None);
+
+        using var body = new MemoryStream();
+        httpContext.Response.Body = body;
+        await result.ExecuteAsync(httpContext);
+
+        Assert.True(httpContext.Response.StatusCode < 500);
+    }
+
     private static string RenderedBody(Microsoft.AspNetCore.Http.IResult result)
     {
         var services = new ServiceCollection();
@@ -109,5 +171,21 @@ public class ErrorXmlGoldenTests
         body.Seek(0, SeekOrigin.Begin);
         using var reader = new StreamReader(body);
         return reader.ReadToEnd();
+    }
+
+    private static int RenderedStatusCode(Microsoft.AspNetCore.Http.IResult result)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var context = new Microsoft.AspNetCore.Http.DefaultHttpContext
+        {
+            RequestServices = services.BuildServiceProvider(),
+        };
+        using var body = new MemoryStream();
+        context.Response.Body = body;
+
+        result.ExecuteAsync(context).GetAwaiter().GetResult();
+
+        return context.Response.StatusCode;
     }
 }
