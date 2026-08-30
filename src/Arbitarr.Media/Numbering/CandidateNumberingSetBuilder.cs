@@ -115,6 +115,22 @@ public static class CandidateNumberingSetBuilder
             }
         }
 
+        // Step 3 (docs/step3b-observed-failures.md section 5, "Sennen Kessen hen" row): a release may
+        // render an arc's own scene season number under a known alternate convention with no
+        // corresponding arc-title token in its own title at all (e.g. the Japanese-language "Sennen
+        // Kessen hen" release group renders TYBW as scene season 1, not season 17, and its arc-title
+        // token doesn't match TybwBinding's English AlternateArcTitles). Binding by scene season here
+        // still requires the season to be a *known* alternate for some binding — an unrecognized
+        // season 1 with no title-token match still falls through to the season==1 exclusion below.
+        if (raw.SceneSeason is { } sceneSeasonForAlias)
+        {
+            var bySceneSeason = arcMap.FindBySceneSeason(sceneSeasonForAlias);
+            if (bySceneSeason is not null)
+            {
+                return bySceneSeason;
+            }
+        }
+
         if (raw.Absolute is { } absolute)
         {
             var byAbsolute = arcMap.FindByAbsolute(absolute);
