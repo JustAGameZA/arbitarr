@@ -10,6 +10,14 @@ namespace Arbitarr.Ai;
 /// </summary>
 public static class ClassificationPrompt
 {
+    /// <summary>
+    /// M5 security review (MED): caps how much of the title/category text is echoed into the
+    /// prompt sent to Ollama. Neither field is attacker-bounded before reaching this layer, so an
+    /// unusually long indexer-supplied title or category list would otherwise inflate the prompt
+    /// (and cost/latency) without limit; 512 chars is generous headroom above any real release title.
+    /// </summary>
+    private const int MaxPromptFieldLength = 512;
+
     private const string BaseSystemPrompt =
         "You are a release-quality classifier for a media automation tool. Given a single release " +
         "title and its metadata, decide whether it should be accepted (a genuine, well-formed release) " +
@@ -44,11 +52,14 @@ public static class ClassificationPrompt
 
         var systemMessage = $"{BaseSystemPrompt} {protocolGuidance}";
 
+        var truncatedTitle = Truncate(candidate.OriginalTitle);
+        var truncatedCategories = Truncate(string.Join(",", candidate.Category));
+
         var userMessage =
-            $"Title: {candidate.OriginalTitle}\n" +
+            $"Title: {truncatedTitle}\n" +
             $"Protocol: {candidate.Protocol}\n" +
             $"Size (bytes): {candidate.Size}\n" +
-            $"Categories: {string.Join(",", candidate.Category)}";
+            $"Categories: {truncatedCategories}";
 
         return new[]
         {
@@ -56,6 +67,9 @@ public static class ClassificationPrompt
             new OllamaChatMessage("user", userMessage),
         };
     }
+
+    private static string Truncate(string value)
+        => value.Length <= MaxPromptFieldLength ? value : value[..MaxPromptFieldLength];
 }
 
 /// <summary>A single chat message in Ollama's <c>/api/chat</c> request shape.</summary>

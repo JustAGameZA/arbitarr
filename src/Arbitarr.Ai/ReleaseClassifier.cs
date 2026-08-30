@@ -32,6 +32,15 @@ public sealed class ReleaseClassifier
     /// failure (circuit open, timeout, malformed response) — deterministic-only behavior is always
     /// the safe fallback (M5-3), never an unhandled exception surfacing out of the background
     /// worker's loop.
+    ///
+    /// <para>
+    /// M5 security review (LOW): catches <see cref="Exception"/> broadly rather than an explicit
+    /// list — <see cref="OllamaClient"/> can also fail with <see cref="InvalidOperationException"/>
+    /// (missing/unparseable message content) or a <see cref="System.Text.Json.JsonException"/>
+    /// (malformed verdict JSON), neither of which is a fail-open failure mode this type should
+    /// ever let escape. The only case rethrown is a caller-requested cancellation, so genuine
+    /// shutdown/cancellation still propagates instead of being swallowed as "no verdict".
+    /// </para>
     /// </summary>
     public async Task<OllamaVerdict?> TryClassifyAsync(ReleaseCandidate candidate, CancellationToken cancellationToken = default)
     {
@@ -41,7 +50,7 @@ public sealed class ReleaseClassifier
         {
             return await _ollamaClient.ClassifyAsync(candidate, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is OllamaCircuitOpenException or HttpRequestException or TaskCanceledException or OperationCanceledException)
+        catch (Exception) when (!cancellationToken.IsCancellationRequested)
         {
             return null;
         }

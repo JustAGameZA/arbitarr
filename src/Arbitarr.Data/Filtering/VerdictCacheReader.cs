@@ -14,10 +14,12 @@ namespace Arbitarr.Data.Filtering;
 public sealed class VerdictCacheReader : IVerdictCacheReader
 {
     private readonly ArbitarrDbContext _dbContext;
+    private readonly TimeProvider _timeProvider;
 
-    public VerdictCacheReader(ArbitarrDbContext dbContext)
+    public VerdictCacheReader(ArbitarrDbContext dbContext, TimeProvider? timeProvider = null)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public CachedVerdict? TryGet(string releaseKeyHash)
@@ -28,6 +30,21 @@ public sealed class VerdictCacheReader : IVerdictCacheReader
             .AsNoTracking()
             .SingleOrDefault(e => e.ReleaseKeyHash == releaseKeyHash);
 
-        return entry is null ? null : new CachedVerdict((Verdict)entry.Verdict, entry.Confidence);
+        if (entry is null)
+        {
+            return null;
+        }
+
+        // M5 security review (MED): refresh LastAccessedAt on a cache hit so the row-ceiling LRU
+        // trim (MaintenanceJob.PruneAiVerdictCacheAsync) evicts genuinely cold entries rather than
+        // entries that are still being read regularly but happened to be written first. This stays
+        // a single synchronous, local ExecuteUpdate against one row by primary key — no await, no
+        // network/model call — preserving Q1-B's "never block the request path on anything
+        // resembling a live model call" contract.
+        _dbContext.VerdictCacheEntries
+            .Where(e => e.Id == entry.Id)
+            .ExecuteUpdate(setters => setters.SetProperty(e => e.LastAccessedAt, _timeProvider.GetUtcNow()));
+
+        return new CachedVerdict((Verdict)entry.Verdict, entry.Confidence);
     }
 }

@@ -1,3 +1,4 @@
+using System.Linq;
 using Arbitarr.Core.Releases;
 
 namespace Arbitarr.Ai.Tests;
@@ -78,5 +79,48 @@ public class ProtocolConditionedPromptTests
         var messages = ClassificationPrompt.Build(Candidate("Movie.2024.1080p", ProtocolKind.Unknown));
 
         Assert.Contains("torrent", messages[0].Content, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Build_OversizedOriginalTitle_IsTruncatedTo512Chars()
+    {
+        // M5 security review (MED): an attacker/indexer-controlled title is not bounded before
+        // reaching ClassificationPrompt, so an unusually long title must be truncated rather than
+        // echoed into the prompt without limit.
+        var longTitle = new string('a', 1000);
+        var candidate = new ReleaseCandidate
+        {
+            Title = "short",
+            OriginalTitleRaw = longTitle,
+            Guid = "guid-long-title",
+            PubDate = DateTimeOffset.UtcNow,
+            Link = new Uri("https://example.invalid/r"),
+            Protocol = ProtocolKind.Torrent,
+        };
+
+        var messages = ClassificationPrompt.Build(candidate);
+
+        var titleLine = messages[1].Content.Split('\n').Single(l => l.StartsWith("Title: ", StringComparison.Ordinal));
+        Assert.Equal(512, titleLine["Title: ".Length..].Length);
+    }
+
+    [Fact]
+    public void Build_OversizedCategories_IsTruncatedTo512Chars()
+    {
+        var longCategories = Enumerable.Range(100000, 200).ToArray();
+        var candidate = new ReleaseCandidate
+        {
+            Title = "Movie.2024.1080p",
+            Category = longCategories,
+            Guid = "guid-long-categories",
+            PubDate = DateTimeOffset.UtcNow,
+            Link = new Uri("https://example.invalid/r"),
+            Protocol = ProtocolKind.Torrent,
+        };
+
+        var messages = ClassificationPrompt.Build(candidate);
+
+        var categoriesLine = messages[1].Content.Split('\n').Single(l => l.StartsWith("Categories: ", StringComparison.Ordinal));
+        Assert.True(categoriesLine["Categories: ".Length..].Length <= 512);
     }
 }

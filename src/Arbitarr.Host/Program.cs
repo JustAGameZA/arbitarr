@@ -132,7 +132,11 @@ builder.Services.AddSingleton(sp =>
     var promptVersion = section["PromptVersion"] ?? "v1";
     return new AiModelIdentity(modelName, modelDigest, promptVersion);
 });
-builder.Services.AddHttpClient(nameof(OllamaClient));
+// SEC-M5 (SSRF): mirrors SEC-M1 above — the Ollama base URL is config-driven, but disabling
+// automatic redirect-following is defense in depth against a compromised/misconfigured endpoint
+// 30x-ing us to an arbitrary host before any origin check could see the real target.
+builder.Services.AddHttpClient(nameof(OllamaClient))
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddScoped<IOllamaClient>(sp =>
 {
     var options = sp.GetRequiredService<OllamaOptions>();

@@ -173,4 +173,88 @@ public sealed class MaintenanceJobTests : IDisposable
             Assert.Equal(0, result.SuppressionAuditLogRowsPruned);
         }
     }
+
+    private static SettingsSnapshot SettingsWithAiVerdictCache(TimeSpan ttl, int rowCeiling) =>
+        SettingsSnapshot.Defaults(TimeSpan.FromMinutes(15)) with
+        {
+            AiVerdictCacheTtl = ttl,
+            AiVerdictCacheRowCeiling = rowCeiling,
+        };
+
+    [Fact]
+    public async Task RunAsync_PrunesAiVerdictCacheRows_OverRowCeiling_EvictsOldestLastAccessedAt()
+    {
+        // M5 security review (MED): the row-ceiling LRU trim must evict the coldest
+        // (oldest-LastAccessedAt) rows first, regardless of TTL, so an unbounded stream of distinct
+        // releases cannot grow this table without limit even when accessed faster than TTL expiry.
+        var ttl = TimeSpan.FromDays(30);
+
+        using (var context = CreateContext())
+        {
+            context.Database.Migrate();
+            for (var i = 0; i < 5; i++)
+            {
+                context.VerdictCacheEntries.Add(new VerdictCacheEntry
+                {
+                    ReleaseKeyHash = $"hash-{i}",
+                    Verdict = 1,
+                    Confidence = 0.9,
+                    ModelName = "model-a",
+                    ModelDigest = "digest-1",
+                    PromptVersion = "v1",
+                    CreatedAt = Now - TimeSpan.FromMinutes(10 - i),
+                    LastAccessedAt = Now - TimeSpan.FromMinutes(10 - i), // entry 0 is oldest, entry 4 is newest
+                });
+            }
+            context.SaveChanges();
+        }
+
+        using (var context = CreateContext())
+        {
+            var job = new MaintenanceJob(context, _timeProvider);
+            var result = await job.RunAsync(SettingsWithAiVerdictCache(ttl, rowCeiling: 3));
+            Assert.Equal(2, result.AiVerdictCacheRowsPruned);
+        }
+
+        using (var context = CreateContext())
+        {
+            var survivingHashes = context.VerdictCacheEntries.Select(e => e.ReleaseKeyHash).ToList();
+            Assert.Equal(3, survivingHashes.Count);
+            Assert.DoesNotContain("hash-0", survivingHashes);
+            Assert.DoesNotContain("hash-1", survivingHashes);
+            Assert.Contains("hash-2", survivingHashes);
+            Assert.Contains("hash-3", survivingHashes);
+            Assert.Contains("hash-4", survivingHashes);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_DoesNotPruneAiVerdictCacheRows_UnderRowCeilingAndWithinTtl()
+    {
+        var ttl = TimeSpan.FromDays(30);
+
+        using (var context = CreateContext())
+        {
+            context.Database.Migrate();
+            context.VerdictCacheEntries.Add(new VerdictCacheEntry
+            {
+                ReleaseKeyHash = "hash-only",
+                Verdict = 1,
+                Confidence = 0.9,
+                ModelName = "model-a",
+                ModelDigest = "digest-1",
+                PromptVersion = "v1",
+                CreatedAt = Now,
+                LastAccessedAt = Now,
+            });
+            context.SaveChanges();
+        }
+
+        using (var context = CreateContext())
+        {
+            var job = new MaintenanceJob(context, _timeProvider);
+            var result = await job.RunAsync(SettingsWithAiVerdictCache(ttl, rowCeiling: 10));
+            Assert.Equal(0, result.AiVerdictCacheRowsPruned);
+        }
+    }
 }

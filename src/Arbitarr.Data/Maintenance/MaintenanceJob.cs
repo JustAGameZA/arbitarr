@@ -1,4 +1,5 @@
 using Arbitarr.Core.Settings;
+using Arbitarr.Data.Entities;
 using Microsoft.EntityFrameworkCore;
 
 namespace Arbitarr.Data.Maintenance;
@@ -11,11 +12,11 @@ namespace Arbitarr.Data.Maintenance;
 /// thin adapter over them.
 ///
 /// Note on scope: the plan's retention table names four accumulating tables — search-result
-/// cache, AI verdict cache, metadata cache, and suppression audit log. Only the first, third, and
-/// fourth have a persisted schema as of Step 2 (see <see cref="ArbitarrDbContext"/>); the AI
-/// verdict cache entity belongs to the AI/classification layer (a later step) and does not exist
-/// yet, so this job does not (and cannot) prune it. When that entity is added, its prune step
-/// should be wired in here following the same pattern.
+/// cache, AI verdict cache, metadata cache, and suppression audit log. All four now have a
+/// persisted schema (see <see cref="ArbitarrDbContext"/>); the AI verdict cache prune
+/// (<see cref="PruneAiVerdictCacheAsync"/>) combines the age/TTL predicate in
+/// <see cref="Arbitarr.Core.Settings.PrunePredicates.IsAiVerdictCacheEntryPrunable"/> with a
+/// separate row-ceiling LRU trim (M5 security review, MED) that this job applies directly.
 ///
 /// Scheduling: run on an interval equal to the <c>maintenance_job_interval</c> setting. Per
 /// <see cref="SettingsValidator.ValidateMaintenanceJobInterval"/>, this is the one setting
@@ -54,12 +55,17 @@ public sealed class MaintenanceJob
                 now, settings.SuppressionAuditRetention, cancellationToken)
             .ConfigureAwait(false);
 
+        var aiVerdictCachePruned = await PruneAiVerdictCacheAsync(
+                now, settings.AiVerdictCacheTtl, settings.AiVerdictCacheRowCeiling, cancellationToken)
+            .ConfigureAwait(false);
+
         await RunIncrementalVacuumAsync(cancellationToken).ConfigureAwait(false);
 
         return new MaintenanceJobResult(
             SearchResultCacheRowsPruned: searchResultCachePruned,
             MetadataCacheRowsPruned: metadataCachePruned,
             SuppressionAuditLogRowsPruned: suppressionAuditPruned,
+            AiVerdictCacheRowsPruned: aiVerdictCachePruned,
             VacuumRan: true);
     }
 
@@ -120,6 +126,41 @@ public sealed class MaintenanceJob
             .ToList();
 
         _dbContext.SuppressionAuditLogEntries.RemoveRange(prunable);
+        await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return prunable.Count;
+    }
+
+    private async Task<int> PruneAiVerdictCacheAsync(
+        DateTimeOffset now, TimeSpan ttl, int rowCeiling, CancellationToken cancellationToken)
+    {
+        // See PruneSearchResultCacheAsync: SQLite's provider cannot reliably translate
+        // DateTimeOffset comparisons server-side, so TTL filtering is done client-side against
+        // PrunePredicates.IsAiVerdictCacheEntryPrunable directly.
+        var candidates = await _dbContext.VerdictCacheEntries
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var ttlExpired = candidates
+            .Where(e => PrunePredicates.IsAiVerdictCacheEntryPrunable(now - e.LastAccessedAt, ttl))
+            .ToList();
+
+        // Row-ceiling LRU trim (M5 security review, MED): a separate mechanism from the TTL
+        // predicate above (see PrunePredicates.IsAiVerdictCacheEntryPrunable's doc comment) — keep
+        // only the rowCeiling most-recently-accessed survivors, regardless of TTL, so an unbounded
+        // stream of distinct releases cannot grow this table without limit even when accessed
+        // faster than the TTL would otherwise expire them.
+        var ttlExpiredIds = ttlExpired.Select(e => e.Id).ToHashSet();
+        var survivors = candidates.Where(e => !ttlExpiredIds.Contains(e.Id));
+        var overCeiling = survivors
+            .OrderByDescending(e => e.LastAccessedAt)
+            .Skip(rowCeiling < 0 ? 0 : rowCeiling)
+            .ToList();
+
+        var prunable = new List<VerdictCacheEntry>(ttlExpired.Count + overCeiling.Count);
+        prunable.AddRange(ttlExpired);
+        prunable.AddRange(overCeiling);
+
+        _dbContext.VerdictCacheEntries.RemoveRange(prunable);
         await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return prunable.Count;
     }

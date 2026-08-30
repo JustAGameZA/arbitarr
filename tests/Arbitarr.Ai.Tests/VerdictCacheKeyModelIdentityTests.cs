@@ -83,4 +83,38 @@ public class VerdictCacheKeyModelIdentityTests
 
         Assert.Equal(keyA, keyB);
     }
+
+    [Fact]
+    public void Compute_SameNormalizedTitleDifferentOriginalTitle_ProducesDistinctKeys()
+    {
+        // M5 security review (LOW): two releases can normalize/noise-strip to the same Title (e.g.
+        // a stripped "RARBG" suffix) while their OriginalTitle differs. Keying on Title instead of
+        // OriginalTitle would collide these to one cache entry and silently reuse one release's
+        // verdict for a different one; keying on OriginalTitle keeps them distinct.
+        var candidateA = new ReleaseCandidate
+        {
+            Title = "Movie.2024.1080p.WEB-DL",
+            OriginalTitleRaw = "Movie.2024.1080p.WEB-DL-RARBG",
+            Guid = "guid-a",
+            PubDate = DateTimeOffset.UtcNow,
+            Link = new Uri("https://example.invalid/r"),
+            Size = 123456789,
+            Protocol = ProtocolKind.Torrent,
+        };
+        var candidateB = new ReleaseCandidate
+        {
+            Title = "Movie.2024.1080p.WEB-DL",
+            OriginalTitleRaw = "Movie.2024.1080p.WEB-DL-OtherGroup",
+            Guid = "guid-b",
+            PubDate = DateTimeOffset.UtcNow,
+            Link = new Uri("https://example.invalid/r"),
+            Size = 123456789,
+            Protocol = ProtocolKind.Torrent,
+        };
+
+        var keyA = VerdictCacheKey.Compute(candidateA, "TestSource", "model-a", "digest-1", "v1");
+        var keyB = VerdictCacheKey.Compute(candidateB, "TestSource", "model-a", "digest-1", "v1");
+
+        Assert.NotEqual(keyA, keyB);
+    }
 }

@@ -140,6 +140,28 @@ public class OllamaClientTests
     }
 
     [Fact]
+    public async Task ClassifyAsync_OversizedResponseBody_IsBoundedNotUnbounded()
+    {
+        // M5 security review (MED): OllamaClient.MaxResponseContentBufferSize caps the response
+        // body buffered into memory. A malicious/misbehaving Ollama endpoint returning a body far
+        // larger than any legitimate verdict payload must not be buffered without limit; it should
+        // fail (HttpRequestException from exceeding MaxResponseContentBufferSize) rather than the
+        // client accepting and buffering an unbounded response.
+        var oversizedContent = new string('x', 128 * 1024); // 128KB > 64KB cap
+        var payload = new
+        {
+            message = new
+            {
+                content = JsonSerializer.Serialize(new { verdict = "accept", confidence = 0.9, note = oversizedContent }),
+            },
+        };
+        var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(payload) };
+        var (client, _, _) = CreateClient(response);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => client.ClassifyAsync(Candidate()));
+    }
+
+    [Fact]
     public void MaxInFlight_IsOne()
     {
         Assert.Equal(1, OllamaOptions.MaxInFlight);

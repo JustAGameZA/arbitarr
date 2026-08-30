@@ -39,6 +39,12 @@ public sealed class OllamaClient : IOllamaClient
         _inFlightGate = new SemaphoreSlim(OllamaOptions.MaxInFlight, OllamaOptions.MaxInFlight);
 
         _httpClient.BaseAddress ??= options.BaseUrl;
+
+        // M5 security review (MED): bound the response body size the underlying handler will
+        // buffer — Ollama is local/trusted infrastructure, but a misbehaving or misconfigured
+        // endpoint returning an unbounded body should not be able to pressure process memory.
+        // 64 KiB is comfortably above any real verdict JSON payload.
+        _httpClient.MaxResponseContentBufferSize = 64 * 1024;
     }
 
     public async Task<OllamaVerdict> ClassifyAsync(ReleaseCandidate candidate, CancellationToken cancellationToken = default)
