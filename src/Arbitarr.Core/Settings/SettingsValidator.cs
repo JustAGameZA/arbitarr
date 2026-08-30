@@ -399,9 +399,33 @@ public static class SettingsValidator
                 break;
             case SettingKey.ClassifierPollInterval:
                 ValidateClassifierPollInterval((TimeSpan)proposed);
+            case SettingKey.SyncArbitrationBudget:
+                ValidateSyncArbitrationBudget((TimeSpan)proposed);
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(key), key, "Unknown setting key.");
+        }
+    }
+
+    /// <summary>
+    /// Validates a proposed <see cref="SettingKey.SyncArbitrationBudget"/> value (AC14b). Floor:
+    /// 1s (below this every call would fail open unconditionally, silently defeating the opt-in).
+    /// Ceiling: 30s (above this the ad-hoc search admin UI feels unresponsive - D3).
+    /// </summary>
+    public static void ValidateSyncArbitrationBudget(TimeSpan proposed)
+    {
+        var floor = TimeSpan.FromSeconds(1);
+        if (proposed < floor)
+        {
+            throw new SettingsValidationException(SettingKey.SyncArbitrationBudget,
+                $"sync AI arbitration budget must be >= {floor}, got {proposed}.");
+        }
+
+        var ceiling = TimeSpan.FromSeconds(30);
+        if (proposed > ceiling)
+        {
+            throw new SettingsValidationException(SettingKey.SyncArbitrationBudget,
+                $"sync AI arbitration budget must be <= {ceiling}, got {proposed}.");
         }
     }
 
@@ -528,6 +552,7 @@ public static class SettingsValidator
         SettingKey.SuppressionAuditRetention => (TimeSpan.FromDays(7).ToString(), null),
         SettingKey.QuerySnapshotTtl => (TimeSpan.FromSeconds(60).ToString(), TimeSpan.FromHours(1).ToString()),
         SettingKey.MaintenanceJobInterval => (TimeSpan.FromMinutes(5).ToString(), TimeSpan.FromHours(24).ToString()),
+        SettingKey.SyncArbitrationBudget => (TimeSpan.FromSeconds(1).ToString(), TimeSpan.FromSeconds(30).ToString()),
         _ => (null, null),
     };
 }

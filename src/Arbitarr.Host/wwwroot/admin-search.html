@@ -47,14 +47,15 @@
           </label>
 
           <!--
-            M7-1 (non-AI half): AC14b's synchronous-AI-arbitration opt-in is intentionally NOT wired
-            up here. It waits on M5 (the AI arbitration pipeline) landing first, and this page (like
-            AdHocSearchEndpoint) must never reference the Arbitarr.Ai project or its output (AC6a).
-            Left disabled and unchecked as a visible placeholder for that future wiring.
+            AC14b: synchronous-AI-arbitration opt-in for this ad-hoc search. Checking this sends
+            runAiSync=true to GET /api/admin/search, which resolves Arbitarr.Core.Arbitration's
+            ISyncReleaseArbiter (implemented in Arbitarr.Ai, registered only in Arbitarr.Host) —
+            this page and AdHocSearchEndpoint (Arbitarr.Api) still never reference Arbitarr.Ai
+            directly (AC6a). Unchecked leaves the search on the plain, non-AI path.
           -->
           <label class="ai-toggle-label">
-            <input type="checkbox" id="run-ai-sync" disabled />
-            Run AI arbitration synchronously (disabled — pending M5, AC14b)
+            <input type="checkbox" id="run-ai-sync" />
+            Run AI arbitration synchronously (AC14b, admin opt-in)
           </label>
 
           <button type="submit">Search</button>

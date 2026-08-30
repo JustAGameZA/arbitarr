@@ -74,6 +74,23 @@ public sealed class SettingsReader
             : (TimeSpan)SettingsCatalog.GetDefault(SettingKey.ClassifierPollInterval);
     }
 
+    /// <summary>
+    /// AC14b: resolves <see cref="SettingKey.SyncArbitrationBudget"/>, defaulting to 5s when no row
+    /// exists. Consumed by the ad-hoc search endpoint to bound its synchronous-AI opt-in.
+    /// </summary>
+    public async Task<TimeSpan> GetSyncArbitrationBudgetAsync(CancellationToken cancellationToken = default)
+    {
+        var raw = await GetRawAsync(SettingKey.SyncArbitrationBudget, cancellationToken).ConfigureAwait(false);
+        if (raw is null)
+        {
+            return (TimeSpan)SettingsCatalog.GetDefault(SettingKey.SyncArbitrationBudget);
+        }
+
+        return TimeSpan.TryParse(raw, CultureInfo.InvariantCulture, out var value)
+            ? value
+            : (TimeSpan)SettingsCatalog.GetDefault(SettingKey.SyncArbitrationBudget);
+    }
+
     private async Task<string?> GetRawAsync(SettingKey key, CancellationToken cancellationToken)
     {
         var entry = await _dbContext.Settings

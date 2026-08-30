@@ -169,6 +169,12 @@ builder.Services.AddScoped(sp => new ClassifierWorker(
     sp.GetRequiredService<IVerdictCacheWriter>(),
     sp.GetRequiredService<AiModelIdentity>()));
 
+// AC14b: the ad-hoc search endpoint's synchronous-AI opt-in. Registered here (Host, sole
+// composition root) against Arbitarr.Core.Arbitration.ISyncReleaseArbiter so Arbitarr.Api never
+// references Arbitarr.Ai (AC6a). Strictly separate from the Q1-B machine path above, which never
+// resolves this or any other inline-classification type.
+builder.Services.AddScoped<Arbitarr.Core.Arbitration.ISyncReleaseArbiter, SyncReleaseArbiter>();
+
 builder.Services.AddScoped<FilterStage>(sp => new FilterStage(
     sp.GetRequiredService<ApiKeyProfileResolver>(),
     sp.GetRequiredService<SettingsReader>(),

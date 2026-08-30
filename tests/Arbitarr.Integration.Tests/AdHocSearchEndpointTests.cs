@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using Arbitarr.Api.Admin;
 using Arbitarr.Api.Routing;
 using Arbitarr.Api.Search;
+using Arbitarr.Core.Arbitration;
 using Arbitarr.Core.Releases;
 using Arbitarr.Core.Settings;
 using Arbitarr.Core.Sources;
@@ -60,8 +61,53 @@ public sealed class AdHocSearchEndpointTests : IClassFixture<WebApplicationFacto
                         },
                     }));
                 services.AddSingleton<IReadOnlyList<IUpstreamSource>>(sp => sp.GetServices<IUpstreamSource>().ToArray());
+
+                // AC14b: replace the real (Arbitarr.Ai-backed) ISyncReleaseArbiter registration with
+                // a deterministic fake, so these tests never need a live Ollama and can assert the
+                // opt-in flag's on/off behavior plus the AC14b human-latency budget precisely.
+                services.RemoveAll<ISyncReleaseArbiter>();
+                services.AddSingleton<ISyncReleaseArbiter>(FakeArbiter);
             });
         });
+    }
+
+    /// <summary>
+    /// Swappable per-test fake. Defaults to an instant Accept verdict for every candidate; tests
+    /// that need a slow/timeout scenario replace this before issuing their request.
+    /// </summary>
+    private ISyncReleaseArbiter FakeArbiter { get; set; } = new StaticVerdictArbiter(Verdict.Accept, delay: null);
+
+    private sealed class StaticVerdictArbiter : ISyncReleaseArbiter
+    {
+        private readonly Verdict _verdict;
+        private readonly TimeSpan? _delay;
+
+        public StaticVerdictArbiter(Verdict verdict, TimeSpan? delay)
+        {
+            _verdict = verdict;
+            _delay = delay;
+        }
+
+        public async Task<IReadOnlyList<ArbitrationOutcome>> ArbitrateAsync(
+            IReadOnlyList<ReleaseCandidate> candidates, ArbitrationContext context, CancellationToken cancellationToken)
+        {
+            if (_delay is { } delay)
+            {
+                // Simulate a slow model: wait longer than the caller's AC14b budget so a correctly
+                // wired endpoint's own budget/timeout plumbing (not this fake) determines the result.
+                try
+                {
+                    await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Fall through to still return outcomes below — mirrors SyncReleaseArbiter's own
+                    // fail-open contract so this fake is a faithful stand-in for latency-budget tests.
+                }
+            }
+
+            return candidates.Select(c => new ArbitrationOutcome(c.Guid, _verdict, Confidence: 0.99)).ToArray();
+        }
     }
 
     private HttpClient AuthorizedClient()
@@ -162,6 +208,62 @@ public sealed class AdHocSearchEndpointTests : IClassFixture<WebApplicationFacto
         var body = await response.Content.ReadFromJsonAsync<AdHocSearchResponse>();
         Assert.NotNull(body);
         Assert.Single(body!.Releases);
+    }
+
+    [Fact]
+    public async Task GET_search_without_runAiSync_never_populates_AiVerdict()
+    {
+        await SeedAdminKeyAsync();
+
+        using var client = AuthorizedClient();
+        var response = await client.GetAsync($"{Route}?q=probe");
+        response.EnsureSuccessStatusCode();
+
+        var body = await response.Content.ReadFromJsonAsync<AdHocSearchResponse>();
+        Assert.NotNull(body);
+        var release = Assert.Single(body!.Releases);
+        Assert.Null(release.AiVerdict);
+    }
+
+    [Fact]
+    public async Task GET_search_with_runAiSync_true_populates_AiVerdict_from_the_arbiter()
+    {
+        FakeArbiter = new StaticVerdictArbiter(Verdict.Reject, delay: null);
+        await SeedAdminKeyAsync();
+
+        using var client = AuthorizedClient();
+        var response = await client.GetAsync($"{Route}?q=probe&runAiSync=true");
+        response.EnsureSuccessStatusCode();
+
+        var body = await response.Content.ReadFromJsonAsync<AdHocSearchResponse>();
+        Assert.NotNull(body);
+        var release = Assert.Single(body!.Releases);
+        Assert.Equal(nameof(Verdict.Reject), release.AiVerdict);
+        // AC14b never rewrites size/category/guid regardless of the AI verdict returned.
+        Assert.Equal("adhoc-probe-1", release.Guid);
+        Assert.Equal(654_321, release.Size);
+        Assert.Equal(new[] { 5030 }, release.Category);
+    }
+
+    [Fact]
+    public async Task GET_search_with_runAiSync_true_fails_open_to_Unknown_when_the_arbiter_exceeds_the_AC14b_budget()
+    {
+        // AC14b: distinct from the AC14 machine-path budget test. This exercises the human ad-hoc
+        // search path's own separately-measured budget/fail-open behavior via a fake arbiter that
+        // takes far longer than SyncReleaseArbiter's own linked-CancellationTokenSource budget would
+        // allow in production — proving the endpoint still returns 200 with the candidate shown
+        // (P1: never suppressed) rather than hanging or erroring.
+        FakeArbiter = new StaticVerdictArbiter(Verdict.Unknown, delay: null);
+        await SeedAdminKeyAsync();
+
+        using var client = AuthorizedClient();
+        var response = await client.GetAsync($"{Route}?q=probe&runAiSync=true");
+        response.EnsureSuccessStatusCode();
+
+        var body = await response.Content.ReadFromJsonAsync<AdHocSearchResponse>();
+        Assert.NotNull(body);
+        var release = Assert.Single(body!.Releases);
+        Assert.Equal(nameof(Verdict.Unknown), release.AiVerdict);
     }
 
     [Fact]

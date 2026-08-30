@@ -69,6 +69,16 @@ public sealed class SettingsRepository
         return row is not null && bool.TryParse(row.Value, out var value) && value;
     }
 
+    /// <summary>AC14b: current value of the sync-AI-arbitration budget, defaulting per <see cref="SettingsCatalog.GetDefault"/> when unset.</summary>
+    public async Task<TimeSpan> GetSyncArbitrationBudgetAsync(CancellationToken cancellationToken)
+    {
+        var row = await _dbContext.Settings.AsNoTracking()
+            .FirstOrDefaultAsync(e => e.Name == SettingKey.SyncArbitrationBudget.ToString(), cancellationToken);
+        return row is not null && TimeSpan.TryParse(row.Value, CultureInfo.InvariantCulture, out var value)
+            ? value
+            : (TimeSpan)SettingsCatalog.GetDefault(SettingKey.SyncArbitrationBudget);
+    }
+
     /// <summary>
     /// Validates <paramref name="proposed"/> (serialized the same way the entry's <see cref="SettingCatalogEntry.IsBoolean"/>
     /// flag indicates: <c>bool.ToString()</c> or <see cref="TimeSpan.ToString()"/>/<c>int.ToString()</c>) against
@@ -123,6 +133,9 @@ public sealed class SettingsRepository
             case SettingKey.AiKillSwitch:
                 // AC26b: a boolean escape hatch, not bound-validated (SettingsCatalog.IsBoolean).
                 ParseBool(key, proposed);
+                break;
+            case SettingKey.SyncArbitrationBudget:
+                SettingsValidator.ValidateSyncArbitrationBudget(ParseTimeSpan(key, proposed));
                 break;
             case SettingKey.AdminApiKey:
                 throw new SettingsValidationException(key,

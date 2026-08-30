@@ -57,6 +57,7 @@ public static class AdminSettingsEndpoints
     {
         var snapshot = await repository.LoadSnapshotAsync(cancellationToken);
         var aiKillSwitch = await repository.GetAiKillSwitchAsync(cancellationToken);
+        var syncArbitrationBudget = await repository.GetSyncArbitrationBudgetAsync(cancellationToken);
 
         var entries = SettingsCatalog.Entries.Select(entry =>
         {
@@ -68,7 +69,7 @@ public static class AdminSettingsEndpoints
                 Rationale: entry.Rationale,
                 RequiresRestart: entry.RequiresRestart,
                 IsBoolean: entry.IsBoolean,
-                Value: CurrentValue(entry.Key, snapshot, aiKillSwitch),
+                Value: CurrentValue(entry.Key, snapshot, aiKillSwitch, syncArbitrationBudget),
                 Min: min,
                 Max: max);
         });
@@ -100,7 +101,7 @@ public static class AdminSettingsEndpoints
         return Results.Ok();
     }
 
-    private static string CurrentValue(SettingKey key, SettingsSnapshot snapshot, bool aiKillSwitch) => key switch
+    private static string CurrentValue(SettingKey key, SettingsSnapshot snapshot, bool aiKillSwitch, TimeSpan syncArbitrationBudget) => key switch
     {
         SettingKey.FreshUntil => snapshot.FreshUntil.ToString(),
         SettingKey.ServeUntil => snapshot.ServeUntil.ToString(),
@@ -116,6 +117,7 @@ public static class AdminSettingsEndpoints
         SettingKey.QuerySnapshotTtl => snapshot.QuerySnapshotTtl.ToString(),
         SettingKey.MaintenanceJobInterval => snapshot.MaintenanceJobInterval.ToString(),
         SettingKey.AiKillSwitch => aiKillSwitch.ToString(),
+        SettingKey.SyncArbitrationBudget => syncArbitrationBudget.ToString(),
         _ => throw new ArgumentOutOfRangeException(nameof(key), key, "No wire projection for this setting key."),
     };
 }

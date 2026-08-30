@@ -180,6 +180,16 @@ public static class SettingsCatalog
             "this once at startup, so a change here only takes effect after the process restarts.",
             RequiresRestart: true,
             IsBoolean: false),
+        new SettingCatalogEntry(
+            SettingKey.SyncArbitrationBudget,
+            SettingGroup.Ai,
+            "Sync AI arbitration budget (ad-hoc search)",
+            "AC14b human-latency budget: how long the ad-hoc search's optional synchronous-AI " +
+            "arbitration waits per release before that release fails open to an Unknown verdict. " +
+            "Floor 1s (below this every call would fail open, defeating the opt-in). Ceiling 30s " +
+            "(above this the admin UI feels unresponsive). Distinct from the AC14 machine budget.",
+            RequiresRestart: false,
+            IsBoolean: false),
     };
 
     /// <summary>
@@ -194,6 +204,7 @@ public static class SettingsCatalog
         SettingKey.AiConfidenceThreshold => 0.9,
         SettingKey.TitleNormalizationEnabled => false,
         SettingKey.ClassifierPollInterval => TimeSpan.FromMinutes(1),
+        SettingKey.SyncArbitrationBudget => TimeSpan.FromSeconds(5),
         _ => throw new ArgumentOutOfRangeException(
             nameof(key), key, $"No default declared in {nameof(SettingsCatalog)} for '{key}'."),
     };

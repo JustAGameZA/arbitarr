@@ -88,4 +88,12 @@ public enum SettingKey
     /// preference, so the usual bound-validation convention does not apply.
     /// </summary>
     AiKillSwitch,
+
+    /// <summary>
+    /// AC14b: the human-latency budget for the ad-hoc search endpoint's synchronous-AI opt-in
+    /// (<c>Arbitarr.Core.Arbitration.ISyncReleaseArbiter</c>). Distinct from the AC14 machine
+    /// (Torznab/Newznab) budget — this bounds how long a human's ad-hoc search waits per candidate
+    /// for a live Ollama call before that candidate fails open to Unknown (P1).
+    /// </summary>
+    SyncArbitrationBudget,
 }

@@ -2,10 +2,10 @@
 // hits GET /api/admin/search — the same PaginationSnapshotService/UpstreamMergeStage path as
 // /torznab/api, rendered as JSON for this dashboard instead of Torznab/Newznab XML.
 //
-// AC14b's synchronous-AI-arbitration opt-in is intentionally NOT wired here: it waits on M5, and
-// per AC6a this page must never reference Arbitarr.Ai or call anything AI-related. The "Run AI
-// arbitration synchronously" checkbox in admin-search.html stays disabled/unchecked as a visible
-// placeholder only.
+// AC14b: the "Run AI arbitration synchronously" checkbox opts into runAiSync=true on the request.
+// The endpoint resolves Arbitarr.Core.Arbitration.ISyncReleaseArbiter server-side; per AC6a this
+// page still never references Arbitarr.Ai or calls anything AI-related directly — it only ever
+// talks to the JSON endpoint.
 
 async function fetchJson(url, adminKey) {
   const response = await fetch(url, {
@@ -50,12 +50,13 @@ function renderResults(releases) {
         <td>${escapeHtml((r.category || []).join(", "))}</td>
         <td>${escapeHtml(r.sourceName)}</td>
         <td>${escapeHtml(new Date(r.pubDate).toLocaleString())}</td>
+        <td>${escapeHtml(r.aiVerdict || "—")}</td>
       </tr>`,
     )
     .join("");
 
   body.innerHTML = `<table>
-    <thead><tr><th>Title</th><th>Guid</th><th>Size</th><th>Category</th><th>Source</th><th>Published</th></tr></thead>
+    <thead><tr><th>Title</th><th>Guid</th><th>Size</th><th>Category</th><th>Source</th><th>Published</th><th>AI Verdict</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
 }
@@ -74,6 +75,9 @@ function buildQueryString() {
     if (value) {
       params.set(field, value);
     }
+  }
+  if (document.getElementById("run-ai-sync").checked) {
+    params.set("runAiSync", "true");
   }
   return params.toString();
 }
