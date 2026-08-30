@@ -1,5 +1,6 @@
 using Arbitarr.Api.Admin;
 using Arbitarr.Api.Routing;
+using Arbitarr.Core.Caching;
 using Arbitarr.Core.Sources;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
