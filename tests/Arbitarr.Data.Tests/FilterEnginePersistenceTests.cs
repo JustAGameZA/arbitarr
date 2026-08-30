@@ -2,16 +2,18 @@ using Arbitarr.Core.Filtering;
 using Arbitarr.Core.Releases;
 using Arbitarr.Data.Entities;
 using Arbitarr.Data.Filtering;
+using Arbitarr.Data.Settings;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
 namespace Arbitarr.Data.Tests;
 
 /// <summary>
-/// M4-1 (rules survive restart), M4-3 (A3: named API keys select distinct profiles), and the
+/// M4-1 (rules survive restart), M4-3 (A3: named API keys select distinct profiles), the
 /// M4-5 persistence half (every rule-driven suppression writes a <see cref="SuppressionAuditLogEntry"/>,
-/// asserted by count equality) — all against the real SQLite migration set, not an in-memory
-/// provider, so the schema itself is exercised.
+/// asserted by count equality), and M4-8 (fresh-install defaults for ShadowMode/AiConfidenceThreshold,
+/// D3) — all against the real SQLite migration set, not an in-memory provider, so the schema itself
+/// is exercised.
 /// </summary>
 public sealed class FilterEnginePersistenceTests : IDisposable
 {
@@ -203,6 +205,32 @@ public sealed class FilterEnginePersistenceTests : IDisposable
         using var verifyContext = CreateContext();
         var persistedCount = verifyContext.SuppressionAuditLogEntries.Count(e => e.QueryKey == "query-1");
         Assert.Equal(result.Suppressions.Count, persistedCount);
+    }
+
+    [Fact]
+    public async Task SettingsReader_FreshInstallNoSeeding_ShadowModeDefaultsOn()
+    {
+        using var context = CreateContext();
+        context.Database.Migrate();
+
+        var reader = new SettingsReader(context);
+
+        var shadowMode = await reader.GetShadowModeAsync();
+
+        Assert.True(shadowMode);
+    }
+
+    [Fact]
+    public async Task SettingsReader_FreshInstallNoSeeding_AiConfidenceThresholdDefaultsToPointNine()
+    {
+        using var context = CreateContext();
+        context.Database.Migrate();
+
+        var reader = new SettingsReader(context);
+
+        var threshold = await reader.GetAiConfidenceThresholdAsync();
+
+        Assert.Equal(0.9, threshold);
     }
 
     private static FilterProfile ToProfile(string name, List<FilterRuleEntry> entries)

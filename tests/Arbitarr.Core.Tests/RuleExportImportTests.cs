@@ -20,7 +20,7 @@ public class RuleExportImportTests
         });
 
         var exported = RuleExporter.Export(profile);
-        var imported = RuleImporter.Import(exported);
+        var imported = RuleImporter.Import(exported, ImportIntent.UserInitiated);
 
         Assert.Equal(profile.Rules.Count, imported.Count);
         for (var i = 0; i < profile.Rules.Count; i++)
@@ -43,7 +43,7 @@ public class RuleExportImportTests
         });
 
         var exported = RuleExporter.Export(profile);
-        var imported = RuleImporter.Import(exported);
+        var imported = RuleImporter.Import(exported, ImportIntent.UserInitiated);
 
         Assert.Single(imported);
         Assert.Equal("deny|pipe", imported[0].Name);
@@ -55,7 +55,7 @@ public class RuleExportImportTests
     {
         var badText = "only-two|fields\n";
 
-        Assert.Throws<FormatException>(() => RuleImporter.Import(badText));
+        Assert.Throws<FormatException>(() => RuleImporter.Import(badText, ImportIntent.UserInitiated));
     }
 
     [Fact]
@@ -63,6 +63,18 @@ public class RuleExportImportTests
     {
         var badText = "name|false|NotATier|pattern\n";
 
-        Assert.Throws<FormatException>(() => RuleImporter.Import(badText));
+        Assert.Throws<FormatException>(() => RuleImporter.Import(badText, ImportIntent.UserInitiated));
+    }
+
+    [Fact]
+    public void Import_WithoutExplicitUserInitiatedIntent_IsRejected()
+    {
+        var profile = new FilterProfile("default", new[]
+        {
+            new FilterRule("deny-cam", isAllow: false, Precedence.High, "CAM|TS"),
+        });
+        var exported = RuleExporter.Export(profile);
+
+        Assert.Throws<ArgumentException>(() => RuleImporter.Import(exported, (ImportIntent)0));
     }
 }

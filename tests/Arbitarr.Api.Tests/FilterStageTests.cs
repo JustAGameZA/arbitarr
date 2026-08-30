@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Arbitarr.Api.Rendering;
 using Arbitarr.Api.Search;
 using Arbitarr.Core.Releases;
@@ -165,5 +166,102 @@ public sealed class FilterStageTests : IDisposable
         var release = Assert.Single(output);
         Assert.Null(release.SuppressionAnnotation);
         Assert.Equal(0, await context.SuppressionAuditLogEntries.CountAsync());
+    }
+
+    /// <summary>
+    /// M4-2 pipeline-level fail-open (P1, R11): a hazardous pattern that times out inside
+    /// <see cref="Core.Filtering.FilterRule.Evaluate"/> must not stall <see cref="FilterStage.ApplyAsync"/>
+    /// or reduce its output — the search still returns the full result set, and a benign deny rule
+    /// in the same profile still applies (and is auditable) alongside the skipped hazard. The hazard
+    /// pattern reuses the backreference construct from ReDoSTimeoutTests to force the
+    /// backtracking-engine fallback (NonBacktracking alone would make a backreference-free
+    /// "(a+)+$"-style pattern linear-time and it would never time out).
+    /// </summary>
+    [Fact]
+    public async Task ApplyAsync_HazardousPatternTimesOut_PipelineFailsOpen_BenignRuleStillApplies()
+    {
+        using var context = CreateContext();
+
+        var profile = new FilterProfileEntry
+        {
+            Name = "Default",
+            IsDefault = true,
+            CreatedAt = Now,
+            UpdatedAt = Now,
+        };
+        context.FilterProfiles.Add(profile);
+        await context.SaveChangesAsync();
+
+        context.FilterRules.Add(new FilterRuleEntry
+        {
+            FilterProfileId = profile.Id,
+            Name = "hazard",
+            IsAllow = false,
+            Pattern = @"(a+)+\1$",
+            Precedence = 1,
+            Enabled = true,
+            CreatedAt = Now,
+            UpdatedAt = Now,
+        });
+        context.FilterRules.Add(new FilterRuleEntry
+        {
+            FilterProfileId = profile.Id,
+            Name = "deny-cam",
+            IsAllow = false,
+            Pattern = "CAM",
+            Precedence = 2,
+            Enabled = true,
+            CreatedAt = Now,
+            UpdatedAt = Now,
+        });
+        await context.SaveChangesAsync();
+        await SetShadowModeAsync(context, shadowMode: false);
+
+        var stage = new FilterStage(
+            new FilterProfileLoader(context),
+            new SettingsReader(context),
+            context,
+            new FakeTimeProvider(Now));
+
+        // Hits the hazard's catastrophic-backtracking input shape but does not match "CAM", so its
+        // survival can only be explained by the hazard rule being skipped (fail-open), not by the
+        // benign rule failing to run.
+        var hazardTitle = new string('a', 40) + "!";
+        var hazardousRelease = new RenderedRelease(
+            "TestSource",
+            new ReleaseCandidate
+            {
+                Title = hazardTitle,
+                Guid = "guid-hazard",
+                PubDate = Now,
+                Size = 111,
+                Link = new Uri("https://example.invalid/hazard"),
+            });
+        var camRelease = DenyMatchedRelease();
+
+        var stopwatch = Stopwatch.StartNew();
+        var output = await stage.ApplyAsync(new[] { hazardousRelease, camRelease }, "query-1");
+        stopwatch.Stop();
+
+        // Bound wall-clock: one hazardous rule evaluation must not exceed a small multiple of
+        // FilterRule.MatchTimeout (250ms), never "hang the pipeline".
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(5), $"ApplyAsync took {stopwatch.Elapsed}, expected bounded by MatchTimeout.");
+
+        // Fail-open: the hazardous release still survives (its rule was skipped, not enforced as a
+        // deny) — the search still returns the full result set for it.
+        var survivor = Assert.Single(output);
+        Assert.Equal("guid-hazard", survivor.Candidate.Guid);
+
+        // The benign deny rule still applied to the other release: enforced (shadow OFF) means it
+        // is withheld from output and recorded exactly once in the audit trail — proof the pipeline
+        // kept running normally after skipping the timed-out hazard, rather than aborting early.
+        var auditEntries = await context.SuppressionAuditLogEntries.ToListAsync();
+        var camAudit = Assert.Single(auditEntries);
+        Assert.Contains("deny-cam", camAudit.RuleName);
+
+        // No audit entry exists for the hazardous release: the skip is silent with respect to
+        // enforcement (it was never treated as a suppression) but is provable here via the timing
+        // bound plus survival — the pipeline did not stall or error on it.
+        Assert.DoesNotContain(auditEntries, e => e.RuleName.Contains("hazard"));
     }
 }
