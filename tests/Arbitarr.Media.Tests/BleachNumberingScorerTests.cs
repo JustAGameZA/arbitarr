@@ -13,6 +13,9 @@ namespace Arbitarr.Media.Tests;
 /// <c>Bleach - 329 [SGKK]</c> must both fall outside the top 5 AND score below
 /// <see cref="ConfidenceCalibration.AcceptanceThreshold"/> (0.9) — shadow mode OFF, single
 /// non-disjunctive threshold (<see cref="ConfidenceCalibration.MeetsAcceptanceThreshold"/>).
+/// NOTE: the fixture field below has only 4 candidates, so "outside top 5" is vacuously true for
+/// every non-#1 candidate and exercises no real ranking boundary; the below-0.9 confidence assertion
+/// is the actual, non-vacuous gate for the three named non-matches (see the in-test comment).
 /// </summary>
 public class BleachNumberingScorerTests
 {
@@ -86,8 +89,12 @@ public class BleachNumberingScorerTests
         Assert.True(ConfidenceCalibration.MeetsAcceptanceThreshold(tybwScore!.Confidence),
             $"Expected TYBW alias confidence >= {ConfidenceCalibration.AcceptanceThreshold}, was {tybwScore.Confidence}");
 
-        // The three named non-matches: outside top 5 (trivially true in a 4-item field where TYBW is
-        // #1, but asserted explicitly per the acceptance criteria's own framing) AND below 0.9.
+        // The three named non-matches: outside top 5 AND below 0.9. NOTE - with only 4 candidates in
+        // this field, "outside top 5" is vacuously true for all three the moment TYBW is #1 (there is
+        // no top-5 cut to fail); it is asserted below only because the acceptance criteria's own
+        // wording names it, not because it exercises any real ranking boundary here. The
+        // MeetsAcceptanceThreshold(...) < 0.9 assertion is the actual gate this test enforces - it is
+        // the only check below that can fail independently of the #1-ranking assertion above.
         foreach (var label in new[] { "UnrelatedSeason16", "BareAbsoluteOnly236", "AnotherBareAbsolute329" })
         {
             var nonMatch = scored.Single(s => s.Label == label).Score;
