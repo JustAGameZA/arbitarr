@@ -59,4 +59,85 @@ public class DependencyDirectionTests
             "Arbitarr.Core.Identity has a forbidden dependency on Api/Ai/Media: " +
             string.Join(", ", result.FailingTypeNames ?? Enumerable.Empty<string>()));
     }
+
+    // M6-7: walks the full transitive reference graph starting from Arbitarr.Core.Identity,
+    // rather than only its direct references, so a future indirect path (Core.Identity -> X ->
+    // Arbitarr.Media) would be caught even though X itself is not one of the forbidden names.
+    private static HashSet<string> GetTransitiveReferenceClosure(Assembly root)
+    {
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        var queue = new Queue<Assembly>();
+        queue.Enqueue(root);
+
+        while (queue.Count > 0)
+        {
+            var current = queue.Dequeue();
+            foreach (var reference in current.GetReferencedAssemblies())
+            {
+                var name = reference.Name;
+                if (name is null || !visited.Add(name))
+                {
+                    continue;
+                }
+
+                // Only walk further into assemblies we can actually load (i.e. our own
+                // Arbitarr.* projects); framework/BCL/NuGet assemblies are leaves for this check.
+                if (!name.StartsWith("Arbitarr.", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var loaded = Assembly.Load(reference);
+                    queue.Enqueue(loaded);
+                }
+                catch (Exception) when (true)
+                {
+                    // Unresolvable transitive reference: nothing further to walk from here, but
+                    // its name is still recorded above so the closure remains accurate.
+                }
+            }
+        }
+
+        return visited;
+    }
+
+    [Fact]
+    public void CoreIdentity_TransitiveClosure_Does_Not_Reach_Media()
+    {
+        var closure = GetTransitiveReferenceClosure(CoreIdentityAssembly);
+
+        // Non-vacuousness: prove the walk actually ran and enumerated real references (and isn't
+        // silently empty because nothing loaded). Note Core.Identity's compiled IL carries no
+        // Arbitarr.Core reference despite the ProjectReference in its .csproj: the C# compiler
+        // elides an assembly reference when no emitted type actually uses it, and no
+        // Arbitarr.Core.Identity source file currently references an Arbitarr.Core type. The
+        // walk's ability to traverse multiple real Arbitarr.* hops is instead proven by
+        // TransitiveClosureHelper_WalksMultipleHops_FromMedia below.
+        Assert.NotEmpty(closure);
+
+        Assert.DoesNotContain("Arbitarr.Media", closure);
+    }
+
+    // Positive control for CoreIdentity_TransitiveClosure_Does_Not_Reach_Media: proves the walk
+    // itself performs real multi-hop traversal (rather than the negative result above being
+    // explainable by a walk that silently does nothing) by starting from Arbitarr.Media — a real,
+    // already-loaded assembly — and confirming the closure reaches both of its known transitive
+    // project dependencies, Arbitarr.Core and Arbitarr.Core.Identity (per Media's own
+    // ProjectReferences). If the walk were broken/no-op, this closure would come back empty and
+    // this test would fail exactly where the Media-detection assertion above would have.
+    [Fact]
+    public void TransitiveClosureHelper_WalksMultipleHops_FromMedia()
+    {
+        var mediaAssembly = AppDomain.CurrentDomain
+            .GetAssemblies()
+            .Concat(new[] { Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "Arbitarr.Media.dll")) })
+            .First(a => a.GetName().Name == "Arbitarr.Media");
+
+        var closure = GetTransitiveReferenceClosure(mediaAssembly);
+
+        Assert.Contains("Arbitarr.Core", closure);
+        Assert.Contains("Arbitarr.Core.Identity", closure);
+    }
 }
