@@ -41,7 +41,8 @@ jobs:
           # and no pre-populated config/data directory anywhere in the published image.
           found=$(docker run --rm --entrypoint sh arbitarr-review:ci -c \
             "find / -xdev \( -iname '*anime*list*' -o -iname 'anime-offline-database*' \) 2>/dev/null; \
-             find /config -mindepth 1 2>/dev/null" || true)
+             find /config -mindepth 1 2>/dev/null; \
+             true")
 
           if [ -n "$found" ]; then
             echo "BLOCKED: found baked dataset/pre-populated config content in the image:" >&2
