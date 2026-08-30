@@ -72,8 +72,9 @@ public sealed class SourceCircuitBreakerTests
 
         Assert.False(breaker.CanCall(Source));
 
-        // Advance most, but not all, of the 5-minute probe interval.
-        clock.Advance(TimeSpan.FromMinutes(4) + TimeSpan.FromSeconds(59));
+        // Advance most, but not all, of the 5s initial backoff (M3-12: the gate is CurrentBackoff,
+        // not the fixed ProbeInterval).
+        clock.Advance(TimeSpan.FromSeconds(4));
         Assert.False(breaker.CanCall(Source));
         Assert.Equal(CircuitState.Open, breaker.GetSnapshot(Source).State);
     }
@@ -87,8 +88,8 @@ public sealed class SourceCircuitBreakerTests
         breaker.RecordFailure(Source, new InvalidOperationException("failure 2"));
         breaker.RecordFailure(Source, new InvalidOperationException("failure 3"));
 
-        // Advance exactly past the 5-minute probe interval.
-        clock.Advance(TimeSpan.FromMinutes(5) + TimeSpan.FromSeconds(1));
+        // Advance exactly past the 5s initial backoff (M3-12: gated by CurrentBackoff).
+        clock.Advance(TimeSpan.FromSeconds(5) + TimeSpan.FromSeconds(1));
 
         // First call after the probe interval elapses transitions to Half-Open and is permitted.
         Assert.True(breaker.CanCall(Source));
@@ -107,7 +108,7 @@ public sealed class SourceCircuitBreakerTests
         breaker.RecordFailure(Source, new InvalidOperationException("failure 2"));
         breaker.RecordFailure(Source, new InvalidOperationException("failure 3"));
 
-        clock.Advance(TimeSpan.FromMinutes(5) + TimeSpan.FromSeconds(1));
+        clock.Advance(TimeSpan.FromSeconds(5) + TimeSpan.FromSeconds(1));
         Assert.True(breaker.CanCall(Source)); // transitions to Half-Open, consumes the probe slot
 
         breaker.RecordSuccess(Source);
@@ -131,7 +132,7 @@ public sealed class SourceCircuitBreakerTests
         var firstBackoff = breaker.GetSnapshot(Source).CurrentBackoff;
         Assert.Equal(TimeSpan.FromSeconds(5), firstBackoff);
 
-        clock.Advance(TimeSpan.FromMinutes(5) + TimeSpan.FromSeconds(1));
+        clock.Advance(TimeSpan.FromSeconds(5) + TimeSpan.FromSeconds(1));
         Assert.True(breaker.CanCall(Source)); // Half-Open probe call
 
         breaker.RecordFailure(Source, new InvalidOperationException("probe failed"));
@@ -143,11 +144,12 @@ public sealed class SourceCircuitBreakerTests
         Assert.False(breaker.CanCall(Source));
 
         // Confirm the new (doubled) probe window is honored: not yet elapsed at old cadence...
-        clock.Advance(TimeSpan.FromMinutes(4));
+        clock.Advance(TimeSpan.FromSeconds(9));
         Assert.False(breaker.CanCall(Source));
 
-        // ...but elapses after the full new 5-minute probe interval from the second open.
-        clock.Advance(TimeSpan.FromMinutes(1) + TimeSpan.FromSeconds(1));
+        // ...but elapses after the full new 10s backoff from the second open (M3-12: gated by
+        // CurrentBackoff, not a fixed probe interval).
+        clock.Advance(TimeSpan.FromSeconds(2));
         Assert.True(breaker.CanCall(Source));
         Assert.Equal(CircuitState.HalfOpen, breaker.GetSnapshot(Source).State);
     }
@@ -173,7 +175,9 @@ public sealed class SourceCircuitBreakerTests
 
         foreach (var expected in expectedBackoffs)
         {
-            clock.Advance(TimeSpan.FromMinutes(5) + TimeSpan.FromSeconds(1));
+            // M3-12: the gate is the current (pre-this-failure) CurrentBackoff, not a fixed interval.
+            var currentBackoff = breaker.GetSnapshot(Source).CurrentBackoff;
+            clock.Advance(currentBackoff + TimeSpan.FromSeconds(1));
             Assert.True(breaker.CanCall(Source));
             Assert.Equal(CircuitState.HalfOpen, breaker.GetSnapshot(Source).State);
 

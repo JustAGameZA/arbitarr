@@ -8,7 +8,12 @@ namespace Arbitarr.Core.Sources.CircuitBreaker;
 /// </summary>
 /// <param name="State">Current lifecycle state.</param>
 /// <param name="ConsecutiveFailures">Consecutive failure count observed since the breaker last closed.</param>
-/// <param name="CurrentBackoff">Current backoff duration (doubling curve, capped at <see cref="CircuitBreakerOptions.MaxBackoff"/>), pre-jitter.</param>
+/// <param name="CurrentBackoff">
+/// Current backoff duration: the doubling curve's base value (capped at
+/// <see cref="CircuitBreakerOptions.MaxBackoff"/>) with jitter already applied. This is also the
+/// open-duration gate — <see cref="NextProbeAt"/> is set to the time the breaker opened plus this
+/// value (M3-12).
+/// </param>
 /// <param name="LastFailureAt">Timestamp of the most recent failure, if any.</param>
 /// <param name="LastSuccessAt">Timestamp of the most recent success, if any.</param>
 /// <param name="LastError">Most recent error message, if any.</param>

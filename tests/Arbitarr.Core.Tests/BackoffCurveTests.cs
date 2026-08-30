@@ -11,6 +11,15 @@ namespace Arbitarr.Core.Tests;
 /// <c>CurrentBackoff</c>/<c>NextProbeAt</c> can pass while the breaker still lets calls through at the
 /// wrong cadence; recording each attempt's observed time and asserting on the deltas between them is
 /// the non-vacuous proof that the retry schedule the caller actually experiences matches AC20's curve.
+///
+/// <para>
+/// <b>M3-12 rewrite:</b> the previous version of this file asserted a flat ~5-minute gap between every
+/// successive attempt — that was proving the bug (<c>NextProbeAt</c> gated by the fixed
+/// <see cref="CircuitBreakerOptions.ProbeInterval"/>), not AC20's intended 5s-to-15min doubling curve.
+/// This version asserts only on the doubling/jittered deltas between recorded attempt instants, using a
+/// seeded <see cref="Random"/> so jitter is deterministic-but-nonzero and every delay assertion checks a
+/// ±20% bound rather than an exact value.
+/// </para>
 /// </summary>
 public sealed class BackoffCurveTests
 {
@@ -56,23 +65,30 @@ public sealed class BackoffCurveTests
         }
     }
 
+    /// <summary>Asserts <paramref name="actual"/> is within ±20% of <paramref name="nominalSeconds"/>.</summary>
+    private static void AssertWithinTwentyPercent(TimeSpan actual, double nominalSeconds)
+    {
+        var lower = TimeSpan.FromSeconds(nominalSeconds * 0.8);
+        var upper = TimeSpan.FromSeconds(nominalSeconds * 1.2);
+        Assert.True(actual >= lower && actual <= upper,
+            $"expected delay within ±20% of {nominalSeconds}s (i.e. [{lower}, {upper}]), but observed {actual}");
+    }
+
     [Fact]
     public void ObservedAttempts_StopOccurring_OnceBreakerOpens()
     {
-        // AC20: breaker opens after 3 consecutive failures. Polling every second, the fake source
-        // must be actually called exactly 3 times before the open breaker starts refusing calls --
-        // proven by the attempt log, not by inspecting ConsecutiveFailures.
+        // AC20 (a): breaker opens after 3 consecutive failures. Polling every second, the fake source
+        // must be actually called exactly 3 times, then none until the first delay elapses -- proven
+        // by the attempt log plateauing, not by inspecting ConsecutiveFailures.
         var clock = new FakeTimeProvider(Start);
         var source = new FakeFailingSource(clock);
         var breaker = new SourceCircuitBreaker(clock, new CircuitBreakerOptions { JitterFraction = 0 }, new Random(1));
 
-        // Poll for up to two minutes at 1s resolution; the breaker must open long before that,
-        // so the attempt count must plateau at 3 rather than keep climbing.
         DriveFailingLoop(breaker, clock, source, TimeSpan.FromSeconds(1), maxAttempts: 3);
         var countAtOpen = source.AttemptTimestamps.Count;
 
-        clock.Advance(TimeSpan.FromSeconds(30));
-        for (var i = 0; i < 30; i++)
+        // Poll well short of the ~5s initial backoff: no further attempt must occur.
+        for (var i = 0; i < 3; i++)
         {
             if (breaker.CanCall(Source))
             {
@@ -89,82 +105,118 @@ public sealed class BackoffCurveTests
     [Fact]
     public void ObservedAttemptTimestamps_MatchAC20DoublingCurve()
     {
-        // Poll continuously at a fine (1s) resolution so the *observed* time between successive
-        // attempts is dictated entirely by the breaker's gating, not by the poll cadence. AC20's
-        // curve: opens after 3 failures with a 5s initial backoff and a fixed 5-minute probe
-        // interval; each subsequent probe failure doubles the backoff, but the observed gap between
-        // attempts while Open is always governed by ProbeInterval (5 minutes), not by CurrentBackoff
-        // directly -- CurrentBackoff instead sizes how "unhealthy" the source is judged, and this
-        // test proves the caller-visible retry cadence (successive real attempt timestamps) is
-        // exactly one probe interval apart once open, for four successive reopen cycles.
+        // AC20 (b)+(c): drive the breaker through repeated probe failures and assert the recorded
+        // attempt-instant deltas follow the doubling curve 5s, 10s, 20s, ... up to the 900s (15min)
+        // ceiling, each within +/-20% of nominal (seeded jitter, deterministic but nonzero). Also
+        // prove the curve passes through the ~5 minute region (one delay within +/-20% of 300s) --
+        // not that it stops there.
         var clock = new FakeTimeProvider(Start);
         var source = new FakeFailingSource(clock);
-        var breaker = new SourceCircuitBreaker(clock, new CircuitBreakerOptions { JitterFraction = 0 }, new Random(1));
+        var breaker = new SourceCircuitBreaker(clock, CircuitBreakerOptions.Default, new Random(1234));
 
-        // Drive the initial 3 consecutive failures that open the breaker (fast polling; these three
-        // attempts happen back-to-back since the breaker is Closed the whole time).
-        DriveFailingLoop(breaker, clock, source, TimeSpan.FromSeconds(1), maxAttempts: 3);
+        // Open the breaker: 3 back-to-back closed-state failures, fast polling.
+        DriveFailingLoop(breaker, clock, source, TimeSpan.FromMilliseconds(100), maxAttempts: 3);
         Assert.Equal(3, source.AttemptTimestamps.Count);
 
-        // Now drive four successive probe attempts (each one fails, reopening with grown backoff).
-        // Each must be observed exactly one 5-minute probe interval after the previous attempt.
-        DriveFailingLoop(breaker, clock, source, TimeSpan.FromSeconds(1), maxAttempts: 7);
-        Assert.Equal(7, source.AttemptTimestamps.Count);
+        // Each probe's delay is the *previous jittered* delay doubled (and re-jittered), capped at
+        // 900s -- not a pure doubling of the original nominal, since jitter compounds step over step.
+        // Drive enough probes to reach and hold the ceiling.
+        const int probeCount = 10;
+        var totalAttempts = 3 + probeCount;
 
-        for (var i = 3; i < 7; i++)
+        // Drive one probe attempt per expected delay: advance the clock in fine ticks so the observed
+        // gap between attempts is dictated purely by the breaker's own gating logic, not poll cadence.
+        DriveFailingLoop(breaker, clock, source, TimeSpan.FromSeconds(1), maxAttempts: totalAttempts);
+        Assert.Equal(totalAttempts, source.AttemptTimestamps.Count);
+
+        var observedDelays = new List<TimeSpan>();
+        for (var i = 3; i < totalAttempts; i++)
         {
-            var gap = source.AttemptTimestamps[i] - source.AttemptTimestamps[i - 1];
-            Assert.True(gap >= TimeSpan.FromMinutes(5), $"attempt {i} arrived only {gap} after the previous attempt, expected >= 5 minutes");
-            Assert.True(gap < TimeSpan.FromMinutes(5) + TimeSpan.FromSeconds(2), $"attempt {i} arrived {gap} after the previous attempt, expected close to 5 minutes");
+            observedDelays.Add(source.AttemptTimestamps[i] - source.AttemptTimestamps[i - 1]);
         }
+
+        // First delay must be ~5s (AC20's initial backoff).
+        AssertWithinTwentyPercent(observedDelays[0], 5);
+
+        // Each subsequent delay must be within +/-20% of double the previous one, until the 900s
+        // ceiling is reached, after which it must stay pinned at ~900s. This proves the doubling
+        // relationship step-by-step without accumulating jitter drift against a fixed nominal table.
+        for (var i = 1; i < observedDelays.Count; i++)
+        {
+            var doubledPrevious = observedDelays[i - 1] * 2;
+            if (doubledPrevious >= TimeSpan.FromMinutes(15))
+            {
+                AssertWithinTwentyPercent(observedDelays[i], 900);
+            }
+            else
+            {
+                AssertWithinTwentyPercent(observedDelays[i], doubledPrevious.TotalSeconds);
+            }
+        }
+
+        // Curve must actually pass through the ~5-minute (300s) region on its way to the ceiling --
+        // proving it traverses that magnitude, not that it lands there exactly (per-step jitter of
+        // up to +/-20% compounds across the doubling chain, so the crossing step can land anywhere
+        // from half to double the pure-nominal 300s; a band that wide still rules out curves that
+        // jump straight from well under a minute to the 15-minute ceiling in a single bound).
+        Assert.Contains(observedDelays, d => d >= TimeSpan.FromSeconds(150) && d <= TimeSpan.FromSeconds(600));
+
+        // Ceiling must actually be reached and held for the final probes.
+        AssertWithinTwentyPercent(observedDelays[^1], 900);
+        AssertWithinTwentyPercent(observedDelays[^2], 900);
     }
 
     [Fact]
     public void ObservedAttempts_Resume_AfterSuccessResetsCurve()
     {
-        // A successful probe closes the breaker and resets backoff to the initial curve. Prove this
-        // via observed timestamps: after a recovering success, the next failure-triggered reopen
-        // must again require 3 consecutive closed-state failures (fast, back-to-back) before the
-        // probe cadence re-appears -- not immediately probing at the old (possibly longer) interval.
+        // AC20 (d): a successful probe closes the breaker; the very next call is permitted
+        // immediately (no lingering backoff wait), and the curve must reset -- 3 fresh consecutive
+        // failures are required to reopen, and the very first reopen delay must again be ~5s, not a
+        // continuation of whatever backoff had grown to before the success.
         var clock = new FakeTimeProvider(Start);
         var source = new FakeFailingSource(clock);
         var breaker = new SourceCircuitBreaker(clock, new CircuitBreakerOptions { JitterFraction = 0 }, new Random(1));
 
-        DriveFailingLoop(breaker, clock, source, TimeSpan.FromSeconds(1), maxAttempts: 3);
-        Assert.Equal(3, source.AttemptTimestamps.Count);
-
-        // Advance past the probe interval and let the single half-open probe succeed this time.
-        clock.Advance(TimeSpan.FromMinutes(5) + TimeSpan.FromSeconds(1));
+        // Open, then grow the backoff via a couple of failed probes so CurrentBackoff is well past 5s.
+        DriveFailingLoop(breaker, clock, source, TimeSpan.FromMilliseconds(100), maxAttempts: 3);
+        clock.Advance(TimeSpan.FromSeconds(6));
         Assert.True(breaker.CanCall(Source));
-        breaker.RecordFailure(Source, source.Attempt()); // the successful probe call itself; log it, then...
-        var probeAttemptedAt = source.AttemptTimestamps[^1];
-        breaker.RecordSuccess(Source); // ...record the actual outcome as success, overriding the failure just recorded.
+        breaker.RecordFailure(Source, source.Attempt()); // probe fails: backoff grows to 10s
+        Assert.Equal(TimeSpan.FromSeconds(10), breaker.GetSnapshot(Source).CurrentBackoff);
 
-        // Breaker is Closed again: the very next call must be let through with no delay at all (no
-        // lingering backoff wait), proving the curve actually reset rather than continuing to grow.
-        // If reset had NOT happened, CanCall would refuse until another full probe interval elapsed.
+        clock.Advance(TimeSpan.FromSeconds(11));
+        Assert.True(breaker.CanCall(Source)); // Half-Open probe slot
+
+        // This time the probe succeeds.
+        breaker.RecordSuccess(Source);
+        var snapshotAfterSuccess = breaker.GetSnapshot(Source);
+        Assert.Equal(CircuitState.Closed, snapshotAfterSuccess.State);
+        Assert.Equal(TimeSpan.Zero, snapshotAfterSuccess.CurrentBackoff);
+
+        // The very next call is permitted immediately -- no delay at all.
         Assert.True(breaker.CanCall(Source));
         breaker.RecordFailure(Source, source.Attempt());
-        var firstAttemptAfterReset = source.AttemptTimestamps[^1];
+        Assert.Equal(CircuitState.Closed, breaker.GetSnapshot(Source).State);
 
-        Assert.Equal(probeAttemptedAt, firstAttemptAfterReset);
-
-        // Now prove the curve genuinely restarted from the initial 5s/3-failures shape, rather than
-        // silently resuming the old cadence: exactly 2 more back-to-back closed-state failures must
-        // be tolerated (no gating) before the breaker opens and probe-interval gating reappears.
+        // Exactly 2 more back-to-back closed-state failures must be tolerated (no gating) before the
+        // breaker reopens -- proving 3 fresh consecutive failures are needed, same as the first open.
         breaker.RecordFailure(Source, source.Attempt());
+        Assert.Equal(CircuitState.Closed, breaker.GetSnapshot(Source).State);
         breaker.RecordFailure(Source, source.Attempt());
         Assert.Equal(CircuitState.Open, breaker.GetSnapshot(Source).State);
-        Assert.False(breaker.CanCall(Source));
+
+        // And the curve must have reset: the reopen delay is ~5s again, not a continuation of the 10s
+        // (or higher) backoff that was in effect before the successful probe.
+        Assert.Equal(TimeSpan.FromSeconds(5), breaker.GetSnapshot(Source).CurrentBackoff);
 
         var lastClosedAttempt = source.AttemptTimestamps[^1];
-        clock.Advance(TimeSpan.FromSeconds(1));
-        Assert.False(breaker.CanCall(Source)); // still gated: not yet a full probe interval since reopening
-        clock.Advance(TimeSpan.FromMinutes(5));
+        clock.Advance(TimeSpan.FromSeconds(4));
+        Assert.False(breaker.CanCall(Source)); // not yet 5s since reopening
+        clock.Advance(TimeSpan.FromSeconds(2));
         Assert.True(breaker.CanCall(Source));
         breaker.RecordFailure(Source, source.Attempt());
         var nextProbeAttempt = source.AttemptTimestamps[^1];
 
-        Assert.Equal(TimeSpan.FromMinutes(5) + TimeSpan.FromSeconds(1), nextProbeAttempt - lastClosedAttempt);
+        AssertWithinTwentyPercent(nextProbeAttempt - lastClosedAttempt, 5);
     }
 }
