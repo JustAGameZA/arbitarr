@@ -231,6 +231,148 @@ public sealed class ConcurrencyTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// M3-7/AC15a refinement: the >1s stall threshold in
+    /// <see cref="ConcurrentWriteWhileRead_WithWalAndBusyTimeout_ReaderNeverStalls"/> only catches
+    /// gross stalls. This test proves the tighter, quantitative claim: reader latency under
+    /// sustained writer contention must stay close to its own uncontended baseline, not merely
+    /// "under some absolute ceiling." Both phases run back-to-back in this same test execution
+    /// (same machine, same process, same moment) so the comparison is never confounded by
+    /// run-to-run environment noise — a separate baseline run captured yesterday would prove
+    /// nothing about today's hardware/load.
+    /// </summary>
+    [Fact]
+    public void ReaderLatency_P95UnderContention_StaysWithinTwentyPercentOfUncontendedBaseline()
+    {
+        var factory = new SqliteConnectionFactory(new SqliteConnectionOptions
+        {
+            DatabasePath = _dbPath,
+            BusyTimeoutMilliseconds = SqliteConnectionOptions.DefaultBusyTimeoutMilliseconds,
+        });
+
+        using (var setupConnection = factory.OpenConnection())
+        using (var createCommand = setupConnection.CreateCommand())
+        {
+            createCommand.CommandText =
+                "CREATE TABLE IF NOT EXISTS concurrency_probe (id INTEGER PRIMARY KEY, value TEXT NOT NULL);";
+            createCommand.ExecuteNonQuery();
+        }
+
+        // Baseline phase: readers alone, no writers running, same connection factory/config as
+        // the contended phase. This is the "same run" comparison point -- captured immediately
+        // before contention starts, on the same machine load, so the 20% tolerance is not
+        // swamped by unrelated environment variance.
+        var baselineLatencies = RunReaderLatencyProbe(factory, TimeSpan.FromMilliseconds(1500), readerCount: 4);
+
+        // Contended phase: identical reader probe, now racing 3 continuous BEGIN IMMEDIATE
+        // writers -- the same writer shape as the existing WAL contention test.
+        using var stopSignal = new CancellationTokenSource();
+        var writerTasks = Enumerable.Range(0, 3).Select(writerIndex => Task.Run(() =>
+        {
+            using var writerConnection = factory.OpenConnection();
+            var row = writerIndex * 1000;
+            while (!stopSignal.IsCancellationRequested)
+            {
+                try
+                {
+                    using (var beginCommand = writerConnection.CreateCommand())
+                    {
+                        beginCommand.CommandTimeout = 10;
+                        beginCommand.CommandText = "BEGIN IMMEDIATE;";
+                        beginCommand.ExecuteNonQuery();
+                    }
+
+                    using (var insertCommand = writerConnection.CreateCommand())
+                    {
+                        insertCommand.CommandTimeout = 10;
+                        insertCommand.CommandText =
+                            "INSERT INTO concurrency_probe (id, value) VALUES ($id, $value) " +
+                            "ON CONFLICT(id) DO UPDATE SET value = excluded.value;";
+                        insertCommand.Parameters.AddWithValue("$id", row % 50);
+                        insertCommand.Parameters.AddWithValue("$value", Guid.NewGuid().ToString());
+                        insertCommand.ExecuteNonQuery();
+                    }
+
+                    Thread.Sleep(5);
+
+                    using (var commitCommand = writerConnection.CreateCommand())
+                    {
+                        commitCommand.CommandTimeout = 10;
+                        commitCommand.CommandText = "COMMIT;";
+                        commitCommand.ExecuteNonQuery();
+                    }
+
+                    row++;
+                }
+                catch
+                {
+                    TryRollback(writerConnection);
+                }
+            }
+        })).ToArray();
+
+        List<double> contendedLatencies;
+        try
+        {
+            contendedLatencies = RunReaderLatencyProbe(factory, TimeSpan.FromMilliseconds(1500), readerCount: 4);
+        }
+        finally
+        {
+            stopSignal.Cancel();
+            Task.WaitAll(writerTasks);
+        }
+
+        var baselineP95 = Percentile(baselineLatencies, 0.95);
+        var contendedP95 = Percentile(contendedLatencies, 0.95);
+        var ceiling = baselineP95 * 1.20;
+
+        Assert.True(
+            contendedP95 <= ceiling,
+            $"Contended p95 reader latency ({contendedP95:F2}ms) exceeded 120% of the same-run " +
+            $"uncontended baseline p95 ({baselineP95:F2}ms, ceiling {ceiling:F2}ms) -- AC15a " +
+            "requires WAL-mode reads to remain effectively unaffected by concurrent writers, not " +
+            "merely avoid multi-second stalls.");
+    }
+
+    /// <summary>
+    /// Runs trivial COUNT(*) reads back-to-back across <paramref name="readerCount"/> concurrent
+    /// tasks for <paramref name="duration"/>, returning every individual query's wall-clock
+    /// latency in milliseconds.
+    /// </summary>
+    private static List<double> RunReaderLatencyProbe(SqliteConnectionFactory factory, TimeSpan duration, int readerCount)
+    {
+        using var stopSignal = new CancellationTokenSource(duration);
+        var latencies = new System.Collections.Concurrent.ConcurrentBag<double>();
+
+        var readerTasks = Enumerable.Range(0, readerCount).Select(_ => Task.Run(() =>
+        {
+            using var readerConnection = factory.OpenConnection();
+            while (!stopSignal.IsCancellationRequested)
+            {
+                var stopwatch = Stopwatch.StartNew();
+                using var selectCommand = readerConnection.CreateCommand();
+                selectCommand.CommandTimeout = 10;
+                selectCommand.CommandText = "SELECT COUNT(*) FROM concurrency_probe;";
+                selectCommand.ExecuteScalar();
+                stopwatch.Stop();
+                latencies.Add(stopwatch.Elapsed.TotalMilliseconds);
+            }
+        })).ToArray();
+
+        Task.WaitAll(readerTasks);
+
+        Assert.True(latencies.Count > 10, "Reader latency probe collected too few samples to compute a meaningful p95.");
+        return latencies.ToList();
+    }
+
+    private static double Percentile(List<double> samples, double percentile)
+    {
+        var sorted = samples.OrderBy(x => x).ToList();
+        var index = (int)Math.Ceiling(percentile * sorted.Count) - 1;
+        index = Math.Clamp(index, 0, sorted.Count - 1);
+        return sorted[index];
+    }
+
     private static void TryRollback(SqliteConnection connection)
     {
         try
