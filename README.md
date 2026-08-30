@@ -53,6 +53,55 @@ When Arbitarr fronts more than one upstream source, the Torznab `caps` response 
 
 The solution still uses the working name `Arbitarr` internally; a rename to `Arbitarr` is planned.
 
+## Running with Docker
+
+> All addresses below are RFC 5737/2606 documentation placeholders — replace them with your own hosts and keys.
+
+Quick start with the reference [`docker-compose.yml`](docker-compose.yml):
+
+```bash
+git clone https://github.com/JustAGameZA/arbitarr.git
+cd arbitarr
+# Edit docker-compose.yml: set your NZBHydra2 endpoint and keys first.
+docker compose up -d --build
+```
+
+Arbitarr listens on port `8080`. The Torznab endpoint your *arr apps point at is
+`http://arbitarr.example.invalid:8080/torznab/api` with the client `apikey` you
+configured; the admin UI is served at `http://arbitarr.example.invalid:8080/admin/`.
+
+### Environment variables
+
+| Variable | Purpose |
+|---|---|
+| `ARBITARR__SOURCES__NZBHYDRA__BASEURL` | Upstream NZBHydra2 instance Arbitarr queries (e.g. `http://nzbhydra2.example.invalid:5076`) |
+| `ARBITARR__SOURCES__NZBHYDRA__APIKEY` | NZBHydra2's own API key (outbound credential) |
+| `ARBITARR__APIKEY` | Single inbound Torznab/Newznab client key your *arr apps authenticate with |
+| `ARBITARR__CLIENTAPIKEYS__<n>__NAME` / `...__KEY` | Alternative to `ARBITARR__APIKEY`: multiple named client keys |
+| `ARBITARR_CONFIG_DIR` | Runtime state directory (defaults to `/config`; mount a volume there) |
+
+Three distinct keys exist, deliberately: the **NZBHydra2 key** (Arbitarr calling out), the
+**client key(s)** (*arr apps calling in), and the **admin key** (below, gating mutating admin
+endpoints only).
+
+### Admin key setup
+
+Mutating admin endpoints (settings, filter rules) require an `X-Admin-Api-Key` header and fail
+closed with `503` until a key is provisioned. The key is intentionally not settable through the
+admin API itself and never appears in the settings catalog. Provision it directly in the SQLite
+settings store inside your config volume:
+
+```bash
+docker compose stop arbitarr
+sqlite3 ./config/arbitarr.db \
+  "INSERT INTO Settings (Name, Value, UpdatedAt) VALUES ('AdminApiKey', 'REDACTED', strftime('%Y-%m-%d %H:%M:%S+00:00','now')) \
+   ON CONFLICT(Name) DO UPDATE SET Value = excluded.Value, UpdatedAt = excluded.UpdatedAt;"
+docker compose start arbitarr
+```
+
+Generate the key value yourself (e.g. `openssl rand -hex 32`). Read-only admin pages stay
+ungated by design; only mutating routes check the key.
+
 ## Building
 
 Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download).
@@ -80,7 +129,7 @@ No credentials, API keys, or real network addresses are committed to this reposi
 
 ## Status
 
-Foundation work is in progress: the Torznab pipeline, SQLite caching layer, and the media-identity context (providers, ambiguity policy, provenance) are built and under test. Ranking/scoring, the LLM arbitration loop, and Docker packaging are next.
+The Torznab pipeline, SQLite caching layer, media-identity context, LLM arbitration loop (shadow mode by default), admin UI with the governed settings surface, and Docker packaging are built and under test. The numbering scorer and release ranking layer is in review, and observability plus deployment hardening are next.
 
 ## License
 
