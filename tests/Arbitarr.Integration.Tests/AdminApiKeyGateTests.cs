@@ -39,16 +39,7 @@ public sealed class AdminApiKeyGateTests : IClassFixture<ArbitarrWebApplicationF
     [Fact]
     public async Task Wrong_admin_key_is_rejected_with_401()
     {
-        await _factory.SeedAsync(db =>
-        {
-            db.Settings.Add(new SettingEntry
-            {
-                Name = SettingKey.AdminApiKey.ToString(),
-                Value = "the-real-admin-key",
-                UpdatedAt = DateTimeOffset.UtcNow,
-            });
-            return Task.CompletedTask;
-        });
+        await SeedAdminKeyAsync("the-real-admin-key");
 
         using var client = _factory.CreateClient();
         using var request = new HttpRequestMessage(HttpMethod.Post, Route);
@@ -62,16 +53,7 @@ public sealed class AdminApiKeyGateTests : IClassFixture<ArbitarrWebApplicationF
     [Fact]
     public async Task Missing_admin_key_header_is_rejected_with_401_when_a_key_is_configured()
     {
-        await _factory.SeedAsync(db =>
-        {
-            db.Settings.Add(new SettingEntry
-            {
-                Name = SettingKey.AdminApiKey.ToString(),
-                Value = "the-real-admin-key",
-                UpdatedAt = DateTimeOffset.UtcNow,
-            });
-            return Task.CompletedTask;
-        });
+        await SeedAdminKeyAsync("the-real-admin-key");
 
         using var client = _factory.CreateClient();
 
@@ -83,16 +65,7 @@ public sealed class AdminApiKeyGateTests : IClassFixture<ArbitarrWebApplicationF
     [Fact]
     public async Task Correct_admin_key_is_accepted_with_200()
     {
-        await _factory.SeedAsync(db =>
-        {
-            db.Settings.Add(new SettingEntry
-            {
-                Name = SettingKey.AdminApiKey.ToString(),
-                Value = "the-real-admin-key",
-                UpdatedAt = DateTimeOffset.UtcNow,
-            });
-            return Task.CompletedTask;
-        });
+        await SeedAdminKeyAsync("the-real-admin-key");
 
         using var client = _factory.CreateClient();
         using var request = new HttpRequestMessage(HttpMethod.Post, Route);
@@ -116,5 +89,31 @@ public sealed class AdminApiKeyGateTests : IClassFixture<ArbitarrWebApplicationF
 
         Assert.NotNull(endpoint);
         Assert.Equal(RouteClassification.AdminMutating, endpoint!.GetClassification());
+    }
+
+    // Upsert rather than Add: ArbitarrWebApplicationFactory's SQLite database is shared across
+    // every [Fact] in this IClassFixture-scoped test class (Name is the SettingEntry primary
+    // key), so a second test seeding the same key would otherwise collide with a unique-constraint
+    // violation instead of simply overwriting the prior test's value.
+    private async Task SeedAdminKeyAsync(string key)
+    {
+        await _factory.SeedAsync(async db =>
+        {
+            var existing = await db.Settings.FindAsync(SettingKey.AdminApiKey.ToString());
+            if (existing is null)
+            {
+                db.Settings.Add(new SettingEntry
+                {
+                    Name = SettingKey.AdminApiKey.ToString(),
+                    Value = key,
+                    UpdatedAt = DateTimeOffset.UtcNow,
+                });
+            }
+            else
+            {
+                existing.Value = key;
+                existing.UpdatedAt = DateTimeOffset.UtcNow;
+            }
+        });
     }
 }

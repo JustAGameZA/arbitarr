@@ -13,6 +13,7 @@ using Arbitarr.Data;
 using Arbitarr.Data.Caching;
 using Arbitarr.Data.CircuitBreaker;
 using Arbitarr.Data.Security;
+using Arbitarr.Data.Settings;
 using Arbitarr.Host.Security;
 using Arbitarr.Sources.NzbHydra;
 using Microsoft.EntityFrameworkCore;
@@ -134,6 +135,12 @@ builder.Services.AddSingleton<IClientApiKeyResolver>(_ =>
 builder.Services.AddScoped<IAdminApiKeyReader, DbAdminApiKeyReader>();
 builder.Services.AddScoped<AdminApiKeyFilter>();
 
+// M7-5 settings write path: shares the same measured *arr RSS sync interval as EffectiveSettingsReader
+// above, so read and write validation agree on cross-field bounds (e.g. FreshUntilCeiling).
+builder.Services.AddScoped(sp => new SettingsRepository(
+    sp.GetRequiredService<ArbitarrDbContext>(),
+    TimeSpan.FromMinutes(15)));
+
 var app = builder.Build();
 
 // SEC-L2: load (or generate, on first run) the per-instance HMAC secret used to compute proxy
@@ -169,6 +176,7 @@ RecentSearchesEndpoint.Map(app);
 EffectiveConfigEndpoint.Map(app);
 HealthStalenessEndpoint.Map(app);
 AdminPingEndpoint.Map(app);
+AdminSettingsEndpoints.Map(app);
 
 // Torznab family (torrent-oriented: namespace prefix "torznab", enclosure MIME application/x-bittorrent).
 app.MapGet("/torznab/api", async (
