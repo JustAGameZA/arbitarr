@@ -26,6 +26,13 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Arbitarr.Core\Arbitarr.Core.csproj" />
     <ProjectReference Include="..\..\src\Arbitarr.Api\Arbitarr.Api.csproj" />
+    <ProjectReference Include="..\..\src\Arbitarr.Core.Identity\Arbitarr.Core.Identity.csproj" />
+    <ProjectReference Include="..\..\src\Arbitarr.Media\Arbitarr.Media.csproj" />
+    <ProjectReference Include="..\..\src\Arbitarr.Ai\Arbitarr.Ai.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\docs\fixtures\nzbhydra\*.xml" Link="fixtures\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
