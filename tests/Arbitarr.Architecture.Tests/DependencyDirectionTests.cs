@@ -92,10 +92,15 @@ public class DependencyDirectionTests
                     var loaded = Assembly.Load(reference);
                     queue.Enqueue(loaded);
                 }
-                catch (Exception) when (true)
+                catch (Exception ex)
                 {
-                    // Unresolvable transitive reference: nothing further to walk from here, but
-                    // its name is still recorded above so the closure remains accurate.
+                    // An unresolvable Arbitarr.* reference is a vacuity hole, not a benign leaf:
+                    // a Media reference reached only through an unloadable intermediate assembly
+                    // would silently never be walked, and this test would pass even though the
+                    // real dependency graph reaches Media. All Arbitarr.* assemblies are copied
+                    // into the test output directory, so a load failure here is unexpected and
+                    // must fail loudly rather than be swallowed.
+                    Assert.Fail($"Failed to load transitive Arbitarr.* reference '{name}': {ex}");
                 }
             }
         }
@@ -108,16 +113,13 @@ public class DependencyDirectionTests
     {
         var closure = GetTransitiveReferenceClosure(CoreIdentityAssembly);
 
-        // Non-vacuousness: prove the walk actually ran and enumerated real references (and isn't
-        // silently empty because nothing loaded). Note Core.Identity's compiled IL carries no
-        // Arbitarr.Core reference despite the ProjectReference in its .csproj: the C# compiler
-        // elides an assembly reference when no emitted type actually uses it, and no
-        // Arbitarr.Core.Identity source file currently references an Arbitarr.Core type. The
-        // walk's ability to traverse multiple real Arbitarr.* hops is instead proven by
-        // TransitiveClosureHelper_WalksMultipleHops_FromMedia below.
-        Assert.NotEmpty(closure);
-
-        Assert.DoesNotContain("Arbitarr.Media", closure);
+        // Non-vacuousness for this specific negative result is established by the positive
+        // control below (TransitiveClosureHelper_WalksMultipleHops_FromMedia), which proves the
+        // same walk performs real multi-hop Arbitarr.* traversal from a different root. An
+        // Assert.NotEmpty(closure) here would be trivially satisfied by non-Arbitarr references
+        // (e.g. System.Runtime) even if the Arbitarr.*-only traversal never advanced past the
+        // root, so it is deliberately not asserted here - see the positive control's remarks.
+        Assert.DoesNotContain(closure, name => name.StartsWith("Arbitarr.Media", StringComparison.Ordinal));
     }
 
     // Positive control for CoreIdentity_TransitiveClosure_Does_Not_Reach_Media: proves the walk
