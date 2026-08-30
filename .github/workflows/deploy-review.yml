@@ -29,6 +29,28 @@ jobs:
       - name: Build container image
         run: docker build -f Dockerfile -t arbitarr-review:ci .
 
+      - name: Assert no dataset is baked into the image (AC21)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # AC21/M7-4: datasets (e.g. AniDB's anime-lists mapping) must only ever be fetched at
+          # runtime into the mounted /config volume (see DatasetProvisioner), never vendored into
+          # the image itself. NoNetworkFirstRunTests covers the runtime half (no network access
+          # needed to boot and serve); this covers the image-content half - no baked dataset file
+          # and no pre-populated config/data directory anywhere in the published image.
+          found=$(docker run --rm --entrypoint sh arbitarr-review:ci -c \
+            "find / -xdev \( -iname '*anime*list*' -o -iname 'anime-offline-database*' \) 2>/dev/null; \
+             find /config -mindepth 1 2>/dev/null" || true)
+
+          if [ -n "$found" ]; then
+            echo "BLOCKED: found baked dataset/pre-populated config content in the image:" >&2
+            echo "$found" >&2
+            exit 1
+          fi
+
+          echo "No baked dataset or pre-populated config directory found."
+
       - name: Run container
         run: docker run -d --name arbitarr-review -p 127.0.0.1:8080:8080 arbitarr-review:ci
 
