@@ -24,7 +24,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Runtime state lives under /config (AC21), overridable via ARBITARR_CONFIG_DIR for local
 // dev/test so a real /config directory is never required outside the production container.
 var configDirectory = Environment.GetEnvironmentVariable("ARBITARR_CONFIG_DIR") ?? "/config";
-Directory.CreateDirectory(configDirectory);
+Arbitarr.Host.Provisioning.DatasetProvisioner.EnsureProvisioned(configDirectory);
 var databasePath = Path.Combine(configDirectory, "arbitarr.db");
 
 builder.Services.AddSingleton(new SqliteConnectionOptions { DatabasePath = databasePath });
