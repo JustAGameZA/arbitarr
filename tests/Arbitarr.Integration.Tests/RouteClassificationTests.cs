@@ -21,6 +21,22 @@ public sealed class RouteClassificationTests : IClassFixture<ArbitarrWebApplicat
         _factory = factory;
     }
 
+    // M2-8 compile-fail proof: WithClassification<TBuilder> has no defaulted overload, so mapping
+    // an endpoint without it is a compile error, not a runtime gap the test above has to catch.
+    // Uncommenting the line below must fail the build with CS7036 ("required parameter
+    // 'classification' has no argument given"):
+    //
+    //     app.MapGet("/api/uncommitted-endpoint", () => Results.Ok());
+    //     // ^ compiles: MapGet alone has no classification requirement.
+    //     // The requirement is enforced by never calling WithClassification's parameterless form
+    //     // — there isn't one:
+    //
+    //     app.MapGet("/api/uncommitted-endpoint", () => Results.Ok())
+    //         .WithClassification();
+    //     // ^ CS7036: no overload for 'WithClassification' takes 0 arguments; the only overload
+    //     // requires a RouteClassification argument, so every mapped endpoint must state one
+    //     // explicitly to compile.
+
     [Fact]
     public void Every_mapped_endpoint_carries_an_explicit_route_classification()
     {
