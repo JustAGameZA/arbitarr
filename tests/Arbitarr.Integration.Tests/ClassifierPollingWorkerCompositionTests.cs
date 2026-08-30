@@ -7,7 +7,7 @@ using Xunit;
 namespace Arbitarr.Integration.Tests;
 
 /// <summary>
-/// verify-m5 V1: the classifier must actually run in the composed Host, not merely be registered
+/// The classifier must actually run in the composed Host, not merely be registered
 /// as a scoped service nobody resolves. Checks the real <c>Program.cs</c> composition root (AC6)
 /// rather than a source-level grep.
 /// </summary>

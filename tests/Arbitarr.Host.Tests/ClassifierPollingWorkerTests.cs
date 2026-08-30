@@ -10,8 +10,8 @@ namespace Arbitarr.Host.Tests;
 
 /// <summary>
 /// Drives <see cref="ClassifierPollingWorker"/> cycles directly over fakes. The worker is the only
-/// production caller of <see cref="ClassifierWorker.ClassifyAndCacheAsync"/> (verify-m5 V1) and the
-/// only producer of cached title rewrites (V2, R17), so these pin what one cycle does and does not
+/// production caller of <see cref="ClassifierWorker.ClassifyAndCacheAsync"/> and the
+/// only producer of cached title rewrites (R17), so these pin what one cycle does and does not
 /// touch.
 /// </summary>
 public sealed class ClassifierPollingWorkerTests
@@ -199,7 +199,7 @@ public sealed class ClassifierPollingWorkerTests
     }
 
     /// <summary>
-    /// architect-m5-r3 blocker: the worker must key each verdict under the release's own upstream
+    /// The worker must key each verdict under the release's own upstream
     /// <see cref="RenderedRelease.SourceName"/> (what FilterStage reads with), not a fixed name of
     /// its own. Two releases with identical candidates but different sources get distinct entries,
     /// and a second cycle finds the first cycle's writes instead of re-classifying.

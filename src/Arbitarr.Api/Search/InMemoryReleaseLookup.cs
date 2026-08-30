@@ -83,7 +83,7 @@ public sealed class InMemoryReleaseLookup : IReleaseLookup
 
     /// <summary>
     /// Returns a point-in-time snapshot of every currently-tracked, non-expired release. Used by the
-    /// classifier polling worker as its candidate source (verify-m5) — the worker never talks to
+    /// classifier polling worker as its candidate source — the worker never talks to
     /// upstream sources directly, only to whatever this process has recently rendered.
     /// </summary>
     public IReadOnlyList<RenderedRelease> Snapshot()

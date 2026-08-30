@@ -140,7 +140,7 @@ public static class SettingsValidator
     /// Validates a proposed <see cref="SettingKey.ClassifierPollInterval"/> value.
     /// Floor: 15s (prevents a hot polling loop against the in-memory release lookup/classifier).
     /// No ceiling needed - a long poll interval only delays classification, it cannot cause
-    /// silent wrongness (verify-m5).
+    /// silent wrongness.
     /// </summary>
     public static void ValidateClassifierPollInterval(TimeSpan proposed)
     {

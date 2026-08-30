@@ -73,7 +73,7 @@ public enum SettingKey
     TitleNormalizationEnabled,
 
     /// <summary>
-    /// Poll interval for the classifier's background hosted-service loop (verify-m5). Re-read from
+    /// Poll interval for the classifier's background hosted-service loop. Re-read from
     /// settings at the top of every cycle (AC24) — changing it takes effect on the next cycle, no
     /// restart required.
     /// </summary>

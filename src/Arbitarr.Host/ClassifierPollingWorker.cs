@@ -13,16 +13,12 @@ namespace Arbitarr.Host;
 
 /// <summary>
 /// Background hosted service that drives <see cref="ClassifierWorker.ClassifyAndCacheAsync"/>
-/// against whatever this process has recently rendered (verify-m5 HIGH: previously nothing ever
-/// called it in the running Host, so <c>ClassifierWorker</c> was dead code in production).
+/// against whatever this process has recently rendered.
 ///
 /// <para>
-/// <see cref="ClassifierWorker"/> itself is deliberately left unchanged (not a
-/// <see cref="BackgroundService"/>) because its existing fixed 4-arg constructor is used directly
-/// by <c>ClassifierWorkerLoadTests</c>; this type wraps it instead, mirroring
-/// <see cref="Arbitarr.Core.Caching.RefreshWorker"/>'s pattern: a fixed-deps constructor for tests,
-/// an <see cref="IServiceScopeFactory"/>-based constructor for Host wiring (each cycle resolves a
-/// fresh scope so the EF-backed verdict cache reader/writer never outlive one cycle), and a shared
+/// Mirrors <see cref="Arbitarr.Core.Caching.RefreshWorker"/>'s shape: a fixed-deps constructor for
+/// tests, an <see cref="IServiceScopeFactory"/>-based constructor for Host wiring (each cycle resolves
+/// a fresh scope so the EF-backed verdict cache reader/writer never outlive one cycle), and a shared
 /// private constructor.
 /// </para>
 ///

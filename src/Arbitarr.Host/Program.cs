@@ -163,11 +163,9 @@ builder.Services.AddScoped<FilterStage>(sp => new FilterStage(
     sp.GetRequiredService<AiModelIdentity>()));
 builder.Services.AddSingleton<InMemoryReleaseLookup>();
 
-// verify-m5 (HIGH): ClassifierWorker.ClassifyAndCacheAsync was previously never invoked anywhere in
-// the running Host. ClassifierPollingWorker is a wrapping BackgroundService (ClassifierWorker itself
-// stays a plain Scoped type — its fixed 4-arg constructor is used directly by
-// ClassifierWorkerLoadTests) that snapshots InMemoryReleaseLookup each cycle and drives
-// classification + (AC26b/R17) worker-side title-rewrite caching. AC24: the poll interval is
+// ClassifierPollingWorker is the BackgroundService that drives ClassifierWorker (a plain Scoped
+// type): it snapshots InMemoryReleaseLookup each cycle and runs classification + (AC26b/R17)
+// worker-side title-rewrite caching. AC24: the poll interval is
 // re-read from settings at the top of every cycle via the scope factory, so a live settings change
 // takes effect without a restart.
 builder.Services.AddHostedService(sp => new ClassifierPollingWorker(

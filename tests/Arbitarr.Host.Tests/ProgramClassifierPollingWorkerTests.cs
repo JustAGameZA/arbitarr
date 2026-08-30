@@ -4,9 +4,8 @@ using Xunit;
 namespace Arbitarr.Host.Tests;
 
 /// <summary>
-/// verify-m5 (HIGH): <see cref="Arbitarr.Ai.ClassifierWorker.ClassifyAndCacheAsync"/> was previously
-/// never invoked anywhere in the running Host (it was registered only as a Scoped dependency, never
-/// driven by anything). <c>Program.cs</c> must register <c>ClassifierPollingWorker</c> — the
+/// <see cref="Arbitarr.Ai.ClassifierWorker.ClassifyAndCacheAsync"/> has no caller in the running
+/// Host unless something drives it. <c>Program.cs</c> must register <c>ClassifierPollingWorker</c> — the
 /// wrapping <see cref="Microsoft.Extensions.Hosting.BackgroundService"/> that polls
 /// <c>InMemoryReleaseLookup</c> and drives classification — as a hosted service.
 ///
