@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Arbitarr — Rules</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>Arbitarr — Filter Rules</h1>
+    <p class="subtitle">Admin-only. Requires the admin API key (D2). An invalid pattern or exceeding the per-profile rule cap is rejected with a reason, never clamped (AC24/R11).</p>
+  </header>
+
+  <main>
+    <section id="admin-key-panel">
+      <h2>Admin API Key</h2>
+      <div class="panel-body">
+        <label>
+          Admin API Key
+          <input type="password" id="admin-key" autocomplete="off" required />
+        </label>
+        <button type="button" id="load-rules">Load rules</button>
+      </div>
+    </section>
+
+    <section id="rules-panel">
+      <h2>Rules</h2>
+      <div class="panel-body" id="rules-body"><p class="empty-text">Enter the admin key and load rules.</p></div>
+    </section>
+
+    <section id="new-rule-panel">
+      <h2>Add rule</h2>
+      <div class="panel-body">
+        <label>Name <input type="text" id="new-rule-name" /></label>
+        <label>Pattern <input type="text" id="new-rule-pattern" /></label>
+        <label>
+          Precedence
+          <select id="new-rule-precedence">
+            <option value="0">Lowest</option>
+            <option value="1">Low</option>
+            <option value="2" selected>Normal</option>
+            <option value="3">High</option>
+            <option value="4">Highest</option>
+          </select>
+        </label>
+        <label>
+          Action
+          <select id="new-rule-action">
+            <option value="true">Allow</option>
+            <option value="false">Reject</option>
+          </select>
+        </label>
+        <label><input type="checkbox" id="new-rule-enabled" checked /> Enabled</label>
+        <button type="button" id="add-rule">Add rule</button>
+        <p class="status-text" id="new-rule-status"></p>
+      </div>
+    </section>
+
+    <section id="test-rule-panel">
+      <h2>Test a rule</h2>
+      <p class="subtitle">Dry-runs a pattern against a candidate title. Nothing is persisted.</p>
+      <div class="panel-body">
+        <label>Name <input type="text" id="test-rule-name" value="Test" /></label>
+        <label>Pattern <input type="text" id="test-rule-pattern" /></label>
+        <label>
+          Precedence
+          <select id="test-rule-precedence">
+            <option value="0">Lowest</option>
+            <option value="1">Low</option>
+            <option value="2" selected>Normal</option>
+            <option value="3">High</option>
+            <option value="4">Highest</option>
+          </select>
+        </label>
+        <label>
+          Action
+          <select id="test-rule-action">
+            <option value="true">Allow</option>
+            <option value="false">Reject</option>
+          </select>
+        </label>
+        <label>Candidate title <input type="text" id="test-rule-title" /></label>
+        <button type="button" id="run-test-rule">Test</button>
+        <p class="status-text" id="test-rule-status"></p>
+      </div>
+    </section>
+
+    <section id="import-export-panel">
+      <h2>Import / export</h2>
+      <p class="subtitle">Pipe-delimited lines: name|isAllow|precedence|pattern. Import replaces nothing automatically — each line is added as a new rule.</p>
+      <div class="panel-body">
+        <textarea id="import-export-text" rows="8" style="width:100%;"></textarea>
+        <div>
+          <button type="button" id="export-rules">Export current rules</button>
+          <button type="button" id="import-rules">Import from text</button>
+        </div>
+        <p class="status-text" id="import-export-status"></p>
+      </div>
+    </section>
+  </main>
+
+  <script src="admin-rules.js"></script>
+</body>
+</html>

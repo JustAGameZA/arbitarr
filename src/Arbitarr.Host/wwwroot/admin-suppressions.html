@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Arbitarr — Suppressions</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>Arbitarr — Suppressions</h1>
+    <p class="subtitle">Admin-only. Requires the admin API key (D2). Read-only view of every suppressed/de-ranked result, attributed to the layer that acted (P3).</p>
+  </header>
+
+  <main>
+    <section id="filter-panel">
+      <h2>Query</h2>
+      <div class="panel-body">
+        <form id="filter-form">
+          <label>
+            Admin API Key
+            <input type="password" id="admin-key" autocomplete="off" required />
+          </label>
+          <label>
+            Query key
+            <input type="text" id="query-key" placeholder="leave blank for all" />
+          </label>
+
+          <button type="submit">Load</button>
+        </form>
+      </div>
+    </section>
+
+    <section id="suppressions-panel">
+      <h2>Suppressed / De-ranked Results</h2>
+      <div class="panel-body" id="suppressions-body"><p class="empty-text">No query run yet.</p></div>
+    </section>
+  </main>
+
+  <script src="admin-suppressions.js"></script>
+</body>
+</html>

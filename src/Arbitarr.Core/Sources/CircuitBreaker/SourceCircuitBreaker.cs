@@ -1,3 +1,4 @@
+using Arbitarr.Core.Diagnostics;
 using System.Collections.Concurrent;
 
 namespace Arbitarr.Core.Sources.CircuitBreaker;
@@ -199,11 +200,7 @@ public sealed class SourceCircuitBreaker
     /// through <see cref="CircuitBreakerSnapshot.LastError"/> into both persistence
     /// (<c>SourceHealthRecord</c>) and the unauthenticated <c>/api/status</c> dashboard.
     /// </summary>
-    private static string DescribeSanitized(Exception ex) => ex switch
-    {
-        HttpRequestException { StatusCode: { } statusCode } => $"{nameof(HttpRequestException)} ({(int)statusCode} {statusCode})",
-        _ => ex.GetType().Name,
-    };
+    private static string DescribeSanitized(Exception ex) => SanitizedErrorDescription.Describe(ex);
 
     private TimeSpan DoubleAndCap(TimeSpan currentBackoff)
     {

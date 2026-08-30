@@ -1,5 +1,6 @@
 using System.Reflection;
 using Arbitarr.Ai;
+using Arbitarr.Api.Admin;
 using Arbitarr.Api.Dashboard;
 using Arbitarr.Api.Rendering;
 using Arbitarr.Api.Routing;
@@ -14,8 +15,11 @@ using Arbitarr.Data;
 using Arbitarr.Data.Caching;
 using Arbitarr.Data.CircuitBreaker;
 using Arbitarr.Data.Filtering;
+using Arbitarr.Data.Maintenance;
+using Arbitarr.Data.Security;
 using Arbitarr.Data.Settings;
 using Arbitarr.Host;
+using Arbitarr.Host.Caching;
 using Arbitarr.Host.Security;
 using Arbitarr.Sources.NzbHydra;
 using Microsoft.EntityFrameworkCore;
@@ -28,7 +32,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Runtime state lives under /config (AC21), overridable via ARBITARR_CONFIG_DIR for local
 // dev/test so a real /config directory is never required outside the production container.
 var configDirectory = Environment.GetEnvironmentVariable("ARBITARR_CONFIG_DIR") ?? "/config";
-Directory.CreateDirectory(configDirectory);
+Arbitarr.Host.Provisioning.DatasetProvisioner.EnsureProvisioned(configDirectory);
 var databasePath = Path.Combine(configDirectory, "arbitarr.db");
 
 builder.Services.AddSingleton(new SqliteConnectionOptions { DatabasePath = databasePath });
@@ -49,6 +53,7 @@ builder.Services.AddScoped<ICapsCacheStore, CapsCacheStore>();
 builder.Services.AddScoped<CapsAggregator>();
 
 builder.Services.AddSingleton<RecentSearchLog>();
+builder.Services.AddSingleton<ObservabilityCounters>();
 
 // 15 minutes: the AC0c-measured *arr RSS sync interval used as the settings floor/ceiling anchor
 // (docs/step0-measurements.md §3 — Sonarr's 15m is the more conservative of Sonarr/Radarr).
@@ -92,24 +97,37 @@ builder.Services.AddScoped<SearchResultCacheStage>();
 builder.Services.AddScoped<SearchResultRefresher>();
 builder.Services.AddScoped<RefreshFetcher>(sp =>
     (_, entry, cancellationToken) => sp.GetRequiredService<SearchResultRefresher>().RefreshAsync(entry, cancellationToken));
-builder.Services.AddScoped<PaginationSnapshotService>();
 builder.Services.AddScoped<FilterProfileLoader>();
 builder.Services.AddScoped<ApiKeyProfileResolver>();
 builder.Services.AddScoped<SettingsReader>();
+builder.Services.AddScoped<DatabaseSizeReporter>();
+
+// M7-8c/AC24: resolved via an explicit factory (rather than relying on DI's constructor
+// selection between PaginationSnapshotService's fixed-TTL and live-TTL overloads) so the
+// live-TTL ctor is always the one the Host wires up.
+builder.Services.AddScoped<ISnapshotTtlSource, SettingsSnapshotTtlSource>();
+builder.Services.AddScoped(sp => new PaginationSnapshotService(
+    sp.GetRequiredService<UpstreamMergeStage>(),
+    sp.GetRequiredService<SearchResultCacheStage>(),
+    sp.GetRequiredService<IQuerySnapshotStore>(),
+    sp.GetRequiredService<TimeProvider>(),
+    sp.GetRequiredService<ISnapshotTtlSource>()));
+
+// M7-7/R20: worker-health snapshot, singleton so both the hosted RefreshWorker (writer) and
+// StatusEndpoint (reader) share the same instance across the app's lifetime.
+builder.Services.AddSingleton<RefreshWorkerHealthTracker>(_ => new RefreshWorkerHealthTracker(RefreshWorkerDefaults.WorkerEnabled));
+builder.Services.AddSingleton<IRefreshWorkerHealth>(sp => sp.GetRequiredService<RefreshWorkerHealthTracker>());
+
+// M7-8b/AC24: options are re-read from the settings store on every cycle (see
+// SettingsRefreshWorkerOptionsSource), not captured once at startup from RefreshWorkerDefaults.
+builder.Services.AddScoped<IRefreshWorkerOptionsSource, SettingsRefreshWorkerOptionsSource>();
+
 builder.Services.AddHostedService(sp => new RefreshWorker(
     sp.GetRequiredService<IServiceScopeFactory>(),
     sp.GetRequiredService<TimeProvider>(),
-    new RefreshWorkerOptions(
-        RefreshWorkerDefaults.WorkerEnabled,
-        RefreshWorkerDefaults.WorkerCycleInterval,
-        RefreshWorkerDefaults.ActiveWindow,
-        RefreshWorkerDefaults.RefreshLead,
-        RefreshWorkerDefaults.FreshUntilAge,
-        RefreshWorkerDefaults.ServeUntilAge,
-        RefreshWorkerDefaults.RepopulationSpreadWindow,
-        RefreshWorkerDefaults.MaxConcurrentRefreshes),
     builder.Configuration["Arbitarr:Sources:NzbHydra:SourceName"] ?? "NZBHydra2",
-    logger: sp.GetRequiredService<ILogger<RefreshWorker>>()));
+    logger: sp.GetRequiredService<ILogger<RefreshWorker>>(),
+    health: sp.GetRequiredService<IRefreshWorkerHealth>()));
 
 // AI layer (M5, Step 6): Arbitarr.Ai has zero references to Arbitarr.Data/Arbitarr.Media (AC6a,
 // enforced by Arbitarr.Architecture.Tests.AiMediaIsolationTests/DependencyDirectionTests) — Host
@@ -152,7 +170,14 @@ builder.Services.AddScoped<IVerdictCacheWriter, VerdictCacheWriter>();
 builder.Services.AddScoped(sp => new ClassifierWorker(
     sp.GetRequiredService<ReleaseClassifier>(),
     sp.GetRequiredService<IVerdictCacheWriter>(),
-    sp.GetRequiredService<AiModelIdentity>()));
+    sp.GetRequiredService<AiModelIdentity>(),
+    sp.GetRequiredService<ObservabilityCounters>()));
+
+// AC14b: the ad-hoc search endpoint's synchronous-AI opt-in. Registered here (Host, sole
+// composition root) against Arbitarr.Core.Arbitration.ISyncReleaseArbiter so Arbitarr.Api never
+// references Arbitarr.Ai (AC6a). Strictly separate from the Q1-B machine path above, which never
+// resolves this or any other inline-classification type.
+builder.Services.AddScoped<Arbitarr.Core.Arbitration.ISyncReleaseArbiter, SyncReleaseArbiter>();
 
 builder.Services.AddScoped<FilterStage>(sp => new FilterStage(
     sp.GetRequiredService<ApiKeyProfileResolver>(),
@@ -160,7 +185,9 @@ builder.Services.AddScoped<FilterStage>(sp => new FilterStage(
     sp.GetRequiredService<ArbitarrDbContext>(),
     sp.GetRequiredService<TimeProvider>(),
     sp.GetRequiredService<IVerdictCacheReader>(),
-    sp.GetRequiredService<AiModelIdentity>()));
+    sp.GetRequiredService<AiModelIdentity>(),
+    sp.GetRequiredService<ObservabilityCounters>()));
+
 builder.Services.AddSingleton<InMemoryReleaseLookup>();
 
 // ClassifierPollingWorker is the BackgroundService that drives ClassifierWorker (a plain Scoped
@@ -197,6 +224,26 @@ builder.Services.AddSingleton<IClientApiKeyResolver>(_ =>
     return new ConfiguredClientApiKeyResolver(keys);
 });
 
+// D2 admin API key gate (M7-6): reads SettingKey.AdminApiKey from the settings store, distinct
+// from the Torznab/Newznab client apikey resolved above. Scoped: captures the scoped ArbitarrDbContext.
+builder.Services.AddScoped<IAdminApiKeyReader, DbAdminApiKeyReader>();
+builder.Services.AddScoped<AdminApiKeyFilter>();
+
+// M7-5 settings write path: shares the same measured *arr RSS sync interval as EffectiveSettingsReader
+// above, so read and write validation agree on cross-field bounds (e.g. FreshUntilCeiling).
+builder.Services.AddScoped(sp => new SettingsRepository(
+    sp.GetRequiredService<ArbitarrDbContext>(),
+    TimeSpan.FromMinutes(15)));
+
+// M7-3a: schedules MaintenanceJob on SettingKey.MaintenanceJobInterval. Unlike the RefreshWorker
+// options above, the interval is the one setting explicitly permitted to require a restart to take
+// effect (see MaintenanceHostedService's doc comment), so it is read once at startup rather than
+// via a live options source.
+builder.Services.AddHostedService(sp => new Arbitarr.Host.Maintenance.MaintenanceHostedService(
+    sp.GetRequiredService<IServiceScopeFactory>(),
+    sp.GetRequiredService<TimeProvider>(),
+    sp.GetRequiredService<ILogger<Arbitarr.Host.Maintenance.MaintenanceHostedService>>()));
+
 var app = builder.Build();
 
 // SEC-L2: load (or generate, on first run) the per-instance HMAC secret used to compute proxy
@@ -204,12 +251,28 @@ var app = builder.Build();
 // any request is handled, since ReleaseGuid.Compute is called from request handlers.
 ReleaseGuid.Configure(ReleaseGuidSecretFile.LoadOrCreate(configDirectory));
 
-// Apply pending migrations on startup so a fresh /config volume gets a usable schema
-// before any endpoint (dashboard included) tries to query it.
+// M7-11: apply pending migrations on startup so a container starting from a clean /config
+// volume self-provisions its schema before any endpoint (dashboard included) tries to query
+// it. This runs on a dedicated scope (not the app's root scope) so the DbContext is disposed
+// immediately after. A failure here is always fatal to startup — there is no safe way to serve
+// requests against a database that isn't at the expected schema version — so we catch only to
+// wrap the raw EF/SQLite exception in a clear, actionable message before re-throwing, which
+// stops the host loop before app.Run() rather than crashing later on the first request.
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<ArbitarrDbContext>();
-    dbContext.Database.Migrate();
+    try
+    {
+        dbContext.Database.Migrate();
+    }
+    catch (Exception ex)
+    {
+        throw new InvalidOperationException(
+            $"Arbitarr failed to apply database migrations for '{databasePath}' on startup. " +
+            "The container cannot serve requests against a database that is not at the expected " +
+            "schema version. Check that the /config volume is writable and not corrupted, then " +
+            "restart. See the inner exception for the underlying EF Core/SQLite error.", ex);
+    }
 }
 
 app.UseDefaultFiles();
@@ -230,6 +293,14 @@ app.MapGet("/health", () => Results.Json(new
 StatusEndpoint.Map(app);
 RecentSearchesEndpoint.Map(app);
 EffectiveConfigEndpoint.Map(app);
+HealthStalenessEndpoint.Map(app);
+AdminPingEndpoint.Map(app);
+ObservabilityEndpoint.Map(app);
+AdminSettingsEndpoints.Map(app);
+AdminRuleEndpoints.Map(app);
+AdHocSearchEndpoint.Map(app);
+MatchExplanationEndpoint.Map(app);
+SuppressionViewEndpoint.Map(app);
 
 // Torznab family (torrent-oriented: namespace prefix "torznab", enclosure MIME application/x-bittorrent).
 app.MapGet("/torznab/api", async (

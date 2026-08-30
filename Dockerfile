@@ -11,7 +11,7 @@ COPY --from=build /app/publish .
 
 # Runtime state (SQLite cache, fetched datasets) lives under /config,
 # mounted from the host (e.g. Unraid appdata).
-ENV ARBITARR__CONFIGDIR=/config \
+ENV ARBITARR_CONFIG_DIR=/config \
     ASPNETCORE_URLS=http://+:8080
 VOLUME /config
 EXPOSE 8080

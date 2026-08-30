@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Arbitarr — Ad Hoc Search</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>Arbitarr — Ad Hoc Search</h1>
+    <p class="subtitle">Admin-only. Requires the admin API key (D2). Not part of the read-only 7-lite dashboard (D1).</p>
+  </header>
+
+  <main>
+    <section id="search-form-panel">
+      <h2>Query</h2>
+      <div class="panel-body">
+        <form id="search-form">
+          <label>
+            Admin API Key
+            <input type="password" id="admin-key" autocomplete="off" required />
+          </label>
+          <label>
+            Query text (q)
+            <input type="text" id="q" />
+          </label>
+          <label>
+            TVDB ID
+            <input type="text" id="tvdbid" />
+          </label>
+          <label>
+            TMDB ID
+            <input type="text" id="tmdbid" />
+          </label>
+          <label>
+            Season
+            <input type="text" id="season" />
+          </label>
+          <label>
+            Episode
+            <input type="text" id="ep" />
+          </label>
+          <label>
+            Categories (comma-separated)
+            <input type="text" id="cat" placeholder="5030,5040" />
+          </label>
+
+          <!--
+            AC14b: synchronous-AI-arbitration opt-in for this ad-hoc search. Checking this sends
+            runAiSync=true to GET /api/admin/search, which resolves Arbitarr.Core.Arbitration's
+            ISyncReleaseArbiter (implemented in Arbitarr.Ai, registered only in Arbitarr.Host) —
+            this page and AdHocSearchEndpoint (Arbitarr.Api) still never reference Arbitarr.Ai
+            directly (AC6a). Unchecked leaves the search on the plain, non-AI path.
+          -->
+          <label class="ai-toggle-label">
+            <input type="checkbox" id="run-ai-sync" />
+            Run AI arbitration synchronously (AC14b, admin opt-in)
+          </label>
+
+          <button type="submit">Search</button>
+        </form>
+      </div>
+    </section>
+
+    <section id="provenance-panel">
+      <h2>Provenance</h2>
+      <div class="panel-body" id="provenance-body"><p class="empty-text">No search run yet.</p></div>
+    </section>
+
+    <section id="results-panel">
+      <h2>Results</h2>
+      <div class="panel-body" id="results-body"><p class="empty-text">No search run yet.</p></div>
+    </section>
+  </main>
+
+  <script src="admin-search.js"></script>
+</body>
+</html>

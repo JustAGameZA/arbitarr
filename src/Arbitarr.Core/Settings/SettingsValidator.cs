@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Arbitarr.Core.Settings;
 
 /// <summary>
@@ -398,8 +400,33 @@ public static class SettingsValidator
             case SettingKey.ClassifierPollInterval:
                 ValidateClassifierPollInterval((TimeSpan)proposed);
                 break;
+            case SettingKey.SyncArbitrationBudget:
+                ValidateSyncArbitrationBudget((TimeSpan)proposed);
+                break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(key), key, "Unknown setting key.");
+        }
+    }
+
+    /// <summary>
+    /// Validates a proposed <see cref="SettingKey.SyncArbitrationBudget"/> value (AC14b). Floor:
+    /// 1s (below this every call would fail open unconditionally, silently defeating the opt-in).
+    /// Ceiling: 30s (above this the ad-hoc search admin UI feels unresponsive - D3).
+    /// </summary>
+    public static void ValidateSyncArbitrationBudget(TimeSpan proposed)
+    {
+        var floor = TimeSpan.FromSeconds(1);
+        if (proposed < floor)
+        {
+            throw new SettingsValidationException(SettingKey.SyncArbitrationBudget,
+                $"sync AI arbitration budget must be >= {floor}, got {proposed}.");
+        }
+
+        var ceiling = TimeSpan.FromSeconds(30);
+        if (proposed > ceiling)
+        {
+            throw new SettingsValidationException(SettingKey.SyncArbitrationBudget,
+                $"sync AI arbitration budget must be <= {ceiling}, got {proposed}.");
         }
     }
 
@@ -494,4 +521,46 @@ public static class SettingsValidator
                 nameof(ruleCount));
         }
     }
+
+    /// <summary>
+    /// Computes the current floor/ceiling for <paramref name="key"/> against a live
+    /// <paramref name="current"/> snapshot, for display in the admin settings UI (AC24/M7-8) — the
+    /// exact same bounds <see cref="ValidateChange"/> enforces, surfaced as data instead of only as
+    /// a rejection message. Boolean settings (<see cref="SettingKey.WorkerEnabled"/>,
+    /// <see cref="SettingKey.AiKillSwitch"/>, <see cref="SettingKey.ShadowMode"/>,
+    /// <see cref="SettingKey.TitleNormalizationEnabled"/>) and <see cref="SettingKey.AdminApiKey"/> are unbounded
+    /// and return (null, null).
+    /// </summary>
+    /// <param name="current">The live snapshot the bound is computed against (for cross-field bounds).</param>
+    /// <param name="key">Which setting to compute bounds for.</param>
+    /// <param name="arrSyncInterval">The AC0c-measured *arr RSS sync interval (see <see cref="ValidateChange"/>).</param>
+    /// <returns>
+    /// (Min, Max) as their <see cref="TimeSpan.ToString()"/>/<see cref="int"/> string form (matching
+    /// how proposed values are serialized elsewhere in this file), or null for an absent bound.
+    /// </returns>
+    public static (string? Min, string? Max) GetBounds(SettingsSnapshot current, SettingKey key, TimeSpan arrSyncInterval) => key switch
+    {
+        SettingKey.FreshUntil => (TimeSpan.Zero.ToString(), FreshUntilCeiling(arrSyncInterval).ToString()),
+        SettingKey.ServeUntil => (current.FreshUntil.ToString(), TimeSpan.FromDays(14).ToString()),
+        SettingKey.ActiveWindow => (arrSyncInterval.ToString(), (current.ServeUntil < TimeSpan.FromDays(7) ? current.ServeUntil : TimeSpan.FromDays(7)).ToString()),
+        SettingKey.RefreshLead => (TimeSpan.FromMinutes(1).ToString(), current.FreshUntil.ToString()),
+        SettingKey.WorkerCycleInterval => (TimeSpan.FromSeconds(15).ToString(), current.RefreshLead.ToString()),
+        SettingKey.WorkerEnabled => (null, null),
+        SettingKey.AiKillSwitch => (null, null),
+        SettingKey.AiVerdictCacheTtl => (TimeSpan.FromHours(24).ToString(), null),
+        SettingKey.AiVerdictCacheRowCeiling => ((10_000).ToString(CultureInfo.InvariantCulture), null),
+        SettingKey.MetadataRefreshCadence => (TimeSpan.FromHours(24).ToString(), TimeSpan.FromDays(30).ToString()),
+        SettingKey.MetadataNegativeTtl => (TimeSpan.FromHours(24).ToString(), TimeSpan.FromDays(30).ToString()),
+        SettingKey.SuppressionAuditRetention => (TimeSpan.FromDays(7).ToString(), null),
+        SettingKey.QuerySnapshotTtl => (TimeSpan.FromSeconds(60).ToString(), TimeSpan.FromHours(1).ToString()),
+        SettingKey.MaintenanceJobInterval => (TimeSpan.FromMinutes(5).ToString(), TimeSpan.FromHours(24).ToString()),
+        SettingKey.SyncArbitrationBudget => (TimeSpan.FromSeconds(1).ToString(), TimeSpan.FromSeconds(30).ToString()),
+        SettingKey.ShadowMode => (null, null),
+        SettingKey.TitleNormalizationEnabled => (null, null),
+        // Floor is exclusive (see ValidateAiConfidenceThreshold): shown as 0 with the exclusivity
+        // stated in the catalog rationale, since the wire form carries no open/closed flag.
+        SettingKey.AiConfidenceThreshold => ((0.0).ToString(CultureInfo.InvariantCulture), (1.0).ToString(CultureInfo.InvariantCulture)),
+        SettingKey.ClassifierPollInterval => (TimeSpan.FromSeconds(15).ToString(), null),
+        _ => (null, null),
+    };
 }

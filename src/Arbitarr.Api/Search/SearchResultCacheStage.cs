@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Arbitarr.Api.Rendering;
 using Arbitarr.Core.Caching;
+using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Identity;
 using Arbitarr.Core.Sources;
 
@@ -58,11 +59,14 @@ public sealed class SearchResultCacheStage
     public const string DefaultProfile = "default";
 
     private readonly SearchResultCache _cache;
+    private readonly ObservabilityCounters? _counters;
 
-    public SearchResultCacheStage(SearchResultCache cache)
+    /// <param name="counters">M7 step-7 counters; optional (null = no-op) so existing callers keep compiling.</param>
+    public SearchResultCacheStage(SearchResultCache cache, ObservabilityCounters? counters = null)
     {
         ArgumentNullException.ThrowIfNull(cache);
         _cache = cache;
+        _counters = counters;
     }
 
     /// <summary>
@@ -135,6 +139,7 @@ public sealed class SearchResultCacheStage
         if (read.IsServable && read.PayloadJson is not null)
         {
             var cachedReleases = CachedSearchPayload.Deserialize(read.PayloadJson)?.Releases ?? Array.Empty<RenderedRelease>();
+            _counters?.RecordSearchCacheHit(read.Band, read.Age);
             return new CacheStageResult(cachedReleases, read.Band, read.Age);
         }
 
@@ -143,6 +148,7 @@ public sealed class SearchResultCacheStage
         {
             // Sick upstream, nothing usable: leave whatever the store holds untouched (M3-10) and
             // flag the (empty) response as expired — nothing servable exists for this key right now.
+            _counters?.RecordSearchCacheDegradedMiss();
             return new CacheStageResult(Array.Empty<RenderedRelease>(), CacheBand.Expired, null);
         }
 
@@ -154,6 +160,7 @@ public sealed class SearchResultCacheStage
             serveUntilAge: RefreshWorkerDefaults.ServeUntilAge,
             cancellationToken).ConfigureAwait(false);
 
+        _counters?.RecordSearchCacheFetched();
         return new CacheStageResult(fetched.Releases, CacheBand.Fresh, TimeSpan.Zero);
     }
 }

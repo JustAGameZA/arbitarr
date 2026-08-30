@@ -107,16 +107,24 @@ public sealed class DashboardReadOnlyTests : IClassFixture<ArbitarrWebApplicatio
     }
 
     [Fact]
-    public async Task Status_worker_status_is_restricted_to_documented_enumerated_values_before_M3()
+    public async Task Status_worker_health_reports_real_snapshot_shape()
     {
         using var client = _factory.CreateClient();
 
         var response = await client.GetFromJsonAsync<StatusResponse>("/api/status");
 
-        // M2-7: before M3 implements the proactive-refresh worker, WorkerStatus must never read as
-        // healthy/running — "not-implemented" is the only value StatusEndpoint may emit right now.
-        Assert.Equal(StatusEndpoint.WorkerNotImplemented, response!.WorkerStatus);
-        Assert.DoesNotContain(response.WorkerStatus, new[] { "ok", "healthy", "running" });
+        // M7-7/R20: the pre-M3 "not-implemented" placeholder is gone — /api/status now reports the
+        // real RefreshWorkerHealth snapshot. The hosted RefreshWorker runs live against this test
+        // host, so by the time this request lands a cycle may already have started/completed; this
+        // asserts the shape and that no cycle-level fault occurred, not "no cycle has run yet".
+        Assert.NotNull(response);
+        var worker = response!.Worker;
+        Assert.NotNull(worker);
+        Assert.Null(worker.LastError);
+        Assert.Equal(0, worker.ConsecutiveFailedCycles);
+        Assert.True(worker.LastCycleCandidates >= 0);
+        Assert.True(worker.LastCycleRefreshed >= 0);
+        Assert.True(worker.LastCycleFailed >= 0);
     }
 
     [Theory]
@@ -144,10 +152,15 @@ public sealed class DashboardReadOnlyTests : IClassFixture<ArbitarrWebApplicatio
             .ToArray();
 
         // D1: 7-lite is dashboard + recent-searches log + read-only config viewer only — no
-        // interactive/ad-hoc search trigger. The only "search"-named surface allowed is the
-        // read-only recent-searches log.
+        // interactive/ad-hoc search trigger for the *unauthenticated* dashboard surface. M7-1 adds
+        // one exception: an admin-gated (D2, AdminApiKeyFilter) ad-hoc search route for the
+        // admin-only dashboard extension. M7-9 adds a second, equally admin-gated exception: the
+        // match-explanation lookup for a single previously rendered release (AC-M7b), keyed off the
+        // same ad-hoc-search route. Neither is reachable without the admin API key, so neither
+        // weakens D1's read-only/no-auth guarantee for the public 7-lite routes. Any other
+        // "search"-named surface remains disallowed.
         Assert.DoesNotContain(routes, r => r is not null && r.Contains("search", StringComparison.OrdinalIgnoreCase)
-            && r != "/api/searches/recent");
+            && r != "/api/searches/recent" && r != "/api/admin/search" && r != "/api/admin/search/{proxyGuid}/explanation");
     }
 
     public static IEnumerable<object[]> DashboardRoutesAndDisallowedMethods()

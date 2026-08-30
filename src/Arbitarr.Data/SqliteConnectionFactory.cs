@@ -52,6 +52,19 @@ public sealed class SqliteConnectionFactory
             busyTimeoutCommand.ExecuteNonQuery();
         }
 
+        // M7-3a (AC22): auto_vacuum must be set to INCREMENTAL before any tables exist in the
+        // database file — it only takes effect at file-creation time, and is otherwise a silent
+        // no-op (per SQLite's own docs), which would make MaintenanceJob's later
+        // "PRAGMA incremental_vacuum;" calls inert. Setting it here, on every connection open,
+        // means it is applied on the very first connection that creates the file (e.g. via EF's
+        // Database.Migrate() at Host startup) while being a harmless no-op on every subsequent
+        // connection to an already-vacuum-configured file.
+        using (var autoVacuumCommand = connection.CreateCommand())
+        {
+            autoVacuumCommand.CommandText = "PRAGMA auto_vacuum = INCREMENTAL;";
+            autoVacuumCommand.ExecuteNonQuery();
+        }
+
         using (var journalModeCommand = connection.CreateCommand())
         {
             journalModeCommand.CommandText = "PRAGMA journal_mode = WAL;";

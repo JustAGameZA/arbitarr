@@ -1,3 +1,4 @@
+using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Filtering;
 using Arbitarr.Core.Releases;
 
@@ -16,15 +17,18 @@ public sealed class ClassifierWorker
     private readonly ReleaseClassifier _classifier;
     private readonly IVerdictCacheWriter _cacheWriter;
     private readonly AiModelIdentity _modelIdentity;
+    private readonly ObservabilityCounters? _counters;
 
     public ClassifierWorker(
         ReleaseClassifier classifier,
         IVerdictCacheWriter cacheWriter,
-        AiModelIdentity modelIdentity)
+        AiModelIdentity modelIdentity,
+        ObservabilityCounters? counters = null)
     {
         _classifier = classifier ?? throw new ArgumentNullException(nameof(classifier));
         _cacheWriter = cacheWriter ?? throw new ArgumentNullException(nameof(cacheWriter));
         _modelIdentity = modelIdentity ?? throw new ArgumentNullException(nameof(modelIdentity));
+        _counters = counters;
     }
 
     /// <summary>
@@ -42,6 +46,7 @@ public sealed class ClassifierWorker
         ArgumentNullException.ThrowIfNull(sourceName);
 
         var result = await _classifier.TryClassifyAsync(candidate, cancellationToken).ConfigureAwait(false);
+        _counters?.RecordLlmCall(failed: result is null);
         if (result is null)
         {
             return;
