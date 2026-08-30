@@ -11,6 +11,19 @@ public sealed class ReleaseCandidate
     /// <summary>Release title, as reported by the upstream source.</summary>
     public required string Title { get; init; }
 
+    /// <summary>
+    /// Backing store for the pre-normalization title. Left <see langword="null"/> at construction
+    /// by every existing call site (so <see cref="OriginalTitle"/> defaults to <see cref="Title"/>
+    /// unchanged); only the title normalizer sets this, after which <see cref="Title"/> holds the
+    /// normalized form and this property preserves what the source actually reported (Architect S3:
+    /// an <c>init</c> accessor cannot read another <c>init</c> member's final value at construction
+    /// time, so the raw value is captured separately rather than derived from <see cref="Title"/>).
+    /// </summary>
+    public string? OriginalTitleRaw { get; init; }
+
+    /// <summary>The title as originally reported by the source, before any normalization.</summary>
+    public string OriginalTitle => OriginalTitleRaw ?? Title;
+
     /// <summary>Source-provided unique identifier (Torznab/Newznab &lt;guid&gt;).</summary>
     public required string Guid { get; init; }
 

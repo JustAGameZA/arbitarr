@@ -9,6 +9,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Arbitarr.Core\Arbitarr.Core.csproj" />
+    <!-- AC6a: Arbitarr.Core.Identity itself references Arbitarr.Core only, never Arbitarr.Media,
+         so this reference cannot reopen the "Ai must never reach Media" violation transitively.
+         Data flows IN (Host composes CandidateNumberingSet/MatchProvenance and passes them into
+         the AI layer); Arbitarr.Ai never reaches out for identity data itself. -->
+    <ProjectReference Include="..\Arbitarr.Core.Identity\Arbitarr.Core.Identity.csproj" />
   </ItemGroup>
 
 </Project>
