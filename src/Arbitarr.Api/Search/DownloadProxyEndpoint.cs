@@ -5,13 +5,18 @@ using Microsoft.AspNetCore.Http;
 namespace Arbitarr.Api.Search;
 
 /// <summary>
-/// Streams an upstream release's download payload (torrent or NZB) back to the caller, resolving
+/// Fetches an upstream release's download payload (torrent or NZB) back to the caller, resolving
 /// the proxy guid emitted by <see cref="SearchEndpoint"/> back to its originating
 /// <see cref="IUpstreamSource"/> via <see cref="IReleaseLookup"/>. This path performs zero
-/// database writes and invokes no AI logic: it is a pure, streaming pass-through from the
-/// upstream source's <see cref="IUpstreamSource.FetchDownloadAsync"/> to the HTTP response body,
-/// never buffering the payload in memory (bounded to <see cref="MaxLengthStream.MaxBytes"/> per
-/// SEC-L3).
+/// database writes and invokes no AI logic.
+///
+/// SEC-L3: the upstream body is read into memory through <see cref="MaxLengthStream"/> (bounded
+/// to <see cref="MaxLengthStream.MaxBytes"/>) BEFORE any response write, so a payload that exceeds
+/// the cap is rejected with a clean 502 rather than a partially-written response. An earlier
+/// version of this endpoint used <c>Results.Stream</c>, which commits response headers/status
+/// before the body is fully read — a <see cref="DownloadTooLargeException"/> thrown mid-stream
+/// could not produce a clean pre-write 502. Buffering (bounded by the same 10 MiB cap) closes that
+/// gap; the memory cost is bounded by design, not unbounded buffering.
 ///
 /// SEC-L1/amendment: the proxy guid alone only prevents enumeration of releases — it is not an
 /// authorization credential. The caller must also present the client apikey it was originally
@@ -50,7 +55,10 @@ public static class DownloadProxyEndpoint
         try
         {
             var stream = await source.FetchDownloadAsync(release.Candidate, cancellationToken).ConfigureAwait(false);
-            return Results.Stream(new MaxLengthStream(stream), "application/octet-stream");
+            await using var bounded = new MaxLengthStream(stream);
+            using var buffer = new MemoryStream();
+            await bounded.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
+            return Results.Bytes(buffer.ToArray(), "application/octet-stream");
         }
         catch (RequestLimitReachedException)
         {
@@ -58,6 +66,13 @@ public static class DownloadProxyEndpoint
         }
         catch (DownloadTooLargeException)
         {
+            return Results.StatusCode(StatusCodes.Status502BadGateway);
+        }
+        catch (HttpRequestException)
+        {
+            // SEC-M1: covers both a genuinely failed upstream request and the origin-mismatch
+            // guard NzbHydraSource.FetchDownloadAsync throws when the resolved link's
+            // scheme/host/port no longer matches the configured upstream origin at fetch time.
             return Results.StatusCode(StatusCodes.Status502BadGateway);
         }
     }

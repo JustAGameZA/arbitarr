@@ -6,12 +6,10 @@ namespace Arbitarr.Api.Tests;
 /// <summary>
 /// SEC-L3: <see cref="MaxLengthStream"/> aborts a download once more than <see cref="MaxLengthStream.MaxBytes"/>
 /// have been read, so a misbehaving/compromised upstream cannot exhaust memory/bandwidth via an
-/// unbounded payload. Tested directly against the stream (via <see cref="Stream.ReadAsync(Memory{byte},CancellationToken)"/>),
-/// not through the full download-proxy endpoint: <c>Results.Stream</c> defers reading to the
-/// ASP.NET Core response-writing pipeline, so <c>DownloadProxyEndpoint.HandleAsync</c>'s own catch
-/// block never actually observes this exception in production — a known, documented limitation.
-/// This test instead pins the one thing that's actually reachable and testable: the stream itself
-/// throws when its budget is exceeded.
+/// unbounded payload. Tested directly against the stream (via <see cref="Stream.ReadAsync(Memory{byte},CancellationToken)"/>)
+/// in isolation from the download-proxy endpoint's HTTP plumbing; the endpoint reads through this
+/// same stream into a bounded buffer before writing any response (see
+/// <see cref="DownloadProxyTests"/> for coverage of that end-to-end 502 behavior).
 /// </summary>
 public class MaxLengthStreamTests
 {
