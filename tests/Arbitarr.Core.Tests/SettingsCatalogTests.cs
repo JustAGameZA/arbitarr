@@ -51,4 +51,27 @@ public sealed class SettingsCatalogTests
 
         Assert.Equal(keys.Count, keys.Distinct().Count());
     }
+
+    /// <summary>M7-8: every unbounded non-boolean setting carries a labelled reason, and only those do.</summary>
+    [Fact]
+    public void NoMaximumReason_IsPresent_ExactlyWhenValidatorHasNoCeiling()
+    {
+        var arrSyncInterval = TimeSpan.FromMinutes(15);
+        var defaults = SettingsSnapshot.Defaults(arrSyncInterval);
+
+        foreach (var entry in SettingsCatalog.Entries)
+        {
+            var (_, max) = SettingsValidator.GetBounds(defaults, entry.Key, arrSyncInterval);
+            var unbounded = max is null && !entry.IsBoolean;
+            Assert.True(unbounded == !string.IsNullOrWhiteSpace(entry.NoMaximumReason), $"{entry.Key}: unbounded={unbounded}, reason={entry.NoMaximumReason}");
+        }
+    }
+
+    /// <summary>M7-8: the restart exception is labelled with why, and nothing else claims a restart reason.</summary>
+    [Fact]
+    public void RestartReason_IsPresent_ExactlyWhenRequiresRestart()
+    {
+        Assert.All(SettingsCatalog.Entries, entry =>
+            Assert.True(entry.RequiresRestart == !string.IsNullOrWhiteSpace(entry.RestartReason), $"{entry.Key}"));
+    }
 }

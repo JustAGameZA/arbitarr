@@ -1,5 +1,7 @@
 using System.Globalization;
 using Arbitarr.Core.Settings;
+using Arbitarr.Data.Entities;
+using Arbitarr.Data.Maintenance;
 using Arbitarr.Data.Settings;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -20,6 +22,16 @@ namespace Arbitarr.Api.Admin;
 /// the admin UI renders bounds from this payload rather than hardcoding them.
 /// </param>
 /// <param name="Max">The current ceiling for this setting, or null if there is none.</param>
+/// <param name="NoMaximumReason">M7-8: why <paramref name="Max"/> is null for a non-boolean setting; null when a ceiling exists.</param>
+/// <param name="RestartReason">M7-8: why the setting only takes effect after a restart; null unless <paramref name="RequiresRestart"/>.</param>
+/// <param name="GovernedTable">
+/// M7-8: the SQLite table whose growth this setting governs (a retention window, TTL or row ceiling),
+/// or null for settings that govern no storage.
+/// </param>
+/// <param name="GovernedTableRows">
+/// Current row count of <paramref name="GovernedTable"/> so the storage cost of the retention
+/// choice is visible where it is made; null when the setting governs no table.
+/// </param>
 public sealed record SettingCatalogEntryResponse(
     string Key,
     string Group,
@@ -29,7 +41,11 @@ public sealed record SettingCatalogEntryResponse(
     bool IsBoolean,
     string Value,
     string? Min,
-    string? Max);
+    string? Max,
+    string? NoMaximumReason,
+    string? RestartReason,
+    string? GovernedTable,
+    long? GovernedTableRows);
 
 /// <summary>Request body for <c>PUT /api/admin/settings/{key}</c>.</summary>
 public sealed record UpdateSettingRequest(string Value);
@@ -55,6 +71,7 @@ public static class AdminSettingsEndpoints
     private static async Task<IResult> GetSettingsAsync(
         SettingsRepository repository,
         SettingsReader reader,
+        DatabaseSizeReporter sizeReporter,
         CancellationToken cancellationToken)
     {
         var snapshot = await repository.LoadSnapshotAsync(cancellationToken);
@@ -65,10 +82,12 @@ public static class AdminSettingsEndpoints
             AiConfidenceThreshold: await reader.GetAiConfidenceThresholdAsync(cancellationToken),
             TitleNormalizationEnabled: await reader.GetTitleNormalizationEnabledAsync(cancellationToken),
             ClassifierPollInterval: await reader.GetClassifierPollIntervalAsync(cancellationToken));
+        var sizes = await sizeReporter.ReadAsync(cancellationToken);
 
         var entries = SettingsCatalog.Entries.Select(entry =>
         {
             var (min, max) = SettingsValidator.GetBounds(snapshot, entry.Key, repository.ArrSyncInterval);
+            var governedTable = GovernedTableOf(entry.Key, sizeReporter);
             return new SettingCatalogEntryResponse(
                 Key: entry.Key.ToString(),
                 Group: entry.Group.ToString(),
@@ -78,11 +97,32 @@ public static class AdminSettingsEndpoints
                 IsBoolean: entry.IsBoolean,
                 Value: CurrentValue(entry.Key, snapshot, live),
                 Min: min,
-                Max: max);
+                Max: max,
+                NoMaximumReason: entry.NoMaximumReason,
+                RestartReason: entry.RestartReason,
+                GovernedTable: governedTable,
+                GovernedTableRows: governedTable is null ? null : sizes.RowsIn(governedTable));
         });
 
         return Results.Ok(entries);
     }
+
+    /// <summary>
+    /// M7-8: which table a storage-governing setting bounds. Search-result freshness/serve windows and
+    /// the worker keep search-result rows alive; the verdict TTL and row ceiling bound the AI verdict
+    /// cache; metadata cadence and negative TTL bound the metadata cache; audit retention bounds the
+    /// suppression audit log; the snapshot TTL bounds pagination snapshots.
+    /// </summary>
+    private static string? GovernedTableOf(SettingKey key, DatabaseSizeReporter sizeReporter) => key switch
+    {
+        SettingKey.FreshUntil or SettingKey.ServeUntil or SettingKey.ActiveWindow or SettingKey.RefreshLead
+            or SettingKey.WorkerCycleInterval or SettingKey.WorkerEnabled => sizeReporter.TableNameOf<SearchResultCacheEntry>(),
+        SettingKey.AiVerdictCacheTtl or SettingKey.AiVerdictCacheRowCeiling => sizeReporter.TableNameOf<VerdictCacheEntry>(),
+        SettingKey.MetadataRefreshCadence or SettingKey.MetadataNegativeTtl => sizeReporter.TableNameOf<MetadataCacheEntry>(),
+        SettingKey.SuppressionAuditRetention => sizeReporter.TableNameOf<SuppressionAuditLogEntry>(),
+        SettingKey.QuerySnapshotTtl => sizeReporter.TableNameOf<QuerySnapshotCacheEntry>(),
+        _ => null,
+    };
 
     private static async Task<IResult> UpdateSettingAsync(
         string key,

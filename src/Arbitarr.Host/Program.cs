@@ -15,6 +15,7 @@ using Arbitarr.Data;
 using Arbitarr.Data.Caching;
 using Arbitarr.Data.CircuitBreaker;
 using Arbitarr.Data.Filtering;
+using Arbitarr.Data.Maintenance;
 using Arbitarr.Data.Security;
 using Arbitarr.Data.Settings;
 using Arbitarr.Host;
@@ -99,6 +100,7 @@ builder.Services.AddScoped<RefreshFetcher>(sp =>
 builder.Services.AddScoped<FilterProfileLoader>();
 builder.Services.AddScoped<ApiKeyProfileResolver>();
 builder.Services.AddScoped<SettingsReader>();
+builder.Services.AddScoped<DatabaseSizeReporter>();
 
 // M7-8c/AC24: resolved via an explicit factory (rather than relying on DI's constructor
 // selection between PaginationSnapshotService's fixed-TTL and live-TTL overloads) so the

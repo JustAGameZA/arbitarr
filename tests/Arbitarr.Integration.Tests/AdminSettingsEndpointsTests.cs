@@ -316,4 +316,42 @@ public sealed class AdminSettingsEndpointsTests : IClassFixture<ArbitarrWebAppli
             new UpdateSettingRequest(bool.TrueString));
         Assert.Equal(HttpStatusCode.OK, restore.StatusCode);
     }
+
+    /// <summary>
+    /// M7-8: the payload labels why a setting has no ceiling or needs a restart, and attaches the
+    /// row count of the table the setting governs, so the storage cost is visible where it is made.
+    /// </summary>
+    [Fact]
+    public async Task GET_settings_labels_no_maximum_and_restart_reasons_and_reports_governed_table_size()
+    {
+        await SeedAdminKeyAsync();
+
+        using var client = AuthorizedClient();
+        var response = await client.GetAsync(SettingsRoute);
+        response.EnsureSuccessStatusCode();
+
+        var entries = await response.Content.ReadFromJsonAsync<List<SettingCatalogEntryResponse>>();
+        Assert.NotNull(entries);
+
+        var maintenanceInterval = entries!.Single(e => e.Key == nameof(SettingKey.MaintenanceJobInterval));
+        Assert.True(maintenanceInterval.RequiresRestart);
+        Assert.False(string.IsNullOrWhiteSpace(maintenanceInterval.RestartReason));
+        Assert.Null(maintenanceInterval.NoMaximumReason);
+
+        var aiVerdictCacheTtl = entries.Single(e => e.Key == nameof(SettingKey.AiVerdictCacheTtl));
+        Assert.Null(aiVerdictCacheTtl.Max);
+        Assert.False(string.IsNullOrWhiteSpace(aiVerdictCacheTtl.NoMaximumReason));
+        Assert.Null(aiVerdictCacheTtl.RestartReason);
+        Assert.Equal("VerdictCacheEntries", aiVerdictCacheTtl.GovernedTable);
+
+        var freshUntil = entries.Single(e => e.Key == nameof(SettingKey.FreshUntil));
+        Assert.Equal("SearchResultCacheEntries", freshUntil.GovernedTable);
+        Assert.NotNull(freshUntil.GovernedTableRows);
+        Assert.True(freshUntil.GovernedTableRows >= 0);
+
+        var shadowMode = entries.Single(e => e.Key == nameof(SettingKey.ShadowMode));
+        Assert.Null(shadowMode.GovernedTable);
+        Assert.Null(shadowMode.GovernedTableRows);
+        Assert.Null(shadowMode.NoMaximumReason);
+    }
 }

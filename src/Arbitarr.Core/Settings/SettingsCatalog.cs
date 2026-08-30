@@ -55,7 +55,18 @@ public sealed record SettingCatalogEntry(
     string DisplayName,
     string Rationale,
     bool RequiresRestart,
-    bool IsBoolean);
+    bool IsBoolean)
+{
+    /// <summary>
+    /// M7-8: why this setting has no validator ceiling. Set on every non-boolean entry whose
+    /// <see cref="SettingsValidator.GetBounds"/> maximum is null, so the settings surface can label the
+    /// exception instead of showing a blank upper bound.
+    /// </summary>
+    public string? NoMaximumReason { get; init; }
+
+    /// <summary>M7-8: why a change to this setting only takes effect after a restart. Set iff <see cref="RequiresRestart"/>.</summary>
+    public string? RestartReason { get; init; }
+}
 
 /// <summary>
 /// The fixed, ordered catalog of settings the admin UI exposes (M7-5). Deliberately excludes
@@ -133,7 +144,10 @@ public static class SettingsCatalog
             "How long an AI verdict is kept before last-access eviction. Floor 24h. No ceiling — verdicts " +
             "are model-version-keyed, so a long TTL cannot cause silent wrongness; size is bounded separately by the row ceiling.",
             RequiresRestart: false,
-            IsBoolean: false),
+            IsBoolean: false)
+        {
+            NoMaximumReason = "Verdicts are keyed by model version, so a long TTL cannot cause silent wrongness; size is bounded by the row ceiling.",
+        },
         new SettingCatalogEntry(
             SettingKey.AiVerdictCacheRowCeiling,
             SettingGroup.Ai,
@@ -141,7 +155,10 @@ public static class SettingsCatalog
             "LRU trim point for the AI verdict cache, in rows. Floor 10,000. No ceiling — an over-large " +
             "value is a disk-space choice visible in the health panel, not a correctness hazard.",
             RequiresRestart: false,
-            IsBoolean: false),
+            IsBoolean: false)
+        {
+            NoMaximumReason = "An over-large ceiling is a disk-space choice, visible as the verdict table row count beside this setting, not a correctness hazard.",
+        },
         new SettingCatalogEntry(
             SettingKey.MetadataRefreshCadence,
             SettingGroup.Metadata,
@@ -165,7 +182,10 @@ public static class SettingsCatalog
             "How long suppression audit log entries are kept. Floor 7d (keeps the shadow-mode 48h review " +
             "window always possible). No ceiling — a longer window only costs disk.",
             RequiresRestart: false,
-            IsBoolean: false),
+            IsBoolean: false)
+        {
+            NoMaximumReason = "Longer retention only costs disk space, visible as the audit table row count beside this setting; it cannot cause silent wrongness.",
+        },
         new SettingCatalogEntry(
             SettingKey.QuerySnapshotTtl,
             SettingGroup.Pagination,
@@ -182,7 +202,10 @@ public static class SettingsCatalog
             "pruning cannot keep pace with accumulation). RESTART REQUIRED: the maintenance job reads " +
             "this once at startup, so a change here only takes effect after the process restarts.",
             RequiresRestart: true,
-            IsBoolean: false),
+            IsBoolean: false)
+        {
+            RestartReason = "The maintenance job registers its timer once at host start-up; the new interval is read on the next start.",
+        },
         new SettingCatalogEntry(
             SettingKey.SyncArbitrationBudget,
             SettingGroup.Ai,
@@ -231,7 +254,10 @@ public static class SettingsCatalog
             "classification, it cannot cause silent wrongness. Re-read at the top of every cycle, so " +
             "changes apply on the next cycle without restart.",
             RequiresRestart: false,
-            IsBoolean: false),
+            IsBoolean: false)
+        {
+            NoMaximumReason = "A long interval only delays classification; it cannot cause silent wrongness.",
+        },
     };
 
     /// <summary>
