@@ -56,6 +56,39 @@ public sealed class AdminSettingsEndpointsTests : IClassFixture<ArbitarrWebAppli
     }
 
     [Fact]
+    public async Task GET_settings_reports_bounds_and_the_maintenance_interval_requires_restart()
+    {
+        // AC24/M7-8: the admin settings UI renders each setting's floor/ceiling from this payload
+        // rather than hardcoding them in JS, and must be able to show a "requires restart" badge.
+        await SeedAdminKeyAsync();
+
+        using var client = AuthorizedClient();
+        var response = await client.GetAsync(SettingsRoute);
+        response.EnsureSuccessStatusCode();
+
+        var entries = await response.Content.ReadFromJsonAsync<List<SettingCatalogEntryResponse>>();
+        Assert.NotNull(entries);
+
+        var workerCycleInterval = entries!.Single(e => e.Key == nameof(SettingKey.WorkerCycleInterval));
+        Assert.Equal(TimeSpan.FromSeconds(15).ToString(), workerCycleInterval.Min);
+        Assert.NotNull(workerCycleInterval.Max);
+        Assert.False(workerCycleInterval.RequiresRestart);
+
+        var aiVerdictCacheTtl = entries.Single(e => e.Key == nameof(SettingKey.AiVerdictCacheTtl));
+        Assert.Equal(TimeSpan.FromHours(24).ToString(), aiVerdictCacheTtl.Min);
+        Assert.Null(aiVerdictCacheTtl.Max);
+
+        var workerEnabled = entries.Single(e => e.Key == nameof(SettingKey.WorkerEnabled));
+        Assert.Null(workerEnabled.Min);
+        Assert.Null(workerEnabled.Max);
+
+        var maintenanceJobInterval = entries.Single(e => e.Key == nameof(SettingKey.MaintenanceJobInterval));
+        Assert.Equal(TimeSpan.FromMinutes(5).ToString(), maintenanceJobInterval.Min);
+        Assert.Equal(TimeSpan.FromHours(24).ToString(), maintenanceJobInterval.Max);
+        Assert.True(maintenanceJobInterval.RequiresRestart);
+    }
+
+    [Fact]
     public async Task PUT_settings_persists_a_valid_value()
     {
         await SeedAdminKeyAsync();
@@ -114,6 +147,20 @@ public sealed class AdminSettingsEndpointsTests : IClassFixture<ArbitarrWebAppli
             new UpdateSettingRequest(TimeSpan.FromSeconds(30).ToString()));
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("/admin-settings.html")]
+    [InlineData("/admin-settings.js")]
+    public async Task Admin_settings_static_assets_are_served(string path)
+    {
+        // M7-8: the admin settings page (wwwroot/admin-settings.html + .js) must actually be wired
+        // to the static-file pipeline, not merely exist on disk.
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetAsync(path);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     private HttpClient AuthorizedClient()
