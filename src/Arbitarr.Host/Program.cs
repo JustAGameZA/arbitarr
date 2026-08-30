@@ -98,6 +98,12 @@ builder.Services.AddScoped<PaginationSnapshotService>();
 builder.Services.AddScoped<FilterProfileLoader>();
 builder.Services.AddScoped<ApiKeyProfileResolver>();
 builder.Services.AddScoped<SettingsReader>();
+
+// M7-7/R20: worker-health snapshot, singleton so both the hosted RefreshWorker (writer) and
+// StatusEndpoint (reader) share the same instance across the app's lifetime.
+builder.Services.AddSingleton<RefreshWorkerHealthTracker>(_ => new RefreshWorkerHealthTracker(RefreshWorkerDefaults.WorkerEnabled));
+builder.Services.AddSingleton<IRefreshWorkerHealth>(sp => sp.GetRequiredService<RefreshWorkerHealthTracker>());
+
 builder.Services.AddHostedService(sp => new RefreshWorker(
     sp.GetRequiredService<IServiceScopeFactory>(),
     sp.GetRequiredService<TimeProvider>(),
@@ -111,7 +117,8 @@ builder.Services.AddHostedService(sp => new RefreshWorker(
         RefreshWorkerDefaults.RepopulationSpreadWindow,
         RefreshWorkerDefaults.MaxConcurrentRefreshes),
     builder.Configuration["Arbitarr:Sources:NzbHydra:SourceName"] ?? "NZBHydra2",
-    logger: sp.GetRequiredService<ILogger<RefreshWorker>>()));
+    logger: sp.GetRequiredService<ILogger<RefreshWorker>>(),
+    health: sp.GetRequiredService<IRefreshWorkerHealth>()));
 
 // AI layer (M5, Step 6): Arbitarr.Ai has zero references to Arbitarr.Data/Arbitarr.Media (AC6a,
 // enforced by Arbitarr.Architecture.Tests.AiMediaIsolationTests/DependencyDirectionTests) — Host
@@ -163,6 +170,7 @@ builder.Services.AddScoped<FilterStage>(sp => new FilterStage(
     sp.GetRequiredService<TimeProvider>(),
     sp.GetRequiredService<IVerdictCacheReader>(),
     sp.GetRequiredService<AiModelIdentity>()));
+
 builder.Services.AddSingleton<InMemoryReleaseLookup>();
 
 // ClassifierPollingWorker is the BackgroundService that drives ClassifierWorker (a plain Scoped

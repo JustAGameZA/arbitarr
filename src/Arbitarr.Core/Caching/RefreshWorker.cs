@@ -38,6 +38,7 @@ public sealed class RefreshWorker : BackgroundService
     private readonly string _sourceName;
     private readonly RepopulationPacer _pacer;
     private readonly ILogger _logger;
+    private readonly IRefreshWorkerHealth _health;
 
     /// <summary>
     /// Constructs a worker over fixed dependencies. Used by tests (fakes, injected clock) and valid
@@ -52,14 +53,16 @@ public sealed class RefreshWorker : BackgroundService
         RefreshWorkerOptions options,
         string sourceName,
         RepopulationPacer? pacer = null,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        IRefreshWorkerHealth? health = null)
         : this(
             () => (new RefreshWorkerDependencies(store, cache, circuitBreaker, fetcher), null),
             timeProvider,
             options,
             sourceName,
             pacer,
-            logger)
+            logger,
+            health)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(cache);
@@ -80,7 +83,8 @@ public sealed class RefreshWorker : BackgroundService
         RefreshWorkerOptions options,
         string sourceName,
         RepopulationPacer? pacer = null,
-        ILogger<RefreshWorker>? logger = null)
+        ILogger<RefreshWorker>? logger = null,
+        IRefreshWorkerHealth? health = null)
         : this(
             () =>
             {
@@ -105,7 +109,8 @@ public sealed class RefreshWorker : BackgroundService
             options,
             sourceName,
             pacer,
-            logger)
+            logger,
+            health)
     {
         ArgumentNullException.ThrowIfNull(scopeFactory);
     }
@@ -116,7 +121,8 @@ public sealed class RefreshWorker : BackgroundService
         RefreshWorkerOptions options,
         string sourceName,
         RepopulationPacer? pacer,
-        ILogger? logger)
+        ILogger? logger,
+        IRefreshWorkerHealth? health)
     {
         _resolveDependencies = resolveDependencies;
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
@@ -124,6 +130,7 @@ public sealed class RefreshWorker : BackgroundService
         _sourceName = sourceName ?? throw new ArgumentNullException(nameof(sourceName));
         _pacer = pacer ?? new RepopulationPacer();
         _logger = logger ?? NullLogger.Instance;
+        _health = health ?? NullRefreshWorkerHealth.Instance;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -146,6 +153,7 @@ public sealed class RefreshWorker : BackgroundService
                     // BackgroundService faults propagate to the host by default. Log and retry on
                     // the next tick; the breaker already governs per-source upstream failures.
                     _logger.LogError(ex, "Search-result refresh cycle for source {SourceName} failed; will retry next cycle.", _sourceName);
+                    _health.CycleFaulted(_timeProvider.GetUtcNow(), ex.Message);
                 }
             }
 
@@ -178,8 +186,11 @@ public sealed class RefreshWorker : BackgroundService
         var now = _timeProvider.GetUtcNow();
 
         var candidates = await deps.Store.GetRefreshCandidatesAsync(now, _options.ActiveWindow, _options.RefreshLead, cancellationToken);
+        _health.CycleStarted(now, _options.Enabled, candidates.Count);
+
         if (candidates.Count == 0)
         {
+            _health.CycleCompleted(_timeProvider.GetUtcNow(), refreshed: 0, failed: 0);
             return;
         }
 
@@ -187,6 +198,7 @@ public sealed class RefreshWorker : BackgroundService
         {
             // Breaker open for this source: the worker defers to the same breaker the inline
             // path uses and does not attempt any refresh this cycle.
+            _health.CycleCompleted(_timeProvider.GetUtcNow(), refreshed: 0, failed: 0);
             return;
         }
 
@@ -196,6 +208,9 @@ public sealed class RefreshWorker : BackgroundService
         var plan = _pacer.Plan(candidates, _options.RepopulationSpreadWindow, _options.MaxConcurrentRefreshes, _sourceName);
         var entriesByKey = candidates.ToDictionary(c => c.QueryKey);
         using var throttle = new SemaphoreSlim(_options.MaxConcurrentRefreshes);
+
+        var refreshedCount = 0;
+        var failedCount = 0;
 
         var tasks = plan.Select(async paced =>
         {
@@ -207,7 +222,15 @@ public sealed class RefreshWorker : BackgroundService
             await throttle.WaitAsync(cancellationToken);
             try
             {
-                await RefreshOneAsync(deps, entriesByKey[paced.QueryKey], cancellationToken);
+                var succeeded = await RefreshOneAsync(deps, entriesByKey[paced.QueryKey], cancellationToken);
+                if (succeeded)
+                {
+                    Interlocked.Increment(ref refreshedCount);
+                }
+                else
+                {
+                    Interlocked.Increment(ref failedCount);
+                }
             }
             finally
             {
@@ -216,9 +239,11 @@ public sealed class RefreshWorker : BackgroundService
         });
 
         await Task.WhenAll(tasks);
+        _health.CycleCompleted(_timeProvider.GetUtcNow(), refreshedCount, failedCount);
     }
 
-    private async Task RefreshOneAsync(RefreshWorkerDependencies deps, CachedSearchResult entry, CancellationToken cancellationToken)
+    /// <returns>true if the entry was successfully refreshed and written back; false otherwise.</returns>
+    private async Task<bool> RefreshOneAsync(RefreshWorkerDependencies deps, CachedSearchResult entry, CancellationToken cancellationToken)
     {
         string? payload;
         try
@@ -232,7 +257,7 @@ public sealed class RefreshWorker : BackgroundService
         catch (Exception ex)
         {
             await deps.CircuitBreaker.RecordFailureAsync(_sourceName, ex, cancellationToken);
-            return;
+            return false;
         }
 
         if (payload is null)
@@ -241,11 +266,12 @@ public sealed class RefreshWorker : BackgroundService
             // untouched (M3-10). Do not record this as a breaker failure — the fetcher already
             // knows the difference between "upstream call failed" (records via exception above)
             // and "nothing new to write back".
-            return;
+            return false;
         }
 
         await deps.CircuitBreaker.RecordSuccessAsync(_sourceName, cancellationToken);
         await deps.Cache.SaveAsync(entry.QueryKey, payload, _options.FreshUntilAge, _options.ServeUntilAge, cancellationToken);
+        return true;
     }
 }
 
