@@ -54,8 +54,11 @@ public enum SettingKey
     ShadowMode,
 
     /// <summary>
-    /// Admin API key required to gate mutating actions in the full UI/API (D2). Used starting at
-    /// M7; declared here so the settings catalog/validator surface it uniformly.
+    /// Admin API key gating all <c>Arbitarr.Api.Routing.RouteClassification.AdminMutating</c>
+    /// routes (D2, wired at M7). Distinct from the Torznab/Newznab client apikey
+    /// (<see cref="Arbitarr.Core.Security.IClientApiKeyResolver"/>) and from the upstream NZBHydra2
+    /// key — this key exists solely so the admin UI's mutating endpoints are not open to anyone who
+    /// can reach the LAN port.
     /// </summary>
     AdminApiKey,
 
@@ -78,4 +81,11 @@ public enum SettingKey
     /// restart required.
     /// </summary>
     ClassifierPollInterval,
+
+    /// <summary>
+    /// AC26b: boolean kill-switch that fully disables the AI layer. Unlike the other settings here,
+    /// this is boolean rather than floor/ceiling-bounded — it is a safety escape hatch, not a
+    /// preference, so the usual bound-validation convention does not apply.
+    /// </summary>
+    AiKillSwitch,
 }

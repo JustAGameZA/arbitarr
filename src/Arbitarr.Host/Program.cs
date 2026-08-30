@@ -1,5 +1,6 @@
 using System.Reflection;
 using Arbitarr.Ai;
+using Arbitarr.Api.Admin;
 using Arbitarr.Api.Dashboard;
 using Arbitarr.Api.Rendering;
 using Arbitarr.Api.Routing;
@@ -14,6 +15,7 @@ using Arbitarr.Data;
 using Arbitarr.Data.Caching;
 using Arbitarr.Data.CircuitBreaker;
 using Arbitarr.Data.Filtering;
+using Arbitarr.Data.Security;
 using Arbitarr.Data.Settings;
 using Arbitarr.Host;
 using Arbitarr.Host.Security;
@@ -197,6 +199,11 @@ builder.Services.AddSingleton<IClientApiKeyResolver>(_ =>
     return new ConfiguredClientApiKeyResolver(keys);
 });
 
+// D2 admin API key gate (M7-6): reads SettingKey.AdminApiKey from the settings store, distinct
+// from the Torznab/Newznab client apikey resolved above. Scoped: captures the scoped ArbitarrDbContext.
+builder.Services.AddScoped<IAdminApiKeyReader, DbAdminApiKeyReader>();
+builder.Services.AddScoped<AdminApiKeyFilter>();
+
 var app = builder.Build();
 
 // SEC-L2: load (or generate, on first run) the per-instance HMAC secret used to compute proxy
@@ -230,6 +237,7 @@ app.MapGet("/health", () => Results.Json(new
 StatusEndpoint.Map(app);
 RecentSearchesEndpoint.Map(app);
 EffectiveConfigEndpoint.Map(app);
+AdminPingEndpoint.Map(app);
 
 // Torznab family (torrent-oriented: namespace prefix "torznab", enclosure MIME application/x-bittorrent).
 app.MapGet("/torznab/api", async (
