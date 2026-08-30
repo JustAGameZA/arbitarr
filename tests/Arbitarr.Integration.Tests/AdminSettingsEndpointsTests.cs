@@ -28,11 +28,32 @@ public sealed class AdminSettingsEndpointsTests : IClassFixture<ArbitarrWebAppli
     [Fact]
     public async Task GET_settings_requires_the_admin_key()
     {
+        // Seed the key first so this deterministically exercises the "wrong/missing key" (401) path
+        // rather than the "no key configured yet" (503) fail-closed path — the two are both real
+        // AdminApiKeyFilter outcomes and which one an unseeded request hits depends on whether another
+        // [Fact] in this IClassFixture-scoped class has already configured a key (xUnit does not
+        // guarantee in-class execution order), so the precondition must be pinned explicitly here.
+        await SeedAdminKeyAsync();
+
         using var client = _factory.CreateClient();
 
         var response = await client.GetAsync(SettingsRoute);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GET_settings_fails_closed_with_503_when_no_admin_key_is_configured()
+    {
+        // Fresh, unseeded factory (not the shared _factory field, which other [Fact]s in this class
+        // may have already seeded a key into) so this deterministically exercises AdminApiKeyFilter's
+        // fail-closed path rather than depending on in-class test ordering.
+        await using var factory = new ArbitarrWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync(SettingsRoute);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
     }
 
     [Fact]
