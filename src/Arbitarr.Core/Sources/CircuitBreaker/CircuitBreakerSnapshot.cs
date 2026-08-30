@@ -8,11 +8,15 @@ namespace Arbitarr.Core.Sources.CircuitBreaker;
 /// </summary>
 /// <param name="State">Current lifecycle state.</param>
 /// <param name="ConsecutiveFailures">Consecutive failure count observed since the breaker last closed.</param>
+/// <param name="BaseBackoff">
+/// Un-jittered doubling-curve base value (capped at <see cref="CircuitBreakerOptions.MaxBackoff"/>).
+/// Kept separately from <see cref="CurrentBackoff"/> so each successive doubling step doubles the
+/// pure base rather than an already-jittered value — doubling a jittered value would compound
+/// jitter multiplicatively across steps instead of applying it once per step (M3-12 jitter-compounding fix).
+/// </param>
 /// <param name="CurrentBackoff">
-/// Current backoff duration: the doubling curve's base value (capped at
-/// <see cref="CircuitBreakerOptions.MaxBackoff"/>) with jitter already applied. This is also the
-/// open-duration gate — <see cref="NextProbeAt"/> is set to the time the breaker opened plus this
-/// value (M3-12).
+/// <see cref="BaseBackoff"/> with jitter applied — this is the open-duration gate:
+/// <see cref="NextProbeAt"/> is set to the time the breaker opened plus this value (M3-12).
 /// </param>
 /// <param name="LastFailureAt">Timestamp of the most recent failure, if any.</param>
 /// <param name="LastSuccessAt">Timestamp of the most recent success, if any.</param>
@@ -21,6 +25,7 @@ namespace Arbitarr.Core.Sources.CircuitBreaker;
 public sealed record CircuitBreakerSnapshot(
     CircuitState State,
     int ConsecutiveFailures,
+    TimeSpan BaseBackoff,
     TimeSpan CurrentBackoff,
     DateTimeOffset? LastFailureAt,
     DateTimeOffset? LastSuccessAt,
@@ -31,6 +36,7 @@ public sealed record CircuitBreakerSnapshot(
     public static CircuitBreakerSnapshot Initial { get; } = new(
         State: CircuitState.Closed,
         ConsecutiveFailures: 0,
+        BaseBackoff: TimeSpan.Zero,
         CurrentBackoff: TimeSpan.Zero,
         LastFailureAt: null,
         LastSuccessAt: null,

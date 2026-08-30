@@ -138,21 +138,22 @@ public sealed class BackoffCurveTests
         // First delay must be ~5s (AC20's initial backoff).
         AssertWithinTwentyPercent(observedDelays[0], 5);
 
-        // Each subsequent delay must be within +/-20% of double the previous one, until the 900s
-        // ceiling is reached, after which it must stay pinned at ~900s. This proves the doubling
-        // relationship step-by-step without accumulating jitter drift against a fixed nominal table.
-        for (var i = 1; i < observedDelays.Count; i++)
+        // M3-12: jitter is applied once per step to an un-jittered doubling base (never compounded
+        // across steps), so each observed delay can be asserted directly against the fixed nominal
+        // curve 5,10,20,40,80,160,320,640,900,900s, each within +/-20%.
+        double[] nominalSeconds = [5, 10, 20, 40, 80, 160, 320, 640, 900, 900];
+        Assert.Equal(nominalSeconds.Length, observedDelays.Count);
+        for (var i = 0; i < observedDelays.Count; i++)
         {
-            var doubledPrevious = observedDelays[i - 1] * 2;
-            if (doubledPrevious >= TimeSpan.FromMinutes(15))
-            {
-                AssertWithinTwentyPercent(observedDelays[i], 900);
-            }
-            else
-            {
-                AssertWithinTwentyPercent(observedDelays[i], doubledPrevious.TotalSeconds);
-            }
+            AssertWithinTwentyPercent(observedDelays[i], nominalSeconds[i]);
         }
+
+        // Note: a step-by-step "observed[i] within +/-20% of observed[i-1]*2" relative check is
+        // deliberately not kept alongside the nominal-table assertion above. With jitter applied
+        // once per step to an un-jittered base (M3-12), two independently-jittered neighbors can
+        // legitimately diverge by up to ~44% of each other's nominal even though each is within
+        // +/-20% of its own nominal value, making a relative check spuriously flaky. The
+        // nominal-table assertion is the correct, non-compounding check for this fix.
 
         // Curve must actually pass through the ~5-minute (300s) region on its way to the ceiling --
         // proving it traverses that magnitude, not that it lands there exactly (per-step jitter of

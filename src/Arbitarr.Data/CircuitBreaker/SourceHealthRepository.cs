@@ -60,6 +60,7 @@ public sealed class SourceHealthRepository
     private static CircuitBreakerSnapshot ToSnapshot(SourceHealthRecord record) => new(
         State: ToCoreState(record.State),
         ConsecutiveFailures: record.ConsecutiveFailures,
+        BaseBackoff: TimeSpan.FromSeconds(record.BaseBackoffSeconds),
         CurrentBackoff: TimeSpan.FromSeconds(record.CurrentBackoffSeconds),
         LastFailureAt: record.LastFailureAt,
         LastSuccessAt: record.LastSuccessAt,
@@ -70,6 +71,7 @@ public sealed class SourceHealthRepository
     {
         record.State = ToEntityState(snapshot.State);
         record.ConsecutiveFailures = snapshot.ConsecutiveFailures;
+        record.BaseBackoffSeconds = snapshot.BaseBackoff.TotalSeconds;
         record.CurrentBackoffSeconds = snapshot.CurrentBackoff.TotalSeconds;
         record.LastFailureAt = snapshot.LastFailureAt;
         record.LastSuccessAt = snapshot.LastSuccessAt;

@@ -115,11 +115,13 @@ public sealed class SourceCircuitBreaker
                 var failures = snapshot.ConsecutiveFailures + 1;
                 if (failures >= _options.ConsecutiveFailuresToOpen)
                 {
-                    var backoff = ApplyJitter(_options.InitialBackoff);
+                    var baseBackoff = _options.InitialBackoff;
+                    var backoff = ApplyJitter(baseBackoff);
                     _bySource[sourceName] = snapshot with
                     {
                         State = CircuitState.Open,
                         ConsecutiveFailures = failures,
+                        BaseBackoff = baseBackoff,
                         CurrentBackoff = backoff,
                         LastFailureAt = now,
                         LastError = errorMessage,
@@ -142,13 +144,16 @@ public sealed class SourceCircuitBreaker
             case CircuitState.HalfOpen:
             {
                 // Probe failed: reopen and grow the backoff curve (doubling the pre-jitter base,
-                // capped, then re-jittered).
-                var nextBaseBackoff = DoubleAndCap(snapshot.CurrentBackoff);
+                // capped, then re-jittered). Doubling snapshot.BaseBackoff (not CurrentBackoff,
+                // which already carries jitter) keeps jitter from compounding multiplicatively
+                // across successive steps.
+                var nextBaseBackoff = DoubleAndCap(snapshot.BaseBackoff);
                 var jittered = ApplyJitter(nextBaseBackoff);
                 _bySource[sourceName] = snapshot with
                 {
                     State = CircuitState.Open,
                     ConsecutiveFailures = snapshot.ConsecutiveFailures + 1,
+                    BaseBackoff = nextBaseBackoff,
                     CurrentBackoff = jittered,
                     LastFailureAt = now,
                     LastError = errorMessage,

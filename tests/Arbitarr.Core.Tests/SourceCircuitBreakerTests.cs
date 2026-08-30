@@ -281,6 +281,7 @@ public sealed class SourceCircuitBreakerTests
         var persisted = new CircuitBreakerSnapshot(
             State: CircuitState.Open,
             ConsecutiveFailures: 5,
+            BaseBackoff: TimeSpan.FromSeconds(20),
             CurrentBackoff: TimeSpan.FromSeconds(20),
             LastFailureAt: Start,
             LastSuccessAt: null,
@@ -290,6 +291,7 @@ public sealed class SourceCircuitBreakerTests
         breaker.Seed(Source, persisted);
 
         Assert.Equal(CircuitState.Open, breaker.GetSnapshot(Source).State);
+        Assert.Equal(TimeSpan.FromSeconds(20), breaker.GetSnapshot(Source).BaseBackoff);
         Assert.False(breaker.CanCall(Source));
 
         clock.Advance(TimeSpan.FromMinutes(5) + TimeSpan.FromSeconds(1));
