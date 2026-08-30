@@ -20,6 +20,9 @@
     <ProjectReference Include="..\..\src\Arbitarr.Core.Identity\Arbitarr.Core.Identity.csproj" />
     <ProjectReference Include="..\..\src\Arbitarr.Ai\Arbitarr.Ai.csproj" />
     <ProjectReference Include="..\..\src\Arbitarr.Media\Arbitarr.Media.csproj" />
+    <ProjectReference Include="..\..\src\Arbitarr.Api\Arbitarr.Api.csproj" />
+    <ProjectReference Include="..\..\src\Arbitarr.Data\Arbitarr.Data.csproj" />
+    <ProjectReference Include="..\..\src\Arbitarr.Sources.NzbHydra\Arbitarr.Sources.NzbHydra.csproj" />
   </ItemGroup>
 
 </Project>

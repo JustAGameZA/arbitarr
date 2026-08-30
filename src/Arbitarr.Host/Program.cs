@@ -54,6 +54,8 @@ builder.Services.AddScoped<IUpstreamSource>(sp =>
 });
 builder.Services.AddScoped<IReadOnlyList<IUpstreamSource>>(sp => sp.GetServices<IUpstreamSource>().ToArray());
 builder.Services.AddScoped<UpstreamMergeStage>();
+builder.Services.AddScoped<IQuerySnapshotStore, QuerySnapshotStore>();
+builder.Services.AddScoped<PaginationSnapshotService>();
 builder.Services.AddSingleton<InMemoryReleaseLookup>();
 builder.Services.AddSingleton<IReleaseLookup>(sp => sp.GetRequiredService<InMemoryReleaseLookup>());
 
@@ -62,6 +64,11 @@ var app = builder.Build();
 var version = Assembly.GetExecutingAssembly()
     .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
     ?? "dev";
+
+// Inbound Torznab/Newznab client apikey (M1-9) — authenticates *arr clients calling into
+// Arbitarr. Distinct from Arbitarr:Sources:NzbHydra:ApiKey, which is the upstream NZBHydra2
+// credential Arbitarr uses to call out.
+var inboundApiKey = builder.Configuration["Arbitarr:ApiKey"] ?? string.Empty;
 
 app.MapGet("/health", () => Results.Json(new
 {
@@ -78,12 +85,17 @@ app.MapGet("/torznab/api", async (
     int? limit,
     int? offset,
     CapsAggregator capsAggregator,
-    UpstreamMergeStage mergeStage,
+    PaginationSnapshotService snapshotService,
     InMemoryReleaseLookup releaseLookup,
     IReadOnlyList<IUpstreamSource> sources,
     HttpRequest request,
     CancellationToken cancellationToken) =>
 {
+    if (ApiKeyValidator.Validate(request.Query["apikey"], inboundApiKey, isTorznab: true) is { } apiKeyError)
+    {
+        return apiKeyError;
+    }
+
     if (string.Equals(t, "caps", StringComparison.OrdinalIgnoreCase))
     {
         return await CapsEndpoint.HandleTorznabAsync(capsAggregator, sources, cancellationToken).ConfigureAwait(false);
@@ -91,11 +103,12 @@ app.MapGet("/torznab/api", async (
 
     var categories = ParseCategories(cat);
     return await SearchEndpoint.HandleTorznabAsync(
+        t,
         q,
         categories,
         limit ?? 100,
         offset ?? 0,
-        mergeStage,
+        snapshotService,
         releaseLookup,
         request,
         cancellationToken).ConfigureAwait(false);
@@ -109,12 +122,17 @@ app.MapGet("/newznab/api", async (
     int? limit,
     int? offset,
     CapsAggregator capsAggregator,
-    UpstreamMergeStage mergeStage,
+    PaginationSnapshotService snapshotService,
     InMemoryReleaseLookup releaseLookup,
     IReadOnlyList<IUpstreamSource> sources,
     HttpRequest request,
     CancellationToken cancellationToken) =>
 {
+    if (ApiKeyValidator.Validate(request.Query["apikey"], inboundApiKey, isTorznab: false) is { } apiKeyError)
+    {
+        return apiKeyError;
+    }
+
     if (string.Equals(t, "caps", StringComparison.OrdinalIgnoreCase))
     {
         return await CapsEndpoint.HandleNewznabAsync(capsAggregator, sources, cancellationToken).ConfigureAwait(false);
@@ -122,11 +140,12 @@ app.MapGet("/newznab/api", async (
 
     var categories = ParseCategories(cat);
     return await SearchEndpoint.HandleNewznabAsync(
+        t,
         q,
         categories,
         limit ?? 100,
         offset ?? 0,
-        mergeStage,
+        snapshotService,
         releaseLookup,
         request,
         cancellationToken).ConfigureAwait(false);

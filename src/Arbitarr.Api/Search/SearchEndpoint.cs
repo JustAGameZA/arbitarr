@@ -23,16 +23,17 @@ public static class SearchEndpoint
     public const int RateLimitErrorCode = 500;
 
     public static async Task<IResult> HandleTorznabAsync(
+        string? searchType,
         string? queryText,
         IReadOnlyList<int> categories,
         int limit,
         int offset,
-        UpstreamMergeStage mergeStage,
+        PaginationSnapshotService snapshotService,
         InMemoryReleaseLookup releaseLookup,
         HttpRequest request,
         CancellationToken cancellationToken)
     {
-        var (result, rateLimited) = await ExecuteAsync(queryText, categories, limit, offset, mergeStage, releaseLookup, cancellationToken).ConfigureAwait(false);
+        var (result, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, snapshotService, releaseLookup, cancellationToken).ConfigureAwait(false);
         if (rateLimited)
         {
             var errorXml = TorznabXmlWriter.WriteError(RateLimitErrorCode, "Request limit reached");
@@ -44,16 +45,17 @@ public static class SearchEndpoint
     }
 
     public static async Task<IResult> HandleNewznabAsync(
+        string? searchType,
         string? queryText,
         IReadOnlyList<int> categories,
         int limit,
         int offset,
-        UpstreamMergeStage mergeStage,
+        PaginationSnapshotService snapshotService,
         InMemoryReleaseLookup releaseLookup,
         HttpRequest request,
         CancellationToken cancellationToken)
     {
-        var (result, rateLimited) = await ExecuteAsync(queryText, categories, limit, offset, mergeStage, releaseLookup, cancellationToken).ConfigureAwait(false);
+        var (result, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, snapshotService, releaseLookup, cancellationToken).ConfigureAwait(false);
         if (rateLimited)
         {
             var errorXml = NewznabXmlWriter.WriteError(RateLimitErrorCode, "Request limit reached");
@@ -64,17 +66,18 @@ public static class SearchEndpoint
         return Results.Text(XmlDocumentRendering.ToXmlString(xml), NewznabXmlWriter.ContentType);
     }
 
-    private static async Task<(MergeResult? Result, bool RateLimited)> ExecuteAsync(
+    private static async Task<(PagedMergeResult? Result, bool RateLimited)> ExecuteAsync(
+        string? searchType,
         string? queryText,
         IReadOnlyList<int> categories,
         int limit,
         int offset,
-        UpstreamMergeStage mergeStage,
+        PaginationSnapshotService snapshotService,
         InMemoryReleaseLookup releaseLookup,
         CancellationToken cancellationToken)
     {
         var query = new SearchQuery(queryText, categories, limit, offset);
-        var result = await mergeStage.MergeAsync(query, cancellationToken).ConfigureAwait(false);
+        var result = await snapshotService.GetPageAsync(searchType ?? "search", query, cancellationToken).ConfigureAwait(false);
 
         releaseLookup.RecordRange(result.Releases);
 

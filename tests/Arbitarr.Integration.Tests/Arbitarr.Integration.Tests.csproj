@@ -15,4 +15,9 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Arbitarr.Core\Arbitarr.Core.csproj" />
+    <ProjectReference Include="..\..\src\Arbitarr.Api\Arbitarr.Api.csproj" />
+  </ItemGroup>
+
 </Project>
