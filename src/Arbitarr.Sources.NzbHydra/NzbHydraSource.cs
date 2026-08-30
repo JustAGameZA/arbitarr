@@ -136,6 +136,17 @@ public sealed class NzbHydraSource : IUpstreamSource
     {
         ArgumentNullException.ThrowIfNull(release);
 
+        // SEC-M1: parse-time origin pinning (TryValidateOriginPinnedLink, above) only guarantees the
+        // link was well-formed and same-origin at *parse* time — it is not a fetch-time guarantee.
+        // Re-validate scheme+host+port against the configured upstream origin immediately before
+        // issuing the request, so a link that was valid when parsed but has since been substituted
+        // (e.g. a mutable ReleaseCandidate, or a future code path that skips parsing) cannot cause an
+        // SSRF fetch to an arbitrary host.
+        if (!TryValidateOriginPinnedLink(release.Link?.ToString(), _options.BaseUrl, out var validatedLink))
+        {
+            throw new HttpRequestException($"Refusing to fetch download link for source '{Name}': link is not same-origin with the configured upstream at fetch time.");
+        }
+
         if (!await _circuitBreaker.CanCallAsync(Name, cancellationToken).ConfigureAwait(false))
         {
             throw new InvalidOperationException($"Circuit breaker for source '{Name}' is open; refusing to call upstream.");
@@ -145,7 +156,7 @@ public sealed class NzbHydraSource : IUpstreamSource
         {
             await _rateLimiter.WaitForTokenAsync(cancellationToken).ConfigureAwait(false);
 
-            var response = await _httpClient.GetAsync(release.Link, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            var response = await _httpClient.GetAsync(validatedLink, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
             ThrowIfRateLimited(response);
             response.EnsureSuccessStatusCode();
             var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);

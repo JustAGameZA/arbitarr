@@ -206,4 +206,42 @@ public class DownloadProxyTests
         var bytesResult = Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.FileContentHttpResult>(result);
         Assert.Equal(MaxLengthStream.MaxBytes, bytesResult.FileContents.Length);
     }
+
+    // SEC-M1: FetchDownloadAsync's fetch-time origin re-validation (or an upstream 302 redirect,
+    // treated as a failure) surfaces as HttpRequestException from the source; the proxy must map
+    // that to a clean 502, never an unhandled 5xx.
+    [Fact]
+    public async Task Source_fetch_time_origin_mismatch_returns_502()
+    {
+        var release = TestReleases.Torrent(sourceName: "eztv", guid: "123");
+        var lookup = new InMemoryReleaseLookup();
+        lookup.Record(release);
+
+        var source = new FakeUpstreamSource("eztv", downloadException: new HttpRequestException("origin mismatch"));
+        var sources = new IUpstreamSource[] { source };
+
+        var result = await DownloadProxyEndpoint.HandleAsync(release.ProxyGuid, ValidApiKey, Resolver(), lookup, sources, CancellationToken.None);
+
+        var statusCodeResult = Assert.IsAssignableFrom<Microsoft.AspNetCore.Http.IStatusCodeHttpResult>(result);
+        Assert.Equal(Microsoft.AspNetCore.Http.StatusCodes.Status502BadGateway, statusCodeResult.StatusCode);
+    }
+
+    [Fact]
+    public async Task Upstream_302_redirect_returns_502()
+    {
+        // Mirrors NzbHydraSource.FetchDownloadAsync with AllowAutoRedirect=false: a 302 is not a
+        // success status, so EnsureSuccessStatusCode throws HttpRequestException, which the proxy
+        // maps to 502 rather than following the redirect.
+        var release = TestReleases.Torrent(sourceName: "eztv", guid: "123");
+        var lookup = new InMemoryReleaseLookup();
+        lookup.Record(release);
+
+        var source = new FakeUpstreamSource("eztv", downloadException: new HttpRequestException("Response status code does not indicate success: 302 (Found)."));
+        var sources = new IUpstreamSource[] { source };
+
+        var result = await DownloadProxyEndpoint.HandleAsync(release.ProxyGuid, ValidApiKey, Resolver(), lookup, sources, CancellationToken.None);
+
+        var statusCodeResult = Assert.IsAssignableFrom<Microsoft.AspNetCore.Http.IStatusCodeHttpResult>(result);
+        Assert.Equal(Microsoft.AspNetCore.Http.StatusCodes.Status502BadGateway, statusCodeResult.StatusCode);
+    }
 }
