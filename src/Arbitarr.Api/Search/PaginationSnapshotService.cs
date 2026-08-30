@@ -67,7 +67,7 @@ public sealed class PaginationSnapshotService
         if (cached is not null)
         {
             var releases = JsonSerializer.Deserialize<RenderedRelease[]>(cached) ?? Array.Empty<RenderedRelease>();
-            return new PagedMergeResult(Slice(releases, query.Offset, query.Limit), Array.Empty<string>());
+            return new PagedMergeResult(Slice(releases, query.Offset, query.Limit), Array.Empty<string>(), FromCache: true);
         }
 
         var merged = await _mergeStage.MergeAsync(query, cancellationToken).ConfigureAwait(false);
@@ -81,7 +81,7 @@ public sealed class PaginationSnapshotService
             await _snapshotStore.SaveAsync(snapshotToken, payloadJson, now, _ttl, cancellationToken).ConfigureAwait(false);
         }
 
-        return new PagedMergeResult(Slice(merged.Releases, query.Offset, query.Limit), merged.RateLimitedSources);
+        return new PagedMergeResult(Slice(merged.Releases, query.Offset, query.Limit), merged.RateLimitedSources, FromCache: false);
     }
 
     private static IReadOnlyList<RenderedRelease> Slice(IReadOnlyList<RenderedRelease> releases, int offset, int limit)
@@ -109,5 +109,10 @@ public sealed class PaginationSnapshotService
     }
 }
 
-/// <summary>A single requested page (offset/limit slice) of a snapshot, plus any sources rate-limited while materializing it.</summary>
-public sealed record PagedMergeResult(IReadOnlyList<RenderedRelease> Releases, IReadOnlyList<string> RateLimitedSources);
+/// <summary>
+/// A single requested page (offset/limit slice) of a snapshot, plus any sources rate-limited while
+/// materializing it, and whether this page came from a live snapshot cache hit
+/// (<paramref name="FromCache"/> = true, zero upstream calls) or a fresh merge — the M7-1 ad-hoc
+/// search provenance strip surfaces this so operators can tell a cached vs. live result apart.
+/// </summary>
+public sealed record PagedMergeResult(IReadOnlyList<RenderedRelease> Releases, IReadOnlyList<string> RateLimitedSources, bool FromCache = false);
