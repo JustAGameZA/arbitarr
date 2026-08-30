@@ -1,10 +1,12 @@
 using System.Reflection;
+using Arbitarr.Ai;
 using Arbitarr.Api.Dashboard;
 using Arbitarr.Api.Rendering;
 using Arbitarr.Api.Routing;
 using Arbitarr.Api.Search;
 using Arbitarr.Core.Caching;
 using Arbitarr.Core.Diagnostics;
+using Arbitarr.Core.Filtering;
 using Arbitarr.Core.Security;
 using Arbitarr.Core.Sources;
 using Arbitarr.Core.Sources.CircuitBreaker;
@@ -93,8 +95,6 @@ builder.Services.AddScoped<PaginationSnapshotService>();
 builder.Services.AddScoped<FilterProfileLoader>();
 builder.Services.AddScoped<ApiKeyProfileResolver>();
 builder.Services.AddScoped<SettingsReader>();
-builder.Services.AddScoped<FilterStage>();
-
 builder.Services.AddHostedService(sp => new RefreshWorker(
     sp.GetRequiredService<IServiceScopeFactory>(),
     sp.GetRequiredService<TimeProvider>(),
@@ -109,6 +109,54 @@ builder.Services.AddHostedService(sp => new RefreshWorker(
         RefreshWorkerDefaults.MaxConcurrentRefreshes),
     builder.Configuration["Arbitarr:Sources:NzbHydra:SourceName"] ?? "NZBHydra2",
     logger: sp.GetRequiredService<ILogger<RefreshWorker>>()));
+
+// AI layer (M5, Step 6): Arbitarr.Ai has zero references to Arbitarr.Data/Arbitarr.Media (AC6a,
+// enforced by Arbitarr.Architecture.Tests.AiMediaIsolationTests/DependencyDirectionTests) — Host
+// is the sole place that composes it with its persistence-backed cache reader/writer and the
+// shared circuit breaker (keyed by source name "Ollama", same IAsyncCircuitBreaker instance every
+// other adapter uses). Base URL defaults to the in-cluster service name, never a LAN IP; tests use
+// http://ollama.example.invalid.
+builder.Services.AddSingleton(_ =>
+{
+    var section = builder.Configuration.GetSection("Arbitarr:Ai:Ollama");
+    var baseUrlRaw = section["BaseUrl"] ?? "http://ollama:11434";
+    var model = section["Model"] ?? "qwen2.5:7b-instruct-q4_K_M";
+    var keepAlive = section["KeepAlive"] ?? "-1";
+    return new OllamaOptions(new Uri(baseUrlRaw), model, keepAlive);
+});
+builder.Services.AddSingleton(sp =>
+{
+    var section = builder.Configuration.GetSection("Arbitarr:Ai");
+    var modelName = section["ModelName"] ?? sp.GetRequiredService<OllamaOptions>().Model;
+    var modelDigest = section["ModelDigest"] ?? "unknown";
+    var promptVersion = section["PromptVersion"] ?? "v1";
+    return new AiModelIdentity(modelName, modelDigest, promptVersion);
+});
+builder.Services.AddHttpClient(nameof(OllamaClient));
+builder.Services.AddScoped<IOllamaClient>(sp =>
+{
+    var options = sp.GetRequiredService<OllamaOptions>();
+    var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
+    var httpClient = httpClientFactory.CreateClient(nameof(OllamaClient));
+    var circuitBreaker = sp.GetRequiredService<IAsyncCircuitBreaker>();
+    return new OllamaClient(options, httpClient, circuitBreaker);
+});
+builder.Services.AddScoped<ReleaseClassifier>();
+builder.Services.AddScoped<IVerdictCacheReader, VerdictCacheReader>();
+builder.Services.AddScoped<IVerdictCacheWriter, VerdictCacheWriter>();
+builder.Services.AddScoped(sp => new ClassifierWorker(
+    sp.GetRequiredService<ReleaseClassifier>(),
+    sp.GetRequiredService<IVerdictCacheWriter>(),
+    sp.GetRequiredService<AiModelIdentity>(),
+    sourceName: "Ollama"));
+
+builder.Services.AddScoped<FilterStage>(sp => new FilterStage(
+    sp.GetRequiredService<FilterProfileLoader>(),
+    sp.GetRequiredService<SettingsReader>(),
+    sp.GetRequiredService<ArbitarrDbContext>(),
+    sp.GetRequiredService<TimeProvider>(),
+    sp.GetRequiredService<IVerdictCacheReader>(),
+    sp.GetRequiredService<AiModelIdentity>()));
 builder.Services.AddSingleton<InMemoryReleaseLookup>();
 builder.Services.AddSingleton<IReleaseLookup>(sp => sp.GetRequiredService<InMemoryReleaseLookup>());
 

@@ -13,6 +13,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Arbitarr.Core\Arbitarr.Core.csproj" />
     <ProjectReference Include="..\Arbitarr.Api\Arbitarr.Api.csproj" />
+    <ProjectReference Include="..\Arbitarr.Ai\Arbitarr.Ai.csproj" />
     <ProjectReference Include="..\Arbitarr.Data\Arbitarr.Data.csproj" />
     <ProjectReference Include="..\Arbitarr.Media\Arbitarr.Media.csproj" />
     <ProjectReference Include="..\Arbitarr.Sources.NzbHydra\Arbitarr.Sources.NzbHydra.csproj" />
