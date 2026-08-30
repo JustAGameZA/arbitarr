@@ -39,6 +39,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Arbitarr.Sources.NzbHydra",
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Arbitarr.Sources.NzbHydra.Tests", "tests\Arbitarr.Sources.NzbHydra.Tests\Arbitarr.Sources.NzbHydra.Tests.csproj", "{685285A0-C98C-4FFB-9FF4-0DE2EDA40933}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Arbitarr.Core.Identity.Tests", "tests\Arbitarr.Core.Identity.Tests\Arbitarr.Core.Identity.Tests.csproj", "{0E1DD84F-F9A9-4E2E-B154-5995638F1378}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -241,6 +243,18 @@ Global
 		{685285A0-C98C-4FFB-9FF4-0DE2EDA40933}.Release|x64.Build.0 = Release|Any CPU
 		{685285A0-C98C-4FFB-9FF4-0DE2EDA40933}.Release|x86.ActiveCfg = Release|Any CPU
 		{685285A0-C98C-4FFB-9FF4-0DE2EDA40933}.Release|x86.Build.0 = Release|Any CPU
+		{0E1DD84F-F9A9-4E2E-B154-5995638F1378}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0E1DD84F-F9A9-4E2E-B154-5995638F1378}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0E1DD84F-F9A9-4E2E-B154-5995638F1378}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{0E1DD84F-F9A9-4E2E-B154-5995638F1378}.Debug|x64.Build.0 = Debug|Any CPU
+		{0E1DD84F-F9A9-4E2E-B154-5995638F1378}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{0E1DD84F-F9A9-4E2E-B154-5995638F1378}.Debug|x86.Build.0 = Debug|Any CPU
+		{0E1DD84F-F9A9-4E2E-B154-5995638F1378}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0E1DD84F-F9A9-4E2E-B154-5995638F1378}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0E1DD84F-F9A9-4E2E-B154-5995638F1378}.Release|x64.ActiveCfg = Release|Any CPU
+		{0E1DD84F-F9A9-4E2E-B154-5995638F1378}.Release|x64.Build.0 = Release|Any CPU
+		{0E1DD84F-F9A9-4E2E-B154-5995638F1378}.Release|x86.ActiveCfg = Release|Any CPU
+		{0E1DD84F-F9A9-4E2E-B154-5995638F1378}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -262,5 +276,6 @@ Global
 		{24C294CF-65A8-4BF6-B0C2-F917F8097E69} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{5B8F3776-598A-4114-943A-FA32EA6FFA33} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{685285A0-C98C-4FFB-9FF4-0DE2EDA40933} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{0E1DD84F-F9A9-4E2E-B154-5995638F1378} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal
