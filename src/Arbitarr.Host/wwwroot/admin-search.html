@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Arbitarr — Ad Hoc Search</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>Arbitarr — Ad Hoc Search</h1>
+    <p class="subtitle">Admin-only. Requires the admin API key (D2). Not part of the read-only 7-lite dashboard (D1).</p>
+  </header>
+
+  <main>
+    <section id="search-form-panel">
+      <h2>Query</h2>
+      <div class="panel-body">
+        <form id="search-form">
+          <label>
+            Admin API Key
+            <input type="password" id="admin-key" autocomplete="off" required />
+          </label>
+          <label>
+            Query text (q)
+            <input type="text" id="q" />
+          </label>
+          <label>
+            TVDB ID
+            <input type="text" id="tvdbid" />
+          </label>
+          <label>
+            TMDB ID
+            <input type="text" id="tmdbid" />
+          </label>
+          <label>
+            Season
+            <input type="text" id="season" />
+          </label>
+          <label>
+            Episode
+            <input type="text" id="ep" />
+          </label>
+          <label>
+            Categories (comma-separated)
+            <input type="text" id="cat" placeholder="5030,5040" />
+          </label>
+
+          <!--
+            M7-1 (non-AI half): AC14b's synchronous-AI-arbitration opt-in is intentionally NOT wired
+            up here. It waits on M5 (the AI arbitration pipeline) landing first, and this page (like
+            AdHocSearchEndpoint) must never reference the Arbitarr.Ai project or its output (AC6a).
+            Left disabled and unchecked as a visible placeholder for that future wiring.
+          -->
+          <label class="ai-toggle-label">
+            <input type="checkbox" id="run-ai-sync" disabled />
+            Run AI arbitration synchronously (disabled — pending M5, AC14b)
+          </label>
+
+          <button type="submit">Search</button>
+        </form>
+      </div>
+    </section>
+
+    <section id="provenance-panel">
+      <h2>Provenance</h2>
+      <div class="panel-body" id="provenance-body"><p class="empty-text">No search run yet.</p></div>
+    </section>
+
+    <section id="results-panel">
+      <h2>Results</h2>
+      <div class="panel-body" id="results-body"><p class="empty-text">No search run yet.</p></div>
+    </section>
+  </main>
+
+  <script src="admin-search.js"></script>
+</body>
+</html>

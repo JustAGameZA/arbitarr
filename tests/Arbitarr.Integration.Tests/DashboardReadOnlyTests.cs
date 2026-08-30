@@ -144,10 +144,13 @@ public sealed class DashboardReadOnlyTests : IClassFixture<ArbitarrWebApplicatio
             .ToArray();
 
         // D1: 7-lite is dashboard + recent-searches log + read-only config viewer only — no
-        // interactive/ad-hoc search trigger. The only "search"-named surface allowed is the
-        // read-only recent-searches log.
+        // interactive/ad-hoc search trigger for the *unauthenticated* dashboard surface. M7-1 adds
+        // exactly one exception: an admin-gated (D2, AdminApiKeyFilter) ad-hoc search route for the
+        // admin-only dashboard extension — it is not reachable without the admin API key, so it does
+        // not weaken D1's read-only/no-auth guarantee for the public 7-lite routes. Any other
+        // "search"-named surface remains disallowed.
         Assert.DoesNotContain(routes, r => r is not null && r.Contains("search", StringComparison.OrdinalIgnoreCase)
-            && r != "/api/searches/recent");
+            && r != "/api/searches/recent" && r != "/api/admin/search");
     }
 
     public static IEnumerable<object[]> DashboardRoutesAndDisallowedMethods()
