@@ -40,9 +40,10 @@ public static class SearchEndpoint
         int? tvdbId = null,
         int? tmdbId = null,
         int? season = null,
-        int? episode = null)
+        int? episode = null,
+        string? clientName = null)
     {
-        var (result, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, cancellationToken).ConfigureAwait(false);
+        var (result, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, clientName, cancellationToken).ConfigureAwait(false);
         if (rateLimited)
         {
             var errorXml = TorznabXmlWriter.WriteError(RateLimitErrorCode, "Request limit reached");
@@ -69,9 +70,10 @@ public static class SearchEndpoint
         int? tvdbId = null,
         int? tmdbId = null,
         int? season = null,
-        int? episode = null)
+        int? episode = null,
+        string? clientName = null)
     {
-        var (result, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, cancellationToken).ConfigureAwait(false);
+        var (result, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, clientName, cancellationToken).ConfigureAwait(false);
         if (rateLimited)
         {
             var errorXml = NewznabXmlWriter.WriteError(RateLimitErrorCode, "Request limit reached");
@@ -96,6 +98,7 @@ public static class SearchEndpoint
         FilterStage filterStage,
         InMemoryReleaseLookup releaseLookup,
         RecentSearchLog recentSearchLog,
+        string? clientName,
         CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
@@ -113,7 +116,7 @@ public static class SearchEndpoint
 
         // Filter before anything downstream sees the set (M4-7): the recorded result count, the
         // download-proxy registrations and the rendered XML must all agree on the post-filter view.
-        var filtered = await filterStage.ApplyAsync(result.Releases, queryText ?? string.Empty, cancellationToken).ConfigureAwait(false);
+        var filtered = await filterStage.ApplyAsync(result.Releases, queryText ?? string.Empty, clientName, cancellationToken).ConfigureAwait(false);
 
         // Register only the post-filter set: an enforced-mode (shadow OFF) suppression is a deny,
         // full stop, so a withheld release must not remain resolvable via /download/{proxyGuid}.

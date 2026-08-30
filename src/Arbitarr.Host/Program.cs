@@ -91,6 +91,7 @@ builder.Services.AddScoped<RefreshFetcher>(sp =>
     (_, entry, cancellationToken) => sp.GetRequiredService<SearchResultRefresher>().RefreshAsync(entry, cancellationToken));
 builder.Services.AddScoped<PaginationSnapshotService>();
 builder.Services.AddScoped<FilterProfileLoader>();
+builder.Services.AddScoped<ApiKeyProfileResolver>();
 builder.Services.AddScoped<SettingsReader>();
 builder.Services.AddScoped<FilterStage>();
 
@@ -188,7 +189,7 @@ app.MapGet("/torznab/api", async (
     HttpRequest request,
     CancellationToken cancellationToken) =>
 {
-    var (_, apiKeyError) = ApiKeyValidator.Validate(apikey, apiKeyResolver, isTorznab: true);
+    var (clientContext, apiKeyError) = ApiKeyValidator.Validate(apikey, apiKeyResolver, isTorznab: true);
     if (apiKeyError is not null)
     {
         return apiKeyError;
@@ -216,7 +217,8 @@ app.MapGet("/torznab/api", async (
         IdParamClamp.ClampProviderId(tvdbid),
         IdParamClamp.ClampProviderId(tmdbid),
         IdParamClamp.ClampSeason(season),
-        IdParamClamp.ClampEpisode(ep)).ConfigureAwait(false);
+        IdParamClamp.ClampEpisode(ep),
+        clientContext?.Name).ConfigureAwait(false);
 })
     .WithClassification(RouteClassification.PublicRead);
 
@@ -242,7 +244,7 @@ app.MapGet("/newznab/api", async (
     HttpRequest request,
     CancellationToken cancellationToken) =>
 {
-    var (_, apiKeyError) = ApiKeyValidator.Validate(apikey, apiKeyResolver, isTorznab: false);
+    var (clientContext, apiKeyError) = ApiKeyValidator.Validate(apikey, apiKeyResolver, isTorznab: false);
     if (apiKeyError is not null)
     {
         return apiKeyError;
@@ -270,7 +272,8 @@ app.MapGet("/newznab/api", async (
         IdParamClamp.ClampProviderId(tvdbid),
         IdParamClamp.ClampProviderId(tmdbid),
         IdParamClamp.ClampSeason(season),
-        IdParamClamp.ClampEpisode(ep)).ConfigureAwait(false);
+        IdParamClamp.ClampEpisode(ep),
+        clientContext?.Name).ConfigureAwait(false);
 })
     .WithClassification(RouteClassification.PublicRead);
 
