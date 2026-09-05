@@ -1,0 +1,110 @@
+/*
+ * Arbitarr theme — the *arr shell palette. NORMATIVE.
+ *
+ * This file is the ONLY legitimate home for colour literals in the frontend.
+ * Everything else references var(--token); the AC3 CI guard greps component
+ * stylesheets for hex/rgb()/hsl() literals and excludes only this file.
+ *
+ * The values below are pinned, not indicative. "*arr chrome" is the reason this
+ * work exists and it has already been lost once between planning sessions --
+ * the earlier gates were all satisfiable by a UI that looks nothing like Sonarr,
+ * because the colour grep never scanned the file holding the palette, so
+ * `--bg-app: #ffffff` passed every check. The cure is pinned values plus
+ * falsifiable assertions: AC-CHROME reads these back RESOLVED out of jsdom and
+ * asserts the literals and the contrast ratios.
+ *
+ * Changing a value here is allowed, but the change must move the token and its
+ * assertion in ONE commit. That coupling is what makes the requirement
+ * un-losable.
+ *
+ * Visual reference: Sonarr v4's Series -> Library index at desktop width.
+ * Radarr/Prowlarr/Lidarr are visually the same shell, so matching one matches
+ * the family.
+ *
+ * Dark theme only. No toggle, no prefers-color-scheme: light block, no
+ * [data-theme] switch -- a CI guard rejects all three, because any of them
+ * would let the shell render light without another gate noticing.
+ */
+
+:root {
+  /* --- Grounds, darkest to lightest ------------------------------------ */
+  /* Page ground, behind everything. Relative luminance ~= 0.0125. */
+  --bg-app: #1a1d21;
+  /* Sidebar column. */
+  --bg-sidebar: #20232a;
+  /* Content cards / panels — one step lighter than the app ground. */
+  --bg-panel: #252930;
+  /* Table zebra rows, hover surfaces. */
+  --bg-panel-alt: #2c313a;
+  /* Hairline separators. */
+  --border: #3a4048;
+
+  /* --- Foregrounds ------------------------------------------------------ */
+  /* Body text. Contrast on --bg-app ~= 14.5 : 1. */
+  --fg-primary: #e8eaed;
+  /* Secondary text, labels. Contrast on --bg-app ~= 6.4 : 1. */
+  --fg-muted: #9aa0a8;
+
+  /* --- Accent ----------------------------------------------------------- */
+  /*
+   * Active nav row, focus ring, primary button. A generic desaturated blue:
+   * deliberately NOT Sonarr's #3a3f51-family brand blue and not Radarr yellow,
+   * per the "neutral accent" constraint.
+   */
+  --accent: #5a9fd4;
+  --accent-hover: #74b3e0;
+
+  /* --- Status ----------------------------------------------------------- */
+  /* The conventional bootstrap-lineage triad *arr itself uses. */
+  --ok: #5cb85c;
+  --warn: #e0a030;
+  --danger: #d9534f;
+
+  /* --- Layout constants -------------------------------------------------- */
+  /*
+   * Pinned so the chrome assertions can test against a number rather than
+   * against a feeling. The shell stylesheet must reference these through
+   * var(); a hard-coded length there is a CI failure.
+   */
+  --sidebar-width: 210px;
+  --topbar-height: 48px;
+  --content-max-width: 1440px;
+}
+
+/* Global reset — minimal, and the only place bare element selectors appear. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg-app);
+  color: var(--fg-primary);
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--accent-hover);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

@@ -61,6 +61,166 @@ jobs:
             exit 1
           fi
 
+      # ----------------------------------------------------------------------
+      # Frontend (src/Arbitarr.Web). These steps sit AFTER the .NET test-count
+      # floor and BEFORE the tree-wide secret/topology guard deliberately: the
+      # backend floor above parses executed="N" out of .trx, the frontend floor
+      # below parses numPassedTests out of the Vitest JSON report. Two files,
+      # two parsers, so neither suite's count can mask a collapse in the other.
+      # ----------------------------------------------------------------------
+      - name: Setup Node
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: src/Arbitarr.Web/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: src/Arbitarr.Web
+        # `npm ci` (not `npm install`) so the committed lockfile is authoritative
+        # and CI fails on drift instead of silently resolving new versions.
+        run: npm ci
+
+      - name: Frontend typecheck
+        working-directory: src/Arbitarr.Web
+        run: npm run typecheck
+
+      - name: Frontend lint
+        working-directory: src/Arbitarr.Web
+        run: npm run lint
+
+      - name: Frontend chrome guards
+        shell: bash
+        working-directory: src/Arbitarr.Web
+        run: |
+          set -euo pipefail
+
+          fail=0
+
+          # See the tree-wide guard below for why a bare `|| true` is unsafe here:
+          # it would mask a broken grep (exit >=2) as "no matches found".
+          run_grep() {
+            local out status
+            out=$("$@") ; status=$?
+            if [ "$status" -gt 1 ]; then
+              echo "BLOCKED: guard command failed (exit $status): $*" >&2
+              exit 1
+            fi
+            printf '%s' "$out"
+          }
+
+          # --- AC3: colour literals live ONLY in theme.css ---------------------
+          # Component stylesheets must reference var(--token). A hard-coded hex,
+          # rgb() or hsl() in a *.module.css is how the pinned palette gets
+          # bypassed one component at a time until the shell no longer matches
+          # *arr while every other gate stays green.
+          colour_pattern='#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\('
+          hits=''
+          while IFS= read -r f; do
+            stripped=$(perl -0777 -pe 's{/\*.*?\*/}{ $& =~ tr/\n//cdr }ges' "$f")
+            m=$(printf '%s' "$stripped" | grep -nE "$colour_pattern" || true)
+            if [ -n "$m" ]; then
+              hits="${hits}${f}:${m}"$'\n'
+            fi
+          done < <(find src -type f -name '*.module.css')
+          if [ -n "$hits" ]; then
+            echo "BLOCKED (AC3): colour literal in a component stylesheet. Use var(--token) from src/styles/theme.css:" >&2
+            echo "$hits" >&2
+            fail=1
+          fi
+
+          # --- Dark theme is not optional --------------------------------------
+          # A light-mode block or a theme switch would let the shell render light
+          # without AC-CHROME noticing: those assertions read :root, which a
+          # media query or [data-theme] override can shadow at runtime.
+          # Comments are stripped before scanning. theme.css documents the rule
+          # ("no prefers-color-scheme: light block, no [data-theme] switch") and a
+          # naive grep matches that prose and blocks on its own documentation. The
+          # cure is to scan declarations rather than to weaken the pattern -- a
+          # looser pattern would let a real light-mode block through, which is the
+          # entire failure this guard exists to prevent.
+          theme_pattern='prefers-color-scheme[[:space:]]*:[[:space:]]*light|\[data-theme'
+          hits=''
+          while IFS= read -r f; do
+            # Strip /* ... */ (including multi-line) and // comments, keeping line
+            # numbering intact so the report still points at a real line.
+            stripped=$(perl -0777 -pe 's{/\*.*?\*/}{ $& =~ tr/\n//cdr }ges; s{//.*$}{}gm' "$f")
+            m=$(printf '%s' "$stripped" | grep -nE "$theme_pattern" || true)
+            if [ -n "$m" ]; then
+              hits="${hits}${f}:${m}"$'\n'
+            fi
+          done < <(find src -type f \( -name '*.css' -o -name '*.ts' -o -name '*.tsx' \))
+          if [ -n "$hits" ]; then
+            echo "BLOCKED: light-theme block or theme switch found. The shell is dark-only:" >&2
+            echo "$hits" >&2
+            fail=1
+          fi
+
+          # --- The admin key is session-only ------------------------------------
+          # It must live in the Zustand store and nowhere persistent. Web storage
+          # survives tab close and is readable by any script on the origin.
+          hits=$(run_grep grep -rInE 'localStorage|sessionStorage' src)
+          if [ -n "$hits" ]; then
+            echo "BLOCKED: web storage referenced in src/. The admin key is session-only (Zustand):" >&2
+            echo "$hits" >&2
+            fail=1
+          fi
+
+          # --- theme.css must actually define the palette ------------------------
+          # Guards the guards: if theme.css were emptied or renamed, every AC-CHROME
+          # read would throw on an empty token and the failure would look like a
+          # broken harness rather than a deleted palette.
+          for token in --bg-app --bg-sidebar --bg-panel --border --fg-primary --accent; do
+            if ! grep -qE "^[[:space:]]*${token}:" src/styles/theme.css; then
+              echo "BLOCKED: ${token} is not defined in src/styles/theme.css." >&2
+              fail=1
+            fi
+          done
+
+          if [ "$fail" -ne 0 ]; then
+            exit 1
+          fi
+          echo "Frontend chrome guards passed."
+
+      - name: Frontend tests
+        working-directory: src/Arbitarr.Web
+        run: npm test
+
+      - name: Enforce frontend test-count floor
+        shell: bash
+        working-directory: src/Arbitarr.Web
+        run: |
+          set -euo pipefail
+
+          floor_file="../../tests/frontend-test-count-floor.txt"
+          if [ ! -f "$floor_file" ]; then
+            echo "BLOCKED: $floor_file is missing." >&2
+            exit 1
+          fi
+          floor=$(tr -d '[:space:]' < "$floor_file")
+
+          report="vitest-report.json"
+          if [ ! -f "$report" ]; then
+            echo "BLOCKED: $report is missing -- the test step must emit the JSON reporter." >&2
+            exit 1
+          fi
+
+          # numPassedTests, not numTotalTests: a skipped or todo test must not be
+          # able to hold the floor up without actually running. node is already on
+          # PATH from the Setup Node step, so parse with it rather than with a
+          # regex over JSON.
+          total=$(node -p "require('./${report}').numPassedTests")
+          if [ -z "$total" ] || [ "$total" = "undefined" ]; then
+            echo "BLOCKED: could not read numPassedTests from $report." >&2
+            exit 1
+          fi
+
+          echo "Frontend passed test count: $total (floor: $floor)"
+          if [ "$total" -lt "$floor" ]; then
+            echo "BLOCKED: frontend passed test count ($total) is below the committed floor ($floor) in tests/frontend-test-count-floor.txt." >&2
+            exit 1
+          fi
+
       - name: Tree-wide secret/topology guard
         shell: bash
         run: |
