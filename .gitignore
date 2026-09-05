@@ -37,3 +37,11 @@ infra.env
 
 # Test result artifacts (.trx logger output)
 TestResults/
+
+# Frontend toolchain
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+coverage/
+vitest-report.json
