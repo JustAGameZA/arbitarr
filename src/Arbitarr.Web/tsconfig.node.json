@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowSyntheticDefaultImports": true,
+    "isolatedModules": true,
+    /*
+     * composite is mandatory because tsconfig.json lists this file under
+     * "references": TS6306 rejects a referenced project without it. composite
+     * in turn forbids noEmit (TS6310), so emit is neutered via
+     * emitDeclarationOnly with both outputs parked under node_modules/.tmp --
+     * already ignored, and never part of the build. Nothing here is meant to
+     * produce artefacts: Vite compiles vite.config.ts itself, and this project
+     * exists only so `tsc --noEmit` typechecks the config file too.
+     */
+    "composite": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "./node_modules/.tmp/tsconfig-node-types",
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+  },
+  "include": ["vite.config.ts"]
+}
