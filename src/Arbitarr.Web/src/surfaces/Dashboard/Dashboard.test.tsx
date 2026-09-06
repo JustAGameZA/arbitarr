@@ -169,6 +169,18 @@ describe('Dashboard', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('shows the empty state for recent searches when none are recorded', async () => {
+    mockApi({
+      ...allOk,
+      '/api/searches/recent': { body: [] },
+    });
+    renderSurface(<DashboardPage />);
+
+    expect(
+      await screen.findByText('No searches recorded yet. Entries appear here once a search runs.'),
+    ).toBeInTheDocument();
+  });
+
   it('renders "Not set" for shadow mode when the field is null', async () => {
     // The response contract still permits shadowMode: null (bool?) even though a real deployment
     // never sends it (D3 default-ON) -- this keeps that branch covered per #42.

@@ -204,7 +204,13 @@ describe('System', () => {
     });
     renderSurface(<SystemPage />);
 
-    expect(await screen.findByText('No suppressions recorded yet.')).toBeInTheDocument();
-    expect(screen.getByText('No served ages recorded yet.')).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        'No suppressions recorded yet. Entries appear here once a rule or the AI layer acts on a release.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('No served ages recorded yet. Entries appear here once a search serves a cached result.'),
+    ).toBeInTheDocument();
   });
 });

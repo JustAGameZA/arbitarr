@@ -201,7 +201,9 @@ export default function DashboardPage() {
           <QueryState isPending={searches.isPending} error={searches.error} data={searches.data}>
             {(entries) =>
               entries.length === 0 ? (
-                <p className={styles.empty}>No searches recorded yet.</p>
+                <p className={styles.empty}>
+                  No searches recorded yet. Entries appear here once a search runs.
+                </p>
               ) : (
                 <div className={styles.tableScroll}>
                   <table className={styles.table}>
