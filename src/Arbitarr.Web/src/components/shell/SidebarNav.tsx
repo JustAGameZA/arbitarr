@@ -6,6 +6,7 @@ import {
   faMagnifyingGlass,
   faFilter,
   faBan,
+  faClockRotateLeft,
   faGear,
   faServer,
   type IconDefinition,
@@ -21,19 +22,31 @@ interface NavEntry {
 }
 
 /**
- * The six addressable nav entries (AC5), in this order.
+ * The seven addressable nav entries (AC5), in this order.
  *
- * Six, not seven: the five product surfaces are Dashboard, Search, Rules,
- * Settings and Suppressions, and System is the one additional section. An
- * earlier draft counted Settings and System both as product surfaces and again
- * as sections. SidebarNav.test.tsx asserts the count exactly -- not `>=` -- so
- * a dropped entry and a smuggled-in one both fail.
+ * SEVEN as of #55, which added Activity. It was six before that: the five
+ * product surfaces were Dashboard, Search, Rules, Suppressions and Settings,
+ * with System as the one additional section. An earlier draft counted Settings
+ * and System both as product surfaces and again as sections, which is why this
+ * comment states the accounting rather than just asserting a number.
+ *
+ * Activity is a product surface, not a section: it answers an operator question
+ * ("what did Arbitarr do, and why") the way Suppressions does, rather than
+ * being configuration or diagnostics. It sits beside Suppressions because the
+ * two read the same decisions from opposite ends -- Suppressions lists what was
+ * withheld, Activity lists everything that happened, those included.
+ *
+ * SidebarNav.test.tsx asserts the count exactly -- not `>=` -- so a dropped
+ * entry and a smuggled-in one both fail. A new surface means updating that test,
+ * routes.tsx and routes.titles.ts in the same change; this comment exists to
+ * catch the case where someone adds an entry here and nowhere else.
  */
 export const NAV_ENTRIES: readonly NavEntry[] = [
   { label: 'Dashboard', to: '/', icon: faGauge },
   { label: 'Search', to: '/search', icon: faMagnifyingGlass },
   { label: 'Rules', to: '/rules', icon: faFilter },
   { label: 'Suppressions', to: '/suppressions', icon: faBan },
+  { label: 'Activity', to: '/activity', icon: faClockRotateLeft },
   { label: 'Settings', to: '/settings', icon: faGear, group: 'Settings' },
   { label: 'System', to: '/system', icon: faServer, group: 'System' },
 ];

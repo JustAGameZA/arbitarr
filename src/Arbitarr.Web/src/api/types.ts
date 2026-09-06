@@ -298,3 +298,47 @@ export interface StalenessEnvelopeResponse {
   refresh_lead_plus_worker_cycle_interval: string;
   serve_until: string;
 }
+
+/**
+ * ActivityEndpoint.cs — one row of GET /api/activity (#55).
+ *
+ * `occurredAt` is an ISO-8601 instant WITH its offset (e.g. "2026-09-07T14:03:11+00:00"),
+ * serialized from a C# DateTimeOffset. The offset is part of the contract, not incidental:
+ * AC9 requires timestamps to be unambiguous about their timezone, so this string must never
+ * be truncated to a bare local-looking datetime on its way to the surface.
+ */
+export interface ActivityEntry {
+  occurredAt: string;
+  kind: ActivityKind;
+  summary: string;
+  reason: string | null;
+  sourceDisplayName: string | null;
+  detail: string | null;
+}
+
+/**
+ * EventKind.cs, camelCased on the wire.
+ *
+ * These are the five kinds the store records — deliberately not "every event", which would
+ * make the surface a log file with extra steps (plan §3.1). `decision` rows are the ones
+ * #54's review queue reads.
+ */
+export type ActivityKind =
+  | 'decision'
+  | 'workerCycle'
+  | 'snapshotRefreshed'
+  | 'searchServed'
+  | 'sourceFailed';
+
+/**
+ * ActivityEndpoint.cs — response body of GET /api/activity.
+ *
+ * `nextCursor` is an OPAQUE row position and null on the last page. It is deliberately not a
+ * page number or an offset: the store grows at the same end it is read from, so an offset would
+ * skip and repeat rows as events arrive mid-page (AC8). Pass it back verbatim as `?cursor=`;
+ * never compute one, and never treat it as an index.
+ */
+export interface ActivityPageResponse {
+  events: ActivityEntry[];
+  nextCursor: number | null;
+}

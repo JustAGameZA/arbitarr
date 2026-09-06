@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Arbitarr.Api.Rendering;
+using Arbitarr.Core.Caching;
 using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Sources;
 using Microsoft.AspNetCore.Http;
@@ -35,6 +36,7 @@ public static class SearchEndpoint
         FilterStage filterStage,
         InMemoryReleaseLookup releaseLookup,
         RecentSearchLog recentSearchLog,
+        IEventSink eventSink,
         HttpRequest request,
         CancellationToken cancellationToken,
         int? tvdbId = null,
@@ -43,7 +45,7 @@ public static class SearchEndpoint
         int? episode = null,
         string? clientName = null)
     {
-        var (result, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, clientName, cancellationToken).ConfigureAwait(false);
+        var (result, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, eventSink, clientName, cancellationToken).ConfigureAwait(false);
         if (rateLimited)
         {
             var errorXml = TorznabXmlWriter.WriteError(RateLimitErrorCode, "Request limit reached");
@@ -65,6 +67,7 @@ public static class SearchEndpoint
         FilterStage filterStage,
         InMemoryReleaseLookup releaseLookup,
         RecentSearchLog recentSearchLog,
+        IEventSink eventSink,
         HttpRequest request,
         CancellationToken cancellationToken,
         int? tvdbId = null,
@@ -73,7 +76,7 @@ public static class SearchEndpoint
         int? episode = null,
         string? clientName = null)
     {
-        var (result, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, clientName, cancellationToken).ConfigureAwait(false);
+        var (result, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, eventSink, clientName, cancellationToken).ConfigureAwait(false);
         if (rateLimited)
         {
             var errorXml = NewznabXmlWriter.WriteError(RateLimitErrorCode, "Request limit reached");
@@ -98,6 +101,7 @@ public static class SearchEndpoint
         FilterStage filterStage,
         InMemoryReleaseLookup releaseLookup,
         RecentSearchLog recentSearchLog,
+        IEventSink eventSink,
         string? clientName,
         CancellationToken cancellationToken)
     {
@@ -137,6 +141,45 @@ public static class SearchEndpoint
             ResultCount: filtered.Count,
             ElapsedMilliseconds: stopwatch.Elapsed.TotalMilliseconds,
             Band: result.CacheBand.ToString().ToLowerInvariant()));
+
+        // #55 step 2, AC3: the durable counterpart to the RecentSearchLog line above. That log is a
+        // process-lifetime ring buffer and forgets everything on restart (see its own doc comment,
+        // and System.tsx:123-124 on the pipeline counters); this row survives one, which is the
+        // visible difference the Activity surface exists to provide (AC4).
+        //
+        // AC3 asks whether a search was served from cache or from a live query. Deciding that needs
+        // BOTH of the two caches in front of this line to be consulted, and neither CacheBand nor
+        // CacheAge answers it alone:
+        //
+        //  - CacheBand.Fresh means "a fresh cache hit OR a just-completed upstream fetch" (see
+        //    CacheStageResult's doc comment). Branching on the band alone therefore labels every
+        //    live fan-out "served from cache" — an integration test caught exactly that here.
+        //  - CacheAge separates those two (a served entry carries its real age; a just-completed
+        //    fetch is stamped TimeSpan.Zero), but only for the two-age cache. It is blind to the
+        //    pagination snapshot in front of it, which REPLAYS the age of whichever request
+        //    materialized the snapshot — so a snapshot hit built from a live fetch also reports
+        //    Age=0 despite making no upstream call of its own.
+        //
+        // Hence ServedFromSnapshot, which the snapshot layer sets because it is the only layer that
+        // knows. Checked FIRST: a snapshot hit is cache-served regardless of the provenance it
+        // happens to be replaying. StaleButValid stays its own case — served immediately from cache
+        // with a refresh attempted alongside, which is honestly neither of the other two.
+        //
+        // The query text goes in the REASON, following the RecentSearchLog precedent directly above:
+        // the PARSED query term, never the raw HttpRequest, because the client's apikey travels on
+        // that request's query string and /api/activity is un-gated exactly as
+        // /api/searches/recent is.
+        var servedWithoutUpstreamCall = result.ServedFromSnapshot || result.CacheAge > TimeSpan.Zero;
+        await eventSink.RecordAsync(
+            RecordedEventKind.SearchServed,
+            summary: result.CacheBand switch
+            {
+                CacheBand.StaleButValid => $"Search served from cache while refreshing ({filtered.Count} results)",
+                _ when servedWithoutUpstreamCall => $"Search served from cache ({filtered.Count} results)",
+                _ => $"Search served from a live query ({filtered.Count} results)",
+            },
+            reason: $"Query '{query.QueryText ?? string.Empty}' ({searchType ?? "search"}), {stopwatch.Elapsed.TotalMilliseconds:F0}ms",
+            cancellationToken: cancellationToken).ConfigureAwait(false);
 
         return (result with { Releases = filtered }, false);
     }

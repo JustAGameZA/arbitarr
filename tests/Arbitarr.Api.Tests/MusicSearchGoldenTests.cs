@@ -89,6 +89,7 @@ public class MusicSearchGoldenTests : IDisposable
             filterStage,
             releaseLookup,
             new RecentSearchLog(),
+            NullEventSink.Instance,
             httpContext.Request,
             CancellationToken.None);
 
@@ -137,6 +138,7 @@ public class MusicSearchGoldenTests : IDisposable
             filterStage,
             releaseLookup,
             new RecentSearchLog(),
+            NullEventSink.Instance,
             httpContext.Request,
             CancellationToken.None);
 

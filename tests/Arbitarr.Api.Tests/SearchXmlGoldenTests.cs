@@ -134,6 +134,7 @@ public sealed class SearchXmlGoldenTests : IDisposable
             filterStage,
             releaseLookup,
             new RecentSearchLog(),
+            NullEventSink.Instance,
             httpContext.Request,
             CancellationToken.None);
 

@@ -193,7 +193,9 @@ builder.Services.AddHostedService(sp => new RefreshWorker(
     sp.GetRequiredService<TimeProvider>(),
     sp.GetRequiredService<ResolvedSourceConfiguration>().SourceName ?? "NZBHydra2",
     logger: sp.GetRequiredService<ILogger<RefreshWorker>>(),
-    health: sp.GetRequiredService<IRefreshWorkerHealth>()));
+    health: sp.GetRequiredService<IRefreshWorkerHealth>(),
+    // #55 step 2: the worker records what each cycle actually did, and any source failure it hit.
+    eventSink: sp.GetRequiredService<IEventSink>()));
 
 // AI layer (M5, Step 6): Arbitarr.Ai has zero references to Arbitarr.Data/Arbitarr.Media (AC6a,
 // enforced by Arbitarr.Architecture.Tests.AiMediaIsolationTests/DependencyDirectionTests) — Host
@@ -252,7 +254,10 @@ builder.Services.AddScoped<FilterStage>(sp => new FilterStage(
     sp.GetRequiredService<TimeProvider>(),
     sp.GetRequiredService<IVerdictCacheReader>(),
     sp.GetRequiredService<AiModelIdentity>(),
-    sp.GetRequiredService<ObservabilityCounters>()));
+    sp.GetRequiredService<ObservabilityCounters>(),
+    // #55 step 2: one Decision event per suppression, alongside (never instead of) the append-only
+    // suppression audit log this stage already writes. These are the rows #54 hangs its verdict on.
+    sp.GetRequiredService<IEventSink>()));
 
 builder.Services.AddSingleton<InMemoryReleaseLookup>();
 
@@ -306,6 +311,7 @@ builder.Services.AddScoped(sp => new SettingsRepository(
 // admin CRUD surface (AdminSourceEndpoints).
 builder.Services.AddScoped<SourceRepository>();
 
+
 // #53 stage 53c: the §3.3 connectivity test's HTTP client. AllowAutoRedirect is disabled for the
 // same SSRF reason as the NzbHydraSource client above — a probed source could otherwise 30x us to
 // an arbitrary host and we would issue the request (carrying that source's API key) before anything
@@ -314,10 +320,19 @@ builder.Services.AddScoped<SourceRepository>();
 builder.Services.AddHttpClient<SourceConnectivityProber>()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 
-// #55 step 1 (foundation shared with #54): the shared event store. Deliberately unread/unwritten
-// until the emission stage (#55 step 2 / #54 step 2) — registered now so those stages can depend on
-// it without another Host change, matching #53 stage 53a's posture for SourceRepository above.
+
+// #55 (foundation shared with #54): the shared event store. Step 1 registered this while nothing
+// read or wrote it; steps 2-7 now do both — ScopedEventSink below writes through it, and
+// ActivityEndpoint reads through it. Still the ONE store for both issues (plan §2): #54 adds a
+// nullable review verdict to the Decision rows here rather than a second table.
 builder.Services.AddScoped<Arbitarr.Data.Events.EventRepository>();
+
+// #55 step 2: the emission seam. Singleton because its consumers are singletons (the refresh
+// worker) and the request pipeline alike; it creates its own scope per event because
+// EventRepository wraps the scoped DbContext, which is not thread-safe. Registered against the
+// Arbitarr.Core interface so Arbitarr.Core and Arbitarr.Api can emit without referencing
+// Arbitarr.Data -- CoreIsolationTests requires Core to reference no other Arbitarr project.
+builder.Services.AddSingleton<Arbitarr.Core.Diagnostics.IEventSink, Arbitarr.Host.Diagnostics.ScopedEventSink>();
 
 // M7-3a: schedules MaintenanceJob on SettingKey.MaintenanceJobInterval. Unlike the RefreshWorker
 // options above, the interval is the one setting explicitly permitted to require a restart to take
@@ -389,6 +404,10 @@ StatusEndpoint.Map(app);
 RecentSearchesEndpoint.Map(app);
 EffectiveConfigEndpoint.Map(app);
 HealthStalenessEndpoint.Map(app);
+// #55 step 3: the paged, filterable read over the shared event store. PublicRead per plan §3.2,
+// now settled rather than provisional -- #59 closed with D2 unamended (the admin key gates
+// mutating actions; reading is not one). See ActivityEndpoint's own note.
+ActivityEndpoint.Map(app);
 Arbitarr.Api.SystemInfo.BuildInfoEndpoint.Map(app);
 AdminPingEndpoint.Map(app);
 ObservabilityEndpoint.Map(app);
@@ -418,6 +437,7 @@ app.MapGet("/torznab/api", async (
     FilterStage filterStage,
     InMemoryReleaseLookup releaseLookup,
     RecentSearchLog recentSearchLog,
+    Arbitarr.Core.Diagnostics.IEventSink eventSink,
     IReadOnlyList<IUpstreamSource> sources,
     HttpRequest request,
     CancellationToken cancellationToken) =>
@@ -445,6 +465,7 @@ app.MapGet("/torznab/api", async (
         filterStage,
         releaseLookup,
         recentSearchLog,
+        eventSink,
         request,
         cancellationToken,
         IdParamClamp.ClampProviderId(tvdbid),
@@ -473,6 +494,7 @@ app.MapGet("/newznab/api", async (
     FilterStage filterStage,
     InMemoryReleaseLookup releaseLookup,
     RecentSearchLog recentSearchLog,
+    Arbitarr.Core.Diagnostics.IEventSink eventSink,
     IReadOnlyList<IUpstreamSource> sources,
     HttpRequest request,
     CancellationToken cancellationToken) =>
@@ -500,6 +522,7 @@ app.MapGet("/newznab/api", async (
         filterStage,
         releaseLookup,
         recentSearchLog,
+        eventSink,
         request,
         cancellationToken,
         IdParamClamp.ClampProviderId(tvdbid),

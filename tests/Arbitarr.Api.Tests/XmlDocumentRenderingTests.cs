@@ -121,6 +121,7 @@ public sealed class XmlDocumentRenderingTests : IDisposable
             filterStage,
             releaseLookup,
             new RecentSearchLog(),
+            NullEventSink.Instance,
             httpContext.Request,
             CancellationToken.None);
 
@@ -156,6 +157,7 @@ public sealed class XmlDocumentRenderingTests : IDisposable
             filterStage,
             releaseLookup,
             new RecentSearchLog(),
+            NullEventSink.Instance,
             httpContext.Request,
             CancellationToken.None);
 

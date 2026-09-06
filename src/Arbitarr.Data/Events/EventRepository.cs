@@ -58,8 +58,10 @@ public sealed class EventRepository
         return entry;
     }
 
-    /// <summary>All events, most recent first. A placeholder read for this stage's own tests only —
-    /// the paged, filterable <c>GET /api/activity</c> query is a later stage's job.</summary>
+    /// <summary>All events, most recent first. A test-only read: it materializes the whole table,
+    /// so nothing that serves a request may call it. <see cref="QueryAsync"/> is the paged,
+    /// filterable read that <c>GET /api/activity</c> uses; this remains only because the retention
+    /// and validation tests assert over the complete table by design.</summary>
     public async Task<List<EventEntry>> GetAllAsync(CancellationToken cancellationToken)
     {
         // Ordering by OccurredAt (a DateTimeOffset) cannot be translated server-side by SQLite's EF
@@ -67,6 +69,68 @@ public sealed class EventRepository
         // so rows are fetched then sorted client-side.
         var all = await _dbContext.Events.AsNoTracking().ToListAsync(cancellationToken);
         return all.OrderByDescending(e => e.OccurredAt).ThenByDescending(e => e.Id).ToList();
+    }
+
+    /// <summary>
+    /// Reads one page of events, most recent first, filtered per <paramref name="query"/> (#55 step
+    /// 3 — the read side of the store this class already owns; no new table, column or kind).
+    ///
+    /// PAGING IS BY SEEK CURSOR, NOT OFFSET, AND THAT IS LOAD-BEARING (AC8). See
+    /// <see cref="EventQuery.Cursor"/> for the full reasoning; the short version is that this store
+    /// grows at the same end it is read from, so an offset-paged reader re-reads and skips rows
+    /// whenever an event arrives mid-page. Anchoring each page to the last <see cref="EventEntry.Id"/>
+    /// the caller actually received removes that class of defect by construction, rather than
+    /// leaving it to be noticed in production.
+    ///
+    /// Ordering is by Id, not OccurredAt, and the two are NOT interchangeable here even though the
+    /// rows are near-sorted by both. Id is unique and monotonic per insert, so it totally orders the
+    /// table and gives the cursor an unambiguous "strictly before this row" boundary. OccurredAt is
+    /// neither: several events can share one instant (the worker emits a handful within a cycle),
+    /// and a cursor on a non-unique key either drops the tied rows or repeats them. OccurredAt stays
+    /// the column the time FILTERS apply to, which is a different job.
+    /// </summary>
+    public async Task<EventPage> QueryAsync(EventQuery query, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        var limit = Math.Clamp(query.Limit, 1, EventQuery.MaxLimit);
+
+        var filtered = _dbContext.Events.AsNoTracking();
+
+        if (query.Kind is { } kind)
+        {
+            filtered = filtered.Where(e => e.Kind == kind);
+        }
+
+        if (query.Cursor is { } cursor)
+        {
+            filtered = filtered.Where(e => e.Id < cursor);
+        }
+
+        // The kind and cursor predicates translate to SQL, but the OccurredAt comparisons do not:
+        // this codebase's SQLite/EF Core combination cannot translate DateTimeOffset comparisons
+        // server-side, which is why GetAllAsync and PruneAsync (and MaintenanceJob before them) also
+        // compare that column client-side. Taking one row past the page is what reveals whether a
+        // further page exists without a second COUNT query.
+        var candidates = await filtered.ToListAsync(cancellationToken);
+
+        var page = candidates
+            .Where(e => query.Since is not { } since || e.OccurredAt >= since)
+            .Where(e => query.Until is not { } until || e.OccurredAt < until)
+            .OrderByDescending(e => e.Id)
+            .Take(limit + 1)
+            .ToList();
+
+        var hasMore = page.Count > limit;
+        if (hasMore)
+        {
+            page.RemoveAt(page.Count - 1);
+        }
+
+        // Null on the last page, so a caller stops rather than re-requesting forever.
+        var nextCursor = hasMore && page.Count > 0 ? page[^1].Id : (long?)null;
+
+        return new EventPage(page, nextCursor);
     }
 
     /// <summary>

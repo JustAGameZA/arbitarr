@@ -1,0 +1,27 @@
+/*
+ * Activity surface (#55) locals.
+ *
+ * Colour comes from var(--token) only; the AC3 guard rejects a hex/rgb()/hsl()
+ * literal in any *.module.css. Everything structural that already exists —
+ * panels, tables, badges, buttons, the empty state — comes from
+ * surface.module.css rather than being restated here.
+ */
+
+/* The paging row sits under the table, with the page indicator centred between
+   the two controls. */
+.paging {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+/*
+ * Timestamps are the column an operator scans down while comparing rows against
+ * a log, so they are tabular-figure aligned: proportional digits make two
+ * timestamps of equal length render at different widths and defeat that scan.
+ */
+.timestamp {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

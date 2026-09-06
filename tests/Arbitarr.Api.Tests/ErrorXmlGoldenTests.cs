@@ -180,6 +180,7 @@ public sealed class ErrorXmlGoldenTests : IDisposable
             filterStage,
             releaseLookup,
             new RecentSearchLog(),
+            NullEventSink.Instance,
             httpContext.Request,
             CancellationToken.None);
 
