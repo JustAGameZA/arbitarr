@@ -279,18 +279,6 @@ public sealed class AdminRuleEndpointsTests : IClassFixture<ArbitarrWebApplicati
         });
     }
 
-    [Theory]
-    [InlineData("/admin-rules.html")]
-    [InlineData("/admin-rules.js")]
-    public async Task Admin_rules_static_assets_are_served(string path)
-    {
-        using var client = _factory.CreateClient();
-
-        var response = await client.GetAsync(path);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    }
-
     private HttpClient AuthorizedClient()
     {
         var client = _factory.CreateClient();

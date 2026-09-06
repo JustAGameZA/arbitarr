@@ -11,3 +11,9 @@ Dockerfile
 **/dist/
 **/.vite/
 **/coverage/
+
+# Host-built SPA bundle. The image builds its own via the `web` stage and the build
+# stage rm -rf's this path before copying /web/dist over it, so shipping a developer's
+# local output in the context is pure waste. Deferred until Step 5b because until the
+# legacy static pages were deleted, this path also held tracked, shipped content.
+src/Arbitarr.Host/wwwroot/
