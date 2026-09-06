@@ -1,4 +1,5 @@
 using Arbitarr.Api.Routing;
+using Arbitarr.Data.Settings;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 
@@ -13,11 +14,13 @@ public static class EffectiveConfigEndpoint
 
     private static async Task<EffectiveConfigResponse> HandleAsync(
         EffectiveSettingsReader settingsReader,
+        SettingsReader reader,
         NzbHydraConfigurationStatus nzbHydraStatus,
         CancellationToken cancellationToken)
     {
         var settings = await settingsReader.LoadAsync(cancellationToken);
+        var shadowMode = await reader.GetShadowModeAsync(cancellationToken);
 
-        return ConfigProjection.Project(settings, nzbHydraStatus.IsConfigured);
+        return ConfigProjection.Project(settings, nzbHydraStatus.IsConfigured, shadowMode);
     }
 }

@@ -39,7 +39,20 @@ export class ApiError extends Error {
   }
 }
 
-/** Raised on 503: the server itself has no admin key configured yet. */
+/**
+ * Raised on 503: the server itself has no admin key configured yet.
+ *
+ * Since #43 a 503 additionally implies the request did NOT arrive from the
+ * local network -- the server admits unkeyed admin requests from loopback and
+ * private ranges precisely so a first key can be set, and only falls back to
+ * 503 for callers outside them. The message stays accurate either way (no key
+ * IS configured), so it is deliberately unchanged; the extra condition is not
+ * surfaced here because the browser cannot tell which side of that line it is
+ * on, and guessing in the copy would be worse than saying less.
+ *
+ * TopBar renders the actionable form of this state, which is reachable exactly
+ * when the bypass applied and the UI loaded at all.
+ */
 export class AdminKeyNotConfiguredError extends ApiError {
   constructor(body?: unknown) {
     super(503, 'No admin API key is configured on the server.', body);
