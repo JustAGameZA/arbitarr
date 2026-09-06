@@ -30,6 +30,20 @@ using Microsoft.EntityFrameworkCore;
 // other steps extend DI wiring and config binding here.
 var builder = WebApplication.CreateBuilder(args);
 
+// Issue #69: WebApplicationBuilder adds the Windows EventLog provider by default, and that provider
+// holds a process-wide native listener shared by every host in the process. Test runs boot and
+// dispose many hosts in the same process, so one host's disposal can tear the listener down while
+// another is still writing through it — surfacing as an ObjectDisposedException from
+// EventLogInternal, intermittently and only under load. Arbitarr never runs as a Windows service
+// (it ships as a Linux container), so nothing reads this sink in any supported deployment and
+// removing it costs no diagnostics. Removed here in the composition root rather than in each test
+// factory because there are five host-construction sites in the test suite and a sixth added later
+// would silently reintroduce the race. ClearProviders drops Console and Debug too, so both are
+// re-added explicitly below and container log output via docker logs is unchanged.
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+builder.Logging.AddDebug();
+
 // #53 stage 53b: NzbHydraSourceOptions requires a non-null absolute Uri, but a deployment can now
 // legitimately have *no* source configured (empty sources table, no environment configuration) —
 // a state the pre-53b env-var wiring could not represent, since it always defaulted to a URL. The
