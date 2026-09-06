@@ -297,6 +297,7 @@ HealthStalenessEndpoint.Map(app);
 AdminPingEndpoint.Map(app);
 ObservabilityEndpoint.Map(app);
 AdminSettingsEndpoints.Map(app);
+AdminSecurityEndpoints.Map(app);
 AdminRuleEndpoints.Map(app);
 AdHocSearchEndpoint.Map(app);
 MatchExplanationEndpoint.Map(app);

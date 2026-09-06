@@ -83,3 +83,20 @@
   border-color: var(--border);
   color: var(--fg-primary);
 }
+
+/*
+ * #43: the actionable half of the "server has no key" state. Styled as a link
+ * rather than a button because it navigates rather than mutating anything --
+ * the operator sets the key on the Settings surface, not from the top bar.
+ */
+.link {
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.link:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
