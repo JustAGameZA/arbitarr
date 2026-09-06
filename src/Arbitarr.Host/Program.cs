@@ -21,6 +21,7 @@ using Arbitarr.Data.Sources;
 using Arbitarr.Host;
 using Arbitarr.Host.Caching;
 using Arbitarr.Host.Security;
+using Arbitarr.Host.Sources;
 using Arbitarr.Sources.NzbHydra;
 using Microsoft.EntityFrameworkCore;
 
@@ -28,6 +29,16 @@ using Microsoft.EntityFrameworkCore;
 // reference source-adapter and other outer-layer projects (AC6). Currently minimal —
 // other steps extend DI wiring and config binding here.
 var builder = WebApplication.CreateBuilder(args);
+
+// #53 stage 53b: NzbHydraSourceOptions requires a non-null absolute Uri, but a deployment can now
+// legitimately have *no* source configured (empty sources table, no environment configuration) —
+// a state the pre-53b env-var wiring could not represent, since it always defaulted to a URL. The
+// adapter is still constructed in that case so the search pipeline shape is unchanged; it is simply
+// pointed at RFC 5737 TEST-NET-1, which is guaranteed non-routable, so any request fails fast and
+// UpstreamMergeStage degrades to an empty result set exactly as it does for an unreachable source.
+// The alternative — registering no IUpstreamSource at all — would change the DI shape and is 53d's
+// call to make once the UI can add sources.
+const string UnconfiguredSourceBaseUrl = "http://192.0.2.1:1";
 
 // Runtime state lives under /config (AC21), overridable via ARBITARR_CONFIG_DIR for local
 // dev/test so a real /config directory is never required outside the production container.
@@ -67,14 +78,34 @@ builder.Services.AddScoped(sp => new EffectiveSettingsReader(
     sp.GetRequiredService<ArbitarrDbContext>(),
     TimeSpan.FromMinutes(15)));
 
+// #53 stage 53b: the environment is now *seed material only*, not a permanent input. It is read
+// here (before Build(), where Configuration lives) but consulted exactly once — by SourceSeeder,
+// after migrations — to populate the sources table on a first run with an empty table. Thereafter
+// the database is authoritative and these values are inert. See SourceSeeder's doc comment for the
+// 2026-09-07 incident that made env-as-fallback untenable.
 var nzbHydraSection = builder.Configuration.GetSection("Arbitarr:Sources:NzbHydra");
-var nzbHydraBaseUrlRaw = nzbHydraSection["BaseUrl"] ?? "http://127.0.0.1:5076";
-var nzbHydraApiKey = nzbHydraSection["ApiKey"] ?? string.Empty;
-var nzbHydraSourceName = nzbHydraSection["SourceName"] ?? "NZBHydra2";
+var nzbHydraEnvironment = new EnvironmentSourceConfiguration(
+    BaseUrl: nzbHydraSection["BaseUrl"] ?? "http://127.0.0.1:5076",
+    ApiKey: nzbHydraSection["ApiKey"] ?? string.Empty,
+    SourceName: nzbHydraSection["SourceName"] ?? "NZBHydra2",
+    BaseUrlWasSupplied: nzbHydraSection["BaseUrl"] is not null,
+    SourceNameWasSupplied: nzbHydraSection["SourceName"] is not null);
+builder.Services.AddSingleton(nzbHydraEnvironment);
 
-// "Configured" means an API key is present (M1 wiring); the dashboard's effective-config view
-// (M2 §2, D1 surface 3) reports this without ever exposing the key itself.
-builder.Services.AddSingleton(new NzbHydraConfigurationStatus(IsConfigured: !string.IsNullOrWhiteSpace(nzbHydraApiKey)));
+// Populated once at startup by SourceSeeder, after Database.Migrate() — the database cannot be read
+// safely before that, which is exactly why the source configuration can no longer be baked into
+// these registrations the way the pre-53b env-var wiring did.
+var resolvedSourceConfiguration = new ResolvedSourceConfiguration();
+builder.Services.AddSingleton(resolvedSourceConfiguration);
+
+// "Configured" means an API key is present — the same predicate the pre-53b env-var wiring used, so
+// the /api/config/effective contract is unchanged (plan §3.4 defers that to 53d). Only the *source*
+// of the answer moved, from the environment to the resolved database row. Registered as a factory
+// rather than an instance because the resolution has not happened yet at this point in startup; the
+// singleton is first resolved on a request, long after SourceSeeder has run. The dashboard's
+// effective-config view (M2 §2, D1 surface 3) reports this without ever exposing the key itself.
+builder.Services.AddSingleton(sp => new NzbHydraConfigurationStatus(
+    IsConfigured: sp.GetRequiredService<ResolvedSourceConfiguration>().IsConfigured));
 
 // SEC-M1 (SSRF): the source adapter validates <link> origins itself, but disabling automatic
 // redirect-following here is defense in depth — an upstream response could otherwise 30x us to an
@@ -83,7 +114,13 @@ builder.Services.AddHttpClient<NzbHydraSource>()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddScoped<IUpstreamSource>(sp =>
 {
-    var options = new NzbHydraSourceOptions(new Uri(nzbHydraBaseUrlRaw), nzbHydraApiKey, nzbHydraSourceName);
+    // Read per scope from the startup-resolved configuration rather than captured from the
+    // environment at registration time.
+    var resolved = sp.GetRequiredService<ResolvedSourceConfiguration>();
+    var options = new NzbHydraSourceOptions(
+        new Uri(resolved.BaseUrl ?? UnconfiguredSourceBaseUrl),
+        resolved.ApiKey ?? string.Empty,
+        resolved.SourceName ?? "NZBHydra2");
     var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
     var httpClient = httpClientFactory.CreateClient(nameof(NzbHydraSource));
     var circuitBreaker = sp.GetRequiredService<IAsyncCircuitBreaker>();
@@ -127,10 +164,20 @@ builder.Services.AddSingleton<IRefreshWorkerHealth>(sp => sp.GetRequiredService<
 // SettingsRefreshWorkerOptionsSource), not captured once at startup from RefreshWorkerDefaults.
 builder.Services.AddScoped<IRefreshWorkerOptionsSource, SettingsRefreshWorkerOptionsSource>();
 
+// #53 stage 53b: the worker's source name now comes from the resolved (database-backed) source
+// rather than straight from configuration, so it stays consistent with the name the IUpstreamSource
+// above reports — the circuit breaker is keyed by this name, so a mismatch would silently split one
+// source's breaker state in two.
+//
+// ORDERING: this factory runs when the host starts its hosted services, which is *after* the
+// SourceSeeder call below (both happen before app.Run(), and the seeder runs earlier in the
+// startup sequence than IHostedService.StartAsync). RefreshWorker captures the name in its
+// constructor, so it must not be resolved any earlier than this. The literal fallback covers a
+// deployment with no source configured at all.
 builder.Services.AddHostedService(sp => new RefreshWorker(
     sp.GetRequiredService<IServiceScopeFactory>(),
     sp.GetRequiredService<TimeProvider>(),
-    builder.Configuration["Arbitarr:Sources:NzbHydra:SourceName"] ?? "NZBHydra2",
+    sp.GetRequiredService<ResolvedSourceConfiguration>().SourceName ?? "NZBHydra2",
     logger: sp.GetRequiredService<ILogger<RefreshWorker>>(),
     health: sp.GetRequiredService<IRefreshWorkerHealth>()));
 
@@ -288,6 +335,17 @@ using (var scope = app.Services.CreateScope())
             "schema version. Check that the /config volume is writable and not corrupted, then " +
             "restart. See the inner exception for the underlying EF Core/SQLite error.", ex);
     }
+
+    // #53 stage 53b: seed the sources table from the environment on a first run with an empty table,
+    // then resolve the source configuration in force from the database and publish it for the
+    // IUpstreamSource factory and NzbHydraConfigurationStatus registered above. This must run after
+    // Migrate() (the table may not exist before it) and before app.Run() (nothing may serve a request
+    // against an unresolved configuration). Reuses this same scope for both reasons.
+    await SourceSeeder.SeedAndResolveAsync(
+        dbContext,
+        resolvedSourceConfiguration,
+        nzbHydraEnvironment,
+        app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Arbitarr.Host.Sources"));
 }
 
 app.UseDefaultFiles();
