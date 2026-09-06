@@ -40,6 +40,12 @@ public sealed class ArbitarrDbContext : DbContext
 
     public DbSet<VerdictCacheEntry> VerdictCacheEntries => Set<VerdictCacheEntry>();
 
+    /// <summary>
+    /// The shared event store (#55 step 1 / #54's decision store — plan §2). Nothing writes to or
+    /// reads from this set outside of <see cref="Events.EventRepository"/> and its tests yet.
+    /// </summary>
+    public DbSet<EventEntry> Events => Set<EventEntry>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<MetadataCacheEntry>(entity =>
@@ -152,6 +158,18 @@ public sealed class ArbitarrDbContext : DbContext
             // M5 R17: rewritten title cached alongside the verdict. The bound is advisory on SQLite; it is
             // enforced in code by VerdictCacheLimits (producer + writer), which this must match.
             entity.Property(e => e.RewrittenTitle).HasMaxLength(VerdictCacheLimits.MaxRewrittenTitleLength);
+        });
+
+        modelBuilder.Entity<EventEntry>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            // Both consumers' expected access patterns: #55 pages recent events (optionally
+            // filtered by kind), #54 filters decisions specifically. A composite (Kind, OccurredAt)
+            // index serves both without needing two separate indexes.
+            entity.HasIndex(e => new { e.Kind, e.OccurredAt });
+            entity.Property(e => e.Summary).IsRequired().HasMaxLength(1024);
+            entity.Property(e => e.Reason).HasMaxLength(1024);
+            entity.Property(e => e.SourceDisplayName).HasMaxLength(256);
         });
     }
 }
