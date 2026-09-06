@@ -121,6 +121,16 @@ public sealed class AdminApiKeyRouteEnumerationTests : IClassFixture<ArbitarrWeb
         // #43: the bypass must not have opened the admin surface to the internet. This is the whole
         // route surface asserted from a public source address (RFC 5737 documentation address) on a
         // host with NO key configured — every one of them must still 503.
+        //
+        // SENDING NO BODY IS LOAD-BEARING — do not "improve" this sweep by giving each request a
+        // valid one. A required request body is model-bound BEFORE endpoint filters run, so a route
+        // declaring one short-circuits to 400 without AdminApiKeyFilter ever executing, letting an
+        // unauthenticated remote caller tell a malformed body (400) from a well-formed one (503).
+        // That is an information leak past the gate, and a bodiless request is exactly what exposes
+        // it: the 400 arrives instead of the 503 this asserts. It is how the leak was found in
+        // AdminSecurityEndpoints, whose body is therefore bound optionally and null-checked inside
+        // the handler. Send valid bodies here and every such route starts returning its real status,
+        // the assertion passes, and the guard silently stops guarding.
         await using var factory = new RemoteAddressWebApplicationFactory(IPAddress.Parse("192.0.2.10"));
         using var client = factory.CreateClient();
 
