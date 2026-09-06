@@ -112,6 +112,63 @@ describe('Dashboard', () => {
     expect(await screen.findByText('some series s01e02')).toBeInTheDocument();
   });
 
+  it('shows the not-configured empty state when nzbHydraConfigured is false and no sources reported', async () => {
+    mockApi({
+      ...allOk,
+      '/api/status': { body: { ...status, sources: [] } },
+      '/api/config/effective': { body: { ...config, nzbHydraConfigured: false } },
+    });
+    renderSurface(<DashboardPage />);
+
+    expect(
+      await screen.findByText(
+        'No sources configured. Add an NZBHydra2 URL and API key to start searching.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        'NZBHydra2 is configured. Sources appear here after the first search runs.',
+      ),
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows the configured-idle empty state when nzbHydraConfigured is true and no sources reported', async () => {
+    mockApi({
+      ...allOk,
+      '/api/status': { body: { ...status, sources: [] } },
+      '/api/config/effective': { body: { ...config, nzbHydraConfigured: true } },
+    });
+    renderSurface(<DashboardPage />);
+
+    expect(
+      await screen.findByText(
+        'NZBHydra2 is configured. Sources appear here after the first search runs.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        'No sources configured. Add an NZBHydra2 URL and API key to start searching.',
+      ),
+    ).not.toBeInTheDocument();
+  });
+
+  it('renders the sources table, not an empty message, when sources are present', async () => {
+    mockApi(allOk);
+    renderSurface(<DashboardPage />);
+
+    await screen.findByText('nzbhydra');
+    expect(
+      screen.queryByText(
+        'No sources configured. Add an NZBHydra2 URL and API key to start searching.',
+      ),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        'NZBHydra2 is configured. Sources appear here after the first search runs.',
+      ),
+    ).not.toBeInTheDocument();
+  });
+
   it('renders "Not set" for shadow mode when the field is null', async () => {
     // The response contract still permits shadowMode: null (bool?) even though a real deployment
     // never sends it (D3 default-ON) -- this keeps that branch covered per #42.
