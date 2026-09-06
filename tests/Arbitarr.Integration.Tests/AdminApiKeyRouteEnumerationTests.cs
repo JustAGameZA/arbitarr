@@ -27,6 +27,22 @@ namespace Arbitarr.Integration.Tests;
 ///     admin key at all.
 /// A future endpoint that is classified but not actually wired to the filter (or vice versa) fails
 /// this test without needing to be named here explicitly.
+///
+/// #43 STRENGTHENING. The local-network bootstrap bypass in <c>AdminApiKeyFilter</c> made this
+/// class's central assertion — "an unkeyed request is rejected" — newly ambiguous: an unkeyed
+/// request is now rejected only from an untrusted address, and allowed from a local one. Two things
+/// keep the sweep meaningful rather than vacuous:
+///
+///   1. Every sweep here seeds a key first, so it exercises the KEYED gate (401 on a missing or
+///      wrong key) and never touches the unconfigured branch at all. That is the property this
+///      class has always been about, and the bypass cannot affect it.
+///   2. The unconfigured branch is asserted explicitly and in BOTH directions, against a host with
+///      a stamped remote address (<see cref="RemoteAddressWebApplicationFactory"/>): from a public
+///      address every admin-mutating route still 503s, and from loopback the bypass admits it.
+///
+/// Without (2) the bypass would be untested across the route surface as a whole; without (1) the
+/// sweep could pass merely because the test transport happens to present no remote address. Both
+/// were added by #43 — this class was strengthened, not relaxed.
 /// </summary>
 public sealed class AdminApiKeyRouteEnumerationTests : IClassFixture<ArbitarrWebApplicationFactory>
 {
@@ -99,6 +115,57 @@ public sealed class AdminApiKeyRouteEnumerationTests : IClassFixture<ArbitarrWeb
         }
     }
 
+    [Fact]
+    public async Task Every_AdminMutating_route_still_fails_closed_from_a_remote_address_when_no_key_is_configured()
+    {
+        // #43: the bypass must not have opened the admin surface to the internet. This is the whole
+        // route surface asserted from a public source address (RFC 5737 documentation address) on a
+        // host with NO key configured — every one of them must still 503.
+        await using var factory = new RemoteAddressWebApplicationFactory(IPAddress.Parse("192.0.2.10"));
+        using var client = factory.CreateClient();
+
+        var routes = GetRoutesByClassification(factory.Services, RouteClassification.AdminMutating).ToList();
+        Assert.NotEmpty(routes);
+
+        foreach (var (method, path) in routes)
+        {
+            using var request = new HttpRequestMessage(method, path);
+            using var response = await client.SendAsync(request);
+
+            Assert.True(
+                response.StatusCode is HttpStatusCode.ServiceUnavailable,
+                $"Expected {method} {path} (classified AdminMutating) to fail closed with 503 for an " +
+                $"unkeyed request from a public address, but it returned {(int)response.StatusCode} " +
+                $"{response.StatusCode}. The bootstrap bypass must never admit a remote caller.");
+        }
+    }
+
+    [Fact]
+    public async Task Every_AdminMutating_route_is_reachable_from_loopback_when_no_key_is_configured()
+    {
+        // The other direction, and the reason #43 exists: on a fresh install a local operator must
+        // be able to reach the admin surface at all, or no key can ever be set. Asserting the
+        // absence of 503/401 (rather than a specific success code) keeps this about the gate —
+        // an unkeyed POST to a route with no body may legitimately 400 once it is past the filter.
+        await using var factory = new RemoteAddressWebApplicationFactory(IPAddress.Loopback);
+        using var client = factory.CreateClient();
+
+        var routes = GetRoutesByClassification(factory.Services, RouteClassification.AdminMutating).ToList();
+        Assert.NotEmpty(routes);
+
+        foreach (var (method, path) in routes)
+        {
+            using var request = new HttpRequestMessage(method, path);
+            using var response = await client.SendAsync(request);
+
+            Assert.False(
+                response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.ServiceUnavailable,
+                $"Expected {method} {path} (classified AdminMutating) to be reachable from loopback " +
+                $"while no admin key is configured, but it returned {(int)response.StatusCode} " +
+                $"{response.StatusCode}. Without this the fresh-install deadlock returns.");
+        }
+    }
+
     /// <summary>
     /// Enumerates every concrete (non-templated), classified <see cref="RouteEndpoint"/> the real
     /// Host serves, paired with one HTTP method it actually accepts. Route-templated endpoints
@@ -106,9 +173,14 @@ public sealed class AdminApiKeyRouteEnumerationTests : IClassFixture<ArbitarrWeb
     /// and are already covered by name in <see cref="AdminSettingsEndpointsTests"/>; this test's
     /// job is the generic "every classified endpoint" sweep, not templated-route resolution.
     /// </summary>
-    private IEnumerable<(HttpMethod Method, string Path)> GetRoutesByClassification(RouteClassification classification)
+    private IEnumerable<(HttpMethod Method, string Path)> GetRoutesByClassification(RouteClassification classification) =>
+        GetRoutesByClassification(_factory.Services, classification);
+
+    private static IEnumerable<(HttpMethod Method, string Path)> GetRoutesByClassification(
+        IServiceProvider services,
+        RouteClassification classification)
     {
-        var dataSource = _factory.Services.GetRequiredService<EndpointDataSource>();
+        var dataSource = services.GetRequiredService<EndpointDataSource>();
 
         foreach (var endpoint in dataSource.Endpoints.OfType<RouteEndpoint>())
         {
