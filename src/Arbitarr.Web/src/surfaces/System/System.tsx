@@ -198,14 +198,14 @@ function Counters({
 
       <h3 className={local.subheading}>Suppressions by source and reason</h3>
       <BreakdownTable
-        emptyLabel="No suppressions recorded yet."
+        emptyLabel="No suppressions recorded yet. Entries appear here once a rule or the AI layer acts on a release."
         entries={counters.suppressedBySourceAndReason}
         keyHeading="Source and reason"
       />
 
       <h3 className={local.subheading}>Served age distribution</h3>
       <BreakdownTable
-        emptyLabel="No served ages recorded yet."
+        emptyLabel="No served ages recorded yet. Entries appear here once a search serves a cached result."
         entries={counters.servedAgeDistribution}
         keyHeading="Age band"
       />
