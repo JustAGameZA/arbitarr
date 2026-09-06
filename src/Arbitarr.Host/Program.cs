@@ -17,6 +17,7 @@ using Arbitarr.Data.Filtering;
 using Arbitarr.Data.Maintenance;
 using Arbitarr.Data.Security;
 using Arbitarr.Data.Settings;
+using Arbitarr.Data.Sources;
 using Arbitarr.Host;
 using Arbitarr.Host.Caching;
 using Arbitarr.Host.Security;
@@ -238,6 +239,11 @@ builder.Services.AddScoped<AdminApiKeyFilter>();
 builder.Services.AddScoped(sp => new SettingsRepository(
     sp.GetRequiredService<ArbitarrDbContext>(),
     TimeSpan.FromMinutes(15)));
+
+// #53 stage 53a: persistence only. Nothing reads from SourceRepository yet — env vars remain
+// authoritative until 53b adds the DB-first, env-var-fallback resolution path (plan §3.2). Registered
+// now so 53b-53d can depend on it without another Host change.
+builder.Services.AddScoped<SourceRepository>();
 
 // M7-3a: schedules MaintenanceJob on SettingKey.MaintenanceJobInterval. Unlike the RefreshWorker
 // options above, the interval is the one setting explicitly permitted to require a restart to take
