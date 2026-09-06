@@ -6,7 +6,7 @@ import SearchPage from './surfaces/Search/Search';
 import RulesPage from './surfaces/Rules/Rules';
 import SuppressionsPage from './surfaces/Suppressions/Suppressions';
 import SettingsPage from './surfaces/Settings/Settings';
-import SystemPage from './pages/System';
+import SystemPage from './surfaces/System/System';
 import NotFoundPage from './pages/NotFound';
 
 /**

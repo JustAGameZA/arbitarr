@@ -211,3 +211,73 @@ export interface SuppressionViewEntry {
   reason: string;
   shadowMode: boolean;
 }
+
+// --- System ---------------------------------------------------------------
+
+/** ObservabilityCounters.cs — HitRate. `rate` is a computed C# property; null until there is traffic. */
+export interface HitRate {
+  hits: number;
+  misses: number;
+  rate: number | null;
+}
+
+/** ObservabilityCounters.cs — SearchCacheStats: cache reads split by band. */
+export interface SearchCacheStats {
+  freshHits: number;
+  staleButValidHits: number;
+  fetchedMisses: number;
+  degradedMisses: number;
+  hitRate: number | null;
+}
+
+/**
+ * ObservabilityCounters.cs — ObservabilitySnapshot. Process-lifetime counters,
+ * reset on restart.
+ *
+ * The two dictionaries are open-ended maps whose KEYS are server-authored and
+ * are NOT camel-cased: `suppressedBySourceAndReason` is keyed like
+ * "DenyRule:no-cam" and `servedAgeDistribution` like "1m-5m". Only the C#
+ * property names go through the camelCase policy; dictionary keys are data.
+ */
+export interface ObservabilitySnapshot {
+  resultsIn: number;
+  suppressedTotal: number;
+  suppressedBySourceAndReason: Record<string, number>;
+  llmCalls: number;
+  llmFailures: number;
+  verdictCache: HitRate;
+  searchCache: SearchCacheStats;
+  servedAgeDistribution: Record<string, number>;
+}
+
+/** ObservabilityEndpoint.cs — MetadataCacheCoverage. */
+export interface MetadataCacheCoverage {
+  entries: number;
+  negativeEntries: number;
+  distinctSeries: number;
+}
+
+/** ObservabilityEndpoint.cs — response body of GET /api/admin/observability. */
+export interface ObservabilityResponse {
+  counters: ObservabilitySnapshot;
+  metadataCache: MetadataCacheCoverage;
+}
+
+/**
+ * HealthStalenessEndpoint.cs — response body of GET /api/health/staleness.
+ *
+ * The field names are snake_case ON PURPOSE and must stay verbatim. AC25 quotes
+ * them directly as the contract operators and monitoring tooling read, so the
+ * server declares them in snake_case rather than letting the camelCase policy
+ * rewrite them. Renaming these to camelCase here would silently read undefined.
+ *
+ * Every value is a C# TimeSpan rendered with ToString(), e.g. "01:30:00".
+ */
+export interface StalenessEnvelopeResponse {
+  worst_case_unjudged_age: string;
+  search_result_cache_band_bound: string;
+  classifier_queue_latency: string;
+  fresh_until: string;
+  refresh_lead_plus_worker_cycle_interval: string;
+  serve_until: string;
+}

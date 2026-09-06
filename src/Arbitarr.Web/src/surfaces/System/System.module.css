@@ -1,0 +1,54 @@
+/*
+ * System-surface styling.
+ *
+ * Colours come only from the theme.css custom properties (AC3): no #hex, rgb()
+ * or hsl() literal appears here, and theme.test.ts enforces that across every
+ * *.module.css in the tree.
+ */
+
+/* Counter tiles. auto-fill rather than a fixed column count so the group reflows
+   on a narrow viewport instead of forcing the panel to scroll sideways. */
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+}
+
+.metric {
+  background: var(--bg-panel-alt);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.625rem 0.75rem;
+}
+
+.metricLabel {
+  color: var(--fg-muted);
+  font-size: 0.75rem;
+  margin: 0 0 0.25rem;
+}
+
+.metricValue {
+  color: var(--fg-primary);
+  font-size: 1.25rem;
+  font-weight: 600;
+  /* <dd> carries a default indent in every browser; it would misalign the value
+     under its own label. */
+  margin: 0;
+}
+
+.subheading {
+  color: var(--fg-primary);
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin: 1.25rem 0 0.5rem;
+}
+
+/* Durations and server-authored map keys are machine-shaped strings
+   ("01:30:00", "DenyRule:no-cam", "1m-5m"): a monospace face keeps them
+   scannable in a column and stops proportional spacing from making similar
+   values hard to tell apart. */
+.duration,
+.breakdownKey {
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+}
