@@ -1,13 +1,58 @@
 import { PageHeader } from '../../components/shell/PageHeader';
 import { QueryState } from '../QueryState';
 import type {
+  BuildInfoResponse,
   MetadataCacheCoverage,
   ObservabilitySnapshot,
   StalenessEnvelopeResponse,
 } from '../../api/types';
 import styles from '../surface.module.css';
 import local from './System.module.css';
-import { useObservabilityQuery, useStalenessQuery } from './queries';
+import { useBuildInfoQuery, useObservabilityQuery, useStalenessQuery } from './queries';
+
+/**
+ * Formats an uptime duration (seconds since process start) for display.
+ *
+ * Rendered separately from the build-time fields in BuildPanel below because it answers a
+ * different question: uptime resets on every restart, while the rest of the panel only changes
+ * on a redeploy. Whole seconds are enough precision for an operator glance.
+ */
+function formatUptime(uptimeSeconds: number): string {
+  const totalSeconds = Math.max(0, Math.floor(uptimeSeconds));
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  const parts: string[] = [];
+  if (days > 0) parts.push(`${days}d`);
+  if (days > 0 || hours > 0) parts.push(`${hours}h`);
+  if (days > 0 || hours > 0 || minutes > 0) parts.push(`${minutes}m`);
+  parts.push(`${seconds}s`);
+
+  return parts.join(' ');
+}
+
+/**
+ * The build panel: what commit, image and build the running process actually is, plus how long
+ * it has been up. Answers "is the box running what I think it's running?" (issue #46 / audit R1)
+ * without an ssh session.
+ */
+function BuildPanel({ buildInfo }: { buildInfo: BuildInfoResponse }) {
+  return (
+    <>
+      {/* Build-time fields only change on a redeploy; uptime resets on every restart. Both
+          belong in this panel, but conflating them would misread a restart as a new build. */}
+      <dl className={local.metrics}>
+        <Metric label="Commit" value={buildInfo.commitSha} />
+        <Metric label="Image tag" value={buildInfo.imageTag} />
+        <Metric label="Built" value={buildInfo.buildTimestampUtc} />
+        <Metric label="Version" value={buildInfo.informationalVersion} />
+        <Metric label="Uptime" value={formatUptime(buildInfo.uptimeSeconds)} />
+      </dl>
+    </>
+  );
+}
 
 /**
  * Formats a ratio as a percentage, or a dash when there is nothing to divide.
@@ -171,21 +216,33 @@ function Counters({
 /**
  * System.
  *
- * Runtime diagnostics: the AC25 staleness envelope (how old a served result can
- * be, worst case) and the pipeline observability counters.
+ * Runtime diagnostics: build identity (issue #46 / audit R1), the AC25 staleness
+ * envelope (how old a served result can be, worst case), and the pipeline
+ * observability counters.
  *
- * The two panels are deliberately independent queries. Staleness is PublicRead
- * and observability is admin-gated, so on a server with no admin key configured
- * -- the review environment's permanent state -- the staleness half still
- * renders while the counters half shows the 503 affordance QueryState owns.
+ * The three panels are deliberately independent queries. Build identity and
+ * staleness are PublicRead and observability is admin-gated, so on a server
+ * with no admin key configured -- the review environment's permanent state --
+ * the build and staleness halves still render while the counters half shows
+ * the 503 affordance QueryState owns.
  */
 export default function SystemPage() {
+  const buildInfo = useBuildInfoQuery();
   const staleness = useStalenessQuery();
   const observability = useObservabilityQuery();
 
   return (
     <>
-      <PageHeader title="System" description="Build information, logs and runtime diagnostics." />
+      <PageHeader title="System" description="Build information and runtime diagnostics." />
+
+      <section className={styles.panel}>
+        <h2 className={styles.panelHeading}>Build</h2>
+        <div className={styles.panelBody}>
+          <QueryState isPending={buildInfo.isPending} error={buildInfo.error} data={buildInfo.data}>
+            {(data) => <BuildPanel buildInfo={data} />}
+          </QueryState>
+        </div>
+      </section>
 
       <section className={styles.panel}>
         <h2 className={styles.panelHeading}>Staleness envelope</h2>

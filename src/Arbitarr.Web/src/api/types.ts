@@ -264,6 +264,23 @@ export interface ObservabilityResponse {
 }
 
 /**
+ * BuildInfoEndpoint.cs — response body of GET /api/system/build.
+ *
+ * CommitSha, ImageTag and BuildTimestampUtc are build-time: they cannot change during the
+ * process lifetime and only move on a redeploy. UptimeSeconds is the one runtime field and
+ * resets on every restart, independent of whether the image itself changed. Every build-time
+ * field renders the literal string "unknown (local build)" rather than being empty when the
+ * server was built with no build args (see BuildInfo.UnknownLocalBuild on the server).
+ */
+export interface BuildInfoResponse {
+  commitSha: string;
+  imageTag: string;
+  buildTimestampUtc: string;
+  informationalVersion: string;
+  uptimeSeconds: number;
+}
+
+/**
  * HealthStalenessEndpoint.cs — response body of GET /api/health/staleness.
  *
  * The field names are snake_case ON PURPOSE and must stay verbatim. AC25 quotes

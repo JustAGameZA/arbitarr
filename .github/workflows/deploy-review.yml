@@ -27,7 +27,17 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Build container image
-        run: docker build -f Dockerfile -t arbitarr-review:ci .
+        # Issue #46/R1: pass the commit SHA and a tag through as build args so the image
+        # itself carries what CI actually built. Without this, GET /api/system/build on a
+        # CI-built image would render "unknown (local build)" for every build-time field --
+        # correct as a fallback, but wrong for a real CI-built image, and exactly the gap
+        # a deployment-drift check needs not to have.
+        run: |
+          docker build -f Dockerfile -t arbitarr-review:ci \
+            --build-arg COMMIT_SHA="${{ github.sha }}" \
+            --build-arg IMAGE_TAG="arbitarr-review:ci" \
+            --build-arg BUILD_TIMESTAMP_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            .
 
       - name: Assert no dataset is baked into the image (AC21)
         shell: bash
@@ -72,6 +82,23 @@ jobs:
           echo "BLOCKED: container did not answer /health within the timeout." >&2
           docker logs arbitarr-review >&2 || true
           exit 1
+
+      - name: Assert the build stamp matches the commit CI built (issue #46 AC6)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          build_json=$(curl -sf "http://127.0.0.1:8080/api/system/build")
+          echo "$build_json"
+
+          reported_sha=$(echo "$build_json" | grep -o '"commitSha":"[^"]*"' | cut -d'"' -f4)
+
+          if [ "$reported_sha" != "${{ github.sha }}" ]; then
+            echo "BLOCKED: /api/system/build reported commitSha '$reported_sha', expected '${{ github.sha }}'." >&2
+            exit 1
+          fi
+
+          echo "Build stamp matches the commit CI built: $reported_sha"
 
       - name: Container logs
         if: failure()
