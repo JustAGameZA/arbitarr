@@ -44,3 +44,64 @@
   max-width: var(--content-max-width);
   margin: 0 auto;
 }
+
+/*
+ * Shell breakpoint (#48), 768px -- distinct from the 560px content-grid query
+ * in Dashboard.module.css. That one reflows cards inside the content pane;
+ * this one changes the chrome itself, so the two stay separate rather than
+ * being consolidated into one number.
+ *
+ * Below it the sidebar column is dropped from the grid entirely (SidebarNav
+ * goes off-canvas via `position: fixed` in its own stylesheet) so a single
+ * content column can use the full viewport width instead of leaving a gap
+ * where the grid track used to be.
+ */
+@media (max-width: 768px) {
+  .shell {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      'topbar'
+      'content';
+  }
+
+  .sidebar {
+    /* Out of flow; SidebarNav.module.css positions and transforms it. */
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 20;
+  }
+
+  .content {
+    /*
+     * A grid child otherwise refuses to shrink below its content's intrinsic
+     * width, which is exactly how a 210px-implied minimum survives the column
+     * being dropped and forces horizontal scroll back in at narrow widths.
+     */
+    min-width: 0;
+  }
+}
+
+/*
+ * Drawer backdrop. AppShell.tsx only mounts this element while the drawer is
+ * open, so the base rule can render it unconditionally; the override below
+ * hides it above the shell breakpoint as a defence-in-depth in case that JS
+ * condition and a real desktop width ever disagree (open state left over from
+ * a resize, for instance). Deliberately visible-by-default rather than
+ * hidden-by-default-and-unhidden-below-768px: jsdom applies a stylesheet's
+ * unconditional rules but never matches a @media query, so the inverse would
+ * leave this permanently `display: none` -- and therefore unfindable -- in
+ * every test regardless of the width a test intends to simulate.
+ */
+.backdrop {
+  display: block;
+  position: fixed;
+  inset: 0;
+  background: var(--overlay-backdrop);
+  z-index: 15;
+}
+
+@media (min-width: 769px) {
+  .backdrop {
+    display: none;
+  }
+}

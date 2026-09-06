@@ -1,3 +1,4 @@
+import { forwardRef } from 'react';
 import { NavLink } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
@@ -37,9 +38,28 @@ export const NAV_ENTRIES: readonly NavEntry[] = [
   { label: 'System', to: '/system', icon: faServer, group: 'System' },
 ];
 
-export function SidebarNav() {
+interface SidebarNavProps {
+  /**
+   * Below the 768px shell breakpoint the nav is an off-canvas drawer (#48);
+   * this toggles the translate that slides it on/off screen. Above the
+   * breakpoint it is inert -- the CSS that reads it is itself inside a
+   * max-width query -- so desktop callers can simply omit it.
+   */
+  isOpen?: boolean;
+}
+
+/**
+ * `ref` is forwarded so AppShell can move focus into the drawer's first
+ * focusable element when it opens, and back out to the toggle when it closes.
+ */
+export const SidebarNav = forwardRef<HTMLElement, SidebarNavProps>(function SidebarNav(
+  { isOpen = false },
+  ref,
+) {
+  const navClassName = isOpen ? `${styles.nav} ${styles.navOpen}` : styles.nav;
+
   return (
-    <nav className={styles.nav} aria-label="Main">
+    <nav ref={ref} className={navClassName} aria-label="Main">
       <div className={styles.brand}>Arbitarr</div>
       {NAV_ENTRIES.map((entry) => (
         <div key={entry.to}>
@@ -60,4 +80,4 @@ export function SidebarNav() {
       ))}
     </nav>
   );
-}
+});

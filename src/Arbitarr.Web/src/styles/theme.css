@@ -69,6 +69,17 @@
   --sidebar-width: 210px;
   --topbar-height: 48px;
   --content-max-width: 1440px;
+
+  /* --- Off-canvas drawer (#48) -------------------------------------------- */
+  /*
+   * The mobile drawer backdrop needs a translucent black. AC3 forbids rgba()
+   * literals in *.module.css, and theme.css is the one file that grep does not
+   * scan, so the alpha value is pinned here instead of inlined at the call
+   * site. This is a colour token like the others above, not a layout escape
+   * hatch -- it happens to need alpha, which var() carries just as well as any
+   * opaque value.
+   */
+  --overlay-backdrop: rgba(10, 11, 13, 0.6);
 }
 
 /* Global reset — minimal, and the only place bare element selectors appear. */
