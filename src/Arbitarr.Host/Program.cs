@@ -422,6 +422,59 @@ app.MapGet("/download/{proxyGuid}", async (
     await DownloadProxyEndpoint.HandleAsync(proxyGuid, apikey, apiKeyResolver, releaseLookup, sources, cancellationToken).ConfigureAwait(false))
     .WithClassification(RouteClassification.PublicRead);
 
+// Terminal 404 for unmatched /api/ paths, so a typo'd, renamed or removed API route fails
+// loudly instead of being swallowed by the SPA fallback below and answered 200 + index.html.
+//
+// THE .RequireHost-STYLE METHOD SCOPE ON THE NEXT LINE IS LOAD-BEARING. An unscoped
+// `app.MapFallback("/api/{*rest}", ...)` -- which is what the plan specified -- matches EVERY
+// HTTP method, and that silently breaks real, registered, mutating admin routes:
+//
+//   POST /api/admin/rules       -> 404   (should be 401/503 from AdminApiKeyFilter)
+//   POST /api/admin/rules/test  -> 404
+//   PUT  /api/admin/settings/{key} -> 404
+//
+// Measured, not theorised: with the unscoped form,
+// AdminApiKeyRouteEnumerationTests.Every_AdminMutating_route_rejects_requests_without_the_admin_key
+// fails on the first such route, and a probe over the whole admin surface showed every non-GET
+// verb falling through to this terminal while every GET still reached its real endpoint.
+//
+// WHY. When a request's PATH matches a real endpoint but its METHOD does not, routing does not
+// stop at that endpoint -- the method-mismatch candidate loses and the next matching candidate
+// is consulted. An all-methods catch-all at Order = int.MaxValue is always still standing, so it
+// wins and answers 404 in place of the gate's 401/503. This is not the "unmatched path" case the
+// terminal exists for; it is a real route being shadowed. Restricting the terminal to GET/HEAD
+// removes it from every mutating verb's candidate set entirely, so those routes resolve to their
+// own endpoints (405 where the verb genuinely is not registered) and the gate runs as designed.
+//
+// GET/HEAD is also exactly the right scope on the merits: this terminal exists solely to stop
+// MapFallbackToFile from swallowing API paths, and MapFallbackToFile is itself GET/HEAD-only.
+// A mutating verb could never have reached the SPA fallback, so it never needed this guard.
+//
+// ORDERING IS NOT THE MECHANISM, and an executor who thinks it is will "helpfully" reorder these
+// two lines and later conclude the guard is flaky. Both MapFallback and MapFallbackToFile set
+// Order = int.MaxValue, so they tie on order and both sort behind every real endpoint; the tie
+// breaks on ROUTE-TEMPLATE PRECEDENCE, where a literal segment outranks a catch-all. Hence
+// "/api/{*rest}" (literal `api` first) beats the SPA fallback's "{*path:nonfile}" regardless of
+// which line is written first.
+//
+// The SPA fallback's {*path:nonfile} constraint is a SECOND, INDEPENDENT filter: it already
+// excludes any path whose last segment contains a dot. So an extensioned probe
+// (/api/admin/foo.json) 404s whether or not this terminal exists and cannot verify it -- an
+// extensionless probe (/api/admin/foo) is the one this line is actually responsible for.
+//
+// PublicRead is the honest classification -- it mutates nothing and requires no key. It is also
+// required: RouteClassificationTests enumerates the live EndpointDataSource and fails on any
+// endpoint missing the metadata, and fallbacks are real RouteEndpoints in that source.
+// AdminApiKeyRouteEnumerationTests skips templates containing '{', so it does not probe these.
+app.MapFallback("/api/{*rest}", () => Results.NotFound())
+    .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get, HttpMethods.Head }))
+    .WithClassification(RouteClassification.PublicRead);
+
+// SPA deep links: /settings, /rules, ... return index.html so react-router resolves them
+// client-side after a hard reload (AC4).
+app.MapFallbackToFile("index.html")
+    .WithClassification(RouteClassification.PublicRead);
+
 app.Run();
 
 static IReadOnlyList<int> ParseCategories(string? cat) =>
