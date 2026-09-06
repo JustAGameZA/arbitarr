@@ -1,0 +1,24 @@
+/* Rules-local layout. Colour comes from var(--token) only (AC3). */
+
+.writeError {
+  margin-bottom: 12px;
+}
+
+/* Patterns are regexes: monospace, and they must not reflow mid-token. */
+.pattern {
+  font-family: ui-monospace, 'Cascadia Mono', 'Consolas', monospace;
+  font-size: 12px;
+  white-space: pre;
+}
+
+.rowActions {
+  display: flex;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.verdict {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--fg-primary);
+}

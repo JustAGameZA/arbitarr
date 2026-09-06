@@ -1,0 +1,26 @@
+/* Suppressions-local layout. Colour comes from var(--token) only (AC3). */
+
+/* The upstream guid: opaque, long, and worth being able to compare by eye
+   against a log line, so it keeps its own glyph width and does not wrap. */
+.identifier {
+  font-family: ui-monospace, 'Cascadia Mono', 'Consolas', monospace;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.titles {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  margin: 0;
+  padding: 8px 0;
+  font-size: 12px;
+}
+
+.titles dt {
+  color: var(--fg-muted);
+}
+
+.titles dd {
+  margin: 0;
+}

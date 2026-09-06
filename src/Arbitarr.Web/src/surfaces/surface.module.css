@@ -1,0 +1,203 @@
+/*
+ * Shared surface primitives — the panel/table/form vocabulary every surface
+ * uses. Colour comes from var(--token) only; AC3's guard rejects a literal in
+ * any *.module.css.
+ *
+ * These live in one file rather than being copied into five sibling
+ * stylesheets so a change to the panel chrome moves in one place, which is the
+ * same reason theme.css owns the palette.
+ */
+
+.panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-bottom: 16px;
+}
+
+.panelHeading {
+  margin: 0;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+}
+
+.panelBody {
+  padding: 16px;
+}
+
+/* Wide tables scroll inside the panel rather than pushing the page sideways. */
+.tableScroll {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.table th {
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--fg-muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.table tbody tr:nth-child(even) {
+  background: var(--bg-panel-alt);
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.muted {
+  color: var(--fg-muted);
+}
+
+.error {
+  color: var(--danger);
+  margin: 0;
+}
+
+.success {
+  color: var(--ok);
+  margin: 0;
+}
+
+.empty {
+  color: var(--fg-muted);
+  margin: 0;
+  font-style: italic;
+}
+
+/* --- Forms --------------------------------------------------------------- */
+
+.form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.checkboxField {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.input,
+.select {
+  padding: 5px 9px;
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--fg-primary);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.input {
+  min-width: 180px;
+}
+
+.inputNarrow {
+  min-width: 90px;
+}
+
+.button {
+  padding: 5px 12px;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  color: var(--bg-app);
+  font-size: 13px;
+  font-family: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.buttonSecondary {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--fg-muted);
+  font-weight: 400;
+}
+
+.buttonSecondary:hover:not(:disabled) {
+  background: var(--bg-panel-alt);
+  border-color: var(--border);
+  color: var(--fg-primary);
+}
+
+.buttonDanger {
+  background: transparent;
+  border-color: var(--danger);
+  color: var(--danger);
+  font-weight: 400;
+}
+
+.buttonDanger:hover:not(:disabled) {
+  background: var(--danger);
+  color: var(--bg-app);
+}
+
+/* --- Badges -------------------------------------------------------------- */
+
+.badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  color: var(--fg-muted);
+}
+
+.badgeOk {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.badgeWarn {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.badgeDanger {
+  border-color: var(--danger);
+  color: var(--danger);
+}

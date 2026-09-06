@@ -1,11 +1,11 @@
 import { Route, Routes } from 'react-router-dom';
 
 import { AppShell } from './components/shell/AppShell';
-import DashboardPage from './pages/Dashboard';
-import SearchPage from './pages/Search';
-import RulesPage from './pages/Rules';
-import SuppressionsPage from './pages/Suppressions';
-import SettingsPage from './pages/Settings';
+import DashboardPage from './surfaces/Dashboard/Dashboard';
+import SearchPage from './surfaces/Search/Search';
+import RulesPage from './surfaces/Rules/Rules';
+import SuppressionsPage from './surfaces/Suppressions/Suppressions';
+import SettingsPage from './surfaces/Settings/Settings';
 import SystemPage from './pages/System';
 import NotFoundPage from './pages/NotFound';
 
