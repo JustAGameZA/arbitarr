@@ -1,0 +1,36 @@
+/*
+ * Dashboard-local layout. Colour comes from var(--token) only (AC3).
+ *
+ * The definition-list grid is the one shape the shared surface.module.css does
+ * not carry, because only the Dashboard renders key/value facts; the tables,
+ * panels and badges it uses are all shared.
+ */
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin: 0 0 16px;
+  font-size: 13px;
+}
+
+.facts dt {
+  color: var(--fg-muted);
+}
+
+.facts dd {
+  margin: 0;
+  color: var(--fg-primary);
+}
+
+/* Narrow viewports stack the label above its value rather than squeezing both. */
+@media (max-width: 560px) {
+  .facts {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  .facts dd {
+    margin-bottom: 8px;
+  }
+}

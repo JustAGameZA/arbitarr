@@ -1,13 +1,24 @@
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { renderApp, renderAppWithBrowserHistory } from './test/renderApp';
 import { useAdminKeyStore } from './state/adminKeyStore';
+import { mockApi } from './test/mockApi';
 
 describe('routing', () => {
   beforeEach(() => {
     useAdminKeyStore.setState({ key: null, serverKeyUnset: false });
+    // These tests mount the real surfaces, each of which fetches on mount.
+    // Every assertion here targets a PageHeader <h1>, which renders above the
+    // query state, so they would pass against a rejected fetch too -- but
+    // "passes without a network" should be a property of this file, not a
+    // coincidence of where the headings sit relative to the data.
+    mockApi({});
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('resolves a deep link directly to its surface', async () => {
