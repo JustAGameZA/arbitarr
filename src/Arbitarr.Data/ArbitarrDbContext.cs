@@ -40,6 +40,12 @@ public sealed class ArbitarrDbContext : DbContext
 
     public DbSet<VerdictCacheEntry> VerdictCacheEntries => Set<VerdictCacheEntry>();
 
+    /// <summary>
+    /// #53 stage 53a: configured upstream sources. Nothing reads this set yet — env vars remain
+    /// authoritative until 53b adds the DB-first, env-var-fallback resolution path (plan §3.2).
+    /// </summary>
+    public DbSet<Source> Sources => Set<Source>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<MetadataCacheEntry>(entity =>
@@ -152,6 +158,18 @@ public sealed class ArbitarrDbContext : DbContext
             // M5 R17: rewritten title cached alongside the verdict. The bound is advisory on SQLite; it is
             // enforced in code by VerdictCacheLimits (producer + writer), which this must match.
             entity.Property(e => e.RewrittenTitle).HasMaxLength(VerdictCacheLimits.MaxRewrittenTitleLength);
+        });
+
+        modelBuilder.Entity<Source>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.DisplayName).IsUnique();
+            entity.Property(e => e.Kind).IsRequired().HasMaxLength(64);
+            entity.Property(e => e.DisplayName).IsRequired().HasMaxLength(256);
+            // No HasMaxLength on BaseUrl: a URL has no natural length ceiling worth guessing at, and
+            // SourceRepository.ValidateBaseUrl already rejects anything that isn't a well-formed
+            // absolute http(s) URL before it reaches this table.
+            entity.Property(e => e.BaseUrl).IsRequired();
         });
     }
 }
