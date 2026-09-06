@@ -287,10 +287,18 @@ builder.Services.AddScoped(sp => new SettingsRepository(
     sp.GetRequiredService<ArbitarrDbContext>(),
     TimeSpan.FromMinutes(15)));
 
-// #53 stage 53a: persistence only. Nothing reads from SourceRepository yet — env vars remain
-// authoritative until 53b adds the DB-first, env-var-fallback resolution path (plan §3.2). Registered
-// now so 53b-53d can depend on it without another Host change.
+// #53: source persistence. Introduced unread in 53a; since 53b it backs the seed-once-then-DB
+// resolution path (SourceSeeder, plan §3.2's OWNER RULING), and since 53c it also backs the
+// admin CRUD surface (AdminSourceEndpoints).
 builder.Services.AddScoped<SourceRepository>();
+
+// #53 stage 53c: the §3.3 connectivity test's HTTP client. AllowAutoRedirect is disabled for the
+// same SSRF reason as the NzbHydraSource client above — a probed source could otherwise 30x us to
+// an arbitrary host and we would issue the request (carrying that source's API key) before anything
+// checked the target. Redirects off means the probe reports the 3xx as an unexpected response
+// instead, which is the truthful answer for a source that is not where it says it is.
+builder.Services.AddHttpClient<SourceConnectivityProber>()
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 
 // #55 step 1 (foundation shared with #54): the shared event store. Deliberately unread/unwritten
 // until the emission stage (#55 step 2 / #54 step 2) — registered now so those stages can depend on
@@ -372,6 +380,7 @@ AdminPingEndpoint.Map(app);
 ObservabilityEndpoint.Map(app);
 AdminSettingsEndpoints.Map(app);
 AdminSecurityEndpoints.Map(app);
+AdminSourceEndpoints.Map(app);
 AdminRuleEndpoints.Map(app);
 AdHocSearchEndpoint.Map(app);
 MatchExplanationEndpoint.Map(app);
