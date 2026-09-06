@@ -3,15 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { renderApp } from '../../test/renderApp';
 import { useAdminKeyStore } from '../../state/adminKeyStore';
-
-const ROUTES: ReadonlyArray<[string, string]> = [
-  ['/', 'Dashboard'],
-  ['/search', 'Search'],
-  ['/rules', 'Rules'],
-  ['/suppressions', 'Suppressions'],
-  ['/settings', 'Settings'],
-  ['/system', 'System'],
-];
+import { ROUTES } from '../../routes.titles';
 
 /**
  * AC2b: exactly one page title per view, and it lives in the content pane.
