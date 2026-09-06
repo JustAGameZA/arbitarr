@@ -70,4 +70,26 @@ describe('TopBar admin key control (AC6, AC6-503)', () => {
     expect(screen.queryByLabelText('Admin API key')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Set admin key' })).toBeNull();
   });
+
+  it('#43: points the operator at Settings instead of dead-ending when serverKeyUnset', () => {
+    // Under the local-network bootstrap bypass the operator is no longer
+    // stranded: they can reach Settings and set a key. The state must therefore
+    // offer a way forward, not merely report the problem.
+    useAdminKeyStore.setState({ key: null, serverKeyUnset: true });
+    renderApp('/');
+
+    const link = screen.getByRole('link', { name: /Set one in Settings/i });
+    expect(link).toBeInTheDocument();
+    expect(link).toHaveAttribute('href', '/settings');
+  });
+
+  it('#43: still offers no key field when serverKeyUnset, link or not', () => {
+    // The link is additive. A prompt would still be a loop that cannot close,
+    // so the original reasoning for omitting the field survives this change.
+    useAdminKeyStore.setState({ key: null, serverKeyUnset: true });
+    renderApp('/');
+
+    expect(screen.queryByLabelText('Admin API key')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Set admin key' })).toBeNull();
+  });
 });

@@ -149,8 +149,27 @@ public sealed class SettingsRepository
                 SettingsValidator.ValidateClassifierPollInterval(ParseTimeSpan(key, proposed));
                 break;
             case SettingKey.AdminApiKey:
-                throw new SettingsValidationException(key,
-                    "admin_api_key is not editable through the settings write path.");
+                // #43: this arm USED TO `throw new SettingsValidationException(key,
+                // "admin_api_key is not editable through the settings write path.")`. Do not
+                // restore that throw. It was one half of a total-lockout deadlock: the admin key
+                // is read only from this table (DbAdminApiKeyReader), there is no seeder and no
+                // IConfiguration binding for it, so a repository that refused to write it meant no
+                // deployment could ever have a key, and AdminApiKeyFilter fails closed with 503 on
+                // every admin-mutating route without one. Four UI surfaces were permanently inert.
+                //
+                // IAdminApiKeyReader's own contract always said the opposite of that throw — "the
+                // admin key is a persisted setting (not static configuration) so it can be changed
+                // at runtime from the admin UI itself" — so this is a half-built feature being
+                // finished, not a security control being removed. The validator below is the check
+                // that was always meant to run here (it predates this change, floor and rationale
+                // already settled and tested).
+                //
+                // The key stays OFF the catalog surface: SettingsCatalog deliberately excludes it,
+                // which keeps `PUT /api/admin/settings/AdminApiKey` a 404 and keeps it out of the
+                // `GET /api/admin/settings` projection. The only route that reaches this arm is the
+                // dedicated write-only AdminSecurityEndpoints route, which never reads the value back.
+                SettingsValidator.ValidateAdminApiKey(proposed);
+                break;
             default:
                 throw new SettingsValidationException(key, $"Unknown setting key '{key}'.");
         }
