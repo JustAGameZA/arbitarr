@@ -110,6 +110,63 @@ describe('Dashboard', () => {
     expect(await screen.findByText('some series s01e02')).toBeInTheDocument();
   });
 
+  it('shows the not-configured empty state when nzbHydraConfigured is false and no sources reported', async () => {
+    mockApi({
+      ...allOk,
+      '/api/status': { body: { ...status, sources: [] } },
+      '/api/config/effective': { body: { ...config, nzbHydraConfigured: false } },
+    });
+    renderSurface(<DashboardPage />);
+
+    expect(
+      await screen.findByText(
+        'No sources configured. Add an NZBHydra2 URL and API key to start searching.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        'NZBHydra2 is configured. Sources appear here after the first search runs.',
+      ),
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows the configured-idle empty state when nzbHydraConfigured is true and no sources reported', async () => {
+    mockApi({
+      ...allOk,
+      '/api/status': { body: { ...status, sources: [] } },
+      '/api/config/effective': { body: { ...config, nzbHydraConfigured: true } },
+    });
+    renderSurface(<DashboardPage />);
+
+    expect(
+      await screen.findByText(
+        'NZBHydra2 is configured. Sources appear here after the first search runs.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        'No sources configured. Add an NZBHydra2 URL and API key to start searching.',
+      ),
+    ).not.toBeInTheDocument();
+  });
+
+  it('renders the sources table, not an empty message, when sources are present', async () => {
+    mockApi(allOk);
+    renderSurface(<DashboardPage />);
+
+    await screen.findByText('nzbhydra');
+    expect(
+      screen.queryByText(
+        'No sources configured. Add an NZBHydra2 URL and API key to start searching.',
+      ),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        'NZBHydra2 is configured. Sources appear here after the first search runs.',
+      ),
+    ).not.toBeInTheDocument();
+  });
+
   it('sends no admin key header, because none of its endpoints is admin-gated', async () => {
     // The inverse of the four admin surfaces' assertion. A key is present in
     // the store precisely so the absence proves the path rule, not an empty
