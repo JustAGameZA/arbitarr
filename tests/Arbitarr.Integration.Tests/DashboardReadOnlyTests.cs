@@ -103,7 +103,25 @@ public sealed class DashboardReadOnlyTests : IClassFixture<ArbitarrWebApplicatio
         Assert.NotNull(response);
         Assert.False(response!.NzbHydraConfigured);
         Assert.True(response.WorkerEnabled);
-        Assert.Null(response.ShadowMode);
+
+        // D3: shadow mode defaults to ON on a fresh install with no settings row. Regression guard
+        // for #42 — the field was previously hardcoded null regardless of database state.
+        Assert.NotNull(response.ShadowMode);
+        Assert.True(response.ShadowMode);
+    }
+
+    [Fact]
+    public async Task Effective_config_endpoint_never_reports_a_null_shadow_mode()
+    {
+        // Regression guard for #42: ConfigProjection.Project's shadowMode parameter must always be
+        // supplied by the endpoint. If a future change drops the third argument, this assertion (and
+        // the compile-time requirement that the parameter now has no default) both catch it.
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetFromJsonAsync<EffectiveConfigResponse>("/api/config/effective");
+
+        Assert.NotNull(response);
+        Assert.NotNull(response!.ShadowMode);
     }
 
     [Fact]
