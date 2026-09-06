@@ -58,8 +58,39 @@ function WorkerHealth({ status }: { status: StatusResponse }) {
   );
 }
 
-function SourcesTable({ status }: { status: StatusResponse }) {
+/**
+ * `status.sources` is built from health snapshots written when a source is
+ * *used*, not from configuration -- so an empty list is ambiguous between
+ * "nothing configured" and "configured, but no search has run yet". Those are
+ * different operator situations (one needs setup, the other just needs to
+ * wait), so the empty state reads `nzbHydraConfigured` from the effective-config
+ * query -- already fetched for the Effective configuration panel below -- to
+ * tell them apart. `nzbHydraConfigured === undefined` while that query is
+ * still pending falls back to the neutral wording rather than asserting either
+ * state before the fact is known.
+ */
+function SourcesTable({
+  status,
+  nzbHydraConfigured,
+}: {
+  status: StatusResponse;
+  nzbHydraConfigured: boolean | undefined;
+}) {
   if (status.sources.length === 0) {
+    if (nzbHydraConfigured === false) {
+      return (
+        <p className={styles.empty}>
+          No sources configured. Add an NZBHydra2 URL and API key to start searching.
+        </p>
+      );
+    }
+    if (nzbHydraConfigured === true) {
+      return (
+        <p className={styles.empty}>
+          NZBHydra2 is configured. Sources appear here after the first search runs.
+        </p>
+      );
+    }
     return <p className={styles.empty}>No sources reporting yet.</p>;
   }
 
@@ -157,7 +188,7 @@ export default function DashboardPage() {
             {(data) => (
               <>
                 <WorkerHealth status={data} />
-                <SourcesTable status={data} />
+                <SourcesTable status={data} nzbHydraConfigured={config.data?.nzbHydraConfigured} />
               </>
             )}
           </QueryState>

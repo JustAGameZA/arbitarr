@@ -95,14 +95,44 @@ public sealed class SettingsRepositoryTests : IDisposable
         Assert.Equal(TimeSpan.FromSeconds(45), snapshot.WorkerCycleInterval);
     }
 
+    // #43: this class previously asserted that AdminApiKey was rejected outright by this write
+    // path. That behaviour was the second half of a total-lockout deadlock (the key is readable
+    // only from this table, and nothing else could write it), so the assertion is now that the key
+    // is WRITABLE but VALIDATED — the property the old throw was standing in for. The key still
+    // never reaches the catalog-driven settings surface; AdminSettingsEndpointsTests pins that.
+
     [Fact]
-    public async Task AdminApiKey_is_rejected_by_the_settings_write_path()
+    public async Task AdminApiKey_is_persisted_when_it_satisfies_the_validator()
+    {
+        using var context = CreateContext();
+        var repository = new SettingsRepository(context, arrSyncInterval: TimeSpan.FromMinutes(15));
+
+        // Exactly at the 16-character floor SettingsValidator.ValidateAdminApiKey enforces.
+        const string key = "0123456789abcdef";
+
+        await repository.SetAsync(SettingKey.AdminApiKey, key, CancellationToken.None);
+
+        var row = await context.Settings.FindAsync(SettingKey.AdminApiKey.ToString());
+        Assert.NotNull(row);
+        Assert.Equal(key, row!.Value);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    // 15 characters — one short of the floor.
+    [InlineData("0123456789abcde")]
+    public async Task AdminApiKey_is_rejected_and_persists_nothing_when_it_fails_the_validator(string proposed)
     {
         using var context = CreateContext();
         var repository = new SettingsRepository(context, arrSyncInterval: TimeSpan.FromMinutes(15));
 
         await Assert.ThrowsAsync<SettingsValidationException>(
-            () => repository.SetAsync(SettingKey.AdminApiKey, "some-key", CancellationToken.None));
+            () => repository.SetAsync(SettingKey.AdminApiKey, proposed, CancellationToken.None));
+
+        // AC24: a rejected write leaves no row behind, so a failed attempt cannot half-configure
+        // the gate into a state no operator can satisfy.
+        Assert.Null(await context.Settings.FindAsync(SettingKey.AdminApiKey.ToString()));
     }
 
     [Fact]
