@@ -1,13 +1,9 @@
-import { Route, Routes } from 'react-router-dom';
+import { AppRoutes } from './routes';
 
 /**
- * Route stubs only. PR #3 replaces this with the real shell (sidebar, top bar,
- * content pane) and PR #4 ports the five surfaces into these slots.
+ * The app is the route table and nothing else. Providers (router, query client)
+ * live in main.tsx so a test can mount App under a MemoryRouter of its own.
  */
 export default function App() {
-  return (
-    <Routes>
-      <Route path="/" element={<h1>Arbitarr</h1>} />
-    </Routes>
-  );
+  return <AppRoutes />;
 }

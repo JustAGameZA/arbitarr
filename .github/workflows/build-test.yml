@@ -159,7 +159,28 @@ jobs:
           # --- The admin key is session-only ------------------------------------
           # It must live in the Zustand store and nowhere persistent. Web storage
           # survives tab close and is readable by any script on the origin.
-          hits=$(run_grep grep -rInE 'localStorage|sessionStorage' src)
+          #
+          # Comments are stripped first, for the same reason as the theme guard
+          # above: adminKeyStore.ts documents the rule in prose ("not written to
+          # localStorage, not to sessionStorage") and an unstripped grep blocks
+          # on its own documentation.
+          #
+          # *.test.ts(x) is excluded. The guard's subject is production code that
+          # WRITES the key to storage; adminKeyStore.test.ts asserts both stores
+          # are EMPTY after a key is set, which is the negation of a violation and
+          # cannot be written without naming them. Excluding tests loses nothing:
+          # a test file ships no runtime behaviour, and a persist middleware added
+          # to the store would still be caught in the source it is added to -- and
+          # caught a second time by that very assertion.
+          hits=''
+          while IFS= read -r f; do
+            case "$f" in *.test.ts|*.test.tsx) continue ;; esac
+            stripped=$(perl -0777 -pe 's{/\*.*?\*/}{ $& =~ tr/\n//cdr }ges; s{//.*$}{}gm' "$f")
+            m=$(printf '%s' "$stripped" | grep -nE 'localStorage|sessionStorage' || true)
+            if [ -n "$m" ]; then
+              hits="${hits}${f}:${m}"$'\n'
+            fi
+          done < <(find src -type f \( -name '*.ts' -o -name '*.tsx' \))
           if [ -n "$hits" ]; then
             echo "BLOCKED: web storage referenced in src/. The admin key is session-only (Zustand):" >&2
             echo "$hits" >&2
