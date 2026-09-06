@@ -45,6 +45,17 @@ describe('Suppressions', () => {
     expect(screen.getByText('Pattern CAM|TS matched the release title.')).toBeInTheDocument();
   });
 
+  it('reads as a healthy quiet state, not a missing thing, when nothing has been suppressed', async () => {
+    mockApi({ '/api/admin/suppressions': { body: [] } });
+    renderSurface(<SuppressionsPage />);
+
+    expect(
+      await screen.findByText(
+        'Nothing suppressed or de-ranked yet. Entries appear here once a rule or the AI layer acts on a release.',
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('attributes each row to the acting layer and distinguishes shadow mode', async () => {
     mockApi({ '/api/admin/suppressions': { body: entries } });
     renderSurface(<SuppressionsPage />);
