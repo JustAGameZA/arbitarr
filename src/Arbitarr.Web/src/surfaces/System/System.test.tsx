@@ -16,6 +16,14 @@ const staleness = {
   serve_until: '03:00:00',
 };
 
+const buildInfo = {
+  commitSha: 'a1b2c3d',
+  imageTag: 'arbitarr:a1b2c3d',
+  buildTimestampUtc: '2026-09-06T12:00:00Z',
+  informationalVersion: '1.2.3+a1b2c3d',
+  uptimeSeconds: 3725,
+};
+
 const observability = {
   counters: {
     resultsIn: 1200,
@@ -37,6 +45,7 @@ const observability = {
 };
 
 const bothRoutes = {
+  '/api/system/build': { body: buildInfo },
   '/api/health/staleness': { body: staleness },
   '/api/admin/observability': { body: observability },
 };
@@ -150,6 +159,32 @@ describe('System', () => {
     // The panels are independent queries precisely so the unauthenticated half
     // survives: this is the review environment's permanent state.
     expect(await screen.findByText('02:30:00')).toBeInTheDocument();
+    expect(await screen.findByText(SERVER_KEY_UNSET_MESSAGE)).toBeInTheDocument();
+  });
+
+  it('renders the build panel from the mock fixture', async () => {
+    mockApi(bothRoutes);
+    renderSurface(<SystemPage />);
+
+    expect(await screen.findByText('a1b2c3d')).toBeInTheDocument();
+    expect(screen.getByText('arbitarr:a1b2c3d')).toBeInTheDocument();
+    expect(screen.getByText('2026-09-06T12:00:00Z')).toBeInTheDocument();
+    expect(screen.getByText('1.2.3+a1b2c3d')).toBeInTheDocument();
+    // 3725s = 1h 2m 5s.
+    expect(screen.getByText('1h 2m 5s')).toBeInTheDocument();
+  });
+
+  it('still renders the build panel when the admin-gated counters query fails', async () => {
+    mockApi({
+      '/api/system/build': { body: buildInfo },
+      '/api/health/staleness': { body: staleness },
+      '/api/admin/observability': { status: 503, body: { error: 'no key configured' } },
+    });
+    renderSurface(<SystemPage />);
+
+    // The build panel is PublicRead and its own independent query, so it must
+    // survive exactly like the staleness panel when observability 503s.
+    expect(await screen.findByText('a1b2c3d')).toBeInTheDocument();
     expect(await screen.findByText(SERVER_KEY_UNSET_MESSAGE)).toBeInTheDocument();
   });
 

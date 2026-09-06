@@ -138,7 +138,7 @@ function Results({
     return (
       <>
         <Provenance provenance={response.provenance} />
-        <p className={styles.empty}>No releases matched.</p>
+        <p className={styles.empty}>No releases matched. Try a broader query or different search terms.</p>
       </>
     );
   }

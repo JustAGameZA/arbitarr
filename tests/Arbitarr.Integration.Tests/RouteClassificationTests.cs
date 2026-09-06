@@ -60,7 +60,7 @@ public sealed class RouteClassificationTests : IClassFixture<ArbitarrWebApplicat
 
         var dataSource = _factory.Services.GetRequiredService<EndpointDataSource>();
 
-        var dashboardRoutes = new[] { "/api/status", "/api/searches/recent", "/api/config/effective" };
+        var dashboardRoutes = new[] { "/api/status", "/api/searches/recent", "/api/config/effective", "/api/system/build" };
 
         foreach (var route in dashboardRoutes)
         {
