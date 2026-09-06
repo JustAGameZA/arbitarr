@@ -45,3 +45,19 @@ dist/
 *.tsbuildinfo
 coverage/
 vitest-report.json
+
+# Host-built SPA bundle (Step 5b). `npm run build` writes here via vite.config.ts's
+# outDir, and the image builds its own copy, so the output is never committed.
+#
+# The directory itself MUST survive, hence the .gitkeep negation below: git does not
+# track empty directories, and UseStaticFiles/MapFallbackToFile resolve the web root
+# at startup and throw DirectoryNotFoundException if it is missing. Ignoring the path
+# without keeping it would break every integration test on a fresh clone -- measured,
+# not hypothesised.
+#
+# Caveat: `npm run build` DELETES this .gitkeep, because vite.config.ts sets
+# emptyOutDir: true on this directory. That shows up as a spurious deletion in
+# `git status` after a local build. Restore it (`git checkout -- ` the path); do not
+# commit its removal, or a fresh clone loses the directory and the host stops booting.
+src/Arbitarr.Host/wwwroot/*
+!src/Arbitarr.Host/wwwroot/.gitkeep

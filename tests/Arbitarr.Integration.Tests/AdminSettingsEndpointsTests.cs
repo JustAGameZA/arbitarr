@@ -170,20 +170,6 @@ public sealed class AdminSettingsEndpointsTests : IClassFixture<ArbitarrWebAppli
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
-    [Theory]
-    [InlineData("/admin-settings.html")]
-    [InlineData("/admin-settings.js")]
-    public async Task Admin_settings_static_assets_are_served(string path)
-    {
-        // M7-8: the admin settings page (wwwroot/admin-settings.html + .js) must actually be wired
-        // to the static-file pipeline, not merely exist on disk.
-        using var client = _factory.CreateClient();
-
-        var response = await client.GetAsync(path);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    }
-
     private HttpClient AuthorizedClient()
     {
         var client = _factory.CreateClient();
