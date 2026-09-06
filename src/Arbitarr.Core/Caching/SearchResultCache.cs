@@ -13,13 +13,36 @@ namespace Arbitarr.Core.Caching;
 /// </summary>
 public sealed class SearchResultCache
 {
+    /// <summary>
+    /// Default coalescing threshold: half of the default <c>WorkerCycleInterval</c>. See
+    /// <see cref="SearchResultCache(ISearchResultCacheStore, TimeProvider, TimeSpan?)"/> for why
+    /// stamping is allowed to be this imprecise.
+    /// </summary>
+    public static TimeSpan DefaultStampCoalescingWindow => RefreshWorkerDefaults.WorkerCycleInterval / 2;
+
     private readonly ISearchResultCacheStore _store;
     private readonly TimeProvider _timeProvider;
+    private readonly TimeSpan _stampCoalescingWindow;
 
-    public SearchResultCache(ISearchResultCacheStore store, TimeProvider timeProvider)
+    /// <param name="stampCoalescingWindow">
+    /// Minimum age of the stored <c>LastRequestedAt</c> before a servable read stamps it again.
+    ///
+    /// Without this, every servable hit issues a real <c>UPDATE</c>, so WAL growth and contention
+    /// for SQLite's single global write lock scale with <em>read</em> volume (#23). The stamp only
+    /// has to be precise enough for <c>GetRefreshCandidatesAsync</c>, which compares it against
+    /// <c>ActiveWindow</c> — hours, against a threshold of half a worker cycle — so an entry being
+    /// served continuously can never drift out of refresh selection between stamps.
+    ///
+    /// Must be non-negative. <see cref="TimeSpan.Zero"/> restores stamp-on-every-hit.
+    /// </param>
+    public SearchResultCache(ISearchResultCacheStore store, TimeProvider timeProvider, TimeSpan? stampCoalescingWindow = null)
     {
+        var window = stampCoalescingWindow ?? DefaultStampCoalescingWindow;
+        ArgumentOutOfRangeException.ThrowIfLessThan(window, TimeSpan.Zero);
+
         _store = store;
         _timeProvider = timeProvider;
+        _stampCoalescingWindow = window;
     }
 
     /// <summary>
@@ -67,11 +90,11 @@ public sealed class SearchResultCache
         switch (band)
         {
             case CacheBand.Fresh:
-                await _store.TouchLastRequestedAsync(queryKey, now, cancellationToken);
+                await StampIfDueAsync(queryKey, entry, now, cancellationToken);
                 return new CacheReadResult(CacheBand.Fresh, entry.PayloadJson, age, RefreshTriggered: false);
 
             case CacheBand.StaleButValid:
-                await _store.TouchLastRequestedAsync(queryKey, now, cancellationToken);
+                await StampIfDueAsync(queryKey, entry, now, cancellationToken);
                 refreshTrigger?.Invoke();
                 return new CacheReadResult(CacheBand.StaleButValid, entry.PayloadJson, age, RefreshTriggered: refreshTrigger is not null);
 
@@ -80,6 +103,23 @@ public sealed class SearchResultCache
                 // Nothing is served: LastRequestedAt MUST NOT be stamped (M3-8a).
                 return new CacheReadResult(CacheBand.Expired, null, null, RefreshTriggered: false);
         }
+    }
+
+    /// <summary>
+    /// Stamps <c>LastRequestedAt</c> for a served entry, unless the stored stamp is younger than
+    /// the coalescing window — a read-path write that buys no selection accuracy (#23).
+    /// </summary>
+    private Task StampIfDueAsync(string queryKey, CachedSearchResult entry, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        // A clock that has gone backwards yields a negative age, which is < the window and would
+        // suppress the stamp indefinitely; stamping is the safe branch, so compare explicitly.
+        var sinceLastStamp = now - entry.LastRequestedAt;
+        if (sinceLastStamp >= TimeSpan.Zero && sinceLastStamp < _stampCoalescingWindow)
+        {
+            return Task.CompletedTask;
+        }
+
+        return _store.TouchLastRequestedAsync(queryKey, now, cancellationToken);
     }
 
     /// <summary>
