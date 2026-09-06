@@ -2,7 +2,6 @@ import { screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import SystemPage from './System';
-import { ADMIN_KEY_HEADER } from '../../api/client';
 import { useAdminKeyStore } from '../../state/adminKeyStore';
 import { SERVER_KEY_UNSET_MESSAGE } from '../QueryState';
 import { mockApi } from '../../test/mockApi';
@@ -134,9 +133,11 @@ describe('System', () => {
 
     // /api/admin/ is gated by path prefix, so the key rides along here...
     expect(api.adminKeyOn('/api/admin/observability')).toBe('test-key');
-    // ...and must not leak onto the PublicRead staleness endpoint.
+    // ...and must not leak onto the PublicRead staleness endpoint. Assert the
+    // request happened first: an absent header and an absent request both read
+    // as undefined, and only one of those is the behaviour under test.
+    expect(api.callsTo('/api/health/staleness')).toHaveLength(1);
     expect(api.adminKeyOn('/api/health/staleness')).toBeUndefined();
-    expect(api.callsTo('/api/health/staleness')[0]?.headers[ADMIN_KEY_HEADER]).toBeUndefined();
   });
 
   it('still renders staleness when the admin-gated counters are refused', async () => {
