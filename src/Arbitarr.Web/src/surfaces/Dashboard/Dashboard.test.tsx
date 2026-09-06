@@ -50,7 +50,9 @@ const config = {
   workerCycleIntervalSeconds: 120,
   workerEnabled: true,
   querySnapshotTtlSeconds: 86400,
-  shadowMode: false,
+  // #42: the default fixture reflects a real deployment, where shadow mode is never null (D3
+  // default-ON). The contract still permits null -- see the dedicated null-branch test below.
+  shadowMode: true,
 };
 
 const allOk = {
@@ -108,6 +110,18 @@ describe('Dashboard', () => {
     expect(await screen.findByText('status probe unavailable')).toBeInTheDocument();
     // One panel failing must not blank the page: the other two still render.
     expect(await screen.findByText('some series s01e02')).toBeInTheDocument();
+  });
+
+  it('renders "Not set" for shadow mode when the field is null', async () => {
+    // The response contract still permits shadowMode: null (bool?) even though a real deployment
+    // never sends it (D3 default-ON) -- this keeps that branch covered per #42.
+    mockApi({
+      ...allOk,
+      '/api/config/effective': { body: { ...config, shadowMode: null } },
+    });
+    renderSurface(<DashboardPage />);
+
+    expect(await screen.findByText('Not set')).toBeInTheDocument();
   });
 
   it('sends no admin key header, because none of its endpoints is admin-gated', async () => {
