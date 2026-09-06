@@ -1,7 +1,21 @@
 import { useQuery } from '@tanstack/react-query';
 
 import { apiFetch } from '../../api/client';
-import type { ObservabilityResponse, StalenessEnvelopeResponse } from '../../api/types';
+import type { BuildInfoResponse, ObservabilityResponse, StalenessEnvelopeResponse } from '../../api/types';
+
+/**
+ * GET /api/system/build.
+ *
+ * RouteClassification.PublicRead, same as useStalenessQuery: no admin header attached, and kept
+ * as its own independent query so the build panel renders even when useObservabilityQuery's
+ * admin-gated request fails.
+ */
+export function useBuildInfoQuery() {
+  return useQuery({
+    queryKey: ['system', 'build'],
+    queryFn: () => apiFetch<BuildInfoResponse>('/api/system/build'),
+  });
+}
 
 /**
  * GET /api/admin/observability.
