@@ -6,6 +6,31 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <!--
+    Issue #46/R1: build identity, threaded from the Dockerfile's build args (via
+    `dotnet publish -p:CommitSha=... -p:ImageTag=... -p:BuildTimestampUtc=...`) down to assembly
+    metadata that Arbitarr.Api.SystemInfo.BuildInfo reads at startup. All three default to empty here
+    so a plain local `dotnet build`/`dotnet run` with no properties supplied produces an assembly
+    with no AssemblyMetadata entry for these keys; BuildInfo.ReadOnce treats that as unset and
+    renders "unknown (local build)" rather than a blank or stale value.
+
+    SourceRevisionId flows into AssemblyInformationalVersionAttribute automatically when set
+    (the standard MSBuild source-control mechanism), so InformationalVersion needs no separate
+    property of its own here.
+  -->
+  <PropertyGroup>
+    <CommitSha Condition="'$(CommitSha)' == ''"></CommitSha>
+    <ImageTag Condition="'$(ImageTag)' == ''"></ImageTag>
+    <BuildTimestampUtc Condition="'$(BuildTimestampUtc)' == ''"></BuildTimestampUtc>
+    <SourceRevisionId Condition="'$(CommitSha)' != ''">$(CommitSha)</SourceRevisionId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AssemblyMetadata Include="CommitSha" Value="$(CommitSha)" />
+    <AssemblyMetadata Include="ImageTag" Value="$(ImageTag)" />
+    <AssemblyMetadata Include="BuildTimestampUtc" Value="$(BuildTimestampUtc)" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.11" />
   </ItemGroup>

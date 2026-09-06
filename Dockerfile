@@ -58,7 +58,19 @@ COPY --from=web /web/dist/ src/Arbitarr.Host/wwwroot/
 # content by default. Because the COPY above lands the bundle on disk BEFORE this
 # publish runs in the same stage, the SDK carries it into /app/publish/wwwroot with
 # no csproj change, and the runtime stage's COPY below then puts it at /app/wwwroot.
-RUN dotnet publish src/Arbitarr.Host/Arbitarr.Host.csproj -c Release -o /app/publish
+#
+# Issue #46/R1: build identity. These three build args default to empty so a manual
+# `docker build` with none supplied still succeeds -- Arbitarr.Host.csproj treats an empty
+# value as unset, and BuildInfo renders "unknown (local build)" for it rather than a blank
+# or stale stamp. deploy-review.yml passes CommitSha, ImageTag and BuildTimestampUtc through --
+# that workflow's `docker build` step is the only one in this repo, build-test.yml has none.
+ARG COMMIT_SHA=""
+ARG IMAGE_TAG=""
+ARG BUILD_TIMESTAMP_UTC=""
+RUN dotnet publish src/Arbitarr.Host/Arbitarr.Host.csproj -c Release -o /app/publish \
+    -p:CommitSha="$COMMIT_SHA" \
+    -p:ImageTag="$IMAGE_TAG" \
+    -p:BuildTimestampUtc="$BUILD_TIMESTAMP_UTC"
 
 # Runtime stage
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
