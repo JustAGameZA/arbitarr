@@ -9,7 +9,9 @@ services:
     image: arbitarr:latest
     container_name: arbitarr
     ports:
-      - "8080:8080"
+      # Host 9705 per the deployment spec: 8080 is the most contended port on a typical
+      # homelab host, so the container's internal 8080 is published on 9705 instead.
+      - "9705:8080"
     volumes:
       # Runtime state: SQLite database, per-instance HMAC secret, fetched datasets (AC21).
       - ./config:/config
