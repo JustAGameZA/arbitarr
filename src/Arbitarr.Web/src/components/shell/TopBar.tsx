@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { useAdminKeyStore } from '../../state/adminKeyStore';
 import styles from './TopBar.module.css';
 
@@ -36,14 +37,24 @@ export function TopBar({ className }: TopBarProps) {
   const barClassName = className === undefined ? styles.topbar : `${styles.topbar} ${className}`;
 
   if (serverKeyUnset) {
-    // A key prompt here would strand the operator: the server has no key set,
-    // so no value they type can satisfy the gate. Say what to fix instead.
+    // A key prompt here would STILL strand the operator: the server has no key
+    // set, so no value they type can satisfy the gate. That reasoning is
+    // unchanged, and is why this branch still renders no input field.
+    //
+    // What changed (#43) is that this is no longer a DEAD end. The server now
+    // admits admin requests arriving from the local network while no key is
+    // configured, so an operator reading this can actually reach Settings and
+    // set one. Hence a link rather than a bare statement of fact -- the old
+    // copy described a problem the operator had no way to act on.
     return (
       <header className={barClassName}>
         <span className={styles.status}>
           <span className={`${styles.dot} ${styles.dotServerUnset}`} aria-hidden="true" />
           No admin API key is configured on the server.
         </span>
+        <Link className={styles.link} to="/settings">
+          Set one in Settings
+        </Link>
       </header>
     );
   }

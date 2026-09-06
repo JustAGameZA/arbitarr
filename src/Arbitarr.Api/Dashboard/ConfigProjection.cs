@@ -18,7 +18,7 @@ namespace Arbitarr.Api.Dashboard;
 /// <param name="WorkerCycleIntervalSeconds">Worker scan period, in seconds.</param>
 /// <param name="WorkerEnabled">Global on/off for proactive refresh.</param>
 /// <param name="QuerySnapshotTtlSeconds">Pagination snapshot TTL, in seconds.</param>
-/// <param name="ShadowMode">Whether AI/rule suppression is currently shadow-mode (annotate-but-never-suppress). Null until M4 introduces the setting.</param>
+/// <param name="ShadowMode">Whether AI/rule suppression is currently shadow-mode (annotate-but-never-suppress). Mirrors what the filter pipeline (<c>FilterStage</c>) actually enforces.</param>
 public sealed record EffectiveConfigResponse(
     bool NzbHydraConfigured,
     double FreshUntilSeconds,
@@ -33,7 +33,7 @@ public sealed record EffectiveConfigResponse(
 /// <summary>Builds the allow-listed <see cref="EffectiveConfigResponse"/> from live settings.</summary>
 public static class ConfigProjection
 {
-    public static EffectiveConfigResponse Project(SettingsSnapshot settings, bool nzbHydraConfigured, bool? shadowMode = null) =>
+    public static EffectiveConfigResponse Project(SettingsSnapshot settings, bool nzbHydraConfigured, bool? shadowMode) =>
         new(
             NzbHydraConfigured: nzbHydraConfigured,
             FreshUntilSeconds: settings.FreshUntil.TotalSeconds,
