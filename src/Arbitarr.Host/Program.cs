@@ -245,6 +245,11 @@ builder.Services.AddScoped(sp => new SettingsRepository(
 // now so 53b-53d can depend on it without another Host change.
 builder.Services.AddScoped<SourceRepository>();
 
+// #55 step 1 (foundation shared with #54): the shared event store. Deliberately unread/unwritten
+// until the emission stage (#55 step 2 / #54 step 2) — registered now so those stages can depend on
+// it without another Host change, matching #53 stage 53a's posture for SourceRepository above.
+builder.Services.AddScoped<Arbitarr.Data.Events.EventRepository>();
+
 // M7-3a: schedules MaintenanceJob on SettingKey.MaintenanceJobInterval. Unlike the RefreshWorker
 // options above, the interval is the one setting explicitly permitted to require a restart to take
 // effect (see MaintenanceHostedService's doc comment), so it is read once at startup rather than
