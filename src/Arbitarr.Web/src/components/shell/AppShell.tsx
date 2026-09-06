@@ -1,7 +1,9 @@
 import type { ReactNode } from 'react';
-import { Outlet } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Outlet, useLocation } from 'react-router-dom';
 import { SidebarNav } from './SidebarNav';
 import { TopBar } from './TopBar';
+import { resolveDocumentTitle } from '../../routes.titles';
 import styles from './AppShell.module.css';
 
 interface AppShellProps {
@@ -18,8 +20,19 @@ interface AppShellProps {
  * engine, so document order is the only structural relationship a test can
  * assert -- offsetWidth is 0 there even for a literal 210px, and a var()-valued
  * longhand reads back unsubstituted.
+ *
+ * Because the shell never remounts, it is also the single always-mounted place
+ * to keep the browser tab title in sync with the route (documentTitle.test.tsx):
+ * a per-page hook would need six call sites and a new surface could silently
+ * forget it, so this effect -- keyed on the pathname -- is the one source.
  */
 export function AppShell({ children }: AppShellProps) {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    document.title = resolveDocumentTitle(pathname);
+  }, [pathname]);
+
   return (
     <div className={styles.shell}>
       <aside className={styles.sidebar}>

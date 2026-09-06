@@ -1,4 +1,3 @@
-using System.Reflection;
 using Arbitarr.Ai;
 using Arbitarr.Api.Admin;
 using Arbitarr.Api.Dashboard;
@@ -18,6 +17,7 @@ using Arbitarr.Data.Filtering;
 using Arbitarr.Data.Maintenance;
 using Arbitarr.Data.Security;
 using Arbitarr.Data.Settings;
+using Arbitarr.Data.Sources;
 using Arbitarr.Host;
 using Arbitarr.Host.Caching;
 using Arbitarr.Host.Security;
@@ -45,6 +45,11 @@ builder.Services.AddScoped(sp =>
 });
 
 builder.Services.AddSingleton(TimeProvider.System);
+
+// Issue #46/R1: read once at startup and cache as a singleton. Assembly metadata cannot change
+// during the process lifetime, so re-reading it per request (as the old inline /health version
+// literal effectively forced by being hardcoded) would be pointless work.
+builder.Services.AddSingleton(sp => Arbitarr.Api.SystemInfo.BuildInfo.ReadOnce(sp.GetRequiredService<TimeProvider>()));
 builder.Services.AddSingleton(CircuitBreakerOptions.Default);
 builder.Services.AddSingleton<SourceCircuitBreaker>();
 builder.Services.AddScoped<SourceHealthRepository>();
@@ -235,6 +240,11 @@ builder.Services.AddScoped(sp => new SettingsRepository(
     sp.GetRequiredService<ArbitarrDbContext>(),
     TimeSpan.FromMinutes(15)));
 
+// #53 stage 53a: persistence only. Nothing reads from SourceRepository yet — env vars remain
+// authoritative until 53b adds the DB-first, env-var-fallback resolution path (plan §3.2). Registered
+// now so 53b-53d can depend on it without another Host change.
+builder.Services.AddScoped<SourceRepository>();
+
 // #55 step 1 (foundation shared with #54): the shared event store. Deliberately unread/unwritten
 // until the emission stage (#55 step 2 / #54 step 2) — registered now so those stages can depend on
 // it without another Host change, matching #53 stage 53a's posture for SourceRepository above.
@@ -283,15 +293,15 @@ using (var scope = app.Services.CreateScope())
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
-var version = Assembly.GetExecutingAssembly()
-    .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
-    ?? "dev";
-
-app.MapGet("/health", () => Results.Json(new
+// Issue #46: the informational version now comes from the same BuildInfo singleton
+// GET /api/system/build reports, instead of a separately-read AssemblyInformationalVersionAttribute
+// lookup that could drift from it. /health stays a minimal liveness probe -- only `version`
+// changes here; no other build fields are added to it (that is what /api/system/build is for).
+app.MapGet("/health", (Arbitarr.Api.SystemInfo.BuildInfo buildInfo) => Results.Json(new
 {
     status = "ok",
     name = "Arbitarr",
-    version,
+    version = buildInfo.InformationalVersion,
 }))
     .WithClassification(RouteClassification.PublicRead);
 
@@ -299,6 +309,7 @@ StatusEndpoint.Map(app);
 RecentSearchesEndpoint.Map(app);
 EffectiveConfigEndpoint.Map(app);
 HealthStalenessEndpoint.Map(app);
+Arbitarr.Api.SystemInfo.BuildInfoEndpoint.Map(app);
 AdminPingEndpoint.Map(app);
 ObservabilityEndpoint.Map(app);
 AdminSettingsEndpoints.Map(app);

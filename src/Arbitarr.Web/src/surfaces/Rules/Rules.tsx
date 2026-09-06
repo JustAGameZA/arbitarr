@@ -181,7 +181,9 @@ export default function RulesPage() {
           <QueryState isPending={rules.isPending} error={rules.error} data={rules.data}>
             {(data) =>
               data.length === 0 ? (
-                <p className={styles.empty}>No rules defined.</p>
+                <p className={styles.empty}>
+                  No rules defined. Add one below to allow or deny releases matching a pattern.
+                </p>
               ) : (
                 <div className={styles.tableScroll}>
                   <table className={styles.table}>

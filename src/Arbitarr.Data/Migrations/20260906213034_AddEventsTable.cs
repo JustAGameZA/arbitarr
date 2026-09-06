@@ -6,10 +6,14 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace Arbitarr.Data.Migrations
 {
     /// <inheritdoc />
-    // #55 step 1 (foundation shared with #54): purely additive (one new table, zero changes to any
-    // existing table or column), so applying this to an existing populated database is lossless by
-    // construction — there is nothing here that could touch or drop an existing row. No credential
-    // column exists on this table by design (see Entities.EventEntry's doc comment).
+    // #55 step 1: purely additive (one new table, zero changes to any existing table or column), so
+    // applying this to an existing populated database is lossless by construction. Regenerated on
+    // top of #53's AddSourcesTable when the two foundation branches met, rather than hand-merging
+    // the EF model snapshot -- a snapshot resolved by hand silently stops matching the model, and
+    // the next migration generated against it inherits the drift.
+    //
+    // No credential can land in this table: EventEntry carries no secret-shaped column, and a
+    // source is identified by its display name (see that type's doc comment).
     public partial class AddEventsTable : Migration
     {
         /// <inheritdoc />

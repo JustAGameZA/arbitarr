@@ -54,7 +54,12 @@ function SuppressionsTable({ entries }: { entries: SuppressionViewEntry[] }) {
   const [openRow, setOpenRow] = useState<number | null>(null);
 
   if (entries.length === 0) {
-    return <p className={styles.empty}>No suppressed or de-ranked results.</p>;
+    return (
+      <p className={styles.empty}>
+        Nothing suppressed or de-ranked yet. Entries appear here once a rule or the AI layer acts on a
+        release.
+      </p>
+    );
   }
 
   return (

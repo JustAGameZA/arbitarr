@@ -11,8 +11,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Arbitarr.Data.Migrations
 {
     [DbContext(typeof(ArbitarrDbContext))]
-    [Migration("20260906180132_AddEventsTable")]
-    partial class AddEventsTable
+    [Migration("20260906174226_AddSourcesTable")]
+    partial class AddSourcesTable
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -70,41 +70,6 @@ namespace Arbitarr.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("CapsCacheEntries");
-                });
-
-            modelBuilder.Entity("Arbitarr.Data.Entities.EventEntry", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Detail")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("Kind")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTimeOffset>("OccurredAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Reason")
-                        .HasMaxLength(1024)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("SourceDisplayName")
-                        .HasMaxLength(256)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Summary")
-                        .IsRequired()
-                        .HasMaxLength(1024)
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Kind", "OccurredAt");
-
-                    b.ToTable("Events");
                 });
 
             modelBuilder.Entity("Arbitarr.Data.Entities.FilterProfileEntry", b =>
@@ -302,6 +267,43 @@ namespace Arbitarr.Data.Migrations
                     b.HasKey("Name");
 
                     b.ToTable("Settings");
+                });
+
+            modelBuilder.Entity("Arbitarr.Data.Entities.Source", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("BaseUrl")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DisplayName")
+                        .IsUnique();
+
+                    b.ToTable("Sources");
                 });
 
             modelBuilder.Entity("Arbitarr.Data.Entities.SourceHealthRecord", b =>
