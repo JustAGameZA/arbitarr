@@ -2,6 +2,31 @@
   display: flex;
   flex-direction: column;
   padding: 12px 0;
+  height: 100%;
+}
+
+/*
+ * Off-canvas drawer (#48). AppShell.module.css takes .sidebar out of grid flow
+ * and fixes it below 768px; this is the translate that actually hides and
+ * reveals it, plus the width it needs now that it no longer inherits one from
+ * the grid track.
+ */
+@media (max-width: 768px) {
+  .nav {
+    width: var(--sidebar-width);
+    transform: translateX(-100%);
+    transition: transform 180ms ease-out;
+  }
+
+  .navOpen {
+    transform: translateX(0);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .nav {
+      transition: none;
+    }
+  }
 }
 
 .brand {

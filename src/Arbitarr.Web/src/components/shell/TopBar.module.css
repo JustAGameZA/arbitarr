@@ -6,12 +6,64 @@
   padding: 0 20px;
 }
 
+/*
+ * Visible by default and hidden above the shell breakpoint (AC3: no toggle on
+ * desktop), rather than the other way around: jsdom applies a stylesheet's
+ * unconditional rules but never matches a @media query, so a base
+ * `display: none` gated on "unhide below 768px" would leave the button
+ * permanently hidden -- and therefore absent from the accessibility tree --
+ * in every test, real viewport or not. AppShell always mounts this button
+ * (see TopBar.tsx); this rule plus the override below is what makes CSS,
+ * not JS, responsible for hiding it on desktop.
+ */
+.drawerToggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin-right: auto;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--fg-primary);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.drawerToggle:hover {
+  background: var(--bg-panel-alt);
+}
+
+@media (min-width: 769px) {
+  .drawerToggle {
+    display: none;
+  }
+}
+
 .status {
   display: flex;
   align-items: center;
   gap: 7px;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
   font-size: 13px;
   color: var(--fg-muted);
+}
+
+/*
+ * #48 AC4: at narrow widths this text is what used to wrap the bar to three
+ * lines. It truncates instead -- the dot still conveys state at a glance, and
+ * the full sentence is not load-bearing once truncated because the
+ * server-key-unset branch also renders an actionable Link next to it.
+ */
+.statusText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .dot {
@@ -90,13 +142,38 @@
  * the operator sets the key on the Settings surface, not from the top bar.
  */
 .link {
+  /*
+   * Never the flex item that gives way: it is the only route out of a fresh
+   * install with no admin key (#43), so `.statusText` truncates before this
+   * is allowed to shrink or wrap.
+   */
+  flex: 0 0 auto;
   color: var(--accent);
   font-size: 13px;
   font-weight: 600;
   text-decoration: none;
+  white-space: nowrap;
 }
 
 .link:hover {
   color: var(--accent-hover);
   text-decoration: underline;
+}
+
+/*
+ * Below the shell breakpoint the drawer toggle already claims space on the
+ * left; give the key-entry form room by letting the input shrink instead of
+ * holding a fixed 220px, which is what pushed the bar wide enough to scroll.
+ */
+@media (max-width: 768px) {
+  .form {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .input {
+    width: auto;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
 }
