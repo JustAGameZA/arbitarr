@@ -97,6 +97,25 @@ describe('Search', () => {
     expect(screen.getByText('1m 30s')).toBeInTheDocument();
   });
 
+  it('tells the operator a query ran and matched nothing', async () => {
+    const user = userEvent.setup();
+    mockApi({
+      '/api/admin/search': {
+        body: { releases: [], provenance: response.provenance },
+      },
+    });
+    renderSurface(<SearchPage />);
+
+    await runSearch(user);
+
+    // Distinct from the pre-search prompt ("Enter a query above to search."):
+    // a query has already run here, so the copy must say the result, not
+    // repeat the instruction to search.
+    expect(
+      await screen.findByText('No releases matched. Try a broader query or different search terms.'),
+    ).toBeInTheDocument();
+  });
+
   it('toggling the AI opt-in changes the outgoing request', async () => {
     const user = userEvent.setup();
     const api = mockApi({ '/api/admin/search': { body: response } });

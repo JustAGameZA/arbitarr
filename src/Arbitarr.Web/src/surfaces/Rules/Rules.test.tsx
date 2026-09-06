@@ -33,6 +33,15 @@ describe('Rules', () => {
     expect(screen.getByText('allow-1080p')).toBeInTheDocument();
   });
 
+  it('tells the operator what a rule does when none are defined yet', async () => {
+    mockApi({ '/api/admin/rules': { body: [] } });
+    renderSurface(<RulesPage />);
+
+    expect(
+      await screen.findByText('No rules defined. Add one below to allow or deny releases matching a pattern.'),
+    ).toBeInTheDocument();
+  });
+
   it('creates, edits and deletes a rule', async () => {
     const user = userEvent.setup();
     const api = mockApi({ '/api/admin/rules': { body: rules } });
