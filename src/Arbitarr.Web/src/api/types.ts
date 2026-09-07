@@ -395,6 +395,8 @@ export interface LogsResponse {
   page: number;
   pageSize: number;
   loggers: string[];
+}
+
 // --- Decisions (#54) ------------------------------------------------------
 
 /** The two verdicts a decision can carry. Unreviewed is null, never a third name. */
