@@ -55,14 +55,28 @@ Match the names explicitly, so the wire format is closed by construction.
   and `tests/frontend-test-count-floor.txt` hold the number a run *printed*. After a
   rebase, **re-measure** — different branches legitimately measure different totals.
   Never adjust a floor by adding the number of tests you wrote.
-- **Mutation-test every "secret must not appear in X" assertion.** A leak test on #57
-  passed while a deliberately injected leak was present, because it drove an endpoint
-  that never went through the dispatcher — it asserted absence from rows the path had
-  never written. Non-vacuity discipline alone did not catch it; only mutation did.
+- **Every "secret must not appear in X" assertion needs a positive control.**
+  `Assert.DoesNotContain(secret, body)` passes just as happily when the secret was
+  never in play — an empty set contains nothing. The test must first demonstrate that
+  a planted secret in that response *would* fail it, then assert the real response
+  carries none. Adding more absence assertions does not fix a vacuous one.
+  - `LogSecretInjectionTests` is the reference: it asserts
+    `LogMessageCleanser.Replacement` **is present**, proving the secret reached the
+    cleanser and was scrubbed rather than never arriving.
+  - Asserting the fixture was created (a `201`, a non-null value) proves the secret
+    **exists**. It does not prove the secret would be **detectable if it leaked**.
+    Those are different properties and only the second makes the assertion bite.
+- **Mutation-test them.** This shape has shipped three times: #57's webhook test passed
+  with a real leak because it drove an endpoint that bypassed the dispatcher; #80's
+  key test passed with a live `debugLastKey` leak because it searched for the *first*
+  minted key while the leak returned the *last*; #78 came close. In each case
+  non-vacuity discipline alone missed it and only mutation caught it.
   - Prove non-vacuity **without putting vulnerable code in the repository**: a
     throwaway console project outside the repo holding both implementations side by
-    side gives the same evidence and leaves nothing behind. Never leave a mutation
-    uncommitted in a worktree.
+    side gives the same evidence and leaves nothing behind. Never mutate files in
+    place, and never leave a mutation uncommitted in a worktree.
+  - When one such assertion is found vacuous, **sweep its whole file** rather than
+    fixing the named test. If the pattern failed once it was never established.
 - Assert **per row** where a flag is written per row. A test that checks "some row has
   it" still passes when an implementation writes one value to all of them.
 
@@ -93,6 +107,11 @@ Match the names explicitly, so the wire format is closed by construction.
   **Never blanket-normalise.** Verify with a plain `--stat` against
   `--ignore-all-space --stat` — if they differ, line endings moved.
 - Every worker gets **its own git worktree**. Never share a checkout.
+- When several agents do share one, `git status` tells you **what** changed and never
+  **who** changed it. A reviewer running a mutation test looks identical to a worker
+  leaving residue. Ask who owns an unexpected change before attributing it — inferring
+  the author from motive gets it wrong. What matters for safety is whether it was
+  committed or pushed: check `git show <pushed-sha>` before raising anything.
 
 ## 7. Architecture
 
