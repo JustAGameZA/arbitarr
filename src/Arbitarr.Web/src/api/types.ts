@@ -522,3 +522,83 @@ export interface CreatedApiKeyResponse {
   key: ApiKeyEntry;
   plaintextKey: string;
 }
+
+// --- Notifications (#57 backend, #83 client) --------------------------------
+
+/**
+ * AdminNotificationEndpoints.cs — NotificationConfigResponse.
+ *
+ * NOTE WHAT IS ABSENT, and keep it absent: there is no `webhookUrl` field, and
+ * deliberately no nullable one a future edit could start populating. For a
+ * notification webhook the URL IS the credential — Discord, Telegram, Gotify
+ * and Notifiarr all carry the token in the path — so the server reports
+ * presence as a bool and nothing else. Adding a string field here would create
+ * the first place in the client capable of holding the value, which is exactly
+ * the property the server record was shaped to deny.
+ */
+export interface NotificationConfig {
+  enabled: boolean;
+  /** Presence only. The value is never served, so the form can never pre-fill it. */
+  hasWebhookUrl: boolean;
+  consecutiveFailureThreshold: number;
+  suppressionRateThreshold: number;
+  /** A TimeSpan on the wire: "01:00:00". Sent back in the same form. */
+  suppressionRateWindow: string;
+  enabledTriggers: NotificationTrigger[];
+  /** A NotificationDeliveryOutcome name, or null when nothing has been attempted. */
+  lastDeliveryOutcome: NotificationDeliveryOutcome | null;
+  lastDeliveryAt: string | null;
+}
+
+/**
+ * NotificationTrigger.cs — projected with `.ToString()`, so these arrive as
+ * NAMES rather than numbers (the same split types.ts's header describes for
+ * `aiVerdict` versus `cacheBand`).
+ */
+export type NotificationTrigger =
+  | 'SourceFailing'
+  | 'SourceRecovered'
+  | 'SuppressionRateHigh'
+  | 'SuppressionRateNormal';
+
+/**
+ * NotificationDeliveryOutcome.cs — a CLOSED set, mirrored closed here.
+ *
+ * The server's enum is closed precisely so a delivery failure cannot carry text
+ * derived from the target or its response. Mirroring it as a union rather than
+ * `string` keeps that guarantee on this side too: the client renders wording
+ * chosen from the outcome alone, and there is no branch that can interpolate a
+ * URL, a hostname or a status code into what the operator reads.
+ */
+export type NotificationDeliveryOutcome =
+  | 'Delivered'
+  | 'Unreachable'
+  | 'TlsFailure'
+  | 'Rejected'
+  | 'NotConfigured';
+
+/**
+ * AdminNotificationEndpoints.cs — UpdateNotificationConfigRequest.
+ *
+ * `webhookUrl` is WRITE-ONLY AND OMITTED WHEN UNTOUCHED. Omitting it leaves the
+ * stored URL alone; sending a non-empty value replaces it. The client never had
+ * the value, so it cannot read-and-reapply one — which is why an ordinary
+ * threshold edit must not carry the field at all, and why clearing is a
+ * separate DELETE rather than a PUT of "".
+ */
+export interface UpdateNotificationConfigRequest {
+  enabled?: boolean;
+  webhookUrl?: string;
+  consecutiveFailureThreshold?: number;
+  suppressionRateThreshold?: number;
+  suppressionRateWindow?: string;
+  enabledTriggers?: NotificationTrigger[];
+}
+
+/** AdminNotificationEndpoints.cs — NotificationTestResponse. */
+export interface NotificationTestResult {
+  success: boolean;
+  outcome: NotificationDeliveryOutcome;
+  /** The server's fixed wording for `outcome`. Never derived from the target. */
+  message: string;
+}

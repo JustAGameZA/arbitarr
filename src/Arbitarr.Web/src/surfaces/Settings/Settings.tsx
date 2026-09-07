@@ -5,6 +5,7 @@ import { QueryState, errorMessage } from '../QueryState';
 import type { SettingCatalogEntry } from '../../api/types';
 import styles from '../surface.module.css';
 import local from './Settings.module.css';
+import { NotificationsSection } from './Notifications/Notifications';
 import { useSettingsQuery, useUpdateSettingMutation } from './queries';
 import { ApiKeysSection } from './ApiKeys/ApiKeys';
 
@@ -180,6 +181,8 @@ export default function SettingsPage() {
       />
 
       <ApiKeysSection />
+
+      <NotificationsSection />
 
       <QueryState isPending={settings.isPending} error={settings.error} data={settings.data}>
         {(entries) =>
