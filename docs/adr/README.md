@@ -58,3 +58,4 @@ of a superseded ADR is what stops the same rejected option being proposed again.
 | [0004](0004-admin-key-write-only-with-bootstrap-bypass.md) | The admin key is write-only, with a local-network bootstrap bypass |
 | [0005](0005-separate-log-database.md) | Logs live in a second SQLite database |
 | [0006](0006-generate-candidates-correctly-rather-than-filtering.md) | Numbering candidates are generated correctly, not filtered afterwards |
+| [0007](0007-restart-rather-than-reload-after-restore.md) | A restore stops the host and relies on the deployment restart policy |

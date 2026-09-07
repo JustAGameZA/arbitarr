@@ -602,3 +602,41 @@ export interface NotificationTestResult {
   /** The server's fixed wording for `outcome`. Never derived from the target. */
   message: string;
 }
+
+// --- Backup and restore (#56) --------------------------------------------
+
+/**
+ * AdminBackupEndpoints.cs — BackupStatusResponse.
+ *
+ * `lastRestore*` covers the most recent restore ATTEMPT this process saw, and is held in
+ * memory rather than in the database on purpose: a restore replaces the configuration
+ * database wholesale, so an outcome persisted there would be overwritten by the very
+ * operation it reports on. The consequence — it does not survive the restart a restore
+ * triggers — is stated in the UI rather than shown as a blank panel.
+ */
+export interface BackupStatusResponse {
+  lastBackupAt: string | null;
+  lastBackupAutomatic: boolean;
+  /** How many automatic archives are kept. 0 means automatic backups are off. */
+  automaticBackupsRetained: number;
+  /**
+   * When the last automatic backup FAILED, or null when the most recent pass succeeded.
+   *
+   * Provenance for the degraded path: without it a broken scheduled backup looks exactly like a
+   * healthy one that has not run again yet, because `lastBackupAt` merely stops advancing.
+   */
+  lastBackupFailureAt: string | null;
+  /** Why it failed. A reason string, never a stack trace. */
+  lastBackupFailureReason: string | null;
+  lastRestoreAt: string | null;
+  lastRestoreSucceeded: boolean;
+  lastRestoreMessage: string | null;
+}
+
+/** AdminBackupEndpoints.cs — RestoreResponse. */
+export interface RestoreResponse {
+  succeeded: boolean;
+  message: string;
+  preRestoreBackupTaken: boolean;
+  restarting: boolean;
+}

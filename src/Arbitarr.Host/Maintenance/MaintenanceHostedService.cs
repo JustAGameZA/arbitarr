@@ -25,6 +25,18 @@ namespace Arbitarr.Host.Maintenance;
 /// on the same cadence, and a second scheduler would be a second thing to reason about when the
 /// disk fills. It runs in its own try/catch so a failure in either job cannot stop the other —
 /// notably, a log-store failure must not prevent the main database from being pruned.
+///
+/// #56 added a THIRD, on the same reasoning and with the same isolation: the automatic
+/// configuration backup and its bounded retention (<see cref="Arbitarr.Data.Backup.AutomaticBackupJob"/>).
+/// Its own try/catch matters more here than for the other two, because it is the only one that can
+/// fail for a reason outside this process's control — a full config volume — and a box that cannot
+/// write a backup must still prune its database.
+///
+/// Every pass therefore touches all THREE stores under the config directory in a deliberate order:
+/// arbitarr.db (prune + vacuum), the separate log database named by
+/// <see cref="LogStore.DatabaseFileName"/> (trim), and the backup directory (take + prune). The two
+/// SQLite files are separate on purpose; anything added here that spans "the databases" must grep
+/// for that constant rather than for "arbitarr.db".
 /// </summary>
 public sealed class MaintenanceHostedService(
     IServiceScopeFactory scopeFactory,
@@ -71,6 +83,29 @@ public sealed class MaintenanceHostedService(
                 // different SQLite files, and a failure on the log store (locked file, no space)
                 // must not stop the main database from being pruned. Same next-cycle retry.
                 _logger.LogError(ex, "Log database trim failed; will retry next cycle.");
+            }
+
+            try
+            {
+                await RunAutomaticBackupAsync(stoppingToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                // Third separate catch, same rule as the two above: a config volume with no space
+                // left fails HERE first (a backup is the largest single write this process makes),
+                // and that must not stop the pruning that might free the space.
+                //
+                // The failure is also RECORDED, not only logged. Logging alone leaves the Backup
+                // tab showing the last SUCCESSFUL backup's timestamp with nothing to say the safety
+                // net has been broken since — a stale backup that reads as a fresh one, which is
+                // the exact failure #56 exists to prevent. Only the type and message are kept: this
+                // is rendered in the UI, and the stack would carry config-directory paths.
+                _logger.LogError(ex, "Automatic configuration backup failed; will retry next cycle.");
+                RecordBackupFailure(ex);
             }
 
             try
@@ -126,5 +161,49 @@ public sealed class MaintenanceHostedService(
         }
 
         await store.TrimAsync(timeProvider.GetUtcNow(), cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// #56: takes one automatic configuration backup and prunes older archives to the retained
+    /// count. A count of 0 disables the feature and this does nothing.
+    ///
+    /// Resolved via <c>GetService</c> for the same reason <see cref="TrimLogDatabaseAsync"/> is:
+    /// several test hosts build a narrower service collection without the backup registrations, and
+    /// maintenance of the main database must not fail merely because one of them has no backup
+    /// paths configured.
+    /// </summary>
+    private async Task RunAutomaticBackupAsync(CancellationToken cancellationToken)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var provider = scope.ServiceProvider;
+
+        var job = provider.GetService<Arbitarr.Data.Backup.AutomaticBackupJob>();
+        var reader = provider.GetService<SettingsReader>();
+        if (job is null || reader is null)
+        {
+            return;
+        }
+
+        var retainedCount = await reader.GetAutomaticBackupRetainedCountAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        await job.RunAsync(retainedCount, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Records a failed automatic-backup pass on <see cref="BackupStateStore"/> so
+    /// <c>GET /api/admin/backup/status</c> can explain a timestamp that stopped advancing.
+    ///
+    /// Resolved with <c>GetService</c> and silently skipped when absent, for the same reason the
+    /// backup itself is: several narrower test hosts register no backup services, and recording
+    /// provenance must never be the thing that breaks a maintenance pass.
+    /// </summary>
+    private void RecordBackupFailure(Exception ex)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var state = scope.ServiceProvider.GetService<Arbitarr.Data.Backup.BackupStateStore>();
+        state?.RecordBackupFailure(
+            timeProvider.GetUtcNow(),
+            ex.GetType().Name + ": " + ex.Message);
     }
 }

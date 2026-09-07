@@ -185,6 +185,22 @@ public static class SettingsValidator
     }
 
     /// <summary>
+    /// #56: validates a proposed <see cref="SettingKey.AutomaticBackupRetainedCount"/> value.
+    /// Floor: 0, which is not merely the smallest legal number but a MEANINGFUL value — it turns
+    /// automatic backups off. An operator who backs up the whole config volume externally should
+    /// not be forced to keep a second copy of their credentials on the same disk. No ceiling: more
+    /// archives is a disk-space choice, not a correctness hazard.
+    /// </summary>
+    public static void ValidateAutomaticBackupRetainedCount(int proposed)
+    {
+        if (proposed < 0)
+        {
+            throw new SettingsValidationException(SettingKey.AutomaticBackupRetainedCount,
+                $"Automatic backups retained must be >= 0, got {proposed}. Use 0 to disable automatic backups.");
+        }
+    }
+
+    /// <summary>
     /// Validates a proposed <see cref="SettingKey.MetadataRefreshCadence"/> value (positive
     /// entries). Floor: 24h (protects XEM/AniDB from over-fetching). Ceiling: 30d (above this the
     /// instance pins to an indefinitely stale snapshot, contradicting AC-M8).
@@ -394,6 +410,10 @@ public static class SettingsValidator
             case SettingKey.QuerySnapshotTtl:
                 ValidateQuerySnapshotTtl((TimeSpan)proposed);
                 break;
+            case SettingKey.AutomaticBackupRetainedCount:
+                ValidateAutomaticBackupRetainedCount((int)proposed);
+                break;
+
             case SettingKey.MaintenanceJobInterval:
                 ValidateMaintenanceJobInterval((TimeSpan)proposed);
                 break;
@@ -554,6 +574,7 @@ public static class SettingsValidator
         SettingKey.SuppressionAuditRetention => (TimeSpan.FromDays(7).ToString(), null),
         SettingKey.QuerySnapshotTtl => (TimeSpan.FromSeconds(60).ToString(), TimeSpan.FromHours(1).ToString()),
         SettingKey.MaintenanceJobInterval => (TimeSpan.FromMinutes(5).ToString(), TimeSpan.FromHours(24).ToString()),
+        SettingKey.AutomaticBackupRetainedCount => ((0).ToString(CultureInfo.InvariantCulture), null),
         SettingKey.SyncArbitrationBudget => (TimeSpan.FromSeconds(1).ToString(), TimeSpan.FromSeconds(30).ToString()),
         SettingKey.ShadowMode => (null, null),
         SettingKey.TitleNormalizationEnabled => (null, null),

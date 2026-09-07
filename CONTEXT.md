@@ -160,6 +160,20 @@ along. The log store has no EF migrations and is absent from most operational
 surfaces — anything enumerating stores must grep for `DatabaseFileName`, not for
 `arbitarr.db`.
 
+**Backup archive.** The zip `GET /api/admin/backup` produces: a consistent
+snapshot of `arbitarr.db` (taken through SQLite'''s backup API, not a file copy),
+`release-guid-secret.key`, and a manifest naming the instant and schema version.
+It excludes `arbitarr-logs.db`. It is a **credential-bearing file** — it carries
+every configured source'''s API key and the secret authenticating every release
+GUID this instance has issued — so it is admin-gated, never fetched through a
+URL-borne token, and never written anywhere served.
+
+**Pre-restore safety copy.** A backup archive of the *current* state, written
+to the config directory immediately before a restore applies anything, so a
+mistaken restore is itself recoverable. It is never swept by automatic-backup
+retention — the moment it is most needed is exactly when later scheduled backups
+would have pushed it off the end of a retained list.
+
 **Snapshot versioning.** Metadata is cached against a hash of the source
 snapshot it came from, so an upstream edit invalidates stale entries rather than
 serving them indefinitely.

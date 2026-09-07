@@ -48,6 +48,18 @@ public sealed class SettingsReader
     public Task<TimeSpan> GetSyncArbitrationBudgetAsync(CancellationToken cancellationToken = default) =>
         ReadAsync<TimeSpan>(SettingKey.SyncArbitrationBudget, ParseTimeSpan, cancellationToken);
 
+    /// <summary>
+    /// #56: resolves <see cref="SettingKey.AutomaticBackupRetainedCount"/>, defaulting to 7 when no
+    /// row exists. Read here rather than added to <see cref="SettingsSnapshot"/> because it has
+    /// exactly one consumer — the maintenance pass's automatic-backup step — and the snapshot is
+    /// the hot per-request settings read that every search takes.
+    /// </summary>
+    public Task<int> GetAutomaticBackupRetainedCountAsync(CancellationToken cancellationToken = default) =>
+        ReadAsync<int>(
+            SettingKey.AutomaticBackupRetainedCount,
+            static (string raw, out int value) => int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out value),
+            cancellationToken);
+
     private delegate bool TryParse<T>(string raw, out T value);
 
     private static bool ParseTimeSpan(string raw, out TimeSpan value) =>

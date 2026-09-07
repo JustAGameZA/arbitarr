@@ -23,6 +23,24 @@ namespace Arbitarr.Data.Maintenance;
 /// correspond to one age threshold — see <c>MaintenanceJob.PruneEventsAsync</c>.
 /// </param>
 /// <param name="VacuumRan">True if <c>PRAGMA incremental_vacuum</c> was executed this run.</param>
+///
+/// <remarks>
+/// THIS RECORD COVERS <c>arbitarr.db</c> ONLY, and the two things it does not cover are deliberate
+/// rather than missing. There are TWO SQLite files under the config directory; the separate
+/// application-log store (<see cref="Arbitarr.Data.Logging.LogStore.DatabaseFileName"/>) is trimmed
+/// on the same cadence by <c>MaintenanceHostedService</c>, and #56's automatic configuration backup
+/// runs there too. Neither reports here, because neither happens inside this job: this type is
+/// produced by <c>MaintenanceJob</c>, which owns one DbContext over one database and cannot observe
+/// work done beside it.
+///
+/// <para>Backup provenance — including a FAILED pass, which is the case a caller actually needs —
+/// lives in <c>BackupStateStore</c> and is served by <c>GET /api/admin/backup/status</c>. Adding
+/// backup fields here instead was tried and removed: this record is built at
+/// <c>MaintenanceJob.RunAsync</c>'''s single return, where the backup result is not in scope, so the
+/// fields could only ever have carried their defaults. Anything spanning the stores belongs in the
+/// hosted service or the state store, and should grep for <c>DatabaseFileName</c> rather than for
+/// "arbitarr.db".</para>
+/// </remarks>
 public sealed record MaintenanceJobResult(
     int SearchResultCacheRowsPruned,
     int MetadataCacheRowsPruned,

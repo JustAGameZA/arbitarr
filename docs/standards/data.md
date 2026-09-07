@@ -18,6 +18,14 @@ any backup.
 is invisible to most operational surfaces. A feature that searches for the literal filename covers
 exactly half the data and looks complete.
 
+**The shipped backup archive (#56) covers `arbitarr.db` and `release-guid-secret.key`, plus a
+plain-text manifest naming the instant and the schema version — and deliberately excludes
+`arbitarr-logs.db`.** The config database is the secret-bearing half (source API keys, the admin
+key, per-client key hashes), so the archive is a credential either way; adding an unbounded,
+unvetted text surface to a file operators carry around widens the blast radius for no recovery
+benefit, and logs are not configuration. Exporting the log store is a support-bundle feature and a
+different artefact with different handling — not an extra entry here.
+
 ---
 
 ## Provenance is mandatory on degraded paths

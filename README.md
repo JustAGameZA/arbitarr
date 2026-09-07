@@ -72,6 +72,14 @@ Arbitarr listens on port `8080`. The Torznab endpoint your *arr apps point at is
 `http://arbitarr.example.invalid:8080/torznab/api` with the client `apikey` you
 configured; the admin UI is served at `http://arbitarr.example.invalid:8080/admin/`.
 
+> **Keep a restart policy on the service.** The reference compose file sets
+> `restart: unless-stopped`, and that is load-bearing rather than a convenience:
+> restoring a backup from the UI **stops** Arbitarr so the restored database and
+> release-GUID secret are actually loaded, and it comes back only if your
+> deployment restarts it. Without a restart policy a restore leaves Arbitarr
+> stopped until you start it again by hand. See
+> [ADR 0007](docs/adr/0007-restart-rather-than-reload-after-restore.md).
+
 ### Environment variables
 
 | Variable | Purpose |

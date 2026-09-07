@@ -81,7 +81,8 @@ public static class AdminSettingsEndpoints
             ShadowMode: await reader.GetShadowModeAsync(cancellationToken),
             AiConfidenceThreshold: await reader.GetAiConfidenceThresholdAsync(cancellationToken),
             TitleNormalizationEnabled: await reader.GetTitleNormalizationEnabledAsync(cancellationToken),
-            ClassifierPollInterval: await reader.GetClassifierPollIntervalAsync(cancellationToken));
+            ClassifierPollInterval: await reader.GetClassifierPollIntervalAsync(cancellationToken),
+            AutomaticBackupRetainedCount: await reader.GetAutomaticBackupRetainedCountAsync(cancellationToken));
         var sizes = await sizeReporter.ReadAsync(cancellationToken);
 
         var entries = SettingsCatalog.Entries.Select(entry =>
@@ -158,7 +159,14 @@ public static class AdminSettingsEndpoints
         bool ShadowMode,
         double AiConfidenceThreshold,
         bool TitleNormalizationEnabled,
-        TimeSpan ClassifierPollInterval);
+        TimeSpan ClassifierPollInterval,
+        // #56. Read through SettingsReader rather than taken from SettingsSnapshot, because
+        // it deliberately is not in the snapshot: the snapshot is the hot per-request
+        // settings read that every search takes, and this key has one runtime consumer (the
+        // maintenance pass). It still has to appear HERE, because CurrentValue below throws
+        // on any key it has no projection for -- a catalog entry with no case is a 500 on
+        // the whole settings page, not merely a missing row.
+        int AutomaticBackupRetainedCount);
 
     private static string CurrentValue(SettingKey key, SettingsSnapshot snapshot, LiveValues live) => key switch
     {
@@ -181,6 +189,8 @@ public static class AdminSettingsEndpoints
         SettingKey.AiConfidenceThreshold => live.AiConfidenceThreshold.ToString(CultureInfo.InvariantCulture),
         SettingKey.TitleNormalizationEnabled => live.TitleNormalizationEnabled.ToString(),
         SettingKey.ClassifierPollInterval => live.ClassifierPollInterval.ToString(),
+        SettingKey.AutomaticBackupRetainedCount =>
+            live.AutomaticBackupRetainedCount.ToString(CultureInfo.InvariantCulture),
         _ => throw new ArgumentOutOfRangeException(nameof(key), key, "No wire projection for this setting key."),
     };
 }

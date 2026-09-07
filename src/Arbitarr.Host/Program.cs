@@ -106,6 +106,30 @@ if (!string.Equals(
 
 builder.Services.AddSingleton(new SqliteConnectionOptions { DatabasePath = databasePath });
 builder.Services.AddSingleton<SqliteConnectionFactory>();
+
+// #56: backup and restore. BackupPaths is built from the SAME configDirectory the database and the
+// secret above come from, so it can never point somewhere else than the running process does.
+//
+// The backup covers arbitarr.db and release-guid-secret.key and DELIBERATELY NOT the separate log
+// database registered just above (LogStore.DatabaseFileName) — the two SQLite files were split so a
+// configuration backup does not drag log contents along, and BackupArchiveLayout carries the full
+// reasoning. Anything added later that spans "the databases" must grep for that constant.
+builder.Services.AddSingleton(new Arbitarr.Data.Backup.BackupPaths(configDirectory));
+builder.Services.AddSingleton<Arbitarr.Data.Backup.BackupStateStore>();
+builder.Services.AddSingleton(sp => new Arbitarr.Data.Backup.BackupService(
+    sp.GetRequiredService<Arbitarr.Data.Backup.BackupPaths>(),
+    sp.GetRequiredService<TimeProvider>()));
+builder.Services.AddSingleton(sp => new Arbitarr.Data.Backup.RestoreService(
+    sp.GetRequiredService<Arbitarr.Data.Backup.BackupPaths>(),
+    sp.GetRequiredService<Arbitarr.Data.Backup.BackupService>()));
+builder.Services.AddSingleton(sp => new Arbitarr.Data.Backup.AutomaticBackupJob(
+    sp.GetRequiredService<Arbitarr.Data.Backup.BackupPaths>(),
+    sp.GetRequiredService<Arbitarr.Data.Backup.BackupService>(),
+    sp.GetRequiredService<Arbitarr.Data.Backup.BackupStateStore>(),
+    sp.GetRequiredService<TimeProvider>()));
+builder.Services.AddSingleton(sp => new Arbitarr.Api.Admin.RestoreCoordinator(
+    sp.GetRequiredService<IHostApplicationLifetime>(),
+    sp.GetRequiredService<TimeProvider>()));
 builder.Services.AddScoped(sp =>
 {
     var factory = sp.GetRequiredService<SqliteConnectionFactory>();
@@ -447,6 +471,13 @@ var app = builder.Build();
 // any request is handled, since ReleaseGuid.Compute is called from request handlers.
 ReleaseGuid.Configure(ReleaseGuidSecretFile.LoadOrCreate(configDirectory));
 
+// #56: seed the last-backup timestamp from the automatic archives already on disk, so a restart
+// does not report "never backed up" beside a directory full of them. Deliberately after the secret
+// load above and before any request is served, for the same reason: the Backup tab must never show
+// an operator a stale-safety-net answer that is merely an artefact of the process having restarted.
+app.Services.GetRequiredService<Arbitarr.Data.Backup.BackupStateStore>()
+    .ReconcileFromDisk(app.Services.GetRequiredService<Arbitarr.Data.Backup.BackupPaths>());
+
 // M7-11: apply pending migrations on startup so a container starting from a clean /config
 // volume self-provisions its schema before any endpoint (dashboard included) tries to query
 // it. This runs on a dedicated scope (not the app's root scope) so the DbContext is disposed
@@ -517,6 +548,7 @@ ObservabilityEndpoint.Map(app);
 LogsEndpoint.Map(app);
 AdminSettingsEndpoints.Map(app);
 AdminSecurityEndpoints.Map(app);
+AdminBackupEndpoints.Map(app);
 AdminApiKeyEndpoints.Map(app);
 AdminSourceEndpoints.Map(app);
 AdminNotificationEndpoints.Map(app);

@@ -163,8 +163,42 @@ public sealed class AdminApiKeyRouteEnumerationTests : IClassFixture<ArbitarrWeb
         var routes = GetRoutesByClassification(factory.Services, RouteClassification.AdminMutating).ToList();
         Assert.NotEmpty(routes);
 
+        // RESTORE IS THE ONE DELIBERATE EXCEPTION, and it is listed rather than filtered by a
+        // pattern so that adding a second one is a decision somebody has to write down here.
+        //
+        // #56 refuses POST /api/admin/restore while no admin key is configured, even from loopback.
+        // multipart/form-data is a CORS-simple content type, so during the bootstrap window a page
+        // on any site a LAN user visits could auto-submit it cross-origin and replace the
+        // configuration database and the release-GUID secret. Every other route on this sweep sets
+        // ONE value; restore replaces every credential the instance holds, which no fresh install
+        // needs to do before its key is set — so excluding it costs nothing and closes that window.
+        // See RestoreBootstrapRefusalTests in Arbitarr.Api.Tests for the refusal itself.
+        var bootstrapExempt = new HashSet<string>(StringComparer.Ordinal)
+        {
+            AdminBackupEndpoints.RestoreRoute,
+        };
+
+        // The exemption must name a route that actually exists, or a rename would silently turn this
+        // into a sweep with a dead entry and one fewer route covered.
+        Assert.Contains(routes, r => bootstrapExempt.Contains(r.Path));
+
         foreach (var (method, path) in routes)
         {
+            if (bootstrapExempt.Contains(path))
+            {
+                // Asserted positively rather than merely skipped: the exemption is a SECURITY
+                // property, so it has to keep holding, not just be tolerated.
+                using var exempt = new HttpRequestMessage(method, path);
+                using var exemptResponse = await client.SendAsync(exempt);
+
+                Assert.True(
+                    exemptResponse.StatusCode is HttpStatusCode.ServiceUnavailable,
+                    $"Expected {method} {path} to REFUSE an unkeyed loopback request while no admin " +
+                    $"key is configured (it replaces every credential the instance holds), but it " +
+                    $"returned {(int)exemptResponse.StatusCode} {exemptResponse.StatusCode}.");
+                continue;
+            }
+
             using var request = new HttpRequestMessage(method, path);
             using var response = await client.SendAsync(request);
 

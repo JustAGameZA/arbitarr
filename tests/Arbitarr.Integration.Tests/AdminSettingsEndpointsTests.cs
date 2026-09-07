@@ -295,6 +295,49 @@ public sealed class AdminSettingsEndpointsTests : IClassFixture<ArbitarrWebAppli
     // ClassifierPollInterval) are exposed through the same catalog + PUT path, rejecting rather
     // than clamping out-of-bound values.
 
+    /// <summary>
+    /// EVERY catalog key must project to a wire value -- asserted over the catalog itself rather
+    /// than key by key, because the failure mode is not a missing row.
+    ///
+    /// <para>CurrentValue is an exhaustive switch whose default arm THROWS, and the endpoint
+    /// projects the whole catalog in one pass. So a key added to SettingsCatalog without a matching
+    /// arm does not omit itself from the response -- it takes down GET /api/admin/settings with a
+    /// 500, and with it the entire Settings page, every key on it included. #56 shipped exactly
+    /// that with AutomaticBackupRetainedCount, and the per-key tests around this one all passed
+    /// while the page was dead, because each of them reads the response the throw prevented.</para>
+    ///
+    /// <para>Written against SettingsCatalog.Entries so it covers keys that do not exist yet: the
+    /// next key added is tested by this the moment it is added, which is the only version of this
+    /// test that keeps working.</para>
+    /// </summary>
+    [Fact]
+    public async Task GET_settings_projects_a_value_for_every_catalog_key()
+    {
+        await SeedAdminKeyAsync();
+
+        using var client = AuthorizedClient();
+        var response = await client.GetAsync(SettingsRoute);
+
+        // Asserted before the body is read: a missing projection surfaces as a 500 here, and
+        // deserialising first would report it as a confusing JSON error instead.
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var entries = (await response.Content.ReadFromJsonAsync<List<SettingCatalogEntryResponse>>())!;
+
+        // The admin key is deliberately absent from the catalog (it is write-only), so the counts
+        // are compared against the catalog rather than against the enum.
+        Assert.Equal(SettingsCatalog.Entries.Count, entries.Count);
+
+        foreach (var entry in SettingsCatalog.Entries)
+        {
+            var projected = entries.Single(e => e.Key == entry.Key.ToString());
+            Assert.False(
+                string.IsNullOrWhiteSpace(projected.Value),
+                $"'{entry.Key}' is in the catalog but projected no value. Add an arm for it to " +
+                "AdminSettingsEndpoints.CurrentValue -- without one the whole settings page 500s.");
+        }
+    }
+
     [Fact]
     public async Task GET_settings_includes_the_M5_keys_with_their_defaults()
     {

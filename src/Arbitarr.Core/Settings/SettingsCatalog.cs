@@ -207,6 +207,19 @@ public static class SettingsCatalog
             RestartReason = "The maintenance job registers its timer once at host start-up; the new interval is read on the next start.",
         },
         new SettingCatalogEntry(
+            SettingKey.AutomaticBackupRetainedCount,
+            SettingGroup.Maintenance,
+            "Automatic backups retained",
+            "How many automatic configuration backups are kept in the config directory. Each is taken on " +
+            "the maintenance job's cadence and holds the configuration database and the release-GUID " +
+            "secret — treat them as credentials. 0 turns automatic backups off. Floor 0. No ceiling — a " +
+            "larger number is a disk-space choice, not a correctness hazard.",
+            RequiresRestart: false,
+            IsBoolean: false)
+        {
+            NoMaximumReason = "Retaining more archives only costs disk space in the config directory; it cannot cause silent wrongness.",
+        },
+        new SettingCatalogEntry(
             SettingKey.SyncArbitrationBudget,
             SettingGroup.Ai,
             "Sync AI arbitration budget (ad-hoc search)",
@@ -273,6 +286,11 @@ public static class SettingsCatalog
         SettingKey.TitleNormalizationEnabled => false,
         SettingKey.ClassifierPollInterval => TimeSpan.FromMinutes(1),
         SettingKey.SyncArbitrationBudget => TimeSpan.FromSeconds(5),
+        // #56: seven automatic backups is one week at the default one-hourly maintenance cadence
+        // only if the box restarts daily; in practice it is "enough history to walk back past a bad
+        // change" without turning the config bind mount into an archive. An operator who wants more
+        // (or none) says so.
+        SettingKey.AutomaticBackupRetainedCount => 7,
         _ => throw new ArgumentOutOfRangeException(
             nameof(key), key, $"No default declared in {nameof(SettingsCatalog)} for '{key}'."),
     };
