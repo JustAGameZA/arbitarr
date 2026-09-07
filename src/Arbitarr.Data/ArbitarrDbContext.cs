@@ -1,4 +1,5 @@
 using Arbitarr.Core.Filtering;
+using Arbitarr.Core.Security;
 using Arbitarr.Data.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -37,6 +38,13 @@ public sealed class ArbitarrDbContext : DbContext
     public DbSet<FilterRuleEntry> FilterRules => Set<FilterRuleEntry>();
 
     public DbSet<ApiKeyProfileEntry> ApiKeyProfiles => Set<ApiKeyProfileEntry>();
+
+    /// <summary>
+    /// #58: named, scoped admin API keys. Distinct from <see cref="ApiKeyProfiles"/>, which maps a
+    /// Torznab/Newznab client apikey to a filter profile — a different credential for a different
+    /// surface. No row here holds a key value; see <see cref="ApiKeyEntry"/>.
+    /// </summary>
+    public DbSet<ApiKeyEntry> ApiKeys => Set<ApiKeyEntry>();
 
     public DbSet<VerdictCacheEntry> VerdictCacheEntries => Set<VerdictCacheEntry>();
 
@@ -146,6 +154,19 @@ public sealed class ArbitarrDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.ApiKeyName).IsUnique();
             entity.Property(e => e.ApiKeyName).IsRequired();
+        });
+
+        modelBuilder.Entity<ApiKeyEntry>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            // Unique on both: the hash because it is the verification lookup and two rows answering
+            // the same presented value would make "which key was this?" unanswerable — the exact
+            // attribution question #58 exists to answer; the label because two keys the operator
+            // cannot tell apart defeat the same purpose from the other end.
+            entity.HasIndex(e => e.KeyHash).IsUnique();
+            entity.HasIndex(e => e.Label).IsUnique();
+            entity.Property(e => e.Label).IsRequired().HasMaxLength(128);
+            entity.Property(e => e.KeyHash).IsRequired().HasMaxLength(ApiKeyHasher.HashLength);
         });
 
         modelBuilder.Entity<VerdictCacheEntry>(entity =>

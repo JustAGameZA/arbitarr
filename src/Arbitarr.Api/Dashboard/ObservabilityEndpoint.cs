@@ -1,5 +1,6 @@
 using Arbitarr.Api.Admin;
 using Arbitarr.Core.Diagnostics;
+using Arbitarr.Core.Security;
 using Arbitarr.Data;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -30,7 +31,10 @@ public sealed record ObservabilityResponse(ObservabilitySnapshot Counters, Metad
 public static class ObservabilityEndpoint
 {
     public static IEndpointConventionBuilder Map(IEndpointRouteBuilder endpoints) =>
-        endpoints.MapGet("/api/admin/observability", HandleAsync).RequireAdminApiKey();
+        // #58: counters and coverage only — the canonical read-only key case from the issue
+        // ("a read-only monitoring script"). Still gated for the reason above; just no longer
+        // requiring a key that could also mutate.
+        endpoints.MapGet("/api/admin/observability", HandleAsync).RequireAdminApiKey(ApiKeyScope.ReadOnly);
 
     private static async Task<ObservabilityResponse> HandleAsync(
         ObservabilityCounters counters,

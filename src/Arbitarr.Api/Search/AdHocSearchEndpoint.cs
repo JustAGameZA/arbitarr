@@ -2,6 +2,7 @@ using Arbitarr.Api.Admin;
 using Arbitarr.Api.Routing;
 using Arbitarr.Core.Arbitration;
 using Arbitarr.Core.Caching;
+using Arbitarr.Core.Security;
 using Arbitarr.Core.Sources;
 using Arbitarr.Data.Settings;
 using Microsoft.AspNetCore.Builder;
@@ -63,8 +64,12 @@ public sealed record AdHocSearchResponse(
 public static class AdHocSearchEndpoint
 {
     public static IEndpointConventionBuilder Map(IEndpointRouteBuilder endpoints) =>
+        // #58: still gated — the gate is by path prefix, never by verb — but reachable with a
+        // ReadOnly-scoped key. Searching is what a *arr instance is FOR, and this is the case the
+        // issue names: a monitoring script or an *arr instance gets a key that can search and is
+        // refused 403 on every mutation, rather than the full admin authority it used to require.
         endpoints.MapGet("/api/admin/search", HandleAsync)
-            .RequireAdminApiKey();
+            .RequireAdminApiKey(ApiKeyScope.ReadOnly);
 
     private static async Task<IResult> HandleAsync(
         string? q,
