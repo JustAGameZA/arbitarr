@@ -1,5 +1,20 @@
 # Step 3b — Observed Numbering/Classification Failures (Evidence Report)
 
+> **Historical document.** This is a record of the evidence gathered *before* Step 3b was
+> implemented, retained for the reasoning it captures. Two of the premises stated below were true
+> when it was written and are **no longer true**:
+>
+> - A release-title parser now exists: `src/Arbitarr.Media/Numbering/RawReleaseNumberingParser.cs`.
+> - A scorer and a `Scoring/` directory now exist:
+>   `src/Arbitarr.Core.Identity/Scoring/` (`TokenWeightedScorer`, `ReleaseRanker`,
+>   `ScoringWeights`, `ConfidenceCalibration`), plus
+>   `src/Arbitarr.Media/Numbering/NumberingCandidateScoring.cs` and
+>   `src/Arbitarr.Media/Ranking/ReleaseRanking.cs`.
+>
+> Read the fixture observations and the failure taxonomy as still-valid evidence; read every
+> statement about what the codebase contains as a snapshot of the past. The code is the authority
+> on what exists.
+
 ## SYNTHETIC / NO LIVE OLLAMA — READ BEFORE USING THIS DOCUMENT
 
 This is a plain-observation report, not a design document, and it does not test any real code

@@ -48,10 +48,12 @@ When Arbitarr fronts more than one upstream source, the Torznab `caps` response 
 | `src/Arbitarr.Data` | SQLite persistence (EF Core) |
 | `src/Arbitarr.Api` | Torznab/Newznab endpoint surface |
 | `src/Arbitarr.Host` | Composition root / entry point |
+| `src/Arbitarr.Web` | Admin UI (React + TypeScript, Vite), served under `/admin/` |
 | `tests/` | xUnit test projects per component, plus architecture and integration tests |
+| `design-system/` | UI patterns and component contracts (the palette itself lives in `theme.css`) |
+| `docs/adr/` | Architecture decision records |
+| `docs/standards/` | Checkable rules — architecture, data, process |
 | `docs/` | Design notes, measurements, and captured (fully redacted) upstream fixtures |
-
-The solution still uses the working name `Arbitarr` internally; a rename to `Arbitarr` is planned.
 
 ## Running with Docker
 
@@ -86,20 +88,32 @@ endpoints only).
 
 ### Admin key setup
 
-Mutating admin endpoints (settings, filter rules) require an `X-Admin-Api-Key` header and fail
-closed with `503` until a key is provisioned. The key is intentionally not settable through the
-admin API itself and never appears in the settings catalog. Provision it directly in the SQLite
-settings store inside your config volume:
+Mutating admin endpoints (settings, filter rules) require an `X-Admin-Api-Key` header. Set the
+key over the API, from a machine on the local network:
 
 ```bash
-docker compose stop arbitarr
-sqlite3 ./config/arbitarr.db \
-  "INSERT INTO Settings (Name, Value, UpdatedAt) VALUES ('AdminApiKey', 'REDACTED', strftime('%Y-%m-%d %H:%M:%S+00:00','now')) \
-   ON CONFLICT(Name) DO UPDATE SET Value = excluded.Value, UpdatedAt = excluded.UpdatedAt;"
-docker compose start arbitarr
+curl -X PUT http://arbitarr.example.invalid:8080/api/admin/security/admin-key \
+  -H 'Content-Type: application/json' \
+  -d '{"value":"REDACTED"}'
 ```
 
-Generate the key value yourself (e.g. `openssl rand -hex 32`). Read-only admin pages stay
+Generate the value yourself (e.g. `openssl rand -hex 32`); it must be at least 16 characters.
+Once a key is set, that same route requires it like every other admin-mutating route — so
+replacing the key later means sending the current one in an `X-Admin-Api-Key` header.
+
+> **Use `https://` unless you are on loopback.** The bypass below accepts calls from anywhere on
+> your LAN, and `http://` puts the key on the wire in cleartext for anything sniffing that
+> segment — terminate TLS at a reverse proxy, or run this over a VPN. Passing the key with `-d`
+> also leaves it in your shell history; `-d @keyfile.json` avoids that.
+
+**Bootstrap bypass.** While no key is configured, admin-mutating routes are permitted from
+loopback and RFC 1918 addresses, and refused with `503` from anywhere else. That is what makes
+the call above possible on a fresh install without a chicken-and-egg deadlock. It is logged at
+Warning for as long as it stays open: until you set a key, your admin surface is open to
+everything on your LAN. Set one as a first-run step.
+
+The key is **write-only** — there is no route that reads it back, it is deliberately absent from
+the settings catalog, and `GET /api/admin/settings` never carries it. Read-only admin pages stay
 ungated by design; only mutating routes check the key.
 
 ## Building
@@ -108,11 +122,22 @@ Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download).
 
 ```bash
 dotnet build
+dotnet test -m:1
 ```
 
+The suite is run sequentially (`-m:1`): it is not reliably parallel-safe across assemblies, and a
+parallel run both under-counts and invents failures.
+
+The admin UI is built separately, from `src/Arbitarr.Web`:
+
 ```bash
-dotnet test
+npm ci
+npm run typecheck && npm test && npm run lint
 ```
+
+See [`src/Arbitarr.Web/README.md`](src/Arbitarr.Web/README.md) for the frontend's own rules, and
+[CONTRIBUTING.md](CONTRIBUTING.md) for architecture boundaries, the secrets policy, and test
+expectations. [CONTEXT.md](CONTEXT.md) defines the project's vocabulary.
 
 ## Continuous integration
 
@@ -129,7 +154,17 @@ No credentials, API keys, or real network addresses are committed to this reposi
 
 ## Status
 
-The Torznab pipeline, SQLite caching layer, media-identity context, LLM arbitration loop (shadow mode by default), admin UI with the governed settings surface, and Docker packaging are built and under test. The numbering scorer and release ranking layer is in review, and observability plus deployment hardening are next.
+Built and under test: the Torznab pipeline, the SQLite caching layer, the media-identity context,
+the LLM arbitration loop (shadow mode by default), Docker packaging, and the admin UI — the
+governed settings surface, the Activity/history view over the shared event store, the persistent
+log store with its admin API and tabbed System page, and the AI verdict review queue.
+
+In review: the numbering scorer and release ranking layer.
+
+Next: authentication beyond the single admin key (real accounts and a session; per-client API
+keys), moving indexer and source configuration out of environment variables into the UI, backup
+and restore, notifications on suppression and source-failure events, and deployment hardening.
+No review environment exists yet — see the CI note above.
 
 ## License
 

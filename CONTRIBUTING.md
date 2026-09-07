@@ -6,6 +6,8 @@ Thanks for your interest! Arbitarr is in early, fast-moving development, so the 
 
 - **Open an issue first** for anything beyond a typo fix. The architecture is still settling; a short discussion up front avoids building on a moving floor.
 - Check the [issue tracker](https://github.com/JustAGameZA/arbitarr/issues) for existing discussion.
+- Read [CONTEXT.md](CONTEXT.md) for the project's vocabulary — identity, numbering schemes, provenance flags, the three distinct API keys, and the terms whose meaning here differs from their everyday one.
+- [docs/adr/](docs/adr/) records the decisions that are hard to reverse, each with the alternatives it beat and the domain background that forced it. [docs/standards/](docs/standards/) carries the long-form reasoning behind the rules summarised here — where the two overlap, this file is the summary and standards is where the *why* lives.
 
 ## Development setup
 
@@ -19,6 +21,30 @@ dotnet test
 ```
 
 No external services are required for the test suite — upstream responses are captured as redacted fixtures under `docs/fixtures/`.
+
+Run the backend suite sequentially. It is not reliably parallel-safe across assemblies (shared SQLite and port state), and a parallel run both under-counts and invents failures:
+
+```bash
+dotnet test -m:1
+```
+
+### Frontend
+
+The admin UI lives in `src/Arbitarr.Web` (React + TypeScript + Vite). From that directory:
+
+```bash
+npm ci
+npm run typecheck    # tsc --noEmit
+npm test             # vitest run
+npm run lint         # eslint --max-warnings=0
+```
+
+`src/Arbitarr.Web/README.md` is the authority on the frontend and covers rules that are not
+obvious from the code: `src/styles/theme.css` is normative and the only file permitted to hold
+colour literals, the admin key is session-only Zustand (never `localStorage`, never
+`sessionStorage`, never a query string), admin access is gated by path prefix and never by HTTP
+verb, and `test.css: true` is load-bearing for the theme assertions. Read it before changing UI
+code.
 
 ### Shareable pre-commit hook
 
@@ -49,6 +75,8 @@ Arbitarr never silently guesses. Any code path that degrades (source unreachable
 - Every behavioral change needs test coverage in the matching `tests/Arbitarr.*.Tests` project.
 - Real-world regression cases are first-class: the Bleach arc-relative numbering collision and the Ghost in the Shell franchise trio are canonical fixtures. If you fix an identity-resolution bug, add the release name that triggered it as a fixture-backed test.
 - Fixture data must be fully redacted — see the secrets policy below.
+- **Test-count floors are measurements, never arithmetic** — raise one to a number a run printed, never to the old floor plus the tests you wrote. See [docs/standards/process.md](docs/standards/process.md#test-count-floors).
+- **Any "this secret must not appear in X" assertion needs a positive control**, or it passes just as happily when the secret was never in play. See [docs/standards/process.md](docs/standards/process.md#non-vacuous-assertions).
 
 ## Secrets and network topology — hard rule
 
@@ -71,7 +99,8 @@ Arbitarr never silently guesses. Any code path that degrades (source unreachable
 Every PR must pass two required checks before merge:
 
 - **`Build & test`** — restores, builds (`dotnet build -m:1`, sequential to bound memory use),
-  and runs the full test suite. It also enforces a test-count floor (`tests/test-count-floor.txt`)
+  and runs the full test suite, backend and frontend. It also enforces both test-count floors
+  (`tests/test-count-floor.txt` and `tests/frontend-test-count-floor.txt`)
   so the suite can't silently shrink, and re-runs the secret/topology guard over the whole tree.
 - **`Deploy review environment`** — builds the container image from `Dockerfile` and smoke-checks
   that the running container answers `GET /health`. **A green tick here means the image builds
@@ -83,10 +112,6 @@ Every PR must pass two required checks before merge:
 ## Commit messages
 
 Short imperative subject line ("Add XEM season-name provider", not "Added..." or "misc fixes"). Body only when the *why* isn't obvious from the diff.
-
-## Naming note
-
-The solution currently uses the working name `Arbitarr` internally; a rename to `Arbitarr` is planned. Don't pre-empt it piecemeal — new code follows the existing `Arbitarr.*` naming until the coordinated rename lands.
 
 ## Questions?
 
