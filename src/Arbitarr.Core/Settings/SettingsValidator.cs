@@ -260,6 +260,53 @@ public static class SettingsValidator
     }
 
     /// <summary>
+    /// Validates a proposed <see cref="SettingKey.SessionIdleTimeout"/> value (#44).
+    ///
+    /// <para>Floor: 5m. This is a LOCKOUT GUARD, not a tuning preference. Arbitarr has no password
+    /// recovery by design (see <c>UserEntry</c>), and this setting is edited through a surface that
+    /// the very session it governs authenticates — so a value of, say, one second would expire the
+    /// operator's session between loading the settings page and saving it, with no way back short
+    /// of restoring a #56 backup. Five minutes is comfortably above any plausible round trip while
+    /// still being a meaningful security choice.</para>
+    ///
+    /// <para>No ceiling: a long idle window is a deliberate convenience trade on a LAN appliance,
+    /// and <see cref="SettingKey.SessionAbsoluteTimeout"/> is the bound that actually limits a
+    /// stolen cookie.</para>
+    /// </summary>
+    public static void ValidateSessionIdleTimeout(TimeSpan proposed)
+    {
+        var floor = TimeSpan.FromMinutes(5);
+        if (proposed < floor)
+        {
+            throw new SettingsValidationException(SettingKey.SessionIdleTimeout,
+                $"session idle timeout must be >= {floor}, got {proposed}. A shorter value risks expiring " +
+                "your own session while you are changing this setting, and there is no password recovery path.");
+        }
+    }
+
+    /// <summary>
+    /// Validates a proposed <see cref="SettingKey.SessionAbsoluteTimeout"/> value (#44).
+    ///
+    /// <para>Floor: the CURRENT idle timeout — a cross-field bound in the same shape as
+    /// <see cref="ValidateServeUntil"/>'s dependence on FreshUntil, and for the same kind of reason.
+    /// An absolute timeout below the idle one would end every session before the idle rule could
+    /// ever apply, which does not merely look odd: it makes the idle setting silently meaningless,
+    /// so an operator tuning it would see no effect and have nothing to tell them why.</para>
+    ///
+    /// <para>No ceiling: how long a session may live is the operator's own risk trade, and signing
+    /// out ends one immediately regardless.</para>
+    /// </summary>
+    public static void ValidateSessionAbsoluteTimeout(TimeSpan proposed, TimeSpan currentIdleTimeout)
+    {
+        if (proposed < currentIdleTimeout)
+        {
+            throw new SettingsValidationException(SettingKey.SessionAbsoluteTimeout,
+                $"session absolute timeout must be >= the idle timeout ({currentIdleTimeout}), got {proposed}. " +
+                "A lower value would end every session before the idle timeout could ever apply.");
+        }
+    }
+
+    /// <summary>
     /// Validates a proposed <see cref="SettingKey.QuerySnapshotTtl"/> value.
     /// Floor: 60s. Ceiling: 1h (prevents a snapshot outliving the paging session it exists to
     /// stabilise).
@@ -423,6 +470,19 @@ public static class SettingsValidator
             case SettingKey.SyncArbitrationBudget:
                 ValidateSyncArbitrationBudget((TimeSpan)proposed);
                 break;
+            case SettingKey.SessionIdleTimeout:
+            {
+                var value = (TimeSpan)proposed;
+                ValidateSessionIdleTimeout(value);
+                // Dependent: the absolute timeout's floor is the idle timeout, so raising idle above
+                // the current absolute value is refused as a whole rather than silently leaving the
+                // pair inconsistent — the same posture ValidateChange takes for FreshUntil.
+                ValidateSessionAbsoluteTimeout(current.SessionAbsoluteTimeout, value);
+                break;
+            }
+            case SettingKey.SessionAbsoluteTimeout:
+                ValidateSessionAbsoluteTimeout((TimeSpan)proposed, current.SessionIdleTimeout);
+                break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(key), key, "Unknown setting key.");
         }
@@ -582,6 +642,12 @@ public static class SettingsValidator
         // stated in the catalog rationale, since the wire form carries no open/closed flag.
         SettingKey.AiConfidenceThreshold => ((0.0).ToString(CultureInfo.InvariantCulture), (1.0).ToString(CultureInfo.InvariantCulture)),
         SettingKey.ClassifierPollInterval => (TimeSpan.FromSeconds(15).ToString(), null),
+        // #44. Both unbounded above, each with a NoMaximumReason in the catalog (which
+        // SettingsCatalogTests asserts is present exactly when the ceiling is null). The absolute
+        // timeout's floor is the live idle timeout, so this pair reads from `current` the same way
+        // ServeUntil's floor reads FreshUntil.
+        SettingKey.SessionIdleTimeout => (TimeSpan.FromMinutes(5).ToString(), null),
+        SettingKey.SessionAbsoluteTimeout => (current.SessionIdleTimeout.ToString(), null),
         _ => (null, null),
     };
 }

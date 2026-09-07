@@ -29,6 +29,9 @@ public enum SettingGroup
 
     /// <summary>D3 global shadow-mode toggle spanning every suppression source.</summary>
     Filtering,
+
+    /// <summary>#44: login session lifetimes (idle and absolute expiry).</summary>
+    Sessions,
 }
 
 /// <summary>
@@ -271,6 +274,40 @@ public static class SettingsCatalog
         {
             NoMaximumReason = "A long interval only delays classification; it cannot cause silent wrongness.",
         },
+        new SettingCatalogEntry(
+            SettingKey.SessionIdleTimeout,
+            SettingGroup.Sessions,
+            "Session idle timeout",
+            "#44: how long a signed-in session may sit unused before it stops authenticating; " +
+            "refreshed by activity, so continuous work never signs you out mid-task. Floor 5m — " +
+            "below that an operator reading a long page returns to a dead session, and since there " +
+            "is NO password recovery a value like 1s would be a self-inflicted lockout. No ceiling: " +
+            "a long idle window is a deliberate convenience choice on a LAN appliance, and the " +
+            "absolute timeout below is the bound that actually limits a stolen cookie.",
+            RequiresRestart: false,
+            IsBoolean: false)
+        {
+            NoMaximumReason =
+                "A long idle window is a deliberate convenience trade on a LAN appliance; the absolute " +
+                "timeout is what bounds a stolen session, so no ceiling is needed here.",
+        },
+        new SettingCatalogEntry(
+            SettingKey.SessionAbsoluteTimeout,
+            SettingGroup.Sessions,
+            "Session absolute timeout",
+            "#44: the hard ceiling on a session's life, fixed when you sign in and never extended by " +
+            "activity — this is what bounds a STOLEN session cookie, which the idle timeout does not, " +
+            "because an attacker using a token is what keeps it alive. Floor: the current idle " +
+            "timeout (a value below it would end sessions before the idle rule could ever apply, " +
+            "making that setting silently meaningless). No ceiling: this is the operator's own " +
+            "risk trade, and the session can always be ended immediately by signing out.",
+            RequiresRestart: false,
+            IsBoolean: false)
+        {
+            NoMaximumReason =
+                "How long a session may live is the operator's own risk trade; signing out ends one " +
+                "immediately regardless, so no ceiling is enforced.",
+        },
     };
 
     /// <summary>
@@ -291,6 +328,18 @@ public static class SettingsCatalog
         // change" without turning the config bind mount into an archive. An operator who wants more
         // (or none) says so.
         SettingKey.AutomaticBackupRetainedCount => 7,
+        // #44 session lifetimes. These ARE in Entries above, and that is required rather than
+        // optional: AdminSettingsEndpoints' PUT guard 404s any key absent from the catalog before
+        // the repository is reached, so a key kept off it cannot be written by ANY mechanism and
+        // "configurable expiry" would be false. SettingKey.AdminApiKey is the exception that proves
+        // it — it is excluded only because it is a SECRET the catalog's GET projection would
+        // publish, and it got its own write-only route to compensate. A timeout is not a secret.
+        //
+        // The lockout risk that argues for hiding them is answered by FLOORS instead (see
+        // SettingsValidator.ValidateSessionIdleTimeout): 5m minimum idle, and an absolute timeout
+        // that cannot be set below the idle one.
+        SettingKey.SessionIdleTimeout => TimeSpan.FromDays(7),
+        SettingKey.SessionAbsoluteTimeout => TimeSpan.FromDays(30),
         _ => throw new ArgumentOutOfRangeException(
             nameof(key), key, $"No default declared in {nameof(SettingsCatalog)} for '{key}'."),
     };

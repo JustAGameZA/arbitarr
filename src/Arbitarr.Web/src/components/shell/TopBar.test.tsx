@@ -1,63 +1,101 @@
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { renderApp } from '../../test/renderApp';
 import { useAdminKeyStore } from '../../state/adminKeyStore';
+import { mockApi, signedIn, signedOut } from '../../test/mockApi';
 
-describe('TopBar admin key control (AC6, AC6-503)', () => {
+/**
+ * #44 REPLACED THE ADMIN-KEY BOX IN THIS BAR with a session-aware control.
+ *
+ * Five tests that used to live here drove that box -- typing a key, masking the
+ * field, clearing it, rejecting whitespace. They are gone rather than adapted
+ * because the affordance they described is gone: a human no longer holds a key,
+ * so there is no field to type one into. The admin KEY itself is NOT gone --
+ * `adminKeyStore` and `apiFetch`'s header attachment remain for machine callers
+ * and the #43 bootstrap path -- it simply has no UI in the chrome any more.
+ * One test below asserts that absence, so re-adding the box fails rather than
+ * silently reintroducing a credential prompt for humans.
+ *
+ * The #43 `serverKeyUnset` tests in the second block are KEPT UNCHANGED: that
+ * state is about the SERVER having no key configured, which is orthogonal to
+ * whether a human is signed in, and its "do not strand the operator" property
+ * still holds exactly as written.
+ */
+describe('TopBar session control (#44)', () => {
   beforeEach(() => {
     useAdminKeyStore.setState({ key: null, serverKeyUnset: false });
   });
 
-  it('offers a key field when no key is held', () => {
-    renderApp('/');
-
-    expect(screen.getByLabelText('Admin API key')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Set admin key' })).toBeInTheDocument();
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
-  it('stores a submitted key and stops showing the field', async () => {
-    const user = userEvent.setup();
+  it('renders the signed-in identity', async () => {
+    mockApi({ ...signedIn('operator') });
     renderApp('/');
 
-    await user.type(screen.getByLabelText('Admin API key'), 'k-1');
-    await user.click(screen.getByRole('button', { name: 'Set admin key' }));
+    expect(await screen.findByText('Signed in as operator')).toBeInTheDocument();
+  });
 
-    expect(useAdminKeyStore.getState().key).toBe('k-1');
+  it('offers a sign-out control when signed in', async () => {
+    mockApi({ ...signedIn('operator') });
+    renderApp('/');
+
+    expect(await screen.findByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+  });
+
+  it('signs out through the server, not merely by dropping a cookie', async () => {
+    const user = userEvent.setup();
+    const api = mockApi({ ...signedIn('operator'), '/api/auth/logout': { status: 204 } });
+    renderApp('/');
+
+    await user.click(await screen.findByRole('button', { name: 'Sign out' }));
+
+    // The POST is the assertion. Clearing a cookie client-side would leave a
+    // copied token working, which is the "logout" the issue lists as a defect --
+    // only the server revoking the session row actually ends the session.
+    await waitFor(() => {
+      expect(api.callsTo('/api/auth/logout').some((call) => call.method === 'POST')).toBe(true);
+    });
+  });
+
+  it('offers no key field, because a human no longer holds a key', async () => {
+    mockApi({ ...signedIn('operator') });
+    renderApp('/');
+
+    await screen.findByText('Signed in as operator');
+
+    // The affordance #44 removed, asserted absent rather than merely deleted
+    // along with its tests -- so re-adding a key box to the chrome fails here.
     expect(screen.queryByLabelText('Admin API key')).toBeNull();
-    expect(screen.getByText('Admin key set')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Set admin key' })).toBeNull();
   });
 
-  it('masks the key field', () => {
+  it('renders no sign-in affordance of its own when not signed in', async () => {
+    // RequireSession owns the redirect to /login. A second route to it rendered
+    // from INSIDE the guarded tree is how a redirect loop gets built by
+    // accident, so this branch deliberately offers nothing to click.
+    mockApi({ ...signedOut() });
     renderApp('/');
 
-    // A visible key is shoulder-surfable and lands in screenshots pasted into
-    // issues; autoComplete=off keeps the browser from offering to save it.
-    const input = screen.getByLabelText('Admin API key');
-    expect(input).toHaveAttribute('type', 'password');
-    expect(input).toHaveAttribute('autocomplete', 'off');
+    expect(await screen.findByText('Not signed in')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /sign in/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /sign in/i })).toBeNull();
+  });
+});
+
+describe('TopBar server-key-unset state (AC6-503, #43)', () => {
+  beforeEach(() => {
+    useAdminKeyStore.setState({ key: null, serverKeyUnset: false });
+    // Signed in, so these assertions are about the serverKeyUnset branch alone
+    // and not about the guard redirecting an anonymous visitor away.
+    mockApi({ ...signedIn('operator') });
   });
 
-  it('clears the key on request', async () => {
-    const user = userEvent.setup();
-    useAdminKeyStore.setState({ key: 'k-1', serverKeyUnset: false });
-    renderApp('/');
-
-    await user.click(screen.getByRole('button', { name: 'Clear admin key' }));
-
-    expect(useAdminKeyStore.getState().key).toBeNull();
-    expect(screen.getByLabelText('Admin API key')).toBeInTheDocument();
-  });
-
-  it('ignores a whitespace-only submission', async () => {
-    const user = userEvent.setup();
-    renderApp('/');
-
-    await user.type(screen.getByLabelText('Admin API key'), '   ');
-    await user.click(screen.getByRole('button', { name: 'Set admin key' }));
-
-    expect(useAdminKeyStore.getState().key).toBeNull();
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('AC6-503: shows the server-side message and no key prompt when serverKeyUnset', () => {

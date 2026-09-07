@@ -191,6 +191,16 @@ public static class AdminSettingsEndpoints
         SettingKey.ClassifierPollInterval => live.ClassifierPollInterval.ToString(),
         SettingKey.AutomaticBackupRetainedCount =>
             live.AutomaticBackupRetainedCount.ToString(CultureInfo.InvariantCulture),
+        // #44. Read from the SNAPSHOT rather than a live reader, because these two are snapshot
+        // fields: the absolute timeout's floor is the current idle timeout, and carrying
+        // cross-field dependencies is exactly what SettingsSnapshot is for.
+        //
+        // NOTE FOR ANYONE ADDING A CATALOG ENTRY: an entry with no arm here throws
+        // ArgumentOutOfRangeException MID-SERIALIZATION, so the failure surfaces as a truncated
+        // response body and a JSON parse error in every settings test — not as a legible 500. This
+        // switch must gain an arm for every key added to SettingsCatalog.Entries.
+        SettingKey.SessionIdleTimeout => snapshot.SessionIdleTimeout.ToString(),
+        SettingKey.SessionAbsoluteTimeout => snapshot.SessionAbsoluteTimeout.ToString(),
         _ => throw new ArgumentOutOfRangeException(nameof(key), key, "No wire projection for this setting key."),
     };
 }

@@ -1,6 +1,7 @@
 using Arbitarr.Core.Filtering;
 using Arbitarr.Core.Security;
 using Arbitarr.Data.Entities;
+using Arbitarr.Data.Security;
 using Microsoft.EntityFrameworkCore;
 
 namespace Arbitarr.Data;
@@ -45,6 +46,20 @@ public sealed class ArbitarrDbContext : DbContext
     /// surface. No row here holds a key value; see <see cref="ApiKeyEntry"/>.
     /// </summary>
     public DbSet<ApiKeyEntry> ApiKeys => Set<ApiKeyEntry>();
+
+    /// <summary>
+    /// #44: human operator accounts. Distinct from <see cref="ApiKeys"/>, which authenticates
+    /// MACHINE callers — two credential kinds for two kinds of caller, resolving to the one shared
+    /// <see cref="ApiKeyScope"/> vocabulary rather than to two authorization models (the owner
+    /// ruling on #44/#58). No row here holds a password; see <see cref="UserEntry"/>.
+    /// </summary>
+    public DbSet<UserEntry> Users => Set<UserEntry>();
+
+    /// <summary>
+    /// #44: live and revoked server-side sessions, so logout and expiry are real rather than a
+    /// discarded cookie. No row here holds a token value; see <see cref="SessionEntry"/>.
+    /// </summary>
+    public DbSet<SessionEntry> Sessions => Set<SessionEntry>();
 
     public DbSet<VerdictCacheEntry> VerdictCacheEntries => Set<VerdictCacheEntry>();
 
@@ -167,6 +182,37 @@ public sealed class ArbitarrDbContext : DbContext
             entity.HasIndex(e => e.Label).IsUnique();
             entity.Property(e => e.Label).IsRequired().HasMaxLength(128);
             entity.Property(e => e.KeyHash).IsRequired().HasMaxLength(ApiKeyHasher.HashLength);
+        });
+
+        modelBuilder.Entity<UserEntry>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            // UNIQUE IS LOAD-BEARING, NOT HYGIENE. This index is the atomicity mechanism for
+            // first-account creation (AC4): UserRepository.CreateFirstUserAsync inserts and lets
+            // the database reject a racing second insert, rather than checking "are there zero
+            // users?" and then writing, which has a window between the two halves that two
+            // concurrent LAN clients can both pass. A test drives that race directly. Removing or
+            // relaxing this index does not merely permit duplicate names — it reopens the
+            // first-account hijack the issue names as the thing to prevent.
+            entity.HasIndex(e => e.Username).IsUnique();
+            entity.Property(e => e.Username).IsRequired().HasMaxLength(UserRepository.MaxUsernameLength);
+            // Bounded well above any KDF output this can hold (ASP.NET Core's PasswordHasher v3
+            // format is 84 base64 chars) so a future cost or algorithm change has headroom.
+            entity.Property(e => e.PasswordHash).IsRequired().HasMaxLength(512);
+        });
+
+        modelBuilder.Entity<SessionEntry>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            // Unique on the hash for the same reason ApiKeyEntry.KeyHash is: it is the verification
+            // lookup, and two rows answering one presented token would make "whose session is
+            // this?" unanswerable.
+            entity.HasIndex(e => e.TokenHash).IsUnique();
+            // Sessions are looked up by user when a logout revokes every session an account holds,
+            // and pruned by expiry.
+            entity.HasIndex(e => e.UserId);
+            entity.HasIndex(e => e.AbsoluteExpiresAt);
+            entity.Property(e => e.TokenHash).IsRequired().HasMaxLength(SessionToken.HashLength);
         });
 
         modelBuilder.Entity<VerdictCacheEntry>(entity =>

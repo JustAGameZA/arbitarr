@@ -34,10 +34,23 @@ export interface ApiErrorBody {
  * generic message only when it did not.
  */
 export function serverReason(body: unknown, fallback: string): string {
-  if (typeof body === 'object' && body !== null && 'error' in body) {
-    const { error } = body as { error: unknown };
-    if (typeof error === 'string' && error !== '') {
-      return error;
+  if (typeof body === 'object' && body !== null) {
+    // Two shapes, because the backend legitimately produces two. Most endpoints
+    // reject with `{ error }` (Results.BadRequest), while the ones that use
+    // Results.Problem emit RFC 7807, whose human-readable reason is `detail` --
+    // #44's auth routes are the latter, so without this arm a failed sign-in
+    // would show the generic "Request to /api/auth/login failed with 401"
+    // instead of the server's own "The username or password is incorrect."
+    //
+    // `error` is checked FIRST so no existing surface's message changes.
+    const record = body as { error?: unknown; detail?: unknown };
+
+    if (typeof record.error === 'string' && record.error !== '') {
+      return record.error;
+    }
+
+    if (typeof record.detail === 'string' && record.detail !== '') {
+      return record.detail;
     }
   }
   return fallback;

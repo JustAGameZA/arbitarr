@@ -103,4 +103,30 @@ public enum SettingKey
     /// for a live Ollama call before that candidate fails open to Unknown (P1).
     /// </summary>
     SyncArbitrationBudget,
+
+    /// <summary>
+    /// #44: how long a login session may sit unused before it stops authenticating. Refreshed by
+    /// activity, so an operator working continuously is never signed out mid-task.
+    ///
+    /// <para>Configurable because the right value is a property of the DEPLOYMENT, not of the
+    /// software: a wall-mounted tablet in a locked room and a laptop carried outside the house
+    /// warrant opposite answers, and this project cannot know which it is running on. Default 7
+    /// days — long enough that a homelab operator checking in weekly is not re-authenticating every
+    /// visit, short enough that a forgotten browser stops being a live credential within the week.</para>
+    ///
+    /// <para>Paired with <see cref="SessionAbsoluteTimeout"/>, which it does not replace: this bound
+    /// alone would let a session live forever under anything that touches it periodically.</para>
+    /// </summary>
+    SessionIdleTimeout,
+
+    /// <summary>
+    /// #44: the hard ceiling on a session's life, fixed when it is issued and never extended by
+    /// activity. Default 30 days.
+    ///
+    /// <para>This is the bound that constrains a STOLEN cookie, which is why it cannot be folded
+    /// into <see cref="SessionIdleTimeout"/>: an idle timeout does not limit an attacker at all,
+    /// because holding the token and using it is what keeps it alive. The two answer different
+    /// failure modes — an abandoned browser, and a credential that got out — and both are needed.</para>
+    /// </summary>
+    SessionAbsoluteTimeout,
 }

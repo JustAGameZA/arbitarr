@@ -1,6 +1,6 @@
 using System.Net;
-using System.Net.Sockets;
 using Arbitarr.Api.Routing;
+using Arbitarr.Api.Security;
 using Arbitarr.Core.Security;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -9,10 +9,25 @@ namespace Arbitarr.Api.Admin;
 
 /// <summary>
 /// D2: gates every <see cref="Arbitarr.Api.Routing.RouteClassification.AdminMutating"/> endpoint
-/// behind an admin credential. The admin UI itself has no login of its own — this filter
-/// is the entire auth surface for mutating admin routes; read-only lite routes
+/// behind an admin credential. Read-only lite routes
 /// (<see cref="Arbitarr.Api.Routing.RouteClassification.PublicRead"/>) are never wrapped by this
 /// filter and stay ungated, per D2.
+///
+/// <para><b>#44: THE ADMIN UI NOW HAS A LOGIN, AND THIS FILTER ACCEPTS EITHER CREDENTIAL.</b> The
+/// sentence that stood here — "the admin UI itself has no login of its own" — was true until #44
+/// and is now the thing that changed, so it is corrected rather than removed: a caller may present
+/// an <c>X-Admin-Api-Key</c> header OR a valid session cookie, and this remains the entire auth
+/// surface for mutating admin routes. Both resolve to one <see cref="AdminKeyResolution"/> carrying
+/// one <see cref="ApiKeyScope"/>, and this filter makes ONE scope check over whichever answered —
+/// the owner ruling's requirement that #44 adopt #58's primitive rather than introduce a second
+/// authorization model. Key authentication is NOT removed and must not be: Sonarr, Radarr and every
+/// scripted caller cannot complete an interactive login.</para>
+///
+/// <para><b>#44: THE BYPASS STILL SKIPS THE KEY, NEVER THE LOGIN.</b> The unset-key behaviour below
+/// is unchanged, and its meaning is deliberately unchanged too — being on the local network makes a
+/// fresh install ADMINISTRABLE, it does not make the caller a logged-in operator. A session can
+/// never resolve to <see cref="AdminKeyResolutionOutcome.NotConfigured"/> (see
+/// <see cref="ISessionAuthenticator"/>), so no cookie can reach or reopen that branch.</para>
 ///
 /// Expects the key in an <c>X-Admin-Api-Key</c> request header (never a query string, so it does
 /// not end up in access logs or browser history the way the Torznab/Newznab client apikey does).
@@ -55,16 +70,37 @@ public sealed class AdminApiKeyFilter : IEndpointFilter
 {
     public const string HeaderName = "X-Admin-Api-Key";
 
+    /// <summary>
+    /// #44: the header a cookie-authenticated request must additionally carry.
+    ///
+    /// <para><b>THIS IS THE CSRF CONTROL, AND IT IS ONLY NEEDED FOR THE COOKIE.</b> A cookie is
+    /// attached by the browser automatically, so a form or image on another origin can make the
+    /// browser issue an authenticated request. <c>SameSite=Lax</c> already blocks the cross-site
+    /// POST case, but it is one flag, enforced by the client, with known gaps (older browsers, and
+    /// Lax's own top-level-navigation allowance), and the cost of a second independent control here
+    /// is one header on a same-origin SPA that is already sending them.</para>
+    ///
+    /// <para>It works because a cross-origin caller cannot set a custom header on a form or image
+    /// request at all: doing so forces a CORS preflight, and this application defines no CORS
+    /// policy, so the preflight is refused and the real request is never sent. The API-KEY path
+    /// needs none of this — a key is not ambient, so an attacker's page cannot make the browser
+    /// attach one.</para>
+    /// </summary>
+    public const string SessionRequestHeaderName = "X-Arbitarr-Session";
+
     private readonly IAdminKeyResolver _resolver;
+    private readonly ISessionAuthenticator _sessionAuthenticator;
     private readonly IApiKeyLastUsedRecorder _lastUsedRecorder;
     private readonly ILogger<AdminApiKeyFilter> _logger;
 
     public AdminApiKeyFilter(
         IAdminKeyResolver resolver,
+        ISessionAuthenticator sessionAuthenticator,
         IApiKeyLastUsedRecorder lastUsedRecorder,
         ILogger<AdminApiKeyFilter> logger)
     {
         _resolver = resolver;
+        _sessionAuthenticator = sessionAuthenticator;
         _lastUsedRecorder = lastUsedRecorder;
         _logger = logger;
     }
@@ -84,6 +120,30 @@ public sealed class AdminApiKeyFilter : IEndpointFilter
             presentedKey,
             requiredScope,
             context.HttpContext.RequestAborted);
+
+        // #44: EITHER credential opens this gate, and both resolve to the SAME AdminKeyResolution
+        // carrying the SAME ApiKeyScope, so the switch below makes ONE scope decision over whichever
+        // one answered. That is the owner ruling's single-model requirement, expressed as control
+        // flow rather than as a comment: there is no second branch here that could authorize a
+        // session under different rules, because there is no second outcome type to branch on.
+        // SessionAndKeyAuthorizeIdenticallyTests asserts the two are interchangeable at the gate.
+        //
+        // ORDER. The key is tried first, so a machine caller presenting one is never charged for a
+        // session lookup, and a browser that holds both a stale cookie and a valid key is judged on
+        // the key. A session is consulted only when the key did not already authorize.
+        if (resolution.Outcome is not AdminKeyResolutionOutcome.Authorized)
+        {
+            var sessionResolution = await AuthenticateSessionAsync(context.HttpContext, requiredScope);
+
+            // Adopted only when the session actually decided something. A rejected session must not
+            // overwrite a NotConfigured key outcome, or presenting any junk cookie on a fresh
+            // install would turn #43's bootstrap bypass into a 401 and re-deadlock the install —
+            // constraint 1 of the owner ruling, in the one place it could actually be broken.
+            if (sessionResolution is { Outcome: not AdminKeyResolutionOutcome.Rejected })
+            {
+                resolution = sessionResolution;
+            }
+        }
 
         switch (resolution.Outcome)
         {
@@ -130,6 +190,43 @@ public sealed class AdminApiKeyFilter : IEndpointFilter
     }
 
     /// <summary>
+    /// #44: resolves the session cookie, if one was presented, to the same
+    /// <see cref="AdminKeyResolution"/> a key resolves to. Returns null when no cookie was sent at
+    /// all, so the caller can leave the key's own outcome standing.
+    ///
+    /// <para><b>THE CSRF REQUIREMENT IS ENFORCED HERE, NOT IN THE AUTHENTICATOR.</b> It is a
+    /// property of the TRANSPORT (an ambient browser credential), not of the session itself, and
+    /// putting it here keeps <see cref="ISessionAuthenticator"/> answering exactly one question.
+    /// A cookie presented without <see cref="SessionRequestHeaderName"/> is treated as no credential
+    /// rather than as a bad one: the request is not evidence of an authenticated operator's intent,
+    /// and the correct response is the same one an unauthenticated request gets.</para>
+    /// </summary>
+    private async ValueTask<AdminKeyResolution?> AuthenticateSessionAsync(
+        HttpContext httpContext,
+        ApiKeyScope requiredScope)
+    {
+        if (!httpContext.Request.Cookies.TryGetValue(ISessionAuthenticator.CookieName, out var token)
+            || string.IsNullOrEmpty(token))
+        {
+            return null;
+        }
+
+        if (!httpContext.Request.Headers.ContainsKey(SessionRequestHeaderName))
+        {
+            _logger.LogWarning(
+                "A session cookie was presented on {Method} {Path} without the {HeaderName} header and was ignored. " +
+                "A same-origin caller sends it; a cross-site request cannot.",
+                httpContext.Request.Method,
+                httpContext.Request.Path,
+                SessionRequestHeaderName);
+
+            return null;
+        }
+
+        return await _sessionAuthenticator.AuthenticateAsync(token, requiredScope, httpContext.RequestAborted);
+    }
+
+    /// <summary>
     /// #43's bootstrap bypass, reached only when NO credential of any kind exists on this deployment
     /// — neither a named key nor the legacy shared value. See the type doc for the deadlock it
     /// resolves and the reason trust is decided from the socket peer alone.
@@ -164,47 +261,14 @@ public sealed class AdminApiKeyFilter : IEndpointFilter
 
     /// <summary>
     /// Whether <paramref name="address"/> is on a network Arbitarr treats as local for the
-    /// unconfigured-key bootstrap bypass: loopback (v4, v6, and v4-mapped-into-v6), the RFC1918
-    /// private v4 ranges (10/8, 172.16/12, 192.168/16), and the RFC4193 IPv6 unique-local range
-    /// (fc00::/7). Anything else — including a null address — is remote.
+    /// unconfigured-key bootstrap bypass.
+    ///
+    /// <para><b>THE DEFINITION MOVED (#44), AND THIS IS NOW A FORWARDER.</b> The ranges and the
+    /// socket-peer-only rule live in <see cref="TrustedNetwork"/>, because #44's first-run account
+    /// setup needs the identical predicate and two copies would drift into two trust boundaries.
+    /// This member remains as the name #43's tests and readers already know, and so the filter's
+    /// call site still reads as a local decision — but there is exactly one definition, over
+    /// there. Do not reinline it.</para>
     /// </summary>
-    internal static bool IsTrustedNetwork(IPAddress? address)
-    {
-        if (address is null)
-        {
-            return false;
-        }
-
-        // Unwrap ::ffff:a.b.c.d so a v4 peer on a dual-stack socket is judged by the v4 rules
-        // rather than falling through to the v6 arm below.
-        if (address.IsIPv4MappedToIPv6)
-        {
-            address = address.MapToIPv4();
-        }
-
-        if (IPAddress.IsLoopback(address))
-        {
-            return true;
-        }
-
-        if (address.AddressFamily == AddressFamily.InterNetwork)
-        {
-            var octets = address.GetAddressBytes();
-            return octets[0] switch
-            {
-                10 => true,
-                172 => octets[1] >= 16 && octets[1] <= 31,
-                192 => octets[1] == 168,
-                _ => false,
-            };
-        }
-
-        if (address.AddressFamily == AddressFamily.InterNetworkV6)
-        {
-            // fc00::/7 — the top 7 bits are 1111110, so the first octet is 0xfc or 0xfd.
-            return (address.GetAddressBytes()[0] & 0xFE) == 0xFC;
-        }
-
-        return false;
-    }
+    internal static bool IsTrustedNetwork(IPAddress? address) => TrustedNetwork.IsTrusted(address);
 }

@@ -1,7 +1,16 @@
 import { useAdminKeyStore } from '../state/adminKeyStore';
 
-/** Matches AdminApiKeyFilter.HeaderName (src/Arbitarr.Api/Admin/AdminApiKeyFilter.cs:23). */
+/** Matches AdminApiKeyFilter.HeaderName (src/Arbitarr.Api/Admin/AdminApiKeyFilter.cs). */
 export const ADMIN_KEY_HEADER = 'X-Admin-Api-Key';
+
+/**
+ * Matches AdminApiKeyFilter.SessionRequestHeaderName (#44).
+ *
+ * The server ignores a session cookie presented without this header. It is the
+ * second, independent CSRF control alongside the cookie's own `SameSite=Lax`,
+ * and it is what a cross-origin attacker cannot supply.
+ */
+export const SESSION_REQUEST_HEADER = 'X-Arbitarr-Session';
 
 /**
  * Whether a request carries the admin key, decided by PATH PREFIX and never by
@@ -118,6 +127,23 @@ export async function apiFetch<T>(path: string, options: ApiRequestOptions = {})
     headers['Content-Type'] = 'application/json';
   }
 
+  // #44: the CSRF control for cookie-authenticated requests, attached to EVERY
+  // request rather than only the gated ones.
+  //
+  // The server requires it before it will honour a session cookie
+  // (AdminApiKeyFilter.SessionRequestHeaderName). Attaching it unconditionally
+  // -- rather than mirroring needsAdminKey's path-prefix rule -- is deliberate:
+  // the cookie is ambient and the browser attaches it to every same-origin
+  // request regardless of path, so a rule here that decided per-path would have
+  // to stay in sync with which routes read the cookie, and the failure mode of
+  // getting that wrong is a request that silently authenticates as nobody.
+  // The header is meaningless to routes that ignore it, so there is no cost.
+  //
+  // It works because a cross-origin page cannot set a custom header without a
+  // CORS preflight, and this app defines no CORS policy, so the preflight is
+  // refused and the forged request is never sent.
+  headers[SESSION_REQUEST_HEADER] = '1';
+
   const store = useAdminKeyStore.getState();
   if (needsAdminKey(path)) {
     const key = store.key;
@@ -148,10 +174,19 @@ export async function apiFetch<T>(path: string, options: ApiRequestOptions = {})
     throw new AdminKeyNotConfiguredError(body);
   }
 
-  if (response.status === 401 || response.status === 403) {
+  if ((response.status === 401 || response.status === 403) && needsAdminKey(path)) {
     // 401: a key is configured and ours is wrong or missing.
-    // 403: defensive only -- AdminApiKeyFilter returns 503 and 401 and has no
-    // 403 path, so handle it but do not assert the server ever sends it.
+    // 403: since #58 this is a real answer, not just defensive -- a live key
+    // whose scope does not reach the route.
+    //
+    // #44: SCOPED TO KEY-BEARING PATHS. Without the needsAdminKey guard, a
+    // failed sign-in (401 from /api/auth/login) would clear the operator's admin
+    // key and report "the admin API key was rejected" -- neither of which is
+    // true, and the message would send someone who mistyped a password to the
+    // top bar to re-enter an unrelated credential. The auth routes carry no key,
+    // so their 401s fall through to the generic branch and surface the server's
+    // own wording ("the username or password is incorrect", or the rate-limit
+    // message), which is the accurate and more useful text.
     store.clearKey();
     throw new AdminKeyRejectedError(response.status, body);
   }

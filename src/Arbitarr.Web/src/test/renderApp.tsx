@@ -17,13 +17,22 @@ function newQueryClient() {
  * table rather than a parallel one that can drift from routes.tsx.
  */
 export function renderApp(initialEntry = '/') {
-  return render(
-    <QueryClientProvider client={newQueryClient()}>
-      <MemoryRouter initialEntries={[initialEntry]}>
-        <App />
-      </MemoryRouter>
-    </QueryClientProvider>,
-  );
+  // The client is returned alongside the render result so a test can inspect the
+  // caches themselves. The #44 password-retention test needs exactly that: the
+  // property it asserts (no credential is left in the mutation cache) is not
+  // observable from the DOM.
+  const queryClient = newQueryClient();
+
+  return {
+    ...render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={[initialEntry]}>
+          <App />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    ),
+    queryClient,
+  };
 }
 
 /**
