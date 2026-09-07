@@ -277,6 +277,37 @@ public sealed class AdminApiKeyEndpointsTests
         Assert.Contains(nameof(ApiKeyScope.Admin), body, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("1")]    // Admin's numeric form — the privilege escalation this closes
+    [InlineData(" 1 ")]  // ...which Enum.TryParse also accepts padded
+    [InlineData("+1")]   // ...and signed
+    [InlineData("0")]    // ReadOnly's numeric form: no escalation, but still an undocumented shape
+    [InlineData("5")]    // undefined ordinal, previously caught only downstream by Enum.IsDefined
+    public async Task A_numeric_scope_string_is_rejected_with_400(string scope)
+    {
+        // Enum.TryParse ACCEPTS AN ENUM'S NUMERIC FORM, so parsing the scope with it let
+        // {"scope":"1"} mint a full-authority Admin key — an input shape no caller is documented to
+        // have and which this endpoint's own error message does not advertise. Neither Enum.IsDefined
+        // (1 is defined) nor trimming (" 1 " and "+1" parse too) closes it; only matching the scope
+        // names does, which is what the handler now does.
+        //
+        // "5" is here for a different reason: it was already refused, but downstream by the
+        // repository's Enum.IsDefined rather than at the wire boundary. Pinning it stops a future
+        // refactor moving that refusal somewhere it can be missed.
+        await using var factory = await CreateSeededFactoryAsync();
+        using var client = CreateKeyedClient(factory, LegacyKey);
+
+        using var response = await client.PostAsJsonAsync(
+            AdminApiKeyEndpoints.KeysRoute,
+            new { label = $"numeric-{scope.Trim()}", scope });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        // And nothing was minted — the refusal must not be cosmetic.
+        var keys = await client.GetFromJsonAsync<List<ApiKeyResponse>>(AdminApiKeyEndpoints.KeysRoute);
+        Assert.DoesNotContain(keys!, k => k.Label.StartsWith("numeric-", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task An_omitted_scope_defaults_to_the_narrower_one()
     {

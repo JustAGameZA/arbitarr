@@ -76,7 +76,10 @@ public sealed record CreatedApiKeyResponse(ApiKeyResponse Key, string PlaintextK
 /// AC24 reject-never-clamp posture. This layer only translates
 /// <see cref="ApiKeyValidationException"/> into a 400 — one validation floor, in one place, already
 /// tested. The one thing parsed here is the scope string, because an unparseable scope is a
-/// wire-format problem that never reaches the repository's typed parameter.</para>
+/// wire-format problem that never reaches the repository's typed parameter. That parse matches the
+/// scope NAMES explicitly rather than using <c>Enum.TryParse</c>, which would also accept the
+/// numeric form and let <c>{"scope":"1"}</c> mint a full-authority key — see the comment at the
+/// parse site for why the obvious guards do not close it.</para>
 /// </summary>
 public static class AdminApiKeyEndpoints
 {
@@ -145,14 +148,32 @@ public static class AdminApiKeyEndpoints
         // validation, and the two floors are genuinely different. Case-insensitive, so "readonly"
         // and "ReadOnly" both work; absent means the NARROWER scope, so a caller who forgets the
         // field gets the least authority rather than the most.
+        //
+        // MATCHED BY NAME, DELIBERATELY — DO NOT "SIMPLIFY" THIS BACK TO Enum.TryParse.
+        // TryParse also accepts the enum's NUMERIC form, so {"scope":"1"} would mint an Admin key
+        // through an input shape no caller is documented to have and this very error message does
+        // not advertise. Adding an Enum.IsDefined check does NOT fix it: 1 IS a defined value, and
+        // neither does trimming, since " 1 " and "+1" parse too. The only closed form is matching
+        // the two names, so the wire format is closed by construction rather than by a second check
+        // that has to anticipate every numeric spelling.
         var scope = ApiKeyScope.ReadOnly;
-        if (!string.IsNullOrWhiteSpace(request.Scope)
-            && !Enum.TryParse(request.Scope, ignoreCase: true, out scope))
+        if (!string.IsNullOrWhiteSpace(request.Scope))
         {
-            return Results.BadRequest(new
+            if (string.Equals(request.Scope, nameof(ApiKeyScope.ReadOnly), StringComparison.OrdinalIgnoreCase))
             {
-                error = $"'{request.Scope}' is not a valid scope. Use '{nameof(ApiKeyScope.ReadOnly)}' or '{nameof(ApiKeyScope.Admin)}'.",
-            });
+                scope = ApiKeyScope.ReadOnly;
+            }
+            else if (string.Equals(request.Scope, nameof(ApiKeyScope.Admin), StringComparison.OrdinalIgnoreCase))
+            {
+                scope = ApiKeyScope.Admin;
+            }
+            else
+            {
+                return Results.BadRequest(new
+                {
+                    error = $"'{request.Scope}' is not a valid scope. Use '{nameof(ApiKeyScope.ReadOnly)}' or '{nameof(ApiKeyScope.Admin)}'.",
+                });
+            }
         }
 
         try

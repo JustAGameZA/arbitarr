@@ -61,6 +61,12 @@ public sealed class ThrottledApiKeyLastUsedRecorder : IApiKeyLastUsedRecorder
         // value unchanged when inside the window. So "the map now holds `now`" is precisely
         // "this call won the slot", decided atomically — two concurrent requests for the same key
         // cannot both win, which a read-then-write pair would allow.
+        //
+        // NOTE FOR A FUTURE CONCURRENCY TEST: this identity test picks out the winner only while
+        // timestamps are DISTINCT, which they are against a real clock. Under a FROZEN TimeProvider
+        // every racer reads the same instant, so all of them compare equal to `now` and all appear
+        // to win — an artefact of the fake clock, not a product bug. Assert the throttle with an
+        // advancing FakeTimeProvider rather than a frozen one.
         var claimed = _lastWrittenAt.AddOrUpdate(
             keyId,
             now,
