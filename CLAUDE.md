@@ -36,16 +36,28 @@ so a secret in a URL **path** (a webhook token, say) is not covered — such reg
 need `.RemoveAllLoggers()`. Care taken inside a typed client cannot defend against a
 handler the container wraps around it.
 
+**There are two SQLite databases, not one.** `arbitarr.db` and `arbitarr-logs.db`
+(`LogStore.DatabaseFileName`), deliberately separate so a config backup does not drag
+log contents along. The second is invisible to most operational surfaces — it has no EF
+migrations and is not reported in `MaintenanceJobResult`. Any feature that enumerates
+stores (a health check reporting DB sizes, a disk-usage panel, a support-bundle export,
+a backup) must **grep for `DatabaseFileName`, not for `arbitarr.db`**, or it will
+silently cover only half the data.
+
 ## 2. Admin routes
 
 - Bind bodies **optionally**:
   `[FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] T? request`.
   A required body is rejected *before* `AdminApiKeyFilter` runs, which leaks
   400-vs-503 and tells an unauthenticated caller whether a route exists.
-- `AdminApiKeyRouteEnumerationTests` **sends no body on purpose.** Adding one is the
-  obvious "fix" and it destroys the test's ability to detect the leak above.
-- That sweep **skips every `{`-containing route**. Templated routes need explicit
-  by-name gating tests; the sweep passing is not evidence for them.
+- `AdminApiKeyRouteEnumerationTests` (in `Arbitarr.Integration.Tests`, not
+  `Arbitarr.Api.Tests`) **sends no body on purpose.** Adding one is the obvious "fix"
+  and it destroys the test's ability to detect the leak above.
+- That sweep **skips every `{`-containing route** — see the guard at its ~line 203, and
+  the note above it explaining that a templated route needs a real value to resolve.
+  Templated routes therefore need explicit by-name gating tests, which live in the
+  matching endpoint test class (e.g. `AdminApiKeyEndpointsTests`), **not** in the sweep.
+  The sweep passing is not evidence for them.
 - Classify routes by **`RouteClassification` / path prefix, never by HTTP verb.**
 
 ## 3. Parsing user-supplied enums
