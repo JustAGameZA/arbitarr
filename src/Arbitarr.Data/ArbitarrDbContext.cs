@@ -176,6 +176,12 @@ public sealed class ArbitarrDbContext : DbContext
             entity.Property(e => e.Summary).IsRequired().HasMaxLength(1024);
             entity.Property(e => e.Reason).HasMaxLength(1024);
             entity.Property(e => e.SourceDisplayName).HasMaxLength(256);
+            // #54: the review verdict hangs on this same row as nullable columns rather than in a
+            // second table (plan §3.1). The note is bounded like Reason above; the bound is enforced
+            // in code by EventRepository.ReviewAsync, which REJECTS an over-long note rather than
+            // truncating it, on AC24's reject-never-clamp footing — silently storing a shortened
+            // version of an operator's own words is a worse answer than refusing them.
+            entity.Property(e => e.ReviewNote).HasMaxLength(1024);
         });
 
         modelBuilder.Entity<Source>(entity =>

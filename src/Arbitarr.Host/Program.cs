@@ -452,6 +452,12 @@ HealthStalenessEndpoint.Map(app);
 // now settled rather than provisional -- #59 closed with D2 unamended (the admin key gates
 // mutating actions; reading is not one). See ActivityEndpoint's own note.
 ActivityEndpoint.Map(app);
+// #54 steps 3-5: the review queue over the SAME event store's Decision rows -- the two reads and
+// the review write. Mapped in one call because the three are one feature, but they are NOT one
+// classification: the reads are PublicRead on ActivityEndpoint's settled precedent (same store,
+// same #59/D2 ruling), while the review write is AdminMutating under /api/admin/. The split is by
+// what each route DOES, never by its HTTP verb. See DecisionReviewEndpoints' own note.
+DecisionReviewEndpoints.Map(app);
 Arbitarr.Api.SystemInfo.BuildInfoEndpoint.Map(app);
 AdminPingEndpoint.Map(app);
 ObservabilityEndpoint.Map(app);

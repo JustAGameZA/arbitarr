@@ -17,12 +17,21 @@ namespace Arbitarr.Data.Events;
 public sealed class EventRepository
 {
     /// <summary>
+<<<<<<< HEAD
     /// Floor on how many rows one scan batch asks SQLite for (see <see cref="QueryAsync"/>). Only the
     /// time filters can reject a fetched row, so a batch sized to the shortfall alone would degrade
     /// to one round trip per rejected row when a window is sparse. Over-fetching a little amortises
     /// that; the ceiling on total work stays the early exit, not this number.
     /// </summary>
     private const int MinimumScanBatch = 256;
+=======
+    /// Longest review note accepted, matching the <c>HasMaxLength(1024)</c> that
+    /// <see cref="ArbitarrDbContext"/> declares on <see cref="EventEntry.ReviewNote"/>. Named here
+    /// because this is where the bound is enforced; the two must stay equal, and the schema is the
+    /// reason for the figure.
+    /// </summary>
+    public const int ReviewNoteMaxLength = 1024;
+>>>>>>> 71a4afe (Add the decision review queue backend (#54, steps 3-5))
 
     private readonly ArbitarrDbContext _dbContext;
     private readonly TimeProvider _timeProvider;
@@ -39,13 +48,21 @@ public sealed class EventRepository
     /// <paramref name="sourceDisplayName"/> that looks like it might carry a credential rather than
     /// an identity (plan §9) — see <see cref="ValidateSourceDisplayName"/>.
     /// </summary>
+    /// <param name="shadowMode">
+    /// For a <see cref="EventKind.Decision"/> row, whether the pipeline was in shadow mode when the
+    /// decision was made (#54 AC1) — captured here, at write time, and never recomputed on read.
+    /// Null for every other kind, where the question does not apply. Optional because the four
+    /// operational emitters legitimately have no answer to give; see
+    /// <see cref="EventEntry.ShadowMode"/> for why this is a column rather than prose.
+    /// </param>
     public async Task<EventEntry> AddAsync(
         EventKind kind,
         string summary,
         string? reason,
         string? sourceDisplayName,
         string? detail,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool? shadowMode = null)
     {
         ValidateSummary(summary);
         ValidateSourceDisplayName(sourceDisplayName);
@@ -58,6 +75,7 @@ public sealed class EventRepository
             Reason = reason,
             SourceDisplayName = sourceDisplayName,
             Detail = detail,
+            ShadowMode = shadowMode,
         };
 
         _dbContext.Events.Add(entry);
@@ -226,7 +244,136 @@ public sealed class EventRepository
             }
         }
 
+<<<<<<< HEAD
         return BuildPage(page, limit);
+=======
+        if (query.Cursor is { } cursor)
+        {
+            filtered = filtered.Where(e => e.Id < cursor);
+        }
+
+        // #54's shadow-mode filter. Compared against the nullable column as a value rather than
+        // with HasValue/Value so EF translates it to `ShadowMode = 1`/`= 0` — SQL's three-valued
+        // logic then excludes NULL rows (the operational kinds) from both branches on its own,
+        // which is the wanted behaviour and not an accident: a row with no shadow-mode answer is
+        // neither a shadow-mode decision nor a live one.
+        if (query.ShadowMode is { } shadowMode)
+        {
+            filtered = filtered.Where(e => e.ShadowMode == shadowMode);
+        }
+
+        // The kind and cursor predicates translate to SQL, but the OccurredAt comparisons do not:
+        // this codebase's SQLite/EF Core combination cannot translate DateTimeOffset comparisons
+        // server-side, which is why GetAllAsync and PruneAsync (and MaintenanceJob before them) also
+        // compare that column client-side. Taking one row past the page is what reveals whether a
+        // further page exists without a second COUNT query.
+        var candidates = await filtered.ToListAsync(cancellationToken);
+
+        var page = candidates
+            .Where(e => query.Since is not { } since || e.OccurredAt >= since)
+            .Where(e => query.Until is not { } until || e.OccurredAt < until)
+            .OrderByDescending(e => e.Id)
+            .Take(limit + 1)
+            .ToList();
+
+        var hasMore = page.Count > limit;
+        if (hasMore)
+        {
+            page.RemoveAt(page.Count - 1);
+        }
+
+        // Null on the last page, so a caller stops rather than re-requesting forever.
+        var nextCursor = hasMore && page.Count > 0 ? page[^1].Id : (long?)null;
+
+        return new EventPage(page, nextCursor);
+>>>>>>> 71a4afe (Add the decision review queue backend (#54, steps 3-5))
+    }
+
+    /// <summary>
+    /// Records an operator's verdict on one decision (#54 step 4 / AC2), returning the updated row,
+    /// or null when <paramref name="id"/> is not a <see cref="EventKind.Decision"/> row that exists.
+    ///
+    /// IDEMPOTENT PER DECISION, WHICH IS PLAN §5 AND THE REASON THE VERDICT IS A COLUMN. This
+    /// updates three fields on the decision's own row, so reviewing the same decision twice
+    /// overwrites the earlier verdict instead of appending a second one. With a verdict TABLE the
+    /// obvious implementation would insert, and the agreement rate would then count one
+    /// much-revisited decision several times — the statistic would drift from the operator's actual
+    /// judgements without anything looking wrong. Here that outcome is unrepresentable.
+    ///
+    /// Only Decision rows are reviewable: a verdict on "the worker ran a cycle" is meaningless, and
+    /// admitting one would put non-decisions into the agreement rate's denominator. A non-decision
+    /// id is rejected as not-found rather than silently ignored.
+    /// </summary>
+    public async Task<EventEntry?> ReviewAsync(
+        long id,
+        ReviewVerdict verdict,
+        string? note,
+        CancellationToken cancellationToken)
+    {
+        if (!Enum.IsDefined(verdict))
+        {
+            // Enum.IsDefined rather than a range check: a cast from an out-of-range int is the way
+            // an invalid verdict actually arrives, and storing it would make the aggregate's
+            // agree/disagree split silently incomplete.
+            throw new EventValidationException(
+                $"Unknown review verdict '{verdict}'. Expected one of: {string.Join(", ", Enum.GetNames<ReviewVerdict>())}.");
+        }
+
+        ValidateReviewNote(note);
+
+        var entry = await _dbContext.Events
+            .FirstOrDefaultAsync(e => e.Id == id && e.Kind == EventKind.Decision, cancellationToken);
+
+        if (entry is null)
+        {
+            return null;
+        }
+
+        entry.ReviewVerdict = verdict;
+        entry.ReviewedAt = _timeProvider.GetUtcNow();
+        // An omitted note CLEARS a previously stored one rather than leaving it in place. This is a
+        // whole-verdict replacement, not a partial patch: the note explains the verdict it was filed
+        // with, so keeping an old note attached to a changed verdict would misattribute the
+        // operator's reasoning. (Note the deliberate contrast with #53's settings edits, where an
+        // omitted field means LEAVE ALONE — that is a patch of independent fields; this is not.)
+        entry.ReviewNote = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return entry;
+    }
+
+    /// <summary>
+    /// Counts reviewed decisions in the window <paramref name="since"/>..now, split by verdict
+    /// (#54 step 5 / AC3) — the arithmetic behind "the pipeline has been right 47 of 52 times".
+    ///
+    /// RETURNS COUNTS, NOT A RATE, AND THAT IS THE POINT. The zero-reviews case (AC4) has no
+    /// meaningful rate — 0/0 is not 0% — so this deliberately does not divide. Whether "no data yet"
+    /// is rendered as an em-dash is a presentation decision, made once in the UI by <c>formatRate</c>
+    /// (<c>System.tsx</c>), and a rate computed here would have to invent some value to stand for
+    /// "undefined" and hope every caller recognised it. Handing back the two counts lets the caller
+    /// distinguish "nobody has reviewed anything" from "everything reviewed was wrong", which are
+    /// very different sentences to put in front of an operator deciding whether to leave shadow mode.
+    ///
+    /// Unreviewed decisions are excluded from BOTH counts (the verdict column is null on them), so
+    /// they never inflate the denominator into reading as disagreement.
+    /// </summary>
+    public async Task<DecisionAgreement> GetAgreementAsync(
+        DateTimeOffset since,
+        CancellationToken cancellationToken)
+    {
+        // Kind and the verdict's presence translate to SQL; the OccurredAt comparison does not, for
+        // the same SQLite/EF DateTimeOffset reason documented on QueryAsync and PruneAsync.
+        var reviewed = await _dbContext.Events
+            .AsNoTracking()
+            .Where(e => e.Kind == EventKind.Decision && e.ReviewVerdict != null)
+            .ToListAsync(cancellationToken);
+
+        var inWindow = reviewed.Where(e => e.OccurredAt >= since).ToList();
+
+        return new DecisionAgreement(
+            Agreed: inWindow.Count(e => e.ReviewVerdict == ReviewVerdict.Agree),
+            Disagreed: inWindow.Count(e => e.ReviewVerdict == ReviewVerdict.Disagree));
     }
 
     /// <summary>
@@ -260,6 +407,7 @@ public sealed class EventRepository
     }
 
     /// <summary>
+<<<<<<< HEAD
     /// One SQL-bounded descending scan step: kind and cursor as WHERE clauses, Id DESC as ORDER BY.
     /// Every part of this translates to SQL on this provider (verified, not assumed — see
     /// <see cref="QueryAsync"/>), so the caller's <c>.Take()</c> becomes a real LIMIT rather than a
@@ -299,6 +447,20 @@ public sealed class EventRepository
         var nextCursor = hasMore && collected.Count > 0 ? collected[^1].Id : (long?)null;
 
         return new EventPage(collected, nextCursor);
+=======
+    /// Rejects a note longer than the column allows, rather than truncating it (AC24's
+    /// reject-never-clamp, the same posture <see cref="ValidateSummary"/> takes). Silently storing a
+    /// shortened version of an operator's own reasoning is a worse answer than refusing it: the
+    /// operator believes they recorded something they did not.
+    /// </summary>
+    private static void ValidateReviewNote(string? note)
+    {
+        if (note is not null && note.Length > ReviewNoteMaxLength)
+        {
+            throw new EventValidationException(
+                $"Review note must be {ReviewNoteMaxLength} characters or fewer.");
+        }
+>>>>>>> 71a4afe (Add the decision review queue backend (#54, steps 3-5))
     }
 
     private static void ValidateSummary(string summary)

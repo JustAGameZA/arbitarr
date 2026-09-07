@@ -81,12 +81,19 @@ public interface IEventSink
     /// <param name="reason">Why it happened (plan AC2 — a reason, not only an event name), or null.</param>
     /// <param name="sourceDisplayName">The source involved, by display name or id — NEVER a credential (plan §9).</param>
     /// <param name="detail">Free-form kind-specific detail, or null.</param>
+    /// <param name="shadowMode">
+    /// For a <see cref="RecordedEventKind.Decision"/>, whether the pipeline was in shadow mode when
+    /// the decision was made (#54 AC1). Null for every other kind, where the question does not
+    /// apply. Recorded as a stored flag rather than left to be inferred from the summary's wording,
+    /// so that a decision made under shadow mode still reads as one after the switch is flipped.
+    /// </param>
     ValueTask RecordAsync(
         RecordedEventKind kind,
         string summary,
         string? reason = null,
         string? sourceDisplayName = null,
         string? detail = null,
+<<<<<<< HEAD
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -114,6 +121,10 @@ public interface IEventSink
                 .ConfigureAwait(false);
         }
     }
+=======
+        CancellationToken cancellationToken = default,
+        bool? shadowMode = null);
+>>>>>>> 71a4afe (Add the decision review queue backend (#54, steps 3-5))
 }
 
 /// <summary>
@@ -137,5 +148,6 @@ public sealed class NullEventSink : IEventSink
         string? reason = null,
         string? sourceDisplayName = null,
         string? detail = null,
-        CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        CancellationToken cancellationToken = default,
+        bool? shadowMode = null) => ValueTask.CompletedTask;
 }

@@ -47,4 +47,49 @@ public sealed class EventEntry
     /// recognizes. Never write a credential into this field (plan §9).
     /// </summary>
     public string? Detail { get; set; }
+
+    /// <summary>
+    /// Whether the pipeline was in shadow mode when this decision was made — #54 AC1's "the
+    /// shadow-mode state AT DECISION TIME", and what #54's review-queue filter selects on
+    /// (plan §4 step 3). Null on every non-<see cref="EventKind.Decision"/> row, where the question
+    /// does not apply.
+    ///
+    /// THIS IS A COLUMN RATHER THAN A SUBSTRING OF <see cref="Detail"/>, AND THAT IS DELIBERATE.
+    /// #55's emission already states shadow mode in <see cref="Summary"/> as English prose
+    /// ("Release flagged in shadow mode (still served)" vs "Release suppressed"), which is right for
+    /// a human reading the Activity surface and wrong for a filter: matching a WHERE clause against
+    /// display text couples the query to wording that exists to be edited, so rephrasing a sentence
+    /// would silently change which rows the review queue returns. Storing the flag the pipeline
+    /// actually held makes the filter answer the question it claims to.
+    ///
+    /// It is captured at write time and never recomputed, which is the whole point: a decision made
+    /// under shadow mode and read after the switch was flipped must still read as a shadow-mode
+    /// decision (plan §7's "shadow-mode flag read at display time instead of decision time" risk).
+    /// </summary>
+    public bool? ShadowMode { get; set; }
+
+    /// <summary>
+    /// The operator's verdict on this decision, or null when nobody has reviewed it yet (#54 AC2).
+    ///
+    /// A NULLABLE COLUMN ON THIS ROW, NEVER A SECOND TABLE — see <see cref="EventKind.Decision"/>'s
+    /// own note and the plan's §3.1. A verdict table keyed on event id would record the same fact
+    /// one indirection away and drift from it; the one-store rule exists precisely to prevent that.
+    ///
+    /// Reviewing is IDEMPOTENT per decision because the verdict lives here: a second review of the
+    /// same decision overwrites these three fields rather than appending a row, so "reviewed twice"
+    /// cannot become "counted twice" in the agreement rate (plan §5).
+    /// </summary>
+    public ReviewVerdict? ReviewVerdict { get; set; }
+
+    /// <summary>When the verdict was recorded, or null while the decision is unreviewed.</summary>
+    public DateTimeOffset? ReviewedAt { get; set; }
+
+    /// <summary>
+    /// The reviewer's optional free-text note (#54 AC2's "with an optional note"). Null both when
+    /// the decision is unreviewed and when it was reviewed without a note — the distinction that
+    /// matters is carried by <see cref="ReviewVerdict"/>, not by this field's nullness.
+    ///
+    /// Never a credential, on the same footing as <see cref="Detail"/> (plan §9).
+    /// </summary>
+    public string? ReviewNote { get; set; }
 }

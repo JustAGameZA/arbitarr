@@ -72,7 +72,8 @@ public sealed class ScopedEventSink : IEventSink
         string? reason = null,
         string? sourceDisplayName = null,
         string? detail = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool? shadowMode = null)
     {
         try
         {
@@ -85,7 +86,8 @@ public sealed class ScopedEventSink : IEventSink
                 reason,
                 sourceDisplayName,
                 detail,
-                cancellationToken);
+                cancellationToken,
+                shadowMode);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
