@@ -173,7 +173,14 @@ public sealed class FilterStage
                     // What #54 needs to review the decision later: which layer acted, and on which
                     // release. Never a credential (plan §9).
                     detail: $"layer={entry.RuleName}; release={entry.ReleaseIdentifier}",
-                    cancellationToken: cancellationToken).ConfigureAwait(false);
+                    cancellationToken: cancellationToken,
+                    // #54 AC1: the shadow-mode state AS OF THIS MOMENT, stored as a queryable flag.
+                    // The summary above already says it in prose for a human, but #54's review queue
+                    // FILTERS on it, and a filter that pattern-matched display text would change
+                    // which decisions it returns the day someone rewords that sentence. Same value,
+                    // same instant, taken from the audit row the decision just produced — so the two
+                    // records cannot disagree about what mode the pipeline was in.
+                    shadowMode: entry.ShadowMode).ConfigureAwait(false);
             }
         }
 

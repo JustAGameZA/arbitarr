@@ -403,4 +403,233 @@ public sealed class EventRepositoryTests : IDisposable
         Assert.Empty(page.Events);
         Assert.Null(page.NextCursor);
     }
+
+    // ---- #54: the review verdict on Decision rows, and the agreement aggregate ----
+
+    /// <summary>Adds one decision carrying the shadow-mode flag it was made under.</summary>
+    private static Task<EventEntry> AddDecisionAsync(EventRepository repository, bool shadowMode) =>
+        repository.AddAsync(
+            EventKind.Decision,
+            shadowMode ? "Release flagged in shadow mode (still served)" : "Release suppressed",
+            reason: "a test decision",
+            sourceDisplayName: null,
+            detail: null,
+            CancellationToken.None,
+            shadowMode: shadowMode);
+
+    /// <summary>
+    /// #54 AC1 / plan section 5: the flag is stored AS OF DECISION TIME, so a decision made under
+    /// shadow mode still reads as one after the switch is flipped. Nothing in this test flips a
+    /// setting - that is the point: the row carries its own answer, so there is no later state that
+    /// COULD change it. A design that inferred shadow mode from the current setting would have no
+    /// way to pass this without a second source of truth.
+    /// </summary>
+    [Fact]
+    public async Task Decisions_record_the_shadow_mode_flag_as_of_decision_time()
+    {
+        using var context = CreateContext();
+        var repository = new EventRepository(context);
+
+        await AddDecisionAsync(repository, shadowMode: true);
+        await AddDecisionAsync(repository, shadowMode: false);
+
+        var shadow = await repository.QueryAsync(
+            new EventQuery(Kind: EventKind.Decision, ShadowMode: true), CancellationToken.None);
+        var live = await repository.QueryAsync(
+            new EventQuery(Kind: EventKind.Decision, ShadowMode: false), CancellationToken.None);
+
+        Assert.All(shadow.Events, e => Assert.True(e.ShadowMode));
+        Assert.All(live.Events, e => Assert.False(e.ShadowMode));
+        Assert.Single(shadow.Events);
+        Assert.Single(live.Events);
+    }
+
+    /// <summary>
+    /// Operational events carry no shadow-mode answer, so they match NEITHER filter branch rather
+    /// than defaulting into the "live" one - which would quietly pad the review queue with rows
+    /// that were never decisions.
+    /// </summary>
+    [Fact]
+    public async Task Non_decision_events_match_neither_shadow_mode_filter_branch()
+    {
+        using var context = CreateContext();
+        var repository = new EventRepository(context);
+
+        await repository.AddAsync(
+            EventKind.WorkerCycle, "cycle ran", null, null, null, CancellationToken.None);
+
+        var shadow = await repository.QueryAsync(new EventQuery(ShadowMode: true), CancellationToken.None);
+        var live = await repository.QueryAsync(new EventQuery(ShadowMode: false), CancellationToken.None);
+
+        Assert.Empty(shadow.Events);
+        Assert.Empty(live.Events);
+    }
+
+    /// <summary>
+    /// Plan section 5: reviewing twice UPDATES, never duplicates. The verdict is a column on the
+    /// decision's own row, so a second review overwrites the first - a verdict table would have
+    /// appended, and the agreement rate would then count one revisited decision twice.
+    /// </summary>
+    [Fact]
+    public async Task ReviewAsync_is_idempotent_per_decision()
+    {
+        using var context = CreateContext();
+        var repository = new EventRepository(context);
+        var decision = await AddDecisionAsync(repository, shadowMode: true);
+
+        await repository.ReviewAsync(decision.Id, ReviewVerdict.Agree, "first", CancellationToken.None);
+        await repository.ReviewAsync(decision.Id, ReviewVerdict.Disagree, "second", CancellationToken.None);
+
+        var all = await repository.GetAllAsync(CancellationToken.None);
+
+        var row = Assert.Single(all);
+        Assert.Equal(ReviewVerdict.Disagree, row.ReviewVerdict);
+        Assert.Equal("second", row.ReviewNote);
+
+        // One decision reviewed once, however many times the operator changed their mind.
+        var agreement = await repository.GetAgreementAsync(DateTimeOffset.MinValue, CancellationToken.None);
+        Assert.Equal(1, agreement.Reviewed);
+    }
+
+    [Fact]
+    public async Task ReviewAsync_returns_null_for_a_non_decision_row()
+    {
+        using var context = CreateContext();
+        var repository = new EventRepository(context);
+
+        // A verdict on "the worker ran a cycle" is meaningless, and admitting one would put a
+        // non-decision into the agreement rate's denominator.
+        var operational = await repository.AddAsync(
+            EventKind.WorkerCycle, "cycle ran", null, null, null, CancellationToken.None);
+
+        var reviewed = await repository.ReviewAsync(
+            operational.Id, ReviewVerdict.Agree, null, CancellationToken.None);
+
+        Assert.Null(reviewed);
+    }
+
+    [Fact]
+    public async Task ReviewAsync_rejects_a_note_longer_than_the_column_allows()
+    {
+        using var context = CreateContext();
+        var repository = new EventRepository(context);
+        var decision = await AddDecisionAsync(repository, shadowMode: true);
+
+        var tooLong = new string('x', EventRepository.ReviewNoteMaxLength + 1);
+
+        // Rejected, not truncated (AC24): storing a shortened version of the operator's own words
+        // would leave them believing they recorded something they did not.
+        await Assert.ThrowsAsync<EventValidationException>(
+            () => repository.ReviewAsync(decision.Id, ReviewVerdict.Agree, tooLong, CancellationToken.None));
+    }
+
+    /// <summary>
+    /// Plan section 5: the aggregate's arithmetic against a known fixture set - four agreed, one
+    /// disagreed, and one left unreviewed, which must count toward NEITHER.
+    /// </summary>
+    [Fact]
+    public async Task GetAgreementAsync_counts_only_reviewed_decisions()
+    {
+        using var context = CreateContext();
+        var repository = new EventRepository(context);
+
+        for (var i = 0; i < 4; i++)
+        {
+            var agreed = await AddDecisionAsync(repository, shadowMode: true);
+            await repository.ReviewAsync(agreed.Id, ReviewVerdict.Agree, null, CancellationToken.None);
+        }
+
+        var disagreed = await AddDecisionAsync(repository, shadowMode: true);
+        await repository.ReviewAsync(disagreed.Id, ReviewVerdict.Disagree, null, CancellationToken.None);
+
+        // Unreviewed: present in the store, absent from both counts.
+        await AddDecisionAsync(repository, shadowMode: true);
+
+        var agreement = await repository.GetAgreementAsync(DateTimeOffset.MinValue, CancellationToken.None);
+
+        Assert.Equal(4, agreement.Agreed);
+        Assert.Equal(1, agreement.Disagreed);
+        Assert.Equal(5, agreement.Reviewed);
+    }
+
+    /// <summary>
+    /// AC4's zero-reviews case at the arithmetic's source. This must not divide by zero, and it must
+    /// report zero REVIEWED rather than zero AGREED-of-some-total - the two are different sentences,
+    /// and only the first lets the UI render "no data yet" instead of a measured 0%.
+    /// </summary>
+    [Fact]
+    public async Task GetAgreementAsync_reports_nothing_reviewed_rather_than_dividing_by_zero()
+    {
+        using var context = CreateContext();
+        var repository = new EventRepository(context);
+
+        await AddDecisionAsync(repository, shadowMode: true);
+
+        var agreement = await repository.GetAgreementAsync(DateTimeOffset.MinValue, CancellationToken.None);
+
+        Assert.Equal(0, agreement.Agreed);
+        Assert.Equal(0, agreement.Disagreed);
+        Assert.Equal(0, agreement.Reviewed);
+    }
+
+    /// <summary>The window is a real filter: a review older than it is not counted.</summary>
+    [Fact]
+    public async Task GetAgreementAsync_excludes_decisions_older_than_the_window()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.Zero));
+        using var context = CreateContext();
+        var repository = new EventRepository(context, clock);
+
+        var old = await AddDecisionAsync(repository, shadowMode: true);
+        await repository.ReviewAsync(old.Id, ReviewVerdict.Agree, null, CancellationToken.None);
+
+        clock.Advance(TimeSpan.FromDays(30));
+
+        var recent = await AddDecisionAsync(repository, shadowMode: true);
+        await repository.ReviewAsync(recent.Id, ReviewVerdict.Agree, null, CancellationToken.None);
+
+        var lastWeek = await repository.GetAgreementAsync(
+            clock.GetUtcNow() - TimeSpan.FromDays(7), CancellationToken.None);
+
+        Assert.Equal(1, lastWeek.Reviewed);
+    }
+
+    /// <summary>
+    /// #54 AC1 through the BATCH path, which is the half that had no coverage and was therefore
+    /// wrong: AddRangeAsync's tuple omitted ShadowMode entirely, so a Decision written in a burst
+    /// persisted a NULL flag.
+    ///
+    /// A NULL flag is not a harmless default here. The shadow-mode filter compares the nullable
+    /// column as a value, so SQL's three-valued logic excludes NULL rows from BOTH branches -- such
+    /// a row would be invisible under "Shadow-only" AND under "Enforced" while rendering as
+    /// "Unknown". FilterStage emits one Decision per suppressed release and is exactly the caller
+    /// that would batch, so this was a live defect waiting on its first batching caller rather than
+    /// a theoretical one.
+    ///
+    /// Asserted per row rather than in aggregate: a test that only counted rows would pass against
+    /// an implementation that wrote one flag to every row in the batch.
+    /// </summary>
+    [Fact]
+    public async Task Decisions_written_in_a_batch_each_keep_their_own_shadow_mode_flag()
+    {
+        using var context = CreateContext();
+        var repository = new EventRepository(context);
+
+        await repository.AddRangeAsync(
+            new (EventKind, string, string?, string?, string?, bool?)[]
+            {
+                (EventKind.Decision, "Flagged in shadow mode", "shadow", null, null, true),
+                (EventKind.Decision, "Suppressed for real", "enforced", null, null, false),
+                (EventKind.WorkerCycle, "A cycle ran", null, null, null, null),
+            },
+            CancellationToken.None);
+
+        var rows = await repository.GetAllAsync(CancellationToken.None);
+
+        Assert.True(rows.Single(r => r.Summary == "Flagged in shadow mode").ShadowMode);
+        Assert.False(rows.Single(r => r.Summary == "Suppressed for real").ShadowMode);
+
+        // The operational kind still has no answer to give, and must not be coerced into one.
+        Assert.Null(rows.Single(r => r.Summary == "A cycle ran").ShadowMode);
+    }
 }

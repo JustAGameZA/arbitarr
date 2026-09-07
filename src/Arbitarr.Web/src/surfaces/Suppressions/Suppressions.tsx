@@ -6,6 +6,7 @@ import { QueryState, errorMessage } from '../QueryState';
 import type { SuppressionViewEntry } from '../../api/types';
 import styles from '../surface.module.css';
 import local from './Suppressions.module.css';
+import { DecisionReviewPanel } from './DecisionReview';
 import { useExplanationQuery, useSuppressionsQuery } from './queries';
 
 function formatTimestamp(value: string): string {
@@ -177,7 +178,12 @@ export default function SuppressionsPage() {
       </section>
 
       <section className={styles.panel}>
-        <h2 className={styles.panelHeading}>Decisions</h2>
+        {/* "Suppression audit log", not the bare "Decisions" it was called when
+            this was the only table on the surface. #54 added a second table of
+            genuinely different rows below, and two panels both called some
+            variant of "decisions" would read as duplicates of one list rather
+            than as the two distinct stores they are. */}
+        <h2 className={styles.panelHeading}>Suppression audit log</h2>
         <div className={styles.panelBody}>
           <QueryState
             isPending={suppressions.isPending}
@@ -188,6 +194,12 @@ export default function SuppressionsPage() {
           </QueryState>
         </div>
       </section>
+
+      {/* The reviewable half (#54). A separate panel because it reads a
+          different store — see DecisionReviewPanel's own note on why these
+          rows, and not the audit-log rows above, are the ones that can carry a
+          verdict. */}
+      <DecisionReviewPanel />
     </>
   );
 }

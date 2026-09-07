@@ -40,12 +40,20 @@ public enum RecordedEventKind
 /// <param name="Reason">Why it happened (plan AC2 — a reason, not only an event name), or null.</param>
 /// <param name="SourceDisplayName">The source involved, by display name or id — NEVER a credential (plan §9).</param>
 /// <param name="Detail">Free-form kind-specific detail, or null.</param>
+/// <param name="ShadowMode">
+/// For a <see cref="RecordedEventKind.Decision"/>, whether the pipeline was in shadow mode when the
+/// decision was made (#54 AC1); null for every other kind. Carried here as well as on
+/// <see cref="IEventSink.RecordAsync"/> to keep the field-for-field correspondence above: a batched
+/// decision that could not carry the flag would silently lose it, and FilterStage — the one caller
+/// that batches — is exactly the caller that emits Decisions.
+/// </param>
 public readonly record struct RecordedEvent(
     RecordedEventKind Kind,
     string Summary,
     string? Reason = null,
     string? SourceDisplayName = null,
-    string? Detail = null);
+    string? Detail = null,
+    bool? ShadowMode = null);
 
 /// <summary>
 /// The emission seam for the activity/history store (#55 step 2, plan §4 item 2).
@@ -81,13 +89,20 @@ public interface IEventSink
     /// <param name="reason">Why it happened (plan AC2 — a reason, not only an event name), or null.</param>
     /// <param name="sourceDisplayName">The source involved, by display name or id — NEVER a credential (plan §9).</param>
     /// <param name="detail">Free-form kind-specific detail, or null.</param>
+    /// <param name="shadowMode">
+    /// For a <see cref="RecordedEventKind.Decision"/>, whether the pipeline was in shadow mode when
+    /// the decision was made (#54 AC1). Null for every other kind, where the question does not
+    /// apply. Recorded as a stored flag rather than left to be inferred from the summary's wording,
+    /// so that a decision made under shadow mode still reads as one after the switch is flipped.
+    /// </param>
     ValueTask RecordAsync(
         RecordedEventKind kind,
         string summary,
         string? reason = null,
         string? sourceDisplayName = null,
         string? detail = null,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        bool? shadowMode = null);
 
     /// <summary>
     /// Records a burst of events that happened at one point, as one unit of work.
@@ -110,7 +125,7 @@ public interface IEventSink
 
         foreach (var e in events)
         {
-            await RecordAsync(e.Kind, e.Summary, e.Reason, e.SourceDisplayName, e.Detail, cancellationToken)
+            await RecordAsync(e.Kind, e.Summary, e.Reason, e.SourceDisplayName, e.Detail, cancellationToken, e.ShadowMode)
                 .ConfigureAwait(false);
         }
     }
@@ -137,5 +152,6 @@ public sealed class NullEventSink : IEventSink
         string? reason = null,
         string? sourceDisplayName = null,
         string? detail = null,
-        CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        CancellationToken cancellationToken = default,
+        bool? shadowMode = null) => ValueTask.CompletedTask;
 }

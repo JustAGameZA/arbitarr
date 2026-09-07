@@ -32,12 +32,24 @@ namespace Arbitarr.Data.Events;
 /// hoped about. Do not "simplify" this back to skip/take.
 /// </param>
 /// <param name="Limit">Maximum rows to return. Clamped by <see cref="EventRepository"/>.</param>
+/// <param name="ShadowMode">
+/// Restrict to decisions made under shadow mode (<c>true</c>) or under live enforcement
+/// (<c>false</c>), or null for both — #54's review-queue filter (plan §4 step 3).
+///
+/// This selects on <see cref="EventEntry.ShadowMode"/>, the flag captured at decision time, so the
+/// filter keeps meaning what it says after the switch is flipped: rows made under shadow mode
+/// remain shadow-mode rows forever, rather than being re-labelled by the current setting. Rows
+/// where the flag is null (every non-decision kind) match neither <c>true</c> nor <c>false</c>, so
+/// combining this with a non-Decision <paramref name="Kind"/> correctly returns nothing rather than
+/// quietly ignoring one of the two filters.
+/// </param>
 public sealed record EventQuery(
     EventKind? Kind = null,
     DateTimeOffset? Since = null,
     DateTimeOffset? Until = null,
     long? Cursor = null,
-    int Limit = EventQuery.DefaultLimit)
+    int Limit = EventQuery.DefaultLimit,
+    bool? ShadowMode = null)
 {
     /// <summary>Page size when a caller does not ask for one.</summary>
     public const int DefaultLimit = 50;
@@ -60,3 +72,22 @@ public sealed record EventQuery(
 /// <see cref="EventQuery.Cursor"/>.
 /// </param>
 public sealed record EventPage(IReadOnlyList<EventEntry> Events, long? NextCursor);
+
+/// <summary>
+/// How often the operator agreed with the pipeline over a window (#54 step 5 / AC3) — the evidence
+/// behind "the pipeline has been right 47 of 52 times this week", which is the sentence that
+/// justifies leaving shadow mode.
+///
+/// DELIBERATELY TWO COUNTS AND NO RATE. With zero reviews there is no rate to state — 0/0 is not
+/// 0%, and AC4 turns exactly on that distinction — so the ratio is formed at the point of display,
+/// where "no data yet" already has an established rendering (<c>formatRate</c>'s em-dash in
+/// <c>System.tsx</c>). Carrying counts also lets a reader tell "nobody has reviewed anything" from
+/// "everything reviewed was wrong"; a single number collapses those into the same misleading zero.
+/// </summary>
+/// <param name="Agreed">Reviewed decisions in the window the operator marked correct.</param>
+/// <param name="Disagreed">Reviewed decisions in the window the operator marked wrong.</param>
+public sealed record DecisionAgreement(int Agreed, int Disagreed)
+{
+    /// <summary>Reviewed decisions in the window, i.e. the denominator of the agreement rate.</summary>
+    public int Reviewed => Agreed + Disagreed;
+}

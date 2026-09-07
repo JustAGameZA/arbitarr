@@ -11,6 +11,8 @@ import type {
 } from '../../api/types';
 import styles from '../surface.module.css';
 import local from './System.module.css';
+// Shared with #54's agreement rate: one em-dash "no data yet" convention, not two.
+import { formatRate } from '../../format';
 import { useBuildInfoQuery, useObservabilityQuery, useStalenessQuery } from './queries';
 
 /**
@@ -55,17 +57,6 @@ function BuildPanel({ buildInfo }: { buildInfo: BuildInfoResponse }) {
       </dl>
     </>
   );
-}
-
-/**
- * Formats a ratio as a percentage, or a dash when there is nothing to divide.
- *
- * `rate`/`hitRate` are null until the counter has seen traffic, and a fresh
- * process legitimately has none. Rendering "0%" there would assert a measured
- * zero hit rate, which is a different and wronger claim than "no data yet".
- */
-function formatRate(rate: number | null): string {
-  return rate === null ? '—' : `${(rate * 100).toFixed(1)}%`;
 }
 
 /** The six-field AC25 staleness envelope, in the order the contract lists them. */
