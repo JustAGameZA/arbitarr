@@ -40,6 +40,7 @@ public sealed class RefreshWorker : BackgroundService
     private readonly RepopulationPacer _pacer;
     private readonly ILogger _logger;
     private readonly IRefreshWorkerHealth _health;
+    private readonly Diagnostics.IEventSink _eventSink;
 
     /// <summary>
     /// Constructs a worker over fixed dependencies. Used by tests (fakes, injected clock) and valid
@@ -58,7 +59,8 @@ public sealed class RefreshWorker : BackgroundService
         string sourceName,
         RepopulationPacer? pacer = null,
         ILogger? logger = null,
-        IRefreshWorkerHealth? health = null)
+        IRefreshWorkerHealth? health = null,
+        Diagnostics.IEventSink? eventSink = null)
         : this(
             () => (new RefreshWorkerDependencies(store, cache, circuitBreaker, fetcher), null),
             new StaticRefreshWorkerOptionsSource(options),
@@ -66,7 +68,8 @@ public sealed class RefreshWorker : BackgroundService
             sourceName,
             pacer,
             logger,
-            health)
+            health,
+            eventSink)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(cache);
@@ -91,7 +94,8 @@ public sealed class RefreshWorker : BackgroundService
         string sourceName,
         RepopulationPacer? pacer = null,
         ILogger<RefreshWorker>? logger = null,
-        IRefreshWorkerHealth? health = null)
+        IRefreshWorkerHealth? health = null,
+        Diagnostics.IEventSink? eventSink = null)
         : this(
             () =>
             {
@@ -117,7 +121,8 @@ public sealed class RefreshWorker : BackgroundService
             sourceName,
             pacer,
             logger,
-            health)
+            health,
+            eventSink)
     {
         ArgumentNullException.ThrowIfNull(scopeFactory);
     }
@@ -129,7 +134,8 @@ public sealed class RefreshWorker : BackgroundService
         string sourceName,
         RepopulationPacer? pacer,
         ILogger? logger,
-        IRefreshWorkerHealth? health)
+        IRefreshWorkerHealth? health,
+        Diagnostics.IEventSink? eventSink)
     {
         ArgumentNullException.ThrowIfNull(optionsSource);
         _resolveDependencies = resolveDependencies;
@@ -139,6 +145,7 @@ public sealed class RefreshWorker : BackgroundService
         _pacer = pacer ?? new RepopulationPacer();
         _logger = logger ?? NullLogger.Instance;
         _health = health ?? NullRefreshWorkerHealth.Instance;
+        _eventSink = eventSink ?? Diagnostics.NullEventSink.Instance;
     }
 
     /// <summary>
@@ -271,6 +278,26 @@ public sealed class RefreshWorker : BackgroundService
 
         await Task.WhenAll(tasks);
         _health.CycleCompleted(_timeProvider.GetUtcNow(), refreshedCount, failedCount);
+
+        // #55 step 2: record WHAT THE CYCLE DID, never merely that it ticked — plan §3.1 excludes
+        // "every tick that did nothing" from the store deliberately, because an event log that
+        // records everything is docker logs with extra steps. Hence the two early returns above (no
+        // candidates selected, breaker open) emit nothing at all, and this line is reached only
+        // when the cycle actually attempted work.
+        //
+        // Kind is SnapshotRefreshed when anything was refreshed, because that is the answer to the
+        // reader's actual question ("did my queries get refreshed?"). A cycle that attempted work
+        // and refreshed none of it is the WorkerCycle case, and it earns a row precisely because it
+        // is the shape a silent failure takes.
+        var attempted = refreshedCount + failedCount;
+        await _eventSink.RecordAsync(
+            refreshedCount > 0 ? Diagnostics.RecordedEventKind.SnapshotRefreshed : Diagnostics.RecordedEventKind.WorkerCycle,
+            summary: refreshedCount > 0
+                ? $"Refreshed {refreshedCount} of {attempted} due query snapshots"
+                : $"Worker cycle refreshed nothing ({failedCount} of {attempted} attempts failed)",
+            reason: $"{candidates.Count} cached entries were within the refresh lead of going stale",
+            sourceDisplayName: _sourceName,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     /// <returns>true if the entry was successfully refreshed and written back; false otherwise.</returns>
@@ -288,6 +315,23 @@ public sealed class RefreshWorker : BackgroundService
         catch (Exception ex)
         {
             await deps.CircuitBreaker.RecordFailureAsync(_sourceName, ex, cancellationToken);
+
+            // #55 step 2 / plan §3.1, and #57's notification trigger (plan §3.3): a source failing
+            // is a thing a human asks about. Recorded here — where the breaker is already told —
+            // rather than at a second hook, so #57 subscribes to this stream instead of growing its
+            // own pathway.
+            //
+            // SanitizedErrorDescription, not ex.ToString(): the same treatment
+            // IRefreshWorkerHealth.LastError gets, and for the same reason. This row is served
+            // un-gated over /api/activity, so a raw exception's paths, URLs and stack frames must
+            // not reach it. _sourceName is a configured display name, never a credential.
+            await _eventSink.RecordAsync(
+                Diagnostics.RecordedEventKind.SourceFailed,
+                summary: $"Source '{_sourceName}' failed during a snapshot refresh",
+                reason: SanitizedErrorDescription.Describe(ex),
+                sourceDisplayName: _sourceName,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+
             return false;
         }
 

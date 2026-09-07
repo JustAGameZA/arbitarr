@@ -35,6 +35,7 @@ public sealed class FilterStage
     private readonly IVerdictCacheReader? _verdictCacheReader;
     private readonly AiModelIdentity? _modelIdentity;
     private readonly ObservabilityCounters? _counters;
+    private readonly IEventSink _eventSink;
 
     /// <param name="verdictCacheReader">
     /// Cache-only AI slot (Q1-B) consulted by <see cref="SuppressionPrecedenceChain"/>. Optional
@@ -52,7 +53,8 @@ public sealed class FilterStage
         TimeProvider timeProvider,
         IVerdictCacheReader? verdictCacheReader = null,
         AiModelIdentity? modelIdentity = null,
-        ObservabilityCounters? counters = null)
+        ObservabilityCounters? counters = null,
+        IEventSink? eventSink = null)
     {
         _profileResolver = profileResolver ?? throw new ArgumentNullException(nameof(profileResolver));
         _settingsReader = settingsReader ?? throw new ArgumentNullException(nameof(settingsReader));
@@ -61,6 +63,7 @@ public sealed class FilterStage
         _verdictCacheReader = verdictCacheReader;
         _modelIdentity = modelIdentity;
         _counters = counters;
+        _eventSink = eventSink ?? NullEventSink.Instance;
     }
 
     /// <summary>
@@ -145,6 +148,33 @@ public sealed class FilterStage
         {
             _dbContext.SuppressionAuditLogEntries.AddRange(auditEntries);
             await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+            // #55 step 2 / plan §3.1's "a result was suppressed or de-ranked, with the reason" —
+            // and the #54 overlap, since these are the Decision-kind rows #54 hangs a review verdict
+            // off of as a nullable column on this same row (plan §2, "one store, not two").
+            //
+            // THIS DOES NOT REPLACE THE AUDIT LOG WRITE ABOVE, and must not be "deduplicated" into
+            // it. The two have different jobs and different guarantees: SuppressionAuditLogEntry is
+            // the append-only record M4-5 requires to have zero gaps, written transactionally on
+            // this path; an event row is a history entry whose sink deliberately swallows its own
+            // failures so that recording history can never fail a search (see ScopedEventSink).
+            // Collapsing them would either put the audit log behind a best-effort writer or put the
+            // search path behind a history write. One row per suppression in each, by design.
+            foreach (var entry in auditEntries)
+            {
+                await _eventSink.RecordAsync(
+                    RecordedEventKind.Decision,
+                    summary: entry.ShadowMode
+                        ? "Release flagged in shadow mode (still served)"
+                        : "Release suppressed",
+                    // The reason the chain recorded at decision time — AC2's "and why". Already
+                    // clamped for reflection where it embeds query text (see ClampForReflection).
+                    reason: entry.Reason,
+                    // What #54 needs to review the decision later: which layer acted, and on which
+                    // release. Never a credential (plan §9).
+                    detail: $"layer={entry.RuleName}; release={entry.ReleaseIdentifier}",
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+            }
         }
 
         return output;

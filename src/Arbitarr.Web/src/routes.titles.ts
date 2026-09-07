@@ -1,5 +1,5 @@
 /**
- * The single path -> label mapping for the app's six surfaces.
+ * The single path -> label mapping for the app's seven surfaces.
  *
  * Two consumers read this table and must never drift apart:
  *  - pageTitle.test.tsx, which asserts the in-page <h1> (AC2b: exactly one
@@ -14,6 +14,7 @@ export const ROUTES: ReadonlyArray<[string, string]> = [
   ['/search', 'Search'],
   ['/rules', 'Rules'],
   ['/suppressions', 'Suppressions'],
+  ['/activity', 'Activity'],
   ['/settings', 'Settings'],
   ['/system', 'System'],
 ];

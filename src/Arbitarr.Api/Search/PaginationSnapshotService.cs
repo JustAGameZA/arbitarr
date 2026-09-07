@@ -120,7 +120,15 @@ public sealed class PaginationSnapshotService
         if (cached is not null)
         {
             var payload = JsonSerializer.Deserialize<SnapshotPayload>(cached) ?? SnapshotPayload.Empty;
-            return new PagedMergeResult(Slice(payload.Releases, query.Offset, query.Limit), Array.Empty<string>(), payload.Age, payload.Band);
+            // ServedFromSnapshot: this branch performs no upstream calls. Age/Band below are
+            // REPLAYED from the request that materialized the snapshot and describe that request's
+            // provenance, not this one's — see PagedMergeResult.ServedFromSnapshot.
+            return new PagedMergeResult(
+                Slice(payload.Releases, query.Offset, query.Limit),
+                Array.Empty<string>(),
+                payload.Age,
+                payload.Band,
+                ServedFromSnapshot: true);
         }
 
         var rateLimitedSources = new List<string>();
@@ -183,11 +191,26 @@ public sealed class PaginationSnapshotService
 /// while materializing it, plus the set-level two-age cache provenance (AC-M7a-cache) every
 /// served response must carry.
 /// </summary>
+/// <param name="ServedFromSnapshot">
+/// True when this page came from an already-materialized pagination snapshot, which performs no
+/// upstream calls at all.
+///
+/// This exists because <paramref name="CacheAge"/> and <paramref name="CacheBand"/> cannot answer
+/// "was anything fetched upstream to serve this request?", and #55's AC3 needs that answered. On a
+/// snapshot hit both fields are REPLAYED verbatim from the request that materialized the snapshot,
+/// so a snapshot hit built from a live fetch reports Age=0/Band=Fresh — indistinguishable, on those
+/// two fields alone, from the live fetch itself. Both are correct about the SET's provenance, which
+/// is the question they were added for (AC-M7a-cache); neither is about this request's work.
+///
+/// Defaulted to false so the two constructions in <see cref="PaginationSnapshotService"/> are the
+/// only places that decide it, and any future one has to opt in deliberately.
+/// </param>
 public sealed record PagedMergeResult(
     IReadOnlyList<RenderedRelease> Releases,
     IReadOnlyList<string> RateLimitedSources,
     TimeSpan? CacheAge,
-    CacheBand CacheBand);
+    CacheBand CacheBand,
+    bool ServedFromSnapshot = false);
 
 /// <summary>
 /// The pagination snapshot's persisted payload shape: the full merged release set plus the

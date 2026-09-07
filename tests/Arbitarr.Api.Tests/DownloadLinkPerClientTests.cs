@@ -77,6 +77,7 @@ public sealed class DownloadLinkPerClientTests : IDisposable
             filterStage,
             releaseLookup,
             new RecentSearchLog(),
+            NullEventSink.Instance,
             httpContext.Request,
             CancellationToken.None);
 

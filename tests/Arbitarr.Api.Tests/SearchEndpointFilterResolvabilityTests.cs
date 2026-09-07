@@ -149,6 +149,7 @@ public sealed class SearchEndpointFilterResolvabilityTests : IDisposable
             filterStage,
             lookup,
             new RecentSearchLog(),
+            NullEventSink.Instance,
             httpContext.Request,
             CancellationToken.None);
 

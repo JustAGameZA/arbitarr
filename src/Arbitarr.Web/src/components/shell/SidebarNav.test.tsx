@@ -9,23 +9,34 @@ import { useAdminKeyStore } from '../../state/adminKeyStore';
  * NAV_ENTRIES and iterates it asserts only that the component agrees with
  * itself, and would stay green if an entry were dropped from the source.
  */
-const EXPECTED = ['Dashboard', 'Search', 'Rules', 'Suppressions', 'Settings', 'System'];
+const EXPECTED = [
+  'Dashboard',
+  'Search',
+  'Rules',
+  'Suppressions',
+  'Activity',
+  'Settings',
+  'System',
+];
 
 describe('SidebarNav', () => {
   beforeEach(() => {
     useAdminKeyStore.setState({ key: null, serverKeyUnset: false });
   });
 
-  it('renders exactly six nav entries in AC5 order', () => {
+  it('renders exactly seven nav entries in AC5 order', () => {
     renderApp('/');
 
     const nav = screen.getByRole('navigation', { name: 'Main' });
     const links = within(nav).getAllByRole('link');
 
     // Exact count, not `>=`: a dropped entry and a smuggled-in one must both
-    // fail. `toHaveLength(6)` catches the first; comparing the whole ordered
+    // fail. `toHaveLength(7)` catches the first; comparing the whole ordered
     // array catches the second and the reordering case as well.
-    expect(links).toHaveLength(6);
+    //
+    // Seven since #55 added Activity -- see NAV_ENTRIES' comment for why that is
+    // a product surface rather than a section.
+    expect(links).toHaveLength(7);
     expect(links.map((link) => link.textContent?.trim())).toEqual(EXPECTED);
   });
 
@@ -40,6 +51,7 @@ describe('SidebarNav', () => {
       '/search',
       '/rules',
       '/suppressions',
+      '/activity',
       '/settings',
       '/system',
     ]);

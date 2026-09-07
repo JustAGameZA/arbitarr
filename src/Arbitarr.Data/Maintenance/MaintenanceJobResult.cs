@@ -16,10 +16,17 @@ namespace Arbitarr.Data.Maintenance;
 /// (<see cref="Arbitarr.Core.Settings.PrunePredicates.IsAiVerdictCacheEntryPrunable"/>) with the
 /// row-ceiling LRU trim (M5 security review, MED).
 /// </param>
+/// <param name="EventRowsPruned">
+/// Rows removed from the shared event store (#55), totalled across every kind. Retention there is
+/// per-KIND and lives in <see cref="Arbitarr.Data.Events.EventRetentionPolicy"/> (decisions are kept
+/// far longer than operational events), so unlike the four counts above this total does not
+/// correspond to one age threshold — see <c>MaintenanceJob.PruneEventsAsync</c>.
+/// </param>
 /// <param name="VacuumRan">True if <c>PRAGMA incremental_vacuum</c> was executed this run.</param>
 public sealed record MaintenanceJobResult(
     int SearchResultCacheRowsPruned,
     int MetadataCacheRowsPruned,
     int SuppressionAuditLogRowsPruned,
     int AiVerdictCacheRowsPruned,
+    int EventRowsPruned,
     bool VacuumRan);

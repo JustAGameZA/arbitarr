@@ -1,5 +1,6 @@
 using Arbitarr.Core.Settings;
 using Arbitarr.Data.Entities;
+using Arbitarr.Data.Events;
 using Arbitarr.Data.Maintenance;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -255,6 +256,128 @@ public sealed class MaintenanceJobTests : IDisposable
             var job = new MaintenanceJob(context, _timeProvider);
             var result = await job.RunAsync(SettingsWithAiVerdictCache(ttl, rowCeiling: 10));
             Assert.Equal(0, result.AiVerdictCacheRowsPruned);
+        }
+    }
+
+    // ---- Event store (#55) -------------------------------------------------------------------
+    //
+    // The event store is the fifth accumulating table. It shipped with retention written and tested
+    // but NO CALLER (#70 wrote nothing to the table, so the gap was invisible); #55 turned on the
+    // writes. These tests assert the scheduled job actually prunes it, which is the thing whose
+    // absence would have made EventRetentionPolicy decorative and grown the SQLite file without
+    // bound.
+
+    [Fact]
+    public async Task RunAsync_PrunesOperationalEventRow_PastOperationalRetention()
+    {
+        using (var context = CreateContext())
+        {
+            context.Database.Migrate();
+            context.Events.Add(new EventEntry
+            {
+                Kind = EventKind.WorkerCycle,
+                OccurredAt = Now - EventRetentionPolicy.OperationalRetention - TimeSpan.FromSeconds(1),
+                Summary = "Worker cycle, one second past its window",
+            });
+            context.SaveChanges();
+        }
+
+        using (var context = CreateContext())
+        {
+            var job = new MaintenanceJob(context, _timeProvider);
+            var result = await job.RunAsync(Settings(TimeSpan.FromDays(7)));
+            Assert.Equal(1, result.EventRowsPruned);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_DoesNotPruneOperationalEventRow_WithinOperationalRetention()
+    {
+        using (var context = CreateContext())
+        {
+            context.Database.Migrate();
+            context.Events.Add(new EventEntry
+            {
+                Kind = EventKind.WorkerCycle,
+                OccurredAt = Now - EventRetentionPolicy.OperationalRetention + TimeSpan.FromSeconds(1),
+                Summary = "Worker cycle, one second inside its window",
+            });
+            context.SaveChanges();
+        }
+
+        using (var context = CreateContext())
+        {
+            var job = new MaintenanceJob(context, _timeProvider);
+            var result = await job.RunAsync(Settings(TimeSpan.FromDays(7)));
+            Assert.Equal(0, result.EventRowsPruned);
+        }
+    }
+
+    /// <summary>
+    /// The asymmetry survives the scheduled job, not just a direct PruneAsync call: a decision older
+    /// than the 7-day operational window must still be here, because decisions are kept for 180 days
+    /// so #54's agreement rate has a sample to compute over. A job that pruned every kind on one
+    /// clock would pass the two tests above and silently destroy that.
+    /// </summary>
+    [Fact]
+    public async Task RunAsync_KeepsDecisionRowsOlderThanTheOperationalWindow()
+    {
+        using (var context = CreateContext())
+        {
+            context.Database.Migrate();
+            context.Events.Add(new EventEntry
+            {
+                Kind = EventKind.Decision,
+                OccurredAt = Now - EventRetentionPolicy.OperationalRetention - TimeSpan.FromDays(30),
+                Summary = "Decision far past the operational window, far inside the decision one",
+            });
+            context.Events.Add(new EventEntry
+            {
+                Kind = EventKind.SearchServed,
+                OccurredAt = Now - EventRetentionPolicy.OperationalRetention - TimeSpan.FromDays(30),
+                Summary = "Operational event of exactly the same age",
+            });
+            context.SaveChanges();
+        }
+
+        using (var context = CreateContext())
+        {
+            var job = new MaintenanceJob(context, _timeProvider);
+            var result = await job.RunAsync(Settings(TimeSpan.FromDays(7)));
+
+            // Only the operational row goes, despite both being identically aged.
+            Assert.Equal(1, result.EventRowsPruned);
+        }
+
+        using (var context = CreateContext())
+        {
+            var survivor = Assert.Single(await context.Events.ToListAsync());
+            Assert.Equal(EventKind.Decision, survivor.Kind);
+        }
+    }
+
+    [Fact]
+    public async Task RunAsync_PrunesDecisionRow_PastDecisionRetention()
+    {
+        using (var context = CreateContext())
+        {
+            context.Database.Migrate();
+            context.Events.Add(new EventEntry
+            {
+                Kind = EventKind.Decision,
+                OccurredAt = Now - EventRetentionPolicy.DecisionRetention - TimeSpan.FromSeconds(1),
+                Summary = "Decision one second past even the 180-day window",
+            });
+            context.SaveChanges();
+        }
+
+        using (var context = CreateContext())
+        {
+            var job = new MaintenanceJob(context, _timeProvider);
+            var result = await job.RunAsync(Settings(TimeSpan.FromDays(7)));
+
+            // Long retention is not unbounded retention.
+            Assert.Equal(1, result.EventRowsPruned);
         }
     }
 }
