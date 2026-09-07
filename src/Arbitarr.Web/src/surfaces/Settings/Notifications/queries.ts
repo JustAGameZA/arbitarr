@@ -62,14 +62,25 @@ export function useUpdateNotificationConfigMutation() {
     // onSettled, NOT onSuccess: a rejected save is the case where the variables
     // would otherwise linger longest.
     //
-    // Deferred to a macrotask, not a microtask. react-query runs the hook-level
-    // onSettled BEFORE the per-call callbacks passed to `mutate`, and those
-    // per-call callbacks are what set the "Saved." and rejection states the
-    // operator reads. A microtask would therefore tear the mutation down in the
-    // same tick, before React had committed those updates, and the server's
-    // rejection would never reach the screen — silently defeating the
-    // reject-never-clamp rule. setTimeout(0) lets the callback chain and its
-    // render finish first, and still evicts the variables immediately after.
+    // Deferred to a macrotask. The reason is SEQUENCING INSIDE REACT-QUERY, not
+    // React rendering. `Mutation.execute` AWAITS this hook-level onSettled and
+    // only THEN dispatches the success/error action (query-core
+    // mutation.ts:266-274), and that dispatch is the ONLY route to the per-call
+    // callbacks passed to `mutate`: `MutationObserver.#notify` fires
+    // `#mutateOptions` solely for an action it is handed
+    // (mutationObserver.ts:127-134, 172). Those per-call callbacks are what set
+    // the "Saved." and rejection states the operator reads. `reset()` removes
+    // the observer from the mutation, so calling it synchronously here would
+    // delete the delivery route before the dispatch that uses it, and the
+    // server's rejection would never reach the screen — silently defeating the
+    // reject-never-clamp rule. The macrotask works because it lands after that
+    // dispatch, and still evicts the variables immediately after.
+    //
+    // The shape that is correct BY CONSTRUCTION is evicting from the per-call
+    // callbacks instead, as the ApiKeys and Sources sections do: there is
+    // nothing to sequence, because such a callback runs after delivery by
+    // definition. A shared hook will adopt that shape as a follow-up; this path
+    // is deliberately left alone until then.
     onSettled: () => {
       setTimeout(() => mutation.reset(), 0);
     },

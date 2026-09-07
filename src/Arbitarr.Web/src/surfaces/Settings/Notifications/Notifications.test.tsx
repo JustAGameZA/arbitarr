@@ -424,6 +424,48 @@ describe('Notifications section', () => {
     expect(await screen.findByText(rejection)).toBeInTheDocument();
   });
 
+  /**
+   * The save that CHANGES something is the one the confirmation has to survive.
+   * A successful save invalidates the config, the refetch returns a different
+   * body, and the form is keyed on that body — so it remounts. When the outcome
+   * state lived inside the form, this remount destroyed it and "Saved." showed
+   * only for a no-op save, which is precisely the save nobody needs confirmed.
+   *
+   * Both halves are asserted together on purpose: the confirmation must survive
+   * the remount, AND the next rejection must replace it with the server's own
+   * words, so the state being hoisted has not made it sticky.
+   */
+  it('keeps the confirmation across the remount a changed save causes, then clears it on a rejection', async () => {
+    const user = userEvent.setup();
+    const api = mockApi({ [ROUTE]: { body: unconfigured } });
+    renderSurface(<NotificationsSection />);
+
+    // Flip a value, so the refetched config differs from the mounted one and
+    // the form's key genuinely changes.
+    await user.click(await screen.findByRole('checkbox', { name: 'Send notifications' }));
+    api.set(ROUTE, { body: { ...unconfigured, enabled: true } });
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(lastPutBody(api).enabled).toBe(true);
+
+    // The refetch really did land and really did change the mounted config —
+    // without this the assertion below could pass on a form that never
+    // remounted, which is the bug it exists to catch.
+    await waitFor(() =>
+      expect(screen.getByRole('checkbox', { name: 'Send notifications' })).toBeChecked(),
+    );
+    expect(await screen.findByText('Saved.')).toBeInTheDocument();
+
+    const rejection = 'Suppression rate threshold must be between 0 and 1; got 5.';
+    api.set(ROUTE, { status: 400, body: { error: rejection } });
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    // The server's exact words, announced, and the stale confirmation gone.
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(rejection);
+    await waitFor(() => expect(screen.queryByText('Saved.')).toBeNull());
+  });
+
   it('renders the last delivery outcome and when it happened', async () => {
     mockApi({ [ROUTE]: { body: { ...configured, lastDeliveryOutcome: 'TlsFailure' } } });
     renderSurface(<NotificationsSection />);

@@ -134,8 +134,26 @@ function LastDelivery({ config }: { config: NotificationConfig }) {
  *
  * Everything else is seeded from the server and edited freely. Only the secret
  * is write-only.
+ *
+ * `saved` and `rejection` are NOT held here. A successful save invalidates the
+ * config, the refetch changes the key this form is mounted under, and the
+ * remount would destroy any outcome state owned by this component — so "Saved."
+ * would only ever survive a save that changed nothing. They live in
+ * `NotificationsSection`, above that boundary, and arrive as props.
  */
-function NotificationForm({ config }: { config: NotificationConfig }) {
+function NotificationForm({
+  config,
+  saved,
+  setSaved,
+  rejection,
+  setRejection,
+}: {
+  config: NotificationConfig;
+  saved: boolean;
+  setSaved: (saved: boolean) => void;
+  rejection: string | null;
+  setRejection: (rejection: string | null) => void;
+}) {
   const update = useUpdateNotificationConfigMutation();
   const clear = useClearWebhookMutation();
   const test = useSendTestNotificationMutation();
@@ -148,15 +166,6 @@ function NotificationForm({ config }: { config: NotificationConfig }) {
   const [rateThreshold, setRateThreshold] = useState(String(config.suppressionRateThreshold));
   const [evaluationWindow, setEvaluationWindow] = useState(config.suppressionRateWindow);
   const [triggers, setTriggers] = useState<NotificationTrigger[]>(config.enabledTriggers);
-  const [saved, setSaved] = useState(false);
-  // The server's rejection is held HERE rather than read from `update.error`,
-  // because the mutation resets itself the moment it settles so the webhook URL
-  // cannot linger in the mutation cache as `variables` (see queries.ts). That
-  // reset also clears `error`, so the operator's rejection text has to be
-  // captured on the way past or it would vanish a tick after it appeared —
-  // which would quietly defeat the reject-never-clamp rule this surface exists
-  // to honour.
-  const [rejection, setRejection] = useState<string | null>(null);
   const [confirmingClear, setConfirmingClear] = useState(false);
 
   const toggleTrigger = (name: NotificationTrigger) =>
@@ -423,6 +432,22 @@ function NotificationForm({ config }: { config: NotificationConfig }) {
 export function NotificationsSection() {
   const config = useNotificationConfigQuery();
 
+  // The save outcome is owned HERE, above the remount boundary below, for the
+  // same reason the catalog's `savedKey` / `failedKey` are owned by
+  // `SettingsPage`: a successful save invalidates the config and the refetch
+  // changes the form's key, so state held inside the form is destroyed by the
+  // very save it is reporting on. Held there, "Saved." would render only for a
+  // save that changed nothing.
+  const [saved, setSaved] = useState(false);
+  // The server's rejection is held as text rather than read from
+  // `update.error`, because the mutation resets itself the moment it settles so
+  // the webhook URL cannot linger in the mutation cache as `variables` (see
+  // queries.ts). That reset also clears `error`, so the operator's rejection
+  // text has to be captured on the way past or it would vanish a tick after it
+  // appeared — which would quietly defeat the reject-never-clamp rule this
+  // surface exists to honour.
+  const [rejection, setRejection] = useState<string | null>(null);
+
   return (
     <section className={styles.panel}>
       <h2 className={styles.panelHeading}>Notifications</h2>
@@ -432,10 +457,16 @@ export function NotificationsSection() {
             // Remounted whenever the server's configuration changes, so a
             // successful save reseeds every field from the server rather than
             // leaving a stale local edit — the same reason the catalog rows key
-            // on their value.
+            // on their value. That remount is exactly why the save outcome is
+            // hoisted above this line and passed down: state owned by the form
+            // does not survive the refetch its own save triggers.
             <NotificationForm
               key={`${data.enabled}:${data.hasWebhookUrl}:${data.consecutiveFailureThreshold}:${data.suppressionRateThreshold}:${data.suppressionRateWindow}:${data.enabledTriggers.join(',')}`}
               config={data}
+              saved={saved}
+              setSaved={setSaved}
+              rejection={rejection}
+              setRejection={setRejection}
             />
           )}
         </QueryState>
