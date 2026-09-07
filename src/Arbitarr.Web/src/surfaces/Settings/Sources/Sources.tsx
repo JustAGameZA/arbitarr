@@ -273,6 +273,7 @@ export function SourcesSection() {
   const [testedId, setTestedId] = useState<number | null>(null);
 
   const editing = sources.data?.find((source) => source.id === editingId);
+  const tested = sources.data?.find((source) => source.id === testedId);
   const writeError = create.error ?? update.error ?? remove.error;
 
   const startEditing = (source: SourceSummary) => {
@@ -438,16 +439,22 @@ export function SourcesSection() {
           </p>
         )}
 
-        {testedId !== null && (
+        {/* One result region for the whole table, naming the source it belongs
+            to. With several sources a bare verdict is ambiguous — the operator
+            cannot tell which row it answered — and the probe is the one control
+            here whose result is worth nothing if attributed to the wrong
+            source. */}
+        {tested !== undefined && (
           <div className={local.testResult}>
             {test.isPending ? (
-              <p className={styles.muted}>Testing…</p>
+              <p className={styles.muted}>Testing {tested.displayName}…</p>
             ) : test.error !== null && test.error !== undefined ? (
               <p className={styles.error} role="alert">
                 {errorMessage(test.error)}
               </p>
             ) : test.data !== undefined ? (
               <p role="status">
+                <strong>{tested.displayName}</strong>{' '}
                 <span
                   className={`${styles.badge} ${test.data.success ? styles.badgeOk : styles.badgeDanger}`}
                 >

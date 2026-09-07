@@ -43,6 +43,18 @@ const sources = [
  */
 const rowFor = (name: string) => screen.findByRole('row', { name: new RegExp(name) });
 
+/**
+ * A longer per-test budget than vitest's 5s default.
+ *
+ * Not masking a hang: this file drives the largest form on the surface, and the
+ * config sets `css: true` (load-bearing for the chrome gate), so every render
+ * here parses the real stylesheet. The passing tests already sit at 3-4s on a
+ * slow machine, which leaves the 5s default with no headroom and turns an
+ * ordinary render into a spurious failure. The assertions are unchanged; only
+ * the patience is.
+ */
+const TEST_TIMEOUT_MS = 20_000;
+
 describe('Sources section', () => {
   beforeEach(() => {
     useAdminKeyStore.setState({ key: null, serverKeyUnset: false });
@@ -72,7 +84,7 @@ describe('Sources section', () => {
     const spare = await rowFor('Spare hydra');
     expect(within(spare).getByText('Disabled')).toBeInTheDocument();
     expect(within(spare).getByText('Not configured')).toBeInTheDocument();
-  });
+  }, TEST_TIMEOUT_MS);
 
   it('names what would fill the list when there are no sources', async () => {
     mockApi({ [SOURCES]: { body: [] } });
@@ -83,10 +95,10 @@ describe('Sources section', () => {
         /No sources configured — add an NZBHydra2 base URL and API key below/,
       ),
     ).toBeInTheDocument();
-  });
+  }, TEST_TIMEOUT_MS);
 
   it('sends the typed key on create, and omits the field entirely when none was typed', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const api = mockApi({ [SOURCES]: { body: [] } });
     renderSurface(<SourcesSection />);
 
@@ -103,10 +115,10 @@ describe('Sources section', () => {
       enabled: true,
       apiKey: 'placeholder-new-key',
     });
-  });
+  }, TEST_TIMEOUT_MS);
 
   it('omits apiKey from a create body when the operator typed no key', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const api = mockApi({ [SOURCES]: { body: [] } });
     renderSurface(<SourcesSection />);
 
@@ -116,7 +128,7 @@ describe('Sources section', () => {
 
     const body = JSON.parse(api.calls.find((call) => call.method === 'POST')!.body!);
     expect(body).not.toHaveProperty('apiKey');
-  });
+  }, TEST_TIMEOUT_MS);
 
   /**
    * THE EDIT CONTRACT, which has three different null policies in one signature.
@@ -130,7 +142,7 @@ describe('Sources section', () => {
    * the other three.
    */
   it('sends kind, displayName and baseUrl on an edit but omits an untouched apiKey', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const api = mockApi({ [SOURCES]: { body: sources } });
     renderSurface(<SourcesSection />);
 
@@ -156,10 +168,10 @@ describe('Sources section', () => {
     // And the one whose omission means "leave it alone" is absent -- not
     // present-and-empty, which would clear the stored key.
     expect(body).not.toHaveProperty('apiKey');
-  });
+  }, TEST_TIMEOUT_MS);
 
   it('sends apiKey on an edit when the operator typed a replacement', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const api = mockApi({ [SOURCES]: { body: sources } });
     renderSurface(<SourcesSection />);
 
@@ -172,10 +184,10 @@ describe('Sources section', () => {
 
     const body = JSON.parse(api.calls.find((call) => call.method === 'PUT')!.body!);
     expect(body.apiKey).toBe('placeholder-rotated-key');
-  });
+  }, TEST_TIMEOUT_MS);
 
   it('frames the edit key field as replacing the stored key, and shows no value for it', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     mockApi({ [SOURCES]: { body: sources } });
     renderSurface(<SourcesSection />);
 
@@ -190,14 +202,14 @@ describe('Sources section', () => {
     const field = await screen.findByLabelText('Edit source API key');
     expect(field).toHaveValue('');
     expect(field).toHaveAttribute('type', 'password');
-  });
+  }, TEST_TIMEOUT_MS);
 
   it('toggles enabled from the row with the full body and no apiKey', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const api = mockApi({ [SOURCES]: { body: sources } });
     renderSurface(<SourcesSection />);
 
-    await user.click(await within(await rowFor('Spare hydra')).findByRole('button', { name: 'Enable' }));
+    await user.click(within(await rowFor('Spare hydra')).getByRole('button', { name: 'Enable' }));
 
     const put = api.calls.find((call) => call.method === 'PUT');
     expect(put?.path).toBe(`${SOURCES}/2`);
@@ -206,14 +218,14 @@ describe('Sources section', () => {
     expect(body.displayName).toBe('Spare hydra');
     expect(body.baseUrl).toBe('http://192.0.2.20:5076');
     expect(body).not.toHaveProperty('apiKey');
-  });
+  }, TEST_TIMEOUT_MS);
 
   it('requires a confirmation before removing a source', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const api = mockApi({ [SOURCES]: { body: sources } });
     renderSurface(<SourcesSection />);
 
-    await user.click(await within(await rowFor('Primary hydra')).findByRole('button', { name: 'Remove' }));
+    await user.click(within(await rowFor('Primary hydra')).getByRole('button', { name: 'Remove' }));
 
     // Nothing has been sent yet: the first click only asks.
     expect(api.calls.some((call) => call.method === 'DELETE')).toBe(false);
@@ -223,18 +235,18 @@ describe('Sources section', () => {
 
     await user.click(screen.getByRole('button', { name: 'Confirm remove' }));
     expect(api.calls.find((call) => call.method === 'DELETE')?.path).toBe(`${SOURCES}/1`);
-  });
+  }, TEST_TIMEOUT_MS);
 
   it('abandons the removal when the operator keeps the source', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const api = mockApi({ [SOURCES]: { body: sources } });
     renderSurface(<SourcesSection />);
 
-    await user.click(await within(await rowFor('Primary hydra')).findByRole('button', { name: 'Remove' }));
+    await user.click(within(await rowFor('Primary hydra')).getByRole('button', { name: 'Remove' }));
     await user.click(screen.getByRole('button', { name: 'Keep' }));
 
     expect(api.calls.some((call) => call.method === 'DELETE')).toBe(false);
-  });
+  }, TEST_TIMEOUT_MS);
 
   /**
    * §3.3/AC4: the five outcomes render five DISTINCT messages.
@@ -275,14 +287,14 @@ describe('Sources section', () => {
   it.each(outcomes)(
     'reports the $outcome probe outcome as "$label"',
     async ({ outcome, success, label, message }) => {
-      const user = userEvent.setup();
+      const user = userEvent.setup({ delay: null });
       mockApi({
         [SOURCES]: { body: sources },
         [`${SOURCES}/1/test`]: { body: { success, outcome, message } },
       });
       renderSurface(<SourcesSection />);
 
-      await user.click(await within(await rowFor('Primary hydra')).findByRole('button', { name: 'Test' }));
+      await user.click(within(await rowFor('Primary hydra')).getByRole('button', { name: 'Test' }));
 
       const result = await screen.findByRole('status');
       expect(within(result).getByText(label)).toBeInTheDocument();
@@ -290,12 +302,13 @@ describe('Sources section', () => {
       // which is the whole reason the outcomes are distinguished at all.
       expect(within(result).getByText(message)).toBeInTheDocument();
     },
+    TEST_TIMEOUT_MS,
   );
 
   it('gives the five outcomes five different labels', () => {
     const labels = new Set(outcomes.map((entry) => entry.label));
     expect(labels.size).toBe(5);
-  });
+  }, TEST_TIMEOUT_MS);
 
   /**
    * AC2: the key value never reaches browser storage.
@@ -326,7 +339,7 @@ describe('Sources section', () => {
     expect(storageDump()).not.toContain(KEY);
 
     // --- the real assertion -------------------------------------------------
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const api = mockApi({ [SOURCES]: { body: sources } });
     renderSurface(<SourcesSection />);
 
@@ -345,11 +358,11 @@ describe('Sources section', () => {
     expect(api.calls.some((call) => call.body?.includes(KEY) === true)).toBe(true);
 
     expect(storageDump()).not.toContain(KEY);
-  });
+  }, TEST_TIMEOUT_MS);
 
   it('never puts the key in a URL, only in a request body', async () => {
     const KEY = 'placeholder-url-check-key';
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const api = mockApi({ [SOURCES]: { body: [] } });
     renderSurface(<SourcesSection />);
 
@@ -362,15 +375,15 @@ describe('Sources section', () => {
     // finding rather than a statement about a key that was never sent.
     expect(api.calls.some((call) => call.body?.includes(KEY) === true)).toBe(true);
     expect(api.calls.every((call) => !call.url.toString().includes(KEY))).toBe(true);
-  });
+  }, TEST_TIMEOUT_MS);
 
   it('attaches the admin key to its read and its writes', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     useAdminKeyStore.getState().setKey('operator-key');
     const api = mockApi({ [SOURCES]: { body: sources } });
     renderSurface(<SourcesSection />);
 
-    await user.click(await within(await rowFor('Primary hydra')).findByRole('button', { name: 'Test' }));
+    await user.click(within(await rowFor('Primary hydra')).getByRole('button', { name: 'Test' }));
 
     // Gated by PATH PREFIX, never by verb: the GET carries the key exactly as
     // the POST does.
@@ -380,10 +393,10 @@ describe('Sources section', () => {
     expect(api.calls.find((call) => call.method === 'POST')?.headers[ADMIN_KEY_HEADER]).toBe(
       'operator-key',
     );
-  });
+  }, TEST_TIMEOUT_MS);
 
   it("shows the server's own rejection when a write fails", async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     // The list loads, then the POST to the same path is switched to a 400 --
     // the mock matches by longest prefix, so one entry serves both verbs and
     // `set` swaps the reply between them.
@@ -404,5 +417,5 @@ describe('Sources section', () => {
     expect(
       await screen.findByText('Base URL must be an absolute http or https URL.'),
     ).toBeInTheDocument();
-  });
+  }, TEST_TIMEOUT_MS);
 });
