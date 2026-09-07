@@ -271,10 +271,20 @@ export function SourcesSection() {
   const [editDraft, setEditDraft] = useState<SourceDraft>(BLANK_DRAFT);
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
   const [testedId, setTestedId] = useState<number | null>(null);
+  /**
+   * The last write rejection, held HERE rather than read off the mutation.
+   *
+   * The mutations reset() on settle so no apiKey-bearing `variables` linger in
+   * the MutationCache (see queries.ts). reset() also clears `error`, so reading
+   * the message straight off `create.error`/`update.error` would blank the
+   * operator's rejection at the same instant. Capturing it first keeps the
+   * server's exact words on screen while the cached credential still goes away
+   * immediately.
+   */
+  const [writeError, setWriteError] = useState<string | null>(null);
 
   const editing = sources.data?.find((source) => source.id === editingId);
   const tested = sources.data?.find((source) => source.id === testedId);
-  const writeError = create.error ?? update.error ?? remove.error;
 
   const startEditing = (source: SourceSummary) => {
     setEditingId(source.id);
@@ -287,16 +297,48 @@ export function SourcesSection() {
    * them is a validation failure, not a no-op. `apiKey` stays absent, which is
    * what keeps a toggle from wiping the stored credential.
    */
+  /**
+   * Settle handler shared by every write that can carry an apiKey.
+   *
+   * ORDER IS LOAD-BEARING: capture the message the UI needs FIRST, then reset.
+   * reset() drops the settled mutation from the MutationCache straight away —
+   * which is the point, because its `variables` are the request body and can
+   * hold a plaintext key — but it also clears `error`, so a reset before the
+   * capture would erase the operator's rejection along with the credential.
+   * Runs on the failure path too: a rejected write cached the key just as a
+   * successful one did.
+   */
+  const settleWrite = (mutation: { reset: () => void }, error: unknown) => {
+    // The error comes from onSettled's own argument rather than off the
+    // mutation object: the closed-over `update`/`create` here are the values
+    // from the render that STARTED the write, so their `.error` has not been
+    // refreshed yet at this point. The argument is the settled result.
+    setWriteError(error === null || error === undefined ? null : errorMessage(error));
+    mutation.reset();
+    // Drop the typed key from the forms too, on BOTH paths. The rest of a
+    // rejected draft is deliberately kept so the operator can correct it and
+    // resubmit, but the secret is not part of what needs correcting — they can
+    // retype it — and holding it in component state (and therefore in the
+    // rendered input) after the request has settled keeps a copy alive for no
+    // benefit. Clearing it here is what makes the DOM sweep in the leak test
+    // true rather than merely close.
+    setNewDraft((draft) => (draft.apiKey === '' ? draft : { ...draft, apiKey: '' }));
+    setEditDraft((draft) => (draft.apiKey === '' ? draft : { ...draft, apiKey: '' }));
+  };
+
   const toggleEnabled = (source: SourceSummary) =>
-    update.mutate({
-      id: source.id,
-      source: {
-        kind: source.kind,
-        displayName: source.displayName,
-        baseUrl: source.baseUrl,
-        enabled: !source.enabled,
+    update.mutate(
+      {
+        id: source.id,
+        source: {
+          kind: source.kind,
+          displayName: source.displayName,
+          baseUrl: source.baseUrl,
+          enabled: !source.enabled,
+        },
       },
-    });
+      { onSettled: (_data, error) => settleWrite(update, error) },
+    );
 
   return (
     <section className={styles.panel}>
@@ -307,9 +349,9 @@ export function SourcesSection() {
           the next restart; environment variables are read only to seed this list on a first run.
         </p>
 
-        {writeError !== null && writeError !== undefined && (
+        {writeError !== null && (
           <p className={`${styles.error} ${local.writeError}`} role="alert">
-            {errorMessage(writeError)}
+            {writeError}
           </p>
         )}
 
@@ -398,7 +440,17 @@ export function SourcesSection() {
                             className={styles.buttonDanger}
                             onClick={() => {
                               setConfirmingId(null);
-                              remove.mutate(source.id);
+                              // remove carries only an id, never a key, so it
+                              // needs no gcTime/reset treatment — but its
+                              // rejection still has to reach the same banner.
+                              remove.mutate(source.id, {
+                                onSettled: (_data, error) =>
+                                  setWriteError(
+                                    error === null || error === undefined
+                                      ? null
+                                      : errorMessage(error),
+                                  ),
+                              });
                             }}
                             disabled={remove.isPending}
                           >
@@ -486,9 +538,12 @@ export function SourcesSection() {
             onSubmit={() =>
               update.mutate(
                 { id: editingId, source: toUpdateRequest(editDraft) },
-                // The editor stays open on failure, holding what was typed, so
-                // the operator can correct it against the server's own reason.
-                { onSuccess: () => setEditingId(null) },
+                {
+                  // The editor stays open on failure, holding what was typed, so
+                  // the operator can correct it against the server's own reason.
+                  onSuccess: () => setEditingId(null),
+                  onSettled: (_data, error) => settleWrite(update, error),
+                },
               )
             }
           />
@@ -504,7 +559,10 @@ export function SourcesSection() {
           submitLabel={create.isPending ? 'Adding…' : 'Add source'}
           busy={create.isPending}
           onSubmit={() =>
-            create.mutate(toCreateRequest(newDraft), { onSuccess: () => setNewDraft(BLANK_DRAFT) })
+            create.mutate(toCreateRequest(newDraft), {
+              onSuccess: () => setNewDraft(BLANK_DRAFT),
+              onSettled: (_data, error) => settleWrite(create, error),
+            })
           }
         />
       </div>

@@ -1,4 +1,6 @@
-import { screen, within } from '@testing-library/react';
+import { render, renderHook, screen, waitFor, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import { QueryClient, QueryClientProvider, useMutation } from '@tanstack/react-query';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -311,70 +313,150 @@ describe('Sources section', () => {
   }, TEST_TIMEOUT_MS);
 
   /**
-   * AC2: the key value never reaches browser storage.
+   * AC2, swept across EVERY surface the key could reach, in one pass.
    *
-   * POSITIVE CONTROL FIRST. `Assert.DoesNotContain`-shaped assertions pass just
-   * as happily when the secret was never in play -- an empty set contains
-   * nothing -- so this test first proves the search it is about to run WOULD
-   * find the key if the key were there. Only then is the real check meaningful.
-   * Without the control, this test would keep passing if the field stopped
-   * being filled in at all, or if `storageDump` read the wrong storage.
+   * The surfaces are DOM, localStorage, sessionStorage, request URLs, and the
+   * React Query MutationCache. They are enumerated together deliberately: the
+   * earlier version of this file checked storage and URLs only, and the
+   * mutation cache — which holds each settled mutation's `variables`, i.e. the
+   * request body with the plaintext key, for a default 5 minutes — was a real
+   * leak that neither of those sweeps could see. Checking "some" surfaces is
+   * how that was missed; the list lives in one place now so adding a surface
+   * means adding it here rather than writing a fourth isolated test.
+   *
+   * EVERY SURFACE CARRIES A PLANTED POSITIVE CONTROL, and that is the whole
+   * point of the shape. An absence assertion passes just as happily when the
+   * secret was never in play — an empty set contains nothing — so each sweep
+   * first proves it WOULD see a key that was really there, and only then
+   * asserts the real one is absent. Without the controls this test would keep
+   * passing if the field stopped being filled in, if the dump read the wrong
+   * storage, or if getMutationCache() started returning an empty array.
+   *
+   * The mutation-cache control goes one step further and REPRODUCES the leak
+   * with a real hook left on react-query's default gcTime, rather than planting
+   * a literal in the cache. A planted literal proves only that the dump can
+   * find a string; reproducing the retention proves the library still behaves
+   * the way `gcTime: 0` in queries.ts exists to counter, so this test fails
+   * loudly if that assumption ever stops holding.
    */
-  it('never writes the typed API key to localStorage or sessionStorage', async () => {
+  it('leaks the typed API key to no reachable surface', async () => {
     const KEY = 'placeholder-secret-under-test';
 
+    // A client of our own, because renderSurface makes its own internally and
+    // does not hand it back — and the mutation cache is only reachable through
+    // the client that owns it.
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+
+    const mutationDump = () =>
+      JSON.stringify(
+        client
+          .getMutationCache()
+          .getAll()
+          .map((m) => [m.state.variables, m.state.data]),
+      );
     const storageDump = () =>
       JSON.stringify([
         Object.entries({ ...localStorage }),
         Object.entries({ ...sessionStorage }),
       ]);
+    const domDump = () => document.body.innerHTML;
+    // A predicate rather than a dump, because a request URL is per-call: this
+    // is the same check the final assertion runs, so the control below proves
+    // exactly the thing that is later asserted.
+    const urlsCarry = (calls: { url: URL }[]) =>
+      calls.some((call) => call.url.toString().includes(KEY));
 
-    // --- positive control: the search demonstrably detects a planted key -----
+    // --- positive controls: each sweep demonstrably detects a planted key ----
     localStorage.setItem('planted', KEY);
     expect(storageDump()).toContain(KEY);
     localStorage.removeItem('planted');
+
     sessionStorage.setItem('planted', KEY);
     expect(storageDump()).toContain(KEY);
     sessionStorage.removeItem('planted');
     expect(storageDump()).not.toContain(KEY);
 
-    // --- the real assertion -------------------------------------------------
+    const planted = document.createElement('div');
+    planted.textContent = KEY;
+    document.body.appendChild(planted);
+    expect(domDump()).toContain(KEY);
+    planted.remove();
+    expect(domDump()).not.toContain(KEY);
+
+    // The URL sweep needs its control too, and it is the easiest one to leave
+    // out because `api.calls` starts empty — `every()` over an empty array is
+    // vacuously true, so the real assertion below would pass before a single
+    // request had been made. Proving the predicate against a URL that really
+    // does carry the key is what makes it bite.
+    expect(urlsCarry([{ url: new URL(`http://localhost/x?k=${KEY}`) }])).toBe(true);
+    expect(urlsCarry([{ url: new URL('http://localhost/x') }])).toBe(false);
+
+    // The mutation-cache control REPRODUCES THE REAL RETENTION rather than
+    // planting a literal. A hand-built cache entry would prove only that
+    // JSON.stringify can find a string someone put there; it would not prove
+    // that react-query retains a settled mutation's `variables` at all, so it
+    // would still pass if that behaviour changed and the sweep became
+    // pointless. This drives an actual mutation through an actual hook with NO
+    // gcTime override — i.e. the library's 5-minute default, exactly what
+    // queries.ts opts out of — and shows the key sitting in the cache after the
+    // mutation has settled. That is the leak; the `gcTime: 0` in queries.ts is
+    // what closes it.
+    const retained = renderHook(() => useMutation({ mutationFn: async (v: unknown) => v }), {
+      wrapper: ({ children }) => (
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      ),
+    });
+    retained.result.current.mutate({ apiKey: KEY });
+    await waitFor(() => expect(retained.result.current.isSuccess).toBe(true));
+    expect(mutationDump()).toContain(KEY);
+    retained.unmount();
+    client.getMutationCache().clear();
+    expect(mutationDump()).not.toContain(KEY);
+
+    // --- the real assertions ------------------------------------------------
     const user = userEvent.setup({ delay: null });
     const api = mockApi({ [SOURCES]: { body: sources } });
-    renderSurface(<SourcesSection />);
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <SourcesSection />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
 
-    // Type it into both forms, and submit both, so neither path is exempt.
+    // A successful create...
     await user.type(await screen.findByLabelText('New source display name'), 'Added hydra');
     await user.type(screen.getByLabelText('New source base URL'), 'http://192.0.2.30:5076');
     await user.type(screen.getByLabelText('New source API key'), KEY);
     await user.click(screen.getByRole('button', { name: 'Add source' }));
+    await waitFor(() => expect(api.calls.some((c) => c.method === 'POST')).toBe(true));
 
+    // ...and a successful edit that replaces the stored key.
     await user.click(within(await rowFor('Primary hydra')).getByRole('button', { name: 'Edit' }));
     await user.type(await screen.findByLabelText('Edit source API key'), KEY);
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(api.calls.some((c) => c.method === 'PUT')).toBe(true));
 
-    // The key DID reach the wire -- otherwise the storage check below would be
-    // vacuous for a second reason: a key that was never sent was never at risk.
+    // The key DID reach the wire. Without this the sweeps below would be
+    // vacuous for a second reason: a key never sent was never at risk.
     expect(api.calls.some((call) => call.body?.includes(KEY) === true)).toBe(true);
 
+    // A FAILING edit too: a rejected write cached the key exactly as a
+    // successful one did, so the failure path must be swept, not assumed.
+    api.set(SOURCES, { status: 400, body: { error: 'Base URL must be an absolute http or https URL.' } });
+    await user.click(within(await rowFor('Primary hydra')).getByRole('button', { name: 'Edit' }));
+    await user.type(await screen.findByLabelText('Edit source API key'), KEY);
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    expect(
+      await screen.findByText('Base URL must be an absolute http or https URL.'),
+    ).toBeInTheDocument();
+
+    await waitFor(() => expect(mutationDump()).not.toContain(KEY));
     expect(storageDump()).not.toContain(KEY);
-  }, TEST_TIMEOUT_MS);
-
-  it('never puts the key in a URL, only in a request body', async () => {
-    const KEY = 'placeholder-url-check-key';
-    const user = userEvent.setup({ delay: null });
-    const api = mockApi({ [SOURCES]: { body: [] } });
-    renderSurface(<SourcesSection />);
-
-    await user.type(await screen.findByLabelText('New source display name'), 'Added hydra');
-    await user.type(screen.getByLabelText('New source base URL'), 'http://192.0.2.30:5076');
-    await user.type(screen.getByLabelText('New source API key'), KEY);
-    await user.click(screen.getByRole('button', { name: 'Add source' }));
-
-    // Positive control: it reached the body, so "absent from the URL" is a real
-    // finding rather than a statement about a key that was never sent.
-    expect(api.calls.some((call) => call.body?.includes(KEY) === true)).toBe(true);
-    expect(api.calls.every((call) => !call.url.toString().includes(KEY))).toBe(true);
+    expect(domDump()).not.toContain(KEY);
+    expect(urlsCarry(api.calls)).toBe(false);
   }, TEST_TIMEOUT_MS);
 
   it('attaches the admin key to its read and its writes', async () => {
