@@ -1,5 +1,10 @@
 # Step 0 — Measurement Spike Results
 
+> **Dated record, not current guidance.** These are the numbers one spike measured on one set of
+> hardware on the date below. They are retained as the evidence behind the constants chosen at the
+> time. They are not a performance target, not a promise, and not re-measured as the code changes —
+> if a decision today depends on any figure here, measure it again.
+
 **Measured:** 2026-08-27, against the user's real infrastructure. All numbers below are live
 measurements, not estimates, except where explicitly marked as an unmeasured/deferred item.
 
