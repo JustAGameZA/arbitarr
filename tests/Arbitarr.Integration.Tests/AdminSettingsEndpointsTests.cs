@@ -142,6 +142,96 @@ public sealed class AdminSettingsEndpointsTests : IClassFixture<ArbitarrWebAppli
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
+    /// <summary>
+    /// AC24's reject-never-clamp guarantee, asserted on the two things a 400 alone does not prove
+    /// (#45): that the response carries the SERVER'S OWN reason naming the bound it violated, and
+    /// that the stored value is genuinely unchanged afterwards.
+    ///
+    /// THE STATUS CODE IS NOT THE GUARANTEE, which is why the test above it is not sufficient. A
+    /// clamping implementation is free to return 400 and store the clamped value anyway; so is one
+    /// that stores the value and reports failure. Both pass a status-code-only assertion while
+    /// leaving the operator's system configured to something they never asked for and were told was
+    /// rejected. Re-reading the catalog is the only way to tell "refused" from "quietly adjusted".
+    ///
+    /// The reason matters for the same reason the frontend has no client-side bounds check: the UI
+    /// renders the server's exact words rather than inventing its own message, so a rejection that
+    /// carried no derivation would leave the operator staring at a refusal with no account of the
+    /// bound it broke. Asserting the bound VALUE appears (not merely that some text does) is what
+    /// makes this bite — a generic "invalid value" body would pass a non-empty check.
+    ///
+    /// Both directions are covered because a floor check and a ceiling check are separate branches
+    /// in <c>SettingsValidator.ValidateMaintenanceJobInterval</c>, and one can regress alone.
+    /// MaintenanceJobInterval is the subject because it is one of the few keys with BOTH a floor
+    /// (5m) and a ceiling (24h), so one setting exercises both branches against one baseline.
+    /// </summary>
+    /// <param name="expectedValueInReason">
+    /// How the refused value appears in the message, which is NOT necessarily the string that was
+    /// sent: the reason interpolates the PARSED <see cref="TimeSpan"/>, so a wire value round-trips
+    /// through <c>TimeSpan.Parse</c> before it is echoed. Both cases below are written in
+    /// <c>d.hh:mm:ss</c> form precisely so the two coincide and this parameter stays a readable
+    /// constant — note that "48:00:00" would NOT have worked, because a 48 in the leading position
+    /// parses as 48 DAYS rather than 48 hours and is echoed as "48.00:00:00". Asserting the echo at
+    /// all is the point: it proves the operator is told what the server actually read, which is
+    /// what makes a rejection actionable rather than merely a refusal.
+    /// </param>
+    [Theory]
+    // Below the 5m floor, and far enough below that a clamp would be unmistakable.
+    [InlineData("00:00:30", "must be >= 00:05:00", "00:00:30")]
+    // Above the 24h ceiling: two days, written unambiguously.
+    [InlineData("2.00:00:00", "must be <= 1.00:00:00", "2.00:00:00")]
+    public async Task PUT_settings_rejects_out_of_bounds_with_the_servers_own_reason_and_never_clamps(
+        string outOfBounds,
+        string expectedBoundInReason,
+        string expectedValueInReason)
+    {
+        await SeedAdminKeyAsync();
+
+        using var client = AuthorizedClient();
+        var route = $"{SettingsRoute}/{SettingKey.MaintenanceJobInterval}";
+
+        // Establish a known baseline in-band, through the same PUT under test, so the "unchanged"
+        // assertion below compares against a value this test actually put there rather than against
+        // whatever an earlier [Fact] in this IClassFixture-scoped class happened to leave behind.
+        var baseline = TimeSpan.FromHours(6).ToString();
+        var seed = await client.PutAsJsonAsync(route, new UpdateSettingRequest(baseline));
+        Assert.Equal(HttpStatusCode.OK, seed.StatusCode);
+        Assert.Equal(baseline, await ReadStoredValueAsync(client, SettingKey.MaintenanceJobInterval));
+
+        var response = await client.PutAsJsonAsync(route, new UpdateSettingRequest(outOfBounds));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        // The server's own reason, naming the bound and its derivation -- not a bare status code
+        // and not a message the client invented.
+        var problem = await response.Content.ReadFromJsonAsync<SettingErrorResponse>();
+        Assert.NotNull(problem);
+        Assert.False(string.IsNullOrWhiteSpace(problem!.Error));
+        Assert.Contains(expectedBoundInReason, problem.Error, StringComparison.Ordinal);
+        // ...and the value that was refused, so the operator can see what the server read.
+        Assert.Contains(expectedValueInReason, problem.Error, StringComparison.Ordinal);
+
+        // NOT CLAMPED, NOT PARTIALLY APPLIED: the stored value is the one from before the rejected
+        // request. A clamp would show 00:05:00 or 1.00:00:00 here; a write-then-fail would show the
+        // out-of-bounds value itself. Only "unchanged" is the documented behaviour.
+        var stored = await ReadStoredValueAsync(client, SettingKey.MaintenanceJobInterval);
+        Assert.Equal(baseline, stored);
+        // Stated separately in the stored form rather than the wire form, so this still names the
+        // outcome it is ruling out even though the equality above already implies it.
+        Assert.NotEqual(expectedValueInReason, stored);
+    }
+
+    /// <summary>Re-reads one key's current value from the catalog the UI itself renders.</summary>
+    private static async Task<string?> ReadStoredValueAsync(HttpClient client, SettingKey key)
+    {
+        var response = await client.GetAsync(SettingsRoute);
+        response.EnsureSuccessStatusCode();
+        var entries = await response.Content.ReadFromJsonAsync<List<SettingCatalogEntryResponse>>();
+        return entries!.Single(e => e.Key == key.ToString()).Value;
+    }
+
+    /// <summary>The <c>{ error }</c> body <c>AdminSettingsEndpoints</c> returns on a 400.</summary>
+    private sealed record SettingErrorResponse(string Error);
+
     [Fact]
     public async Task PUT_settings_rejects_the_admin_api_key_itself_with_404()
     {

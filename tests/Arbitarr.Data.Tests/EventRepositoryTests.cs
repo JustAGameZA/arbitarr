@@ -404,6 +404,209 @@ public sealed class EventRepositoryTests : IDisposable
         Assert.Null(page.NextCursor);
     }
 
+    // ---- CountAsync: the aggregate QueryAsync cannot express (#77 item 1) ----------------------
+    //
+    // EVERY TEST BELOW SEEDS MORE THAN EventQuery.MaxLimit (200) ROWS ON PURPOSE, and that is the
+    // whole point of the fixture size rather than an arbitrary large number. The defect this method
+    // exists to prevent is a count that silently reports a PAGE's worth: an implementation that
+    // paged, clamped, or honoured EventQuery.Limit would return 200 (or 50, the default) here and
+    // look perfectly healthy. A table below the limit could not tell the two apart, so the
+    // assertions would be vacuous against precisely the implementation most likely to be written.
+    //
+    // The filter cases mirror the QueryAsync tests above one for one (kind, kind+window composed,
+    // shadow mode) because the contract is that the two agree about which rows are in scope; a
+    // divergence would make "47 of 52" disagree with the list the operator is looking at.
+
+    /// <summary>
+    /// Rows above <see cref="EventQuery.MaxLimit"/>, so a paged or clamped count is distinguishable
+    /// from a real one. 260 is the smallest round figure comfortably above both the 200 limit and
+    /// <c>MinimumScanBatch</c> (256), so a batched implementation must take more than one trip too.
+    /// </summary>
+    private const int AboveMaxLimit = 260;
+
+    [Fact]
+    public async Task CountAsync_counts_the_whole_window_not_one_page()
+    {
+        using var context = CreateContext();
+        var clock = new FakeTimeProvider(DateTimeOffset.Parse("2026-09-01T00:00:00Z"));
+        var repository = new EventRepository(context, clock);
+        await SeedAsync(repository, clock, AboveMaxLimit);
+
+        var count = await repository.CountAsync(new EventQuery(), CancellationToken.None);
+
+        // A count that honoured Limit would be 50 (the default) and one that clamped to the ceiling
+        // would be 200. Neither is the answer to "how many events are there".
+        Assert.Equal(AboveMaxLimit, count);
+    }
+
+    [Fact]
+    public async Task CountAsync_ignores_the_limit_and_cursor_the_query_carries()
+    {
+        using var context = CreateContext();
+        var clock = new FakeTimeProvider(DateTimeOffset.Parse("2026-09-01T00:00:00Z"));
+        var repository = new EventRepository(context, clock);
+        await SeedAsync(repository, clock, AboveMaxLimit);
+
+        // Take a real cursor from a real page, so this is the shape a caller actually holds rather
+        // than an invented id.
+        var page = await repository.QueryAsync(new EventQuery(Limit: 10), CancellationToken.None);
+        Assert.NotNull(page.NextCursor);
+
+        var count = await repository.CountAsync(
+            new EventQuery(Cursor: page.NextCursor, Limit: 10), CancellationToken.None);
+
+        // The count is about the WINDOW, not about what this reader has left to fetch: honouring
+        // the cursor would answer AboveMaxLimit - 10 and honouring the limit would answer 10.
+        Assert.Equal(AboveMaxLimit, count);
+    }
+
+    [Fact]
+    public async Task CountAsync_filters_by_kind()
+    {
+        using var context = CreateContext();
+        var clock = new FakeTimeProvider(DateTimeOffset.Parse("2026-09-01T00:00:00Z"));
+        var repository = new EventRepository(context, clock);
+        await SeedAsync(repository, clock, AboveMaxLimit, EventKind.Decision, "decision");
+        await SeedAsync(repository, clock, 7, EventKind.SourceFailed, "failure");
+
+        Assert.Equal(
+            AboveMaxLimit,
+            await repository.CountAsync(new EventQuery(Kind: EventKind.Decision), CancellationToken.None));
+        Assert.Equal(
+            7,
+            await repository.CountAsync(new EventQuery(Kind: EventKind.SourceFailed), CancellationToken.None));
+        Assert.Equal(
+            AboveMaxLimit + 7,
+            await repository.CountAsync(new EventQuery(), CancellationToken.None));
+    }
+
+    /// <summary>
+    /// The kind and time filters must COMPOSE here exactly as they do in
+    /// <see cref="QueryAsync_composes_the_kind_and_time_filters"/> — same half-open window, same
+    /// interleaving, just counted instead of listed.
+    /// </summary>
+    [Fact]
+    public async Task CountAsync_composes_the_kind_and_time_filters_over_a_table_larger_than_one_page()
+    {
+        using var context = CreateContext();
+        var start = DateTimeOffset.Parse("2026-09-01T00:00:00Z");
+        var clock = new FakeTimeProvider(start);
+        var repository = new EventRepository(context, clock);
+
+        // 300 events one hour apart, alternating Decision / WorkerCycle, so neither filter alone
+        // produces the expected answer and the table is comfortably past MaxLimit.
+        const int total = 300;
+        for (var i = 0; i < total; i++)
+        {
+            await repository.AddAsync(
+                i % 2 == 0 ? EventKind.Decision : EventKind.WorkerCycle,
+                $"event {i}",
+                null,
+                null,
+                null,
+                CancellationToken.None);
+            clock.Advance(TimeSpan.FromHours(1));
+        }
+
+        // Decisions sit at the even hours. The window [+10h, +210h) therefore admits the decisions
+        // at +10h, +12h, ... +208h -- 100 of them. Both bounds bite (there are 150 decisions in
+        // total) and the answer is well past a page, so a clamped count would report 200.
+        var count = await repository.CountAsync(
+            new EventQuery(
+                Kind: EventKind.Decision,
+                Since: start + TimeSpan.FromHours(10),
+                Until: start + TimeSpan.FromHours(210)),
+            CancellationToken.None);
+
+        Assert.Equal(100, count);
+
+        // Dropping the kind filter must double it -- proof the two filters compose rather than one
+        // overriding the other.
+        var bothKinds = await repository.CountAsync(
+            new EventQuery(
+                Since: start + TimeSpan.FromHours(10),
+                Until: start + TimeSpan.FromHours(210)),
+            CancellationToken.None);
+
+        Assert.Equal(200, bothKinds);
+    }
+
+    /// <summary>
+    /// The window is half-open exactly as <see cref="EventRepository.QueryAsync"/> treats it: Since
+    /// is inclusive, Until is exclusive. Asserted on the boundary rows themselves, because an
+    /// off-by-one here would silently move one event between "counted" and "not counted" without
+    /// any test over a wider window noticing.
+    /// </summary>
+    [Fact]
+    public async Task CountAsync_treats_the_window_as_half_open_the_same_way_QueryAsync_does()
+    {
+        using var context = CreateContext();
+        var start = DateTimeOffset.Parse("2026-09-01T00:00:00Z");
+        var clock = new FakeTimeProvider(start);
+        var repository = new EventRepository(context, clock);
+        await SeedAsync(repository, clock, AboveMaxLimit);
+
+        // Events sit at start + 0h, 1h, ... The window [start+1h, start+4h) admits 1h, 2h and 3h.
+        var query = new EventQuery(
+            Since: start + TimeSpan.FromHours(1),
+            Until: start + TimeSpan.FromHours(4));
+
+        var count = await repository.CountAsync(query, CancellationToken.None);
+        Assert.Equal(3, count);
+
+        // And it agrees with the listing read over the identical filters -- the contract that keeps
+        // an aggregate from disagreeing with the page an operator is looking at.
+        var page = await repository.QueryAsync(query with { Limit = EventQuery.MaxLimit }, CancellationToken.None);
+        Assert.Equal(page.Events.Count, count);
+    }
+
+    [Fact]
+    public async Task CountAsync_filters_by_shadow_mode_and_excludes_rows_with_no_answer()
+    {
+        using var context = CreateContext();
+        var clock = new FakeTimeProvider(DateTimeOffset.Parse("2026-09-01T00:00:00Z"));
+        var repository = new EventRepository(context, clock);
+
+        for (var i = 0; i < AboveMaxLimit; i++)
+        {
+            await repository.AddAsync(
+                EventKind.Decision, $"decision {i}", null, null, null, CancellationToken.None,
+                shadowMode: i % 2 == 0);
+            clock.Advance(TimeSpan.FromHours(1));
+        }
+
+        // Operational rows carry no shadow-mode answer at all (the column is null).
+        await SeedAsync(repository, clock, 5, EventKind.WorkerCycle, "cycle");
+
+        var shadow = await repository.CountAsync(new EventQuery(ShadowMode: true), CancellationToken.None);
+        var live = await repository.CountAsync(new EventQuery(ShadowMode: false), CancellationToken.None);
+
+        Assert.Equal(AboveMaxLimit / 2, shadow);
+        Assert.Equal(AboveMaxLimit / 2, live);
+
+        // The five WorkerCycle rows match NEITHER branch -- a row with no shadow-mode answer is not
+        // a shadow decision and not a live one, the same three-valued behaviour QueryAsync relies on.
+        Assert.Equal(AboveMaxLimit + 5, await repository.CountAsync(new EventQuery(), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task CountAsync_returns_zero_when_nothing_matches()
+    {
+        using var context = CreateContext();
+        var clock = new FakeTimeProvider(DateTimeOffset.Parse("2026-09-01T00:00:00Z"));
+        var repository = new EventRepository(context, clock);
+        await SeedAsync(repository, clock, 3, EventKind.WorkerCycle);
+
+        Assert.Equal(
+            0,
+            await repository.CountAsync(new EventQuery(Kind: EventKind.Decision), CancellationToken.None));
+        Assert.Equal(
+            0,
+            await repository.CountAsync(
+                new EventQuery(Since: DateTimeOffset.Parse("2030-01-01T00:00:00Z")),
+                CancellationToken.None));
+    }
+
     // ---- #54: the review verdict on Decision rows, and the agreement aggregate ----
 
     /// <summary>Adds one decision carrying the shadow-mode flag it was made under.</summary>

@@ -57,7 +57,22 @@ public sealed record EventQuery(
     /// <summary>
     /// Largest page a caller may request. A ceiling exists because this endpoint is
     /// <c>PublicRead</c> (plan §3.2): an unbounded <c>limit</c> would let any LAN caller ask for
-    /// the entire 180-day decision history in one query and materialize it in host memory.
+    /// the entire 180-day decision history in one query and serialize it into one response.
+    ///
+    /// WHAT THIS PRIMARILY BOUNDS IS THE RESPONSE, NOT THE SCAN, and the distinction is worth stating
+    /// because the obvious reading is the wrong one (#77 item 3). The time filters
+    /// (<see cref="Since"/>/<see cref="Until"/>) run CLIENT-SIDE — SQLite's EF Core provider
+    /// cannot translate a <c>DateTimeOffset</c> comparison, which is why <c>GetAllAsync</c>,
+    /// <c>PruneAsync</c> and <c>GetAgreementAsync</c> all compare that column in memory too — so
+    /// a row rejected by a time filter has already been materialized by the time it is rejected.
+    /// This limit still shapes the scan (it sizes each batch and ends a dense scan as soon as a
+    /// page is full), but on a sparse window it cannot cap how many rows were read to fill a page.
+    ///
+    /// What actually keeps a time-filtered read cheap is <see cref="EventRepository.QueryAsync"/>'s
+    /// batched descending scan: each round trip is a real SQL <c>LIMIT</c> (kind, shadow mode and
+    /// cursor DO translate), and the scan stops the moment it descends past <see cref="Since"/>,
+    /// because Id is monotonic with insertion time. That early exit is the memory bound; this
+    /// constant is the response bound. Do not restate one as the other.
     /// </summary>
     public const int MaxLimit = 200;
 }

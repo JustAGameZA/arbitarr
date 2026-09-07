@@ -96,12 +96,21 @@ describe('Settings', () => {
     await user.type(field, '10:00:00');
     await user.click(screen.getAllByRole('button', { name: 'Save' })[0]);
 
-    // The server's exact words -- AC10 forbids paraphrasing or inventing one.
-    expect(
-      await screen.findByText(
-        "Cache.FreshUntil must be between 00:01:00 and 01:00:00; got 10:00:00.",
-      ),
-    ).toBeInTheDocument();
+    // The server's exact words -- AC10 forbids paraphrasing or inventing one -- and they are
+    // ANNOUNCED, not merely rendered: an operator who has just pressed Save is not necessarily
+    // looking at the field that failed, so the message carries role="alert" (Settings.tsx) to
+    // reach a screen reader without one.
+    //
+    // Found by text and then asserted to BE an alert, rather than queried by role: this surface
+    // mounts the API-keys section (#88) alongside the settings panels, and that section raises its
+    // own alert here because this test does not mock /api/admin/keys. A bare findByRole would
+    // therefore be ambiguous, and widening the mock to silence it would couple every settings test
+    // to an unrelated section's endpoints. Asserting the message IS an alert -- rather than just
+    // finding the text -- is the point, so that dropping role="alert" still fails here.
+    const rejection = await screen.findByText(
+      'Cache.FreshUntil must be between 00:01:00 and 01:00:00; got 10:00:00.',
+    );
+    expect(rejection).toHaveAttribute('role', 'alert');
 
     // The request went out unaltered. The legacy page had an isWithinBounds()
     // pre-check that blocked this call entirely and displayed a message of its

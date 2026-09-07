@@ -75,6 +75,20 @@ distinct predicates** (`PrunePredicates`) and must never be confused.
 *Why:* an entry can be unservable but still worth keeping (for history, or because deleting it
 loses the negative-cache result). Merging the two predicates silently changes retention.
 
+## Time-bounded reads run client-side
+
+**The SQLite EF Core provider cannot translate a `DateTimeOffset` comparison.** EF throws rather
+than degrading, so every time-window predicate on `OccurredAt` runs in memory after the row is
+materialised: `EventRepository.QueryAsync`, `CountAsync`, `GetAllAsync`, `PruneAsync` and
+`GetAgreementAsync` all compare that column client-side. Kind, shadow mode, cursor, ordering and
+`LIMIT` do translate and ride the `(Kind, OccurredAt)` index.
+
+*Why it matters:* a time-filtered read is bounded by the **scan shape**, not by the page limit.
+`QueryAsync` pulls SQL-bounded batches newest-first and stops the moment it descends past
+`Since`; that early exit is the memory bound. A single `ToListAsync()` followed by a client-side
+`Where`/`Take` is correct and unbounded. Any new time-bounded read must batch the same way, and
+must not restate `EventQuery.MaxLimit` as a bound on the work.
+
 ---
 
 ## Settings

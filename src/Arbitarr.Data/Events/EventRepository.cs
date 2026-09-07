@@ -254,6 +254,60 @@ public sealed class EventRepository
     }
 
     /// <summary>
+    /// Counts every event matching <paramref name="query"/>'s FILTERS, ignoring its paging (#77
+    /// item 1) — the aggregate over a filtered window that <see cref="QueryAsync"/> structurally
+    /// cannot express.
+    ///
+    /// THIS EXISTS SO NOBODY REACHES FOR <see cref="GetAllAsync"/>. A caller wanting "how many
+    /// decisions this week" has, without this method, two bad options: page the whole window
+    /// client-side purely to count it, or call GetAllAsync — which looks exactly like the wanted
+    /// capability and would be a defect that passes its tests, because GetAllAsync materializes
+    /// the entire table and its doc comment forbids request-path use. A real window is far larger
+    /// than one page (<see cref="EventQuery.MaxLimit"/> is 200; decision retention is 180 days),
+    /// so the temptation is not hypothetical.
+    ///
+    /// <see cref="EventQuery.Limit"/> and <see cref="EventQuery.Cursor"/> ARE DELIBERATELY IGNORED
+    /// rather than rejected. A count is an answer about the window, not about a page: honouring
+    /// the limit would cap the count at 200 and silently report "200" for every larger window,
+    /// which is the exact defect this method exists to prevent. Honouring the cursor would count
+    /// only what a particular reader has not yet seen, which is a different question again. Every
+    /// other filter — <see cref="EventQuery.Kind"/>, <see cref="EventQuery.ShadowMode"/>,
+    /// <see cref="EventQuery.Since"/> and <see cref="EventQuery.Until"/> — matches QueryAsync's
+    /// semantics exactly, INCLUDING the half-open window (Since inclusive, Until exclusive), so
+    /// the two never disagree about which rows are in scope.
+    ///
+    /// Kind and shadow mode translate to SQL and are counted there when no time bound is asked
+    /// for. A time bound cannot translate on this provider (see <see cref="QueryAsync"/>), so the
+    /// timestamps of the kind-filtered set are projected and compared in memory. Only the
+    /// OccurredAt column is fetched — no <see cref="EventEntry"/> is materialized — so this stays
+    /// far cheaper than GetAllAsync even on the path that must read every candidate row.
+    /// </summary>
+    public async Task<int> CountAsync(EventQuery query, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        // Cursor deliberately not passed: see the doc comment. Reusing BuildScanQuery keeps the
+        // kind/shadow-mode predicates literally the same code QueryAsync scans with, so the two
+        // cannot drift apart into disagreeing about a filter.
+        var filtered = BuildScanQuery(query.Kind, query.ShadowMode, cursor: null);
+
+        if (query.Since is null && query.Until is null)
+        {
+            // No client-side predicate left, so SQLite can answer this as a COUNT(*) without
+            // returning any rows at all.
+            return await filtered.CountAsync(cancellationToken);
+        }
+
+        var occurredAt = await filtered
+            .Select(e => e.OccurredAt)
+            .ToListAsync(cancellationToken);
+
+        return occurredAt.Count(at =>
+            (query.Since is not { } since || at >= since)
+            && (query.Until is not { } until || at < until));
+    }
+
+    /// <summary>
     /// Records an operator's verdict on one decision (#54 step 4 / AC2), returning the updated row,
     /// or null when <paramref name="id"/> is not a <see cref="EventKind.Decision"/> row that exists.
     ///
