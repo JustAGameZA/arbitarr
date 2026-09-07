@@ -392,6 +392,45 @@ builder.Services.AddScoped<Arbitarr.Data.Events.EventRepository>();
 // Arbitarr.Data -- CoreIsolationTests requires Core to reference no other Arbitarr project.
 builder.Services.AddSingleton<Arbitarr.Core.Diagnostics.IEventSink, Arbitarr.Host.Diagnostics.ScopedEventSink>();
 
+// #57: notification configuration and the notifier's durable policy state. Both live as
+// colon-namespaced rows in the existing Settings table -- NO NEW TABLE, so there is nothing new for
+// MaintenanceJob to prune (the rows are fixed in number, one per setting, and do not accumulate).
+// The webhook URL is stored there write-only under a name no SettingKey can produce, exactly as
+// source API keys are, so it can never surface through GET /api/admin/settings.
+builder.Services.AddScoped<Arbitarr.Data.Notifications.NotificationRepository>();
+
+// #57: the outbound webhook client. AllowAutoRedirect is disabled for the same SSRF reason as the
+// NzbHydraSource and SourceConnectivityProber clients above, and it matters more here: the target
+// is a URL the operator typed, and a webhook endpoint that answered with a 30x could otherwise
+// redirect this process into issuing a request at an address the operator never configured.
+// Redirects off means such a response is reported as a rejection instead, which is the truthful
+// answer. The URL itself is a secret (providers embed the token in the path), so the transport
+// returns a closed enum and never surfaces the target, the response body, or an exception message.
+builder.Services.AddHttpClient<Arbitarr.Core.Notifications.WebhookNotificationTransport>()
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false })
+    // AND THE REQUEST URI MUST NOT BE LOGGED. IHttpClientFactory attaches its own logging handler
+    // to every named client, which writes "Sending HTTP request POST {Uri}" at Information -- with
+    // the FULL absolute URI. For every other client here that is merely noisy; for this one the URI
+    // IS the credential (providers embed the token in the path), and since #65 the log store is a
+    // persistent SQLite database read back through GET /api/admin/logs, so it would be a DURABLE
+    // credential leak rather than a line that scrolls away.
+    //
+    // The transport's own care -- a closed-enum return, never reading the body, never inspecting
+    // exception text -- cannot prevent this, because the leak is in framework code the transport
+    // never calls. Suppressing the two logging categories the factory uses is what actually closes
+    // it. An integration test drives a real delivery and asserts the URL reaches no log row, so
+    // this cannot silently regress if the factory's categories change shape.
+    .RemoveAllLoggers();
+
+// #57: the notifier's evaluation loop. POLLS the shared event store through EventRepository's
+// seek-cursor read path (#55 step 3) -- there is deliberately no subscribe/observer mechanism over
+// that table; see NotificationDispatcher's doc comment. A fresh scope per cycle, like the
+// maintenance service below, because the repositories wrap the scoped DbContext.
+builder.Services.AddHostedService(sp => new Arbitarr.Host.Notifications.NotificationHostedService(
+    sp.GetRequiredService<IServiceScopeFactory>(),
+    sp.GetRequiredService<TimeProvider>(),
+    sp.GetRequiredService<ILogger<Arbitarr.Host.Notifications.NotificationHostedService>>()));
+
 // M7-3a: schedules MaintenanceJob on SettingKey.MaintenanceJobInterval. Unlike the RefreshWorker
 // options above, the interval is the one setting explicitly permitted to require a restart to take
 // effect (see MaintenanceHostedService's doc comment), so it is read once at startup rather than
@@ -480,6 +519,7 @@ AdminSettingsEndpoints.Map(app);
 AdminSecurityEndpoints.Map(app);
 AdminApiKeyEndpoints.Map(app);
 AdminSourceEndpoints.Map(app);
+AdminNotificationEndpoints.Map(app);
 AdminRuleEndpoints.Map(app);
 AdHocSearchEndpoint.Map(app);
 MatchExplanationEndpoint.Map(app);
