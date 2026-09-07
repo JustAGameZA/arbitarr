@@ -65,8 +65,8 @@ public sealed record EventQuery(
     /// cannot translate a <c>DateTimeOffset</c> comparison, which is why <c>GetAllAsync</c>,
     /// <c>PruneAsync</c> and <c>GetAgreementAsync</c> all compare that column in memory too — so
     /// a row rejected by a time filter has already been materialized by the time it is rejected.
-    /// This limit is applied after that, and therefore cannot cap how many rows were read to fill
-    /// a page.
+    /// This limit still shapes the scan (it sizes each batch and ends a dense scan as soon as a
+    /// page is full), but on a sparse window it cannot cap how many rows were read to fill a page.
     ///
     /// What actually keeps a time-filtered read cheap is <see cref="EventRepository.QueryAsync"/>'s
     /// batched descending scan: each round trip is a real SQL <c>LIMIT</c> (kind, shadow mode and
