@@ -89,9 +89,19 @@ if (!string.Equals(
         StringComparison.OrdinalIgnoreCase))
 {
     // Information matches the level Sonarr registers its own database target at.
+    //
+    // onError goes to stderr rather than through ILogger, and that is the whole point: this
+    // callback fires when the SQLite sink itself could not write, so routing it back through the
+    // logging pipeline would enqueue the report of the failure into the queue that is failing.
+    // The same applies to the sink's dropped-entry notice, which IS written to the log store --
+    // when the store is unwritable, both the failure and the notice about it vanish, and the Logs
+    // tab becomes structurally unable to explain why it is empty. Console/docker logs is the one
+    // surface guaranteed to survive that, so the last-resort report goes there directly.
     builder.Logging.AddProvider(new Arbitarr.Data.Logging.SqliteLoggerProvider(
         logStore,
-        LogLevel.Information));
+        LogLevel.Information,
+        onError: ex => Console.Error.WriteLine(
+            $"[arbitarr] log sink write failed; entries are being dropped. {ex.GetType().Name}: {ex.Message}")));
 }
 
 builder.Services.AddSingleton(new SqliteConnectionOptions { DatabasePath = databasePath });
