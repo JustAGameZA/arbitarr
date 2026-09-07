@@ -273,15 +273,70 @@ export function ApiKeysSection() {
   const [created, setCreated] = useState<CreatedApiKeyResponse | null>(null);
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
   const [revokeFailedId, setRevokeFailedId] = useState<number | null>(null);
+  // Both outcomes of a create are held HERE rather than read back off the
+  // mutation, because the mutation is reset the moment it settles (see
+  // `dropCreateFromCache`): after that `create.data` and `create.error` are both
+  // undefined, so a render that consulted them would show neither the key nor the
+  // server's refusal.
+  const [createFailure, setCreateFailure] = useState<unknown>(null);
+
+  /**
+   * Drop the settled create from the MutationCache.
+   *
+   * `reset()` releases the mutation, and the `gcTime: 0` in `queries.ts` is what
+   * makes that collection immediate rather than five minutes late — together they
+   * are what stops `state.data`, plaintext and all, sitting in the cache where the
+   * devtools or the console can still read it.
+   *
+   * WHERE this is called from is load-bearing. It must run from the per-call
+   * callbacks passed to `mutate(vars, { ... })` below — never from a hook-level
+   * `onSuccess`/`onSettled` in `queries.ts`. `Mutation.execute` awaits the
+   * hook-level callbacks BEFORE it dispatches the settle action, and it is that
+   * dispatch which notifies the observer and runs these per-call ones. Since
+   * `MutationObserver.reset()` clears its current mutation and removes the
+   * observer, and the notify path is gated on `hasListeners()`, a reset from up
+   * there does not merely race the capture below: it deletes the callback's only
+   * delivery route, so the reveal never receives the key and a rejection is
+   * swallowed with no message shown. Called from here the capture has already
+   * happened, so a plain synchronous reset is correct and no deferral is needed.
+   */
+  const dropCreateFromCache = () => {
+    create.reset();
+  };
 
   const onCreate = (label: string, scope: ApiKeyScope) => {
     setCreated(null);
     // Clear the previous attempt's error before starting a new one. Without this
-    // the mutation keeps its last error until the next one settles, so a failed
-    // create leaves its message on screen underneath the retry — the operator
-    // reads a rejection the server has not issued for the value now in the field.
+    // the last rejection stays on screen underneath the retry — the operator
+    // reads a refusal the server has not issued for the value now in the field.
+    setCreateFailure(null);
     create.reset();
-    create.mutate({ label, scope }, { onSuccess: (response) => setCreated(response) });
+    create.mutate(
+      { label, scope },
+      {
+        onSuccess: (response) => {
+          setCreated(response);
+          dropCreateFromCache();
+        },
+        onError: (error) => {
+          setCreateFailure(error);
+          dropCreateFromCache();
+        },
+      },
+    );
+  };
+
+  /**
+   * Dropping the reveal drops the rendered copy — the last one left.
+   *
+   * There is deliberately no `create.reset()` here: the cached copy is already
+   * gone, dropped by `dropCreateFromCache` the moment the create settled, so this
+   * only has to clear the state the panel renders from. A reset here as well would
+   * be unfalsifiable — removing it changes no observable behaviour — and a line no
+   * test can hold accountable is one a later edit can quietly break.
+   */
+  const onDismissReveal = () => {
+    setCreated(null);
   };
 
   const onRevoke = (id: number) => {
@@ -305,10 +360,14 @@ export function ApiKeysSection() {
         </p>
 
         {created !== null && (
-          <CreatedKeyReveal created={created} onDismiss={() => setCreated(null)} />
+          <CreatedKeyReveal created={created} onDismiss={onDismissReveal} />
         )}
 
-        <CreateKeyForm onCreate={onCreate} pending={create.isPending} failure={create.error} />
+        {/*
+          `failure` is the captured copy, never `create.error`: the mutation is
+          reset once it settles, so its own error is gone by the time this renders.
+        */}
+        <CreateKeyForm onCreate={onCreate} pending={create.isPending} failure={createFailure} />
 
         <QueryState isPending={keys.isPending} error={keys.error} data={keys.data}>
           {(entries) =>
@@ -346,7 +405,14 @@ export function ApiKeysSection() {
                           // scope"), so it renders in that key's row rather than
                           // under the table, where it would read as a statement
                           // about the list.
-                          failure={revokeFailedId === entry.id ? revoke.error : null}
+                          // The `entry.id !== null` guard keeps the legacy row out of
+                          // this comparison entirely: its id is null and so is
+                          // revokeFailedId's initial value, so null === null would
+                          // hand an unrevokable row somebody else's refusal the
+                          // moment either of those invariants shifted.
+                          failure={
+                            entry.id !== null && revokeFailedId === entry.id ? revoke.error : null
+                          }
                         />
                       ))}
                     </tbody>
