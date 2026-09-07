@@ -344,6 +344,20 @@ builder.Services.AddSingleton<IClientApiKeyResolver>(_ =>
 builder.Services.AddScoped<IAdminApiKeyReader, DbAdminApiKeyReader>();
 builder.Services.AddScoped<AdminApiKeyFilter>();
 
+// #58: named, scoped API keys. DbAdminKeyResolver — not IAdminApiKeyReader — is now what the gate
+// consults; the reader above survives as ONE OF ITS TWO INPUTS, because the pre-#58 shared key must
+// keep working across the upgrade (issue §Migration) and is still written by AdminSecurityEndpoints.
+// Deleting the reader would break every existing deployment on restart.
+builder.Services.AddScoped(sp => new ApiKeyRepository(
+    sp.GetRequiredService<ArbitarrDbContext>(),
+    sp.GetRequiredService<TimeProvider>()));
+builder.Services.AddScoped<IAdminKeyResolver, DbAdminKeyResolver>();
+
+// Singleton because the throttle state it holds must outlive a request — that is the whole
+// mechanism (see the type doc). It resolves its own scope per write, like ScopedEventSink, because
+// ApiKeyRepository wraps the scoped ArbitarrDbContext, which is not thread-safe.
+builder.Services.AddSingleton<IApiKeyLastUsedRecorder, ThrottledApiKeyLastUsedRecorder>();
+
 // M7-5 settings write path: shares the same measured *arr RSS sync interval as EffectiveSettingsReader
 // above, so read and write validation agree on cross-field bounds (e.g. FreshUntilCeiling).
 builder.Services.AddScoped(sp => new SettingsRepository(
@@ -464,6 +478,7 @@ ObservabilityEndpoint.Map(app);
 LogsEndpoint.Map(app);
 AdminSettingsEndpoints.Map(app);
 AdminSecurityEndpoints.Map(app);
+AdminApiKeyEndpoints.Map(app);
 AdminSourceEndpoints.Map(app);
 AdminRuleEndpoints.Map(app);
 AdHocSearchEndpoint.Map(app);

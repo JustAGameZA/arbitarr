@@ -1,5 +1,6 @@
 using Arbitarr.Api.Admin;
 using Arbitarr.Api.Routing;
+using Arbitarr.Core.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -34,8 +35,11 @@ public sealed record MatchExplanationResponse(string Title, string OriginalTitle
 public static class MatchExplanationEndpoint
 {
     public static IEndpointConventionBuilder Map(IEndpointRouteBuilder endpoints) =>
+        // #58: a pure read over an already-served release, so a ReadOnly-scoped key reaches it,
+        // matching AdHocSearchEndpoint — an operator auditing why a match happened should not need
+        // a credential that can also rewrite the rules that produced it.
         endpoints.MapGet("/api/admin/search/{proxyGuid}/explanation", HandleAsync)
-            .RequireAdminApiKey();
+            .RequireAdminApiKey(ApiKeyScope.ReadOnly);
 
     public static async Task<IResult> HandleAsync(
         string proxyGuid,

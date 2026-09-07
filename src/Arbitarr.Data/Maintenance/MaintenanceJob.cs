@@ -25,6 +25,24 @@ namespace Arbitarr.Data.Maintenance;
 /// with a long fuse on a homelab SQLite file, which is precisely how the event store shipped
 /// (retention written and tested, but with no caller) until emission went live.
 ///
+/// #58 ADDED A SIXTH TABLE, ApiKeys, AND IT IS DELIBERATELY NOT PRUNED HERE. Recorded because the
+/// rule above ("anything that accumulates rows belongs in this list") would otherwise make its
+/// absence read as the oversight it is not:
+///
+///   - Its rows are not log data. A revoked key is a TOMBSTONE, and keeping it is load-bearing:
+///     <see cref="Entities.ApiKeyEntry.RevokedAt"/> exists so a revoked key's label and last-used
+///     time survive revocation (an operator investigating what broke after revoking still has an
+///     answer), and so a leaked key's hash can never be silently re-minted onto a fresh row.
+///     Pruning old rows would delete exactly the evidence the tombstone exists to preserve.
+///   - Its growth is bounded by operator action, not by traffic. Rows appear only when a human
+///     mints a key — dozens over a deployment's lifetime — whereas every table above grows per
+///     request. Recording a key's use UPDATES its row rather than inserting one (see
+///     <c>ThrottledApiKeyLastUsedRecorder</c>), so a busy *arr instance adds no rows at all.
+///
+/// The long-fuse outage this list guards against needs unbounded per-request growth to happen, and
+/// this table has none. If a future change ever makes key rows machine-generated, that reasoning
+/// stops holding and it belongs in this list.
+///
 /// Scheduling: run on an interval equal to the <c>maintenance_job_interval</c> setting. Per
 /// <see cref="SettingsValidator.ValidateMaintenanceJobInterval"/>, this is the one setting
 /// explicitly permitted to require a restart to take effect — callers that own a recurring timer

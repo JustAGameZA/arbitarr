@@ -3,6 +3,7 @@ using System;
 using Arbitarr.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Arbitarr.Data.Migrations
 {
     [DbContext(typeof(ArbitarrDbContext))]
-    partial class ArbitarrDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260907080054_AddApiKeysTable")]
+    partial class AddApiKeysTable
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.11");
@@ -126,19 +129,6 @@ namespace Arbitarr.Data.Migrations
                     b.Property<string>("Reason")
                         .HasMaxLength(1024)
                         .HasColumnType("TEXT");
-
-                    b.Property<string>("ReviewNote")
-                        .HasMaxLength(1024)
-                        .HasColumnType("TEXT");
-
-                    b.Property<int?>("ReviewVerdict")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTimeOffset?>("ReviewedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool?>("ShadowMode")
-                        .HasColumnType("INTEGER");
 
                     b.Property<string>("SourceDisplayName")
                         .HasMaxLength(256)

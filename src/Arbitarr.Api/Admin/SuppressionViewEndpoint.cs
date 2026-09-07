@@ -1,3 +1,4 @@
+using Arbitarr.Core.Security;
 using Arbitarr.Data;
 using Arbitarr.Data.Entities;
 using Microsoft.AspNetCore.Builder;
@@ -41,8 +42,11 @@ public sealed record SuppressionViewEntryResponse(
 public static class SuppressionViewEndpoint
 {
     public static IEndpointConventionBuilder Map(IEndpointRouteBuilder endpoints) =>
+        // #58: a read of the audit log, reachable with a ReadOnly-scoped key. It stays GATED —
+        // the rows name filter rules and suppressed releases, which is not lite-dashboard material —
+        // but reading them confers no authority to change anything, so a monitoring key suffices.
         endpoints.MapGet("/api/admin/suppressions", HandleAsync)
-            .RequireAdminApiKey();
+            .RequireAdminApiKey(ApiKeyScope.ReadOnly);
 
     public static async Task<IResult> HandleAsync(
         string? queryKey,

@@ -1,3 +1,4 @@
+using Arbitarr.Core.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -45,6 +46,29 @@ public static class RouteClassificationExtensions
         ArgumentNullException.ThrowIfNull(endpoint);
         return endpoint.Metadata.GetMetadata<RouteClassificationMetadata>()?.Classification;
     }
+
+    /// <summary>
+    /// #58: declares the <see cref="ApiKeyScope"/> a route demands of the key presented to it.
+    /// Attached by <c>AdminEndpointConventions.RequireAdminApiKey</c> alongside the gate itself, so
+    /// a gated route always carries a scope and the two cannot be wired apart.
+    /// </summary>
+    public static TBuilder WithRequiredApiKeyScope<TBuilder>(this TBuilder builder, ApiKeyScope scope)
+        where TBuilder : IEndpointConventionBuilder
+    {
+        builder.WithMetadata(new RequiredApiKeyScopeMetadata(scope));
+        return builder;
+    }
+
+    /// <summary>
+    /// #58: the <see cref="ApiKeyScope"/> an endpoint demands, or null when it declares none (every
+    /// ungated route). <c>AdminApiKeyFilter</c> falls back to the stricter scope rather than
+    /// treating "no declaration" as "no requirement".
+    /// </summary>
+    public static ApiKeyScope? GetRequiredApiKeyScope(this Endpoint endpoint)
+    {
+        ArgumentNullException.ThrowIfNull(endpoint);
+        return endpoint.Metadata.GetMetadata<RequiredApiKeyScopeMetadata>()?.Scope;
+    }
 }
 
 /// <summary>Endpoint metadata carrying a route's <see cref="RouteClassification"/>.</summary>
@@ -56,4 +80,15 @@ public sealed class RouteClassificationMetadata
     }
 
     public RouteClassification Classification { get; }
+}
+
+/// <summary>#58: endpoint metadata carrying the <see cref="ApiKeyScope"/> a route requires.</summary>
+public sealed class RequiredApiKeyScopeMetadata
+{
+    public RequiredApiKeyScopeMetadata(ApiKeyScope scope)
+    {
+        Scope = scope;
+    }
+
+    public ApiKeyScope Scope { get; }
 }
