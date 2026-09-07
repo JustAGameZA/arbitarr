@@ -11,6 +11,20 @@ What follows is only what a contributor could not reasonably infer, and that has
 already cost rework — mostly traps where the obvious action is the wrong one. Where a
 rule looks like it could be simplified away, the reason it cannot is stated with it.
 
+**Where everything else lives.** This file is the top of the authority order: where it
+covers something, it wins, and it stays short on purpose. Everything below it:
+
+| Surface | Holds |
+|---|---|
+| [CONTEXT.md](CONTEXT.md) | The vocabulary. On a term conflict, it wins — and a new term goes in the moment it settles |
+| [docs/adr/](docs/adr/) | Decisions that are hard to reverse, each with the alternative it beat |
+| [docs/standards/](docs/standards/) | The full rules and their reasoning: [architecture](docs/standards/architecture.md), [data](docs/standards/data.md), [process](docs/standards/process.md) |
+| [design-system/](design-system/) | UI patterns and component contracts (the palette itself is normative in `theme.css`) |
+
+Prefer linking over copying. A rule stated in full in two places is two places to keep
+true, and the copies drift silently — which is how §4's floors and §1's key mechanisms
+get quietly contradicted.
+
 **This repository is PUBLIC.** Issue and PR bodies are as public as the code, so the
 secrets policy in CONTRIBUTING.md applies to those too — not just to committed files.
 

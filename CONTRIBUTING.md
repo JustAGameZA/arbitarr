@@ -7,7 +7,8 @@ Thanks for your interest! Arbitarr is in early, fast-moving development, so the 
 - **Open an issue first** for anything beyond a typo fix. The architecture is still settling; a short discussion up front avoids building on a moving floor.
 - Check the [issue tracker](https://github.com/JustAGameZA/arbitarr/issues) for existing discussion.
 - Read [CONTEXT.md](CONTEXT.md) for the project's vocabulary — identity, numbering schemes, provenance flags, the three distinct API keys, and the terms whose meaning here differs from their everyday one.
-- [docs/adr/](docs/adr/) records the decisions that are hard to reverse, each with the alternatives it beat and the domain background that forced it. [docs/standards/](docs/standards/) carries the long-form reasoning behind the rules summarised here — where the two overlap, this file is the summary and standards is where the *why* lives.
+- [docs/adr/](docs/adr/) records the decisions that are hard to reverse, each with the alternatives it beat and the domain background that forced it.
+- [docs/standards/](docs/standards/) carries the long-form reasoning behind the rules summarised here, in three volumes: [architecture](docs/standards/architecture.md) (project boundaries, the route surface, secrets mechanisms), [data](docs/standards/data.md) (persistence, caching, provenance) and [process](docs/standards/process.md) (tests, verification, git, PR flow). Where they overlap with this file, this file is the summary and standards is where the *why* lives.
 
 ## Development setup
 
