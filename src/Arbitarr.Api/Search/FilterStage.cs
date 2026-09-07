@@ -172,14 +172,27 @@ public sealed class FilterStage
                     reason: entry.Reason,
                     // What #54 needs to review the decision later: which layer acted, and on which
                     // release. Never a credential (plan §9).
-                    detail: $"layer={entry.RuleName}; release={entry.ReleaseIdentifier}",
+                    //
+                    // The shadow-mode state is carried BOTH ways here, deliberately, because two
+                    // consumers read it through two different channels and neither can be dropped:
+                    //
+                    //   - `shadow=` in Detail is #57's discriminator. NotificationDispatcher's
+                    //     suppression-rate policy separates enforced suppressions (its numerator)
+                    //     from shadow-flagged ones by matching this token
+                    //     (IsShadowModeDecision, NotificationDispatcher.cs).
+                    //   - the typed `shadowMode:` parameter is #54 AC1's queryable flag, which the
+                    //     review queue FILTERS on.
+                    //
+                    // What both exist to avoid is the same failure: inferring the mode from the
+                    // English summary above, which would make a display string load-bearing —
+                    // rewording one line would silently change both which decisions the review
+                    // queue returns and the rate an operator is notified about. Both are taken
+                    // from the same audit row at the same instant, so the two records cannot
+                    // disagree about what mode the pipeline was in.
+                    //
+                    // Removing either one breaks its consumer silently, with no compiler error.
+                    detail: $"layer={entry.RuleName}; release={entry.ReleaseIdentifier}; shadow={entry.ShadowMode}",
                     cancellationToken: cancellationToken,
-                    // #54 AC1: the shadow-mode state AS OF THIS MOMENT, stored as a queryable flag.
-                    // The summary above already says it in prose for a human, but #54's review queue
-                    // FILTERS on it, and a filter that pattern-matched display text would change
-                    // which decisions it returns the day someone rewords that sentence. Same value,
-                    // same instant, taken from the audit row the decision just produced — so the two
-                    // records cannot disagree about what mode the pipeline was in.
                     shadowMode: entry.ShadowMode).ConfigureAwait(false);
             }
         }
