@@ -89,6 +89,32 @@ say why.
 
 ---
 
+## Probe outcome
+
+`SourceProbeOutcome` (`src/Arbitarr.Core/Sources/SourceProbeOutcome.cs`) is the
+result of the connectivity probe behind `POST /api/admin/sources/{id}/test`,
+mirrored as a string union in `Sources/types.ts`. It is a **closed** enum with
+no free-text field, so no probe failure can carry key-derived text into a
+response.
+
+| Outcome | Means | Distinct from |
+|---|---|---|
+| `Ok` | The source answered with the expected API shape; the key works | A reachable source — reachability alone does not prove the key |
+| `Unreachable` | No usable connection: DNS, refused, no route, or past the short timeout | `TlsFailure` — nothing was negotiated at all |
+| `TlsFailure` | Connected, but the TLS handshake failed | `Unreachable` — the host is there; the certificate is the problem |
+| `AuthenticationFailed` | Reached and answered, but rejected the key | `UnexpectedResponse` — a clear "no", not an unreadable one |
+| `UnexpectedResponse` | Answered, but not in the shape expected | `AuthenticationFailed` — the source never said the key was wrong |
+
+The five are reported **distinctly** because each has a different fix; a single
+red "failed" makes the test button decorative.
+
+**Not to be confused with `SourceUnreachable`.** That is a `MatchProvenanceFlags`
+value about identity resolution degrading on a live lookup; `Unreachable` here is
+a probe outcome about one operator-triggered connectivity test. Different enums,
+different questions.
+
+---
+
 ## Keys — three of them, deliberately
 
 Conflating these is the most common misreading of the configuration surface.

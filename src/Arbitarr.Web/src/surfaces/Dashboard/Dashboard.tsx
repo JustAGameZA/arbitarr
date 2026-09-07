@@ -70,6 +70,17 @@ function WorkerHealth({ status }: { status: StatusResponse }) {
  * tell them apart. `nzbHydraConfigured === undefined` while that query is
  * still pending falls back to the neutral wording rather than asserting either
  * state before the fact is known.
+ *
+ * #53 stage 53d settled what the flag means, and it is worth stating here
+ * because this empty state is where an operator reads the answer:
+ * `nzbHydraConfigured` is true only when an ENABLED source carries an API key.
+ * A source that exists and has a key but has been disabled reports FALSE, so
+ * "No sources configured" is what shows — which is the correct reading, since a
+ * disabled source is never searched and telling the operator it is configured
+ * would describe a working setup that cannot answer a query. That is the
+ * configured-vs-reporting distinction this surface exists to keep honest.
+ * Resolution happens once at startup, so a source disabled from Settings
+ * changes this only after a restart.
  */
 function SourcesTable({
   status,

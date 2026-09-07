@@ -7,6 +7,7 @@ import styles from '../surface.module.css';
 import local from './Settings.module.css';
 import { NotificationsSection } from './Notifications/Notifications';
 import { useSettingsQuery, useUpdateSettingMutation } from './queries';
+import { SourcesSection } from './Sources/Sources';
 import { ApiKeysSection } from './ApiKeys/ApiKeys';
 
 /** Groups the flat catalog into its declared groups, preserving server order. */
@@ -179,6 +180,8 @@ export default function SettingsPage() {
         title="Settings"
         description="Tunable values, with the bounds and rationale the server enforces."
       />
+
+      <SourcesSection />
 
       <ApiKeysSection />
 

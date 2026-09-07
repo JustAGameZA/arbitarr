@@ -1,0 +1,55 @@
+/* Sources-section layout. Colour comes from var(--token) only (AC3). */
+
+.url {
+  font-family: ui-monospace, 'Cascadia Mono', 'Consolas', monospace;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.rowActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.writeError {
+  margin-bottom: 12px;
+}
+
+/* The removal warning and the probe result sit below the table rather than
+   inside a row, so a long message does not widen a column and push the table
+   into its horizontal scroll. */
+.confirm {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--danger);
+  max-width: 70ch;
+}
+
+.testResult {
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+.testResult p {
+  margin: 0;
+  max-width: 90ch;
+}
+
+/* The add and edit forms are sub-sections of the one Sources panel, separated
+   by a rule rather than nested panels: three stacked panel borders for one
+   feature reads as three features. */
+.subPanel {
+  padding: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.subHeading {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+}
