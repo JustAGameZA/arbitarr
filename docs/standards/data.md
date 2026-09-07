@@ -50,7 +50,12 @@ invalidates stale entries rather than serving them indefinitely (`SourceSnapshot
 
 **Negative outcomes are cached too.** `NoXemCoverage` is a real, stable answer; re-asking on every
 request hammers an endpoint to learn the same thing. Transient failures
-(`SourceUnreachable`) are **not** negative-cacheable — caching an outage extends it.
+(`SourceUnreachable`) are **not** negative-cacheable — caching an outage extends it past its end.
+
+TheXEM (thexem.info) is community-maintained and is what makes arc-relative resolution possible at
+all. Its two negative states must never be conflated: **no coverage** means XEM answered and has no
+entries for the series (permanent, legitimate, worth caching), while **unreachable** means XEM did
+not answer (transient, never cached).
 
 **`FreshUntil` and `ServeUntil` are two boundaries on one entry**, not alternatives. Inside
 `FreshUntil`, serve directly with zero upstream requests. Past `ServeUntil`, do not serve at all.

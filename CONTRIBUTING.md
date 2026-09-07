@@ -7,7 +7,7 @@ Thanks for your interest! Arbitarr is in early, fast-moving development, so the 
 - **Open an issue first** for anything beyond a typo fix. The architecture is still settling; a short discussion up front avoids building on a moving floor.
 - Check the [issue tracker](https://github.com/JustAGameZA/arbitarr/issues) for existing discussion.
 - Read [CONTEXT.md](CONTEXT.md) for the project's vocabulary — identity, numbering schemes, provenance flags, the three distinct API keys, and the terms whose meaning here differs from their everyday one.
-- [docs/business/](docs/business/) explains why the domain is shaped this way; [docs/adr/](docs/adr/) records the decisions that are hard to reverse, each with the alternatives it beat; [docs/standards/](docs/standards/) holds the checkable rules in full, with their reasoning.
+- [docs/adr/](docs/adr/) records the decisions that are hard to reverse, each with the alternatives it beat and the domain background that forced it. [docs/standards/](docs/standards/) carries the long-form reasoning behind the rules summarised here — where the two overlap, this file is the summary and standards is where the *why* lives.
 
 ## Development setup
 
@@ -75,8 +75,8 @@ Arbitarr never silently guesses. Any code path that degrades (source unreachable
 - Every behavioral change needs test coverage in the matching `tests/Arbitarr.*.Tests` project.
 - Real-world regression cases are first-class: the Bleach arc-relative numbering collision and the Ghost in the Shell franchise trio are canonical fixtures. If you fix an identity-resolution bug, add the release name that triggered it as a fixture-backed test.
 - Fixture data must be fully redacted — see the secrets policy below.
-- **Test-count floors are measurements, never arithmetic.** `tests/test-count-floor.txt` (backend, parsed from `executed="N"` in the `.trx`) and `tests/frontend-test-count-floor.txt` (frontend, parsed from `numPassedTests` in `vitest-report.json`) hold numbers a run actually printed. Raise a floor to a value you measured — never to the old value plus the tests you wrote — and re-measure after a rebase, since different branches legitimately measure different totals. Two files and two parsers, deliberately, so neither suite's count can mask a collapse in the other.
-- **Any "this secret must not appear in X" assertion needs a positive control.** `Assert.DoesNotContain(secret, body)` passes just as happily when the secret was never in play. Demonstrate first that a planted secret *would* fail the assertion, then assert the real response carries none. `LogSecretInjectionTests` is the reference: it asserts `LogMessageCleanser.Replacement` **is present**, proving the secret reached the cleanser and was scrubbed rather than never arriving. Asserting the fixture exists (a `201`, a non-null value) proves only that — not that a leak would be detected.
+- **Test-count floors are measurements, never arithmetic** — raise one to a number a run printed, never to the old floor plus the tests you wrote. See [docs/standards/process.md](docs/standards/process.md#test-count-floors).
+- **Any "this secret must not appear in X" assertion needs a positive control**, or it passes just as happily when the secret was never in play. See [docs/standards/process.md](docs/standards/process.md#non-vacuous-assertions).
 
 ## Secrets and network topology — hard rule
 

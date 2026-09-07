@@ -62,23 +62,18 @@ Templated routes therefore need explicit by-name gating tests in the matching en
 
 ## Secrets mechanisms
 
-Three implementations that a tidy-up would silently break. Each is a mechanism, not a coincidence.
+Four checkable rules. Each is a mechanism, not a coincidence, and each would survive a tidy-up
+looking like an improvement. The reasoning behind the admin-key ones is in
+[ADR 0004](../adr/0004-admin-key-write-only-with-bootstrap-bypass.md) — do not restate it here.
 
-**Source API keys are write-only rows** under `source:{id}:api_key`. That colon-namespaced name
-cannot be produced by any `SettingKey` enum value, which is *why* they can never surface on
-`GET /api/admin/settings`.
-
-**`SourceRepository.ReadApiKeyForUpstreamRequestAsync` must have exactly one caller.** The
-guarantee is the call-site count; a second caller is a second place to audit.
-
-**The admin key is session-only in Zustand** on the frontend — never `localStorage`, never
-`sessionStorage`, never a query string. CI rejects references to browser storage in the web
-project.
-
-**The admin key is absent from `SettingsCatalog`.** The catalog feeds both the settings PUT
-allow-list and its GET projection, so adding it there to make it writable would also publish it on
-the read surface. It has its own write-only route instead. See
-[ADR 0004](../adr/0004-admin-key-write-only-with-bootstrap-bypass.md).
+- **Source API keys are write-only rows** under `source:{id}:api_key` — a colon-namespaced name no
+  `SettingKey` enum value can produce.
+- **`SourceRepository.ReadApiKeyForUpstreamRequestAsync` has exactly one caller.** The guarantee
+  *is* the call-site count; a second caller is a second place to audit.
+- **The admin key is session-only in Zustand** on the frontend — never `localStorage`, never
+  `sessionStorage`, never a query string. CI rejects browser-storage references in the web project.
+- **The admin key stays absent from `SettingsCatalog`**, which feeds both the settings PUT
+  allow-list and its GET projection.
 
 ---
 

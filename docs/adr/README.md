@@ -17,7 +17,8 @@ easy to reverse is not an ADR; change it and move on.
 
 - Vocabulary — that is [CONTEXT.md](../../CONTEXT.md).
 - Checkable rules that apply to every change — those are [docs/standards/](../standards/).
-- Domain background and business rules — those are [docs/business/](../business/).
+- Domain background belongs in the ADR's own Context section, where it explains the decision it
+  forced — not in a separate article restating the same argument.
 - Anything the code already says plainly.
 
 ## Format
@@ -56,3 +57,4 @@ of a superseded ADR is what stops the same rejected option being proposed again.
 | [0003](0003-siblings-are-deranked-not-discarded.md) | Franchise siblings are de-ranked, never discarded |
 | [0004](0004-admin-key-write-only-with-bootstrap-bypass.md) | The admin key is write-only, with a local-network bootstrap bypass |
 | [0005](0005-separate-log-database.md) | Logs live in a second SQLite database |
+| [0006](0006-generate-candidates-correctly-rather-than-filtering.md) | Numbering candidates are generated correctly, not filtered afterwards |

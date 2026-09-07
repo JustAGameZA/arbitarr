@@ -11,8 +11,20 @@ Thousand-Year Blood War are both defensible readings, and on TheXEM they can map
 episodes.
 
 The whole reason Arbitarr exists is that the surrounding ecosystem resolves this by picking one and
-saying nothing. A wrong grab is worse than no grab: it consumes the slot, looks successful, and is
-discovered only when someone watches the wrong episode.
+saying nothing.
+
+The costs are not symmetrical, and this asymmetry is the premise under this decision and
+[0003](0003-siblings-are-deranked-not-discarded.md):
+
+- A **missing match** is visible and cheap. The episode does not arrive, the operator notices,
+  searches again, and adjusts. The cost is a delay, and the system's state stays truthful.
+- A **wrong match** is invisible and expensive. The wrong file downloads successfully, fills the
+  slot, is marked satisfied, and stops the search. Nothing retries, because as far as the *arr app
+  knows the episode is present. It surfaces when a human watches the wrong thing, possibly weeks
+  later, and has to be traced back through a chain that recorded no error anywhere.
+
+The same asymmetry governs degradation generally: an operator who cannot tell "there is genuinely
+nothing" from "the thing that would have found it was broken" cannot act on either.
 
 ## Decision
 

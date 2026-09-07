@@ -52,7 +52,6 @@ When Arbitarr fronts more than one upstream source, the Torznab `caps` response 
 | `tests/` | xUnit test projects per component, plus architecture and integration tests |
 | `design-system/` | UI patterns and component contracts (the palette itself lives in `theme.css`) |
 | `docs/adr/` | Architecture decision records |
-| `docs/business/` | Domain background: numbering schemes, franchise identity, the wrong-match tradeoff |
 | `docs/standards/` | Checkable rules — architecture, data, process |
 | `docs/` | Design notes, measurements, and captured (fully redacted) upstream fixtures |
 
@@ -101,6 +100,11 @@ curl -X PUT http://arbitarr.example.invalid:8080/api/admin/security/admin-key \
 Generate the value yourself (e.g. `openssl rand -hex 32`); it must be at least 16 characters.
 Once a key is set, that same route requires it like every other admin-mutating route — so
 replacing the key later means sending the current one in an `X-Admin-Api-Key` header.
+
+> **Use `https://` unless you are on loopback.** The bypass below accepts calls from anywhere on
+> your LAN, and `http://` puts the key on the wire in cleartext for anything sniffing that
+> segment — terminate TLS at a reverse proxy, or run this over a VPN. Passing the key with `-d`
+> also leaves it in your shell history; `-d @keyfile.json` avoids that.
 
 **Bootstrap bypass.** While no key is configured, admin-mutating routes are permitted from
 loopback and RFC 1918 addresses, and refused with `503` from anywhere else. That is what makes

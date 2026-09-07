@@ -5,12 +5,19 @@
 
 ## Context
 
-*Ghost in the Shell: Arise*, *Stand Alone Complex*, and *SAC_2045* are distinct, non-mergeable
-works that share most of their title text and overlapping `S01E01`-style numbering. Fuzzy matching
-conflates them because the shared tokens dominate the string and the episode numbers agree.
+*Ghost in the Shell* exists as, among others, the 1995 film, *Stand Alone Complex*, *Arise*, and
+*SAC_2045* — separate works with separate TVDB identities, not seasons of one another. They share
+most of their title text, and several use `S01E01`-style numbering, so the episode numbers *agree*
+between distinct series. String similarity and number equality both point the wrong way at once,
+and fuzzy matching conflates them.
 
-The first iteration of the design proposed a hard gate: admit only releases matching the exact
-requested entry, reject everything else.
+The failure is silent and self-confirming: the download succeeds, the file lands, and nothing in
+the chain reports a problem. See [0002](0002-admit-no-match-when-ambiguous.md) for the cost
+asymmetry this rests on.
+
+The first draft of the design proposed a hard gate: admit only releases matching the exact
+requested entry, reject everything else. This was rejected on the plan, before any of it was
+built — no hard-gate code path ever existed to be removed.
 
 ## Decision
 
@@ -23,7 +30,7 @@ labelling *why* a candidate is a sibling rather than the same series.
 
 ## Alternatives rejected
 
-- **The hard gate from iteration 1.** Rejected as fail-closed: it violates the principle that a
+- **The hard gate from the first design draft.** Rejected as fail-closed: it violates the principle that a
   real match can still exist under a slightly different alternate title. A release legitimately
   titled with an alternate rendering would be dropped outright, with no recourse and no signal
   that it happened.

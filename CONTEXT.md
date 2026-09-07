@@ -32,11 +32,15 @@ title text and overlapping `S01E01` numbering while being distinct works.
 **Numbering scheme.** How the season/episode numbers of a release should be read —
 `NumberingScheme` (`src/Arbitarr.Core.Identity/CandidateNumberingSet.cs`):
 
-| Scheme | Meaning |
-|---|---|
-| `ArcRelative` | Numbers relative to a story arc, not the original TVDB run |
-| `TvdbSeasonal` | Season/episode as TheTVDB publishes them for the original run |
-| `Absolute` | A single absolute episode number, no season component |
+| Scheme | Meaning | Who numbers this way, and why |
+|---|---|---|
+| `ArcRelative` | Numbers relative to a story arc, not the original TVDB run | Distributors re-packaging a returning series, which often restarts at 1 within the new arc |
+| `TvdbSeasonal` | Season/episode as TheTVDB publishes them for the original run | What Sonarr asks for, because its library is organised that way |
+| `Absolute` | A single absolute episode number, no season component | Release groups, especially for long-running anime — stable across broadcaster re-cuts |
+
+All three can be correct for one episode at the same time. A release name usually
+does not say which it used, which is why a number never identifies an episode on
+its own.
 
 **Candidate numbering set.** The *plural* readings of one release — the same
 release name decoded under each applicable scheme, carried together. Arbitarr
@@ -98,20 +102,15 @@ Conflating these is the most common misreading of the configuration surface.
 The admin key is not a login. There is no user account model; the admin UI has
 no session of its own. Read-only admin pages are ungated by design.
 
-**Bootstrap bypass.** With no admin key set, admin-mutating routes are allowed
-from loopback/RFC1918 addresses and refused with `503` from anywhere else — so a
-fresh install can set its first key, and only from the local network. It logs at
-Warning for as long as it stays open, because running unconfigured leaves the
-admin surface open to the whole LAN. The bypass and
-`PUT /api/admin/security/admin-key` are two halves of one fix; neither resolves
-the bootstrap deadlock alone (`AdminApiKeyFilter`, `AdminSecurityEndpoints`).
+**Bootstrap bypass.** The state a fresh install is in: no admin key set, so
+admin-mutating routes are allowed from the local network and refused elsewhere,
+letting the first key be set at all.
 
-**Write-only.** The admin key has one write path and no read path anywhere. It is
-absent from `SettingsCatalog`, which feeds both the settings PUT allow-list and
-its GET projection — so `PUT /api/admin/settings/AdminApiKey` is a 404 and
-`GET /api/admin/settings` never carries the value. Source API keys are likewise
-write-only rows under the colon-namespaced name `source:{id}:api_key`, which no
-`SettingKey` enum value can produce. These are mechanisms, not coincidences.
+**Write-only.** Said of a key with a write path and no read path anywhere — true
+of both the admin key and source API keys.
+
+Why each works the way it does, and what would break if it were "tidied", is in
+[ADR 0004](docs/adr/0004-admin-key-write-only-with-bootstrap-bypass.md).
 
 ---
 
@@ -138,6 +137,16 @@ surfaces — anything enumerating stores must grep for `DatabaseFileName`, not f
 **Snapshot versioning.** Metadata is cached against a hash of the source
 snapshot it came from, so an upstream edit invalidates stale entries rather than
 serving them indefinitely.
+
+**Prune predicate.** Answers "may this row be deleted from disk?" — a
+disk-space question for the scheduled maintenance job (`PrunePredicates`). It is
+**not** the same question as "may this entry still be served?", which is a
+read-time correctness question answered elsewhere. Conflating the two silently
+changes retention.
+
+**Query snapshot.** A stored result set backing one paginated query
+(`IQuerySnapshotStore`), keyed on the query *excluding* `offset`/`limit` so
+paging through it stays consistent instead of re-querying per page.
 
 ---
 
@@ -167,15 +176,14 @@ not a passthrough, and the merge rule differs per field:
 
 ## Process terms
 
-**Test-count floor.** A number a run actually printed, held in
-`tests/test-count-floor.txt` and `tests/frontend-test-count-floor.txt`, so the
-suite cannot silently shrink. It is a **measurement, never arithmetic** —
-re-measure after a rebase; never adjust it by adding the number of tests written.
+**Test-count floor.** The minimum number of tests that must pass, held in
+`tests/test-count-floor.txt` and `tests/frontend-test-count-floor.txt` so the
+suite cannot silently shrink. Always a *measured* number — the rule and its
+reasoning are in [docs/standards/process.md](docs/standards/process.md#test-count-floors).
 
 **Positive control.** The demonstration that a "secret must not appear in X"
-assertion would actually fail if the secret leaked. `Assert.DoesNotContain`
-passes just as happily when the secret was never in play, so without one the
-assertion is vacuous.
+assertion would actually fail if the secret leaked — without one the assertion is
+vacuous. See [docs/standards/process.md](docs/standards/process.md#non-vacuous-assertions).
 
 **Review environment.** The `Deploy review environment` CI check builds the
 container image and confirms `GET /health` answers. **Nothing is deployed** — no

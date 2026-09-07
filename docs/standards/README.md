@@ -21,9 +21,16 @@ A one-off decision is an [ADR](../adr/). A word's meaning is [CONTEXT.md](../../
 so hot it is violated repeatedly may be promoted into `CLAUDE.md`'s body — that file holds at most
 five such entries, and promoting one demotes the coldest back to here.
 
-## Relationship to CONTRIBUTING.md
+## Who owns which rule
 
-[CONTRIBUTING.md](../../CONTRIBUTING.md) is the entry point and states the rules everyone must
-follow. These volumes are where a rule's full reasoning lives when it is longer than CONTRIBUTING
-should carry. Where they overlap, they must agree; CONTRIBUTING is the summary, not a second
-source of truth.
+Three files can state the same rule. The order of authority is:
+
+1. **[CLAUDE.md](../../CLAUDE.md)** — wins on anything it covers. It holds the small set of traps
+   that have already cost rework, kept deliberately short (its body carries at most five hot
+   entries) and aimed at agents working this codebase.
+2. **These volumes** — the full statement of a rule and its reasoning.
+3. **[CONTRIBUTING.md](../../CONTRIBUTING.md)** — the entry point and the human-facing summary.
+
+Where any two overlap they must agree, and the more specific file wins. A rule should be stated in
+full **once**: CONTRIBUTING summarises in a sentence and links here; CLAUDE.md carries only what an
+agent must not get wrong. If you find yourself copying a paragraph between them, link instead.
