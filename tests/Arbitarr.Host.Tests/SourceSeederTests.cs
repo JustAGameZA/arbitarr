@@ -251,6 +251,66 @@ public sealed class SourceSeederTests : IDisposable
         Assert.Contains(logger.Entries, e => e.Message.Contains("API key not set"));
     }
 
+    /// <summary>
+    /// #53 stage 53d's aggregate decision (plan §3.4), pinned: <b>"configured" means an ENABLED
+    /// source with an API key</b>, not merely "a key exists somewhere".
+    ///
+    /// <para>53c's architectural review left this open and warned that
+    /// <c>ResolvedSourceConfiguration.IsConfigured</c> reads only the key, so it "means 'has a key',
+    /// NOT 'has an enabled source with a key'". The enabled-ness is in fact enforced one layer up,
+    /// in <c>ResolveFromDatabaseAsync</c>'s <c>Where(... &amp;&amp; s.Enabled)</c> — so the behaviour
+    /// was already correct and undocumented. This test is what makes it a decision rather than a
+    /// coincidence: a future edit that lifts the enabled filter out of that query, or that re-derives
+    /// the aggregate from a bare key lookup, fails here.</para>
+    ///
+    /// <para><b>Why this is the right meaning:</b> #50 exists to separate "configured" from
+    /// "reporting". A source the operator has deliberately disabled will never be searched, so
+    /// telling them on the dashboard that it is configured describes a working setup that cannot
+    /// answer a single query — the misleading state #50 was written to prevent.</para>
+    ///
+    /// <para><b>Positive control.</b> The first half enables the same row, with the same key, and
+    /// asserts <c>IsConfigured</c> is TRUE. Without it the <c>Assert.False</c> below would pass just
+    /// as happily against a resolver that reported everything as unconfigured, or against a fixture
+    /// whose key was never stored — an empty set satisfies a negative assertion. Proving the true
+    /// case first is what makes the false case bite.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_disabled_source_with_a_key_is_not_reported_as_configured()
+    {
+        using var context = CreateContext();
+
+        // Seed a normal enabled source that carries a key.
+        await SourceSeeder.SeedAndResolveAsync(
+            context, new ResolvedSourceConfiguration(), EnvConfig(), new RecordingLogger());
+
+        var source = Assert.Single(await context.Sources.ToListAsync());
+        Assert.True(await context.Settings.AsNoTracking()
+            .AnyAsync(e => e.Name == SourceRepository.ApiKeySettingName(source.Id)));
+
+        // POSITIVE CONTROL: enabled and keyed resolves as configured, so the
+        // negative assertion below is demonstrably capable of failing.
+        var whileEnabled = new ResolvedSourceConfiguration();
+        await SourceSeeder.SeedAndResolveAsync(
+            context, whileEnabled, NoEnvironment(), new RecordingLogger());
+        Assert.True(whileEnabled.IsConfigured);
+        Assert.Equal(EnvironmentBaseUrl, whileEnabled.BaseUrl);
+
+        // Now disable that same row. The key is untouched and still stored.
+        source.Enabled = false;
+        await context.SaveChangesAsync();
+        Assert.True(await context.Settings.AsNoTracking()
+            .AnyAsync(e => e.Name == SourceRepository.ApiKeySettingName(source.Id)));
+
+        var whileDisabled = new ResolvedSourceConfiguration();
+        await SourceSeeder.SeedAndResolveAsync(
+            context, whileDisabled, NoEnvironment(), new RecordingLogger());
+
+        // The key still exists in the Settings table; the aggregate is false anyway.
+        Assert.False(whileDisabled.IsConfigured);
+        Assert.Null(whileDisabled.BaseUrl);
+        Assert.Null(whileDisabled.ApiKey);
+    }
+
     /// <summary>Minimal in-memory <see cref="ILogger"/> capturing level and formatted message.</summary>
     private sealed class RecordingLogger : ILogger
     {
