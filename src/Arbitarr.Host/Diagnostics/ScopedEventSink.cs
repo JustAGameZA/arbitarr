@@ -25,9 +25,13 @@ public static class EventKindMapping
         RecordedEventKind.SearchServed => EventKind.SearchServed,
         RecordedEventKind.SourceFailed => EventKind.SourceFailed,
 
-        // Deliberately throwing rather than defaulting to some "other" kind: a silently
-        // mis-filed event is a worse outcome than a loud one, and ScopedEventSink swallows
-        // this before it can reach the caller's critical path anyway.
+        // Unreachable in practice, and that is the point: EventKindMappingTests asserts this
+        // mapping is total over both enums, so a kind added on one side without the other fails
+        // the test suite at build time — which is the actual guard. This arm exists so the
+        // compiler's exhaustiveness check has an answer and so a value cast in from outside the
+        // enum's range fails loudly rather than being filed under some "other" kind; a silently
+        // mis-filed event is worse than a thrown one, and ScopedEventSink swallows this before it
+        // can reach the caller's critical path anyway.
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unmapped event kind."),
     };
 }
@@ -98,6 +102,54 @@ public sealed class ScopedEventSink : IEventSink
                 "Failed to record a {EventKind} activity event ({Summary}); the originating operation was unaffected.",
                 kind,
                 summary);
+        }
+    }
+
+    /// <inheritdoc />
+    public async ValueTask RecordBatchAsync(
+        IReadOnlyList<RecordedEvent> events,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(events);
+
+        if (events.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            // ONE scope and ONE SaveChangesAsync for the whole burst, which is the entire reason
+            // this override exists: the default implementation loops RecordAsync, and on the
+            // suppression path that is one scope plus one database round trip PER SUPPRESSED
+            // RELEASE, awaited in sequence while a search waits. Same swallow-everything posture
+            // as RecordAsync — a burst that fails costs the events, never the search.
+            using var scope = _scopeFactory.CreateScope();
+            var repository = scope.ServiceProvider.GetRequiredService<EventRepository>();
+
+            var rows = events
+                .Select(e => (
+                    Kind: EventKindMapping.ToEntityKind(e.Kind),
+                    e.Summary,
+                    e.Reason,
+                    e.SourceDisplayName,
+                    e.Detail))
+                .ToList();
+
+            await repository.AddRangeAsync(rows, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // The batch is one transaction, so a failure loses all of it — hence the count, which
+            // is what distinguishes "one bad row" from "the database is unwritable" in the log.
+            _logger.LogWarning(
+                ex,
+                "Failed to record a batch of {EventCount} activity events; the originating operation was unaffected.",
+                events.Count);
         }
     }
 }

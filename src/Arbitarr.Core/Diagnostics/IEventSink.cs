@@ -30,6 +30,24 @@ public enum RecordedEventKind
 }
 
 /// <summary>
+/// One event, as a value, so a caller with several to record can hand them over together — see
+/// <see cref="IEventSink.RecordBatchAsync"/>. Field-for-field identical to
+/// <see cref="IEventSink.RecordAsync"/>'s parameters, deliberately: this is the same event in a
+/// shape that can go in a list, not a second model of one.
+/// </summary>
+/// <param name="Kind">Which kind of event this is.</param>
+/// <param name="Summary">One line stating what happened. Required.</param>
+/// <param name="Reason">Why it happened (plan AC2 — a reason, not only an event name), or null.</param>
+/// <param name="SourceDisplayName">The source involved, by display name or id — NEVER a credential (plan §9).</param>
+/// <param name="Detail">Free-form kind-specific detail, or null.</param>
+public readonly record struct RecordedEvent(
+    RecordedEventKind Kind,
+    string Summary,
+    string? Reason = null,
+    string? SourceDisplayName = null,
+    string? Detail = null);
+
+/// <summary>
 /// The emission seam for the activity/history store (#55 step 2, plan §4 item 2).
 ///
 /// Why an interface in Core rather than calling the repository directly: the two busiest emission
@@ -38,17 +56,25 @@ public enum RecordedEventKind
 /// <see cref="RecordedEventKind"/>. This is the same shape <see cref="IRefreshWorkerHealth"/>
 /// already uses for the same reason, so it is the established local pattern rather than a new one.
 ///
-/// IMPLEMENTATIONS MUST NOT THROW AND MUST NOT BLOCK THE CALLER'S WORK. Recording history is
-/// strictly less important than serving the request that produced it: a failed write here must
-/// never fail a search or abort a worker cycle. <see cref="NullEventSink"/> is the no-op default,
-/// so a caller that was never wired to a real sink degrades to recording nothing rather than
-/// NullReferenceException-ing on a hot path.
+/// IMPLEMENTATIONS MUST NOT THROW. Recording history is strictly less important than serving the
+/// request that produced it: a failed write here must never fail a search or abort a worker cycle.
+/// <see cref="NullEventSink"/> is the no-op default, so a caller that was never wired to a real
+/// sink degrades to recording nothing rather than NullReferenceException-ing on a hot path.
+///
+/// THEY DO, HOWEVER, COST THE CALLER THE WRITE'S LATENCY. The real sink awaits its database write
+/// rather than posting it to a background queue, so this is not free and a caller must not treat it
+/// as such. That is a deliberate choice, not an oversight: fire-and-forget would need its own
+/// bounded queue, drain-on-shutdown and overflow policy, and #55 is not the place to introduce a
+/// second lifetime-managed background writer. The obligation it puts on callers instead is to
+/// record ONE event per thing that happened rather than looping — which is what
+/// <see cref="RecordBatchAsync"/> exists for.
 /// </summary>
 public interface IEventSink
 {
     /// <summary>
-    /// Records one event. Returns as soon as the event is accepted for writing — see the interface
-    /// note: callers await this only to propagate cancellation, never to confirm durability.
+    /// Records one event, awaiting the write. A failed write is swallowed by the implementation, so
+    /// completion means "the sink is done with this", not "the row is durable" — see the interface
+    /// note. Use <see cref="RecordBatchAsync"/> when there is more than one event to record.
     /// </summary>
     /// <param name="kind">Which kind of event this is.</param>
     /// <param name="summary">One line stating what happened. Required.</param>
@@ -62,6 +88,32 @@ public interface IEventSink
         string? sourceDisplayName = null,
         string? detail = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Records a burst of events that happened at one point, as one unit of work.
+    ///
+    /// This exists because <see cref="RecordAsync"/> awaited in a loop violates the interface's own
+    /// "must not block the caller's work" contract at scale: <c>FilterStage</c> emits one Decision
+    /// per suppressed release and can suppress dozens within a single search, so a loop becomes
+    /// dozens of sequential scope-creations and database round trips ON the search path. A caller
+    /// with more than one event to record should use this instead.
+    ///
+    /// The default implementation is the loop, so an existing sink (and any test double) keeps
+    /// working unchanged and merely fails to get the batching benefit. The real sink overrides it.
+    /// </summary>
+    /// <param name="events">The events to record. An empty list is a no-op.</param>
+    async ValueTask RecordBatchAsync(
+        IReadOnlyList<RecordedEvent> events,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(events);
+
+        foreach (var e in events)
+        {
+            await RecordAsync(e.Kind, e.Summary, e.Reason, e.SourceDisplayName, e.Detail, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
 }
 
 /// <summary>

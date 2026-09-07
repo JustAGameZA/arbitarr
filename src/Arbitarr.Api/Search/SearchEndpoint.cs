@@ -169,7 +169,14 @@ public static class SearchEndpoint
         // the PARSED query term, never the raw HttpRequest, because the client's apikey travels on
         // that request's query string and /api/activity is un-gated exactly as
         // /api/searches/recent is.
-        var servedWithoutUpstreamCall = result.ServedFromSnapshot || result.CacheAge > TimeSpan.Zero;
+        // CacheAge is nullable and all THREE cases matter, so the null arm is written out rather
+        // than left to lifted-comparison semantics: SearchResultCacheStage returns a null age on
+        // the degraded-empty path, and that path returns CacheBand.Expired after a real upstream
+        // attempt — so "no age information" means a live query was made, not a cache hit. Lifted
+        // `null > TimeSpan.Zero` happens to be false, which is the right answer, but relying on
+        // that made the code correct for a reason no reader could see.
+        var servedWithoutUpstreamCall =
+            result.ServedFromSnapshot || (result.CacheAge is { } cacheAge && cacheAge > TimeSpan.Zero);
         await eventSink.RecordAsync(
             RecordedEventKind.SearchServed,
             summary: result.CacheBand switch

@@ -16,6 +16,14 @@ namespace Arbitarr.Data.Events;
 /// </summary>
 public sealed class EventRepository
 {
+    /// <summary>
+    /// Floor on how many rows one scan batch asks SQLite for (see <see cref="QueryAsync"/>). Only the
+    /// time filters can reject a fetched row, so a batch sized to the shortfall alone would degrade
+    /// to one round trip per rejected row when a window is sparse. Over-fetching a little amortises
+    /// that; the ceiling on total work stays the early exit, not this number.
+    /// </summary>
+    private const int MinimumScanBatch = 256;
+
     private readonly ArbitarrDbContext _dbContext;
     private readonly TimeProvider _timeProvider;
 
@@ -58,6 +66,60 @@ public sealed class EventRepository
         return entry;
     }
 
+    /// <summary>
+    /// Validates and inserts several event rows in ONE round trip, for a caller that produces a
+    /// burst of related events at a single point (today: <c>FilterStage</c>, which emits one
+    /// Decision row per suppressed release and can suppress dozens within one search).
+    ///
+    /// This exists because the alternative is not merely slower, it is wrong-shaped: N calls to
+    /// <see cref="AddAsync"/> mean N SaveChangesAsync round trips awaited in sequence on the path
+    /// serving a search, which is exactly what the interface's "must not block the caller's work"
+    /// contract forbids. One batch is one transaction, so it is also atomic per burst.
+    ///
+    /// Validation is unchanged and still per-row: every entry is validated BEFORE anything is
+    /// staged, so one credential-shaped display name rejects the whole batch rather than writing a
+    /// partial one. Rejecting loudly and completely is the same posture <see cref="AddAsync"/>
+    /// takes (AC24 — never coerce malformed input into something valid).
+    /// </summary>
+    public async Task<IReadOnlyList<EventEntry>> AddRangeAsync(
+        IReadOnlyList<(EventKind Kind, string Summary, string? Reason, string? SourceDisplayName, string? Detail)> events,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(events);
+
+        if (events.Count == 0)
+        {
+            return Array.Empty<EventEntry>();
+        }
+
+        foreach (var e in events)
+        {
+            ValidateSummary(e.Summary);
+            ValidateSourceDisplayName(e.SourceDisplayName);
+        }
+
+        // One timestamp for the whole burst: these events did happen at one point, and reading them
+        // back with a spread of microseconds would imply an ordering the caller never had.
+        var occurredAt = _timeProvider.GetUtcNow();
+
+        var entries = events
+            .Select(e => new EventEntry
+            {
+                Kind = e.Kind,
+                OccurredAt = occurredAt,
+                Summary = e.Summary,
+                Reason = e.Reason,
+                SourceDisplayName = e.SourceDisplayName,
+                Detail = e.Detail,
+            })
+            .ToList();
+
+        _dbContext.Events.AddRange(entries);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return entries;
+    }
+
     /// <summary>All events, most recent first. A test-only read: it materializes the whole table,
     /// so nothing that serves a request may call it. <see cref="QueryAsync"/> is the paged,
     /// filterable read that <c>GET /api/activity</c> uses; this remains only because the retention
@@ -95,42 +157,76 @@ public sealed class EventRepository
 
         var limit = Math.Clamp(query.Limit, 1, EventQuery.MaxLimit);
 
-        var filtered = _dbContext.Events.AsNoTracking();
+        // Rows wanted before we can answer: the page itself, plus one more that only tells us
+        // whether a further page exists (cheaper than a second COUNT query).
+        var wanted = limit + 1;
 
-        if (query.Kind is { } kind)
+        // THE WORK IS BOUNDED IN SQL, NOT ONLY THE RESPONSE. The kind and cursor predicates, the
+        // ordering and the LIMIT all translate and ride the (Kind, OccurredAt) index; the OccurredAt
+        // comparisons genuinely CANNOT translate on this provider — EF Core throws rather than
+        // degrading, so this is verified, not assumed — which is why GetAllAsync, PruneAsync and
+        // MaintenanceJob all compare that column client-side too.
+        //
+        // A single .ToListAsync() over the kind/cursor-filtered set followed by a client-side Take
+        // would therefore be correct but load every matching row: `?since=<a minute ago>` against a
+        // large table would materialize the whole table to return a handful, making MaxLimit a cap
+        // on the RESPONSE while the work stayed unbounded. That defeats the purpose it documents.
+        //
+        // So rows are pulled in SQL-bounded batches, newest first, and time-filtered as they arrive.
+        // Because the scan runs in descending Id order and Id is monotonic with insertion time, a
+        // batch whose newest row already sits before `Since` proves every remaining row does too —
+        // that is the early exit that keeps a narrow recent window cheap regardless of table size.
+        var page = new List<EventEntry>(wanted);
+        var scanCursor = query.Cursor;
+
+        while (page.Count < wanted)
         {
-            filtered = filtered.Where(e => e.Kind == kind);
+            var batchSize = Math.Max(wanted - page.Count, MinimumScanBatch);
+
+            var batch = await BuildScanQuery(query.Kind, scanCursor)
+                .Take(batchSize)
+                .ToListAsync(cancellationToken);
+
+            if (batch.Count == 0)
+            {
+                // The table is exhausted for this filter.
+                break;
+            }
+
+            // Resume strictly below the oldest row seen, so batches never overlap or skip.
+            scanCursor = batch[^1].Id;
+
+            foreach (var entry in batch)
+            {
+                if (query.Until is { } until && entry.OccurredAt >= until)
+                {
+                    // Newer than the window's upper bound. Later rows are older, so this is not a
+                    // stopping condition — just skip it and keep descending.
+                    continue;
+                }
+
+                if (query.Since is { } since && entry.OccurredAt < since)
+                {
+                    // Past the lower bound. Everything below is older still, so nothing further can
+                    // match: return what we have rather than scanning the rest of the table.
+                    return BuildPage(page, limit);
+                }
+
+                page.Add(entry);
+                if (page.Count == wanted)
+                {
+                    break;
+                }
+            }
+
+            if (batch.Count < batchSize)
+            {
+                // A short batch means the table ran out, not that the window did.
+                break;
+            }
         }
 
-        if (query.Cursor is { } cursor)
-        {
-            filtered = filtered.Where(e => e.Id < cursor);
-        }
-
-        // The kind and cursor predicates translate to SQL, but the OccurredAt comparisons do not:
-        // this codebase's SQLite/EF Core combination cannot translate DateTimeOffset comparisons
-        // server-side, which is why GetAllAsync and PruneAsync (and MaintenanceJob before them) also
-        // compare that column client-side. Taking one row past the page is what reveals whether a
-        // further page exists without a second COUNT query.
-        var candidates = await filtered.ToListAsync(cancellationToken);
-
-        var page = candidates
-            .Where(e => query.Since is not { } since || e.OccurredAt >= since)
-            .Where(e => query.Until is not { } until || e.OccurredAt < until)
-            .OrderByDescending(e => e.Id)
-            .Take(limit + 1)
-            .ToList();
-
-        var hasMore = page.Count > limit;
-        if (hasMore)
-        {
-            page.RemoveAt(page.Count - 1);
-        }
-
-        // Null on the last page, so a caller stops rather than re-requesting forever.
-        var nextCursor = hasMore && page.Count > 0 ? page[^1].Id : (long?)null;
-
-        return new EventPage(page, nextCursor);
+        return BuildPage(page, limit);
     }
 
     /// <summary>
@@ -161,6 +257,48 @@ public sealed class EventRepository
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         return byKind;
+    }
+
+    /// <summary>
+    /// One SQL-bounded descending scan step: kind and cursor as WHERE clauses, Id DESC as ORDER BY.
+    /// Every part of this translates to SQL on this provider (verified, not assumed — see
+    /// <see cref="QueryAsync"/>), so the caller's <c>.Take()</c> becomes a real LIMIT rather than a
+    /// client-side truncation of an already-materialized table.
+    /// </summary>
+    private IQueryable<EventEntry> BuildScanQuery(EventKind? kind, long? cursor)
+    {
+        var scan = _dbContext.Events.AsNoTracking();
+
+        if (kind is { } k)
+        {
+            scan = scan.Where(e => e.Kind == k);
+        }
+
+        if (cursor is { } c)
+        {
+            scan = scan.Where(e => e.Id < c);
+        }
+
+        return scan.OrderByDescending(e => e.Id);
+    }
+
+    /// <summary>
+    /// Turns the accumulated rows into a page. The scan collects up to <c>limit + 1</c> rows; that
+    /// extra row is a probe, never part of the response — its presence is the whole signal that a
+    /// further page exists. NextCursor is null on the last page so a caller stops rather than
+    /// re-requesting forever.
+    /// </summary>
+    private static EventPage BuildPage(List<EventEntry> collected, int limit)
+    {
+        var hasMore = collected.Count > limit;
+        if (hasMore)
+        {
+            collected.RemoveAt(collected.Count - 1);
+        }
+
+        var nextCursor = hasMore && collected.Count > 0 ? collected[^1].Id : (long?)null;
+
+        return new EventPage(collected, nextCursor);
     }
 
     private static void ValidateSummary(string summary)

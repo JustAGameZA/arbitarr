@@ -18,6 +18,13 @@ namespace Arbitarr.Data.Maintenance;
 /// <see cref="Arbitarr.Core.Settings.PrunePredicates.IsAiVerdictCacheEntryPrunable"/> with a
 /// separate row-ceiling LRU trim (M5 security review, MED) that this job applies directly.
 ///
+/// A FIFTH table joined them with #55: the shared event store. It is pruned by
+/// <see cref="PruneEventsAsync"/>, which delegates to <see cref="Events.EventRepository.PruneAsync"/>
+/// because its retention is per-kind and settings-independent, unlike the four above. Anything that
+/// accumulates rows belongs in this list — a table that is written but never pruned is an outage
+/// with a long fuse on a homelab SQLite file, which is precisely how the event store shipped
+/// (retention written and tested, but with no caller) until emission went live.
+///
 /// Scheduling: run on an interval equal to the <c>maintenance_job_interval</c> setting. Per
 /// <see cref="SettingsValidator.ValidateMaintenanceJobInterval"/>, this is the one setting
 /// explicitly permitted to require a restart to take effect — callers that own a recurring timer
@@ -59,6 +66,8 @@ public sealed class MaintenanceJob
                 now, settings.AiVerdictCacheTtl, settings.AiVerdictCacheRowCeiling, cancellationToken)
             .ConfigureAwait(false);
 
+        var eventsPruned = await PruneEventsAsync(cancellationToken).ConfigureAwait(false);
+
         await RunIncrementalVacuumAsync(cancellationToken).ConfigureAwait(false);
 
         return new MaintenanceJobResult(
@@ -66,6 +75,7 @@ public sealed class MaintenanceJob
             MetadataCacheRowsPruned: metadataCachePruned,
             SuppressionAuditLogRowsPruned: suppressionAuditPruned,
             AiVerdictCacheRowsPruned: aiVerdictCachePruned,
+            EventRowsPruned: eventsPruned,
             VacuumRan: true);
     }
 
@@ -163,6 +173,34 @@ public sealed class MaintenanceJob
         _dbContext.VerdictCacheEntries.RemoveRange(prunable);
         await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return prunable.Count;
+    }
+
+    /// <summary>
+    /// Prunes the shared event store (#55) against <see cref="Events.EventRetentionPolicy"/>.
+    ///
+    /// This is the fifth accumulating table, added when #55 turned on the writes. Until then the
+    /// table existed but nothing wrote to it, so its absence here was harmless; with emission live
+    /// it takes one Decision row per suppressed release plus one SearchServed row per search, which
+    /// on a busy box is thousands of rows a day. Without this call the retention policy would be
+    /// decorative and the SQLite file in the config bind mount would grow without bound — the
+    /// slow-motion outage the plan's §2 names.
+    ///
+    /// Delegated to <see cref="Events.EventRepository.PruneAsync"/> rather than reimplemented here,
+    /// unlike the four tables above, because the retention windows are per-KIND and
+    /// <see cref="Events.EventRetentionPolicy"/> is their single named home. Restating "180 days for
+    /// decisions, 7 for everything else" as a predicate in this file would be a second place for
+    /// those figures to drift from, which that policy's own doc comment explicitly warns against.
+    /// The windows are also deliberately NOT settings-driven, which is why this takes no argument
+    /// from the snapshot the way its four siblings do.
+    /// </summary>
+    private async Task<int> PruneEventsAsync(CancellationToken cancellationToken)
+    {
+        var repository = new Events.EventRepository(_dbContext, _timeProvider);
+        var prunedByKind = await repository.PruneAsync(cancellationToken).ConfigureAwait(false);
+
+        // Flattened to a total: MaintenanceJobResult reports one count per table, and the per-kind
+        // breakdown PruneAsync returns is what its own tests assert the asymmetry against.
+        return prunedByKind.Values.Sum();
     }
 
     private async Task RunIncrementalVacuumAsync(CancellationToken cancellationToken)
