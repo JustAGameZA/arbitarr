@@ -135,7 +135,8 @@ public sealed class ScopedEventSink : IEventSink
                     e.Summary,
                     e.Reason,
                     e.SourceDisplayName,
-                    e.Detail))
+                    e.Detail,
+                    e.ShadowMode))
                 .ToList();
 
             await repository.AddRangeAsync(rows, cancellationToken);

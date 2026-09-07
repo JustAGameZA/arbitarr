@@ -593,4 +593,43 @@ public sealed class EventRepositoryTests : IDisposable
 
         Assert.Equal(1, lastWeek.Reviewed);
     }
+
+    /// <summary>
+    /// #54 AC1 through the BATCH path, which is the half that had no coverage and was therefore
+    /// wrong: AddRangeAsync's tuple omitted ShadowMode entirely, so a Decision written in a burst
+    /// persisted a NULL flag.
+    ///
+    /// A NULL flag is not a harmless default here. The shadow-mode filter compares the nullable
+    /// column as a value, so SQL's three-valued logic excludes NULL rows from BOTH branches -- such
+    /// a row would be invisible under "Shadow-only" AND under "Enforced" while rendering as
+    /// "Unknown". FilterStage emits one Decision per suppressed release and is exactly the caller
+    /// that would batch, so this was a live defect waiting on its first batching caller rather than
+    /// a theoretical one.
+    ///
+    /// Asserted per row rather than in aggregate: a test that only counted rows would pass against
+    /// an implementation that wrote one flag to every row in the batch.
+    /// </summary>
+    [Fact]
+    public async Task Decisions_written_in_a_batch_each_keep_their_own_shadow_mode_flag()
+    {
+        using var context = CreateContext();
+        var repository = new EventRepository(context);
+
+        await repository.AddRangeAsync(
+            new (EventKind, string, string?, string?, string?, bool?)[]
+            {
+                (EventKind.Decision, "Flagged in shadow mode", "shadow", null, null, true),
+                (EventKind.Decision, "Suppressed for real", "enforced", null, null, false),
+                (EventKind.WorkerCycle, "A cycle ran", null, null, null, null),
+            },
+            CancellationToken.None);
+
+        var rows = await repository.GetAllAsync(CancellationToken.None);
+
+        Assert.True(rows.Single(r => r.Summary == "Flagged in shadow mode").ShadowMode);
+        Assert.False(rows.Single(r => r.Summary == "Suppressed for real").ShadowMode);
+
+        // The operational kind still has no answer to give, and must not be coerced into one.
+        Assert.Null(rows.Single(r => r.Summary == "A cycle ran").ShadowMode);
+    }
 }

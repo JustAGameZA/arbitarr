@@ -99,7 +99,7 @@ public sealed class EventRepository
     /// takes (AC24 — never coerce malformed input into something valid).
     /// </summary>
     public async Task<IReadOnlyList<EventEntry>> AddRangeAsync(
-        IReadOnlyList<(EventKind Kind, string Summary, string? Reason, string? SourceDisplayName, string? Detail)> events,
+        IReadOnlyList<(EventKind Kind, string Summary, string? Reason, string? SourceDisplayName, string? Detail, bool? ShadowMode)> events,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(events);
@@ -128,6 +128,13 @@ public sealed class EventRepository
                 Reason = e.Reason,
                 SourceDisplayName = e.SourceDisplayName,
                 Detail = e.Detail,
+
+                // Set here for the same reason AddAsync sets it: a Decision written through the
+                // batch path must carry the flag captured at decision time (#54 AC1). Omitting it
+                // here would leave the row NULL, which the shadow-mode filter treats as "no answer"
+                // and excludes from BOTH branches -- so a batched shadow decision would be
+                // invisible under "Shadow-only" AND under "Enforced", and render as Unknown.
+                ShadowMode = e.ShadowMode,
             })
             .ToList();
 
