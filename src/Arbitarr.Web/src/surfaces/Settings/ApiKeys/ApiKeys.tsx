@@ -167,6 +167,7 @@ function KeyRow({
   onCancelConfirm,
   onRevoke,
   pending,
+  failure,
 }: {
   entry: ApiKeyEntry;
   confirmingId: number | null;
@@ -174,6 +175,8 @@ function KeyRow({
   onCancelConfirm: () => void;
   onRevoke: (id: number) => void;
   pending: boolean;
+  /** The server's refusal for THIS key, or null. Never a client-side guess. */
+  failure: unknown;
 }) {
   const revoked = entry.revokedAt !== null;
   const id = entry.id;
@@ -233,6 +236,11 @@ function KeyRow({
             </button>
           )}
         </div>
+        {failure !== null && failure !== undefined && (
+          <p className={`${styles.error} ${local.rowError}`} role="alert">
+            {errorMessage(failure)}
+          </p>
+        )}
       </td>
     </tr>
   );
@@ -268,11 +276,18 @@ export function ApiKeysSection() {
 
   const onCreate = (label: string, scope: ApiKeyScope) => {
     setCreated(null);
+    // Clear the previous attempt's error before starting a new one. Without this
+    // the mutation keeps its last error until the next one settles, so a failed
+    // create leaves its message on screen underneath the retry — the operator
+    // reads a rejection the server has not issued for the value now in the field.
+    create.reset();
     create.mutate({ label, scope }, { onSuccess: (response) => setCreated(response) });
   };
 
   const onRevoke = (id: number) => {
     setRevokeFailedId(null);
+    // Same reason as create: the previous refusal must not outlive its attempt.
+    revoke.reset();
     revoke.mutate(id, {
       onSuccess: () => setConfirmingId(null),
       onError: () => setRevokeFailedId(id),
@@ -326,16 +341,17 @@ export function ApiKeysSection() {
                           onCancelConfirm={() => setConfirmingId(null)}
                           onRevoke={onRevoke}
                           pending={revoke.isPending}
+                          // The refusal belongs to ONE key. AC5's message names the
+                          // key it refused ("'X' is the last API key with admin
+                          // scope"), so it renders in that key's row rather than
+                          // under the table, where it would read as a statement
+                          // about the list.
+                          failure={revokeFailedId === entry.id ? revoke.error : null}
                         />
                       ))}
                     </tbody>
                   </table>
                 </div>
-                {revokeFailedId !== null && (
-                  <p className={styles.error} role="alert">
-                    {errorMessage(revoke.error)}
-                  </p>
-                )}
               </>
             )
           }

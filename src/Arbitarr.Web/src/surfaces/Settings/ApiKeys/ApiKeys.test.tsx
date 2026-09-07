@@ -330,5 +330,39 @@ describe('ApiKeys', () => {
     await user.click(screen.getByRole('button', { name: 'Confirm revoke' }));
 
     expect(await screen.findByText(refusal)).toBeInTheDocument();
+
+    // And it renders in the row of the key it refused, not under the table: the
+    // message names one key, so a floating copy would read as a statement about
+    // the list. The untouched key's row carries no error.
+    expect(within(rowFor('Maintenance script')).getByText(refusal)).toBeInTheDocument();
+    expect(within(rowFor('Sonarr')).queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('does not carry a failed create message into the next attempt', async () => {
+    const user = userEvent.setup();
+    const api = mockKeysApi({ [`GET ${KEYS}`]: { body: keys } });
+    renderSurface(<ApiKeysSection />);
+
+    await screen.findByRole('cell', { name: 'Sonarr' });
+
+    // First attempt is rejected by the server.
+    api.set(`POST ${KEYS}`, {
+      status: 400,
+      body: { error: "An API key labelled 'Sonarr' already exists." },
+    });
+    await user.type(screen.getByLabelText('New key label'), 'Sonarr');
+    await user.click(screen.getByRole('button', { name: 'Create key' }));
+    expect(await screen.findByText(/already exists/i)).toBeInTheDocument();
+
+    // Second attempt succeeds. Without create.reset() the mutation keeps its
+    // previous error until the new one settles, leaving the stale rejection on
+    // screen beneath a value the server has not rejected.
+    api.set(`POST ${KEYS}`, { status: 201, body: created });
+    await user.clear(screen.getByLabelText('New key label'));
+    await user.type(screen.getByLabelText('New key label'), 'Radarr');
+    await user.click(screen.getByRole('button', { name: 'Create key' }));
+
+    expect(await screen.findByText(PLAINTEXT)).toBeInTheDocument();
+    expect(screen.queryByText(/already exists/i)).not.toBeInTheDocument();
   });
 });

@@ -118,3 +118,14 @@
   font-size: 12px;
   color: var(--fg-primary);
 }
+
+/*
+ * A revoke refusal, shown in the row of the key it refused. Constrained so a
+ * long AC5 message wraps inside the actions cell instead of stretching the
+ * column. Colour comes from surface.module.css's .error token.
+ */
+.rowError {
+  margin: 6px 0 0;
+  font-size: 12px;
+  max-width: 44ch;
+}
