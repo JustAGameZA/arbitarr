@@ -452,3 +452,73 @@ export interface ReviewDecisionRequest {
   verdict: ReviewVerdict;
   note?: string;
 }
+
+// --- API keys (#58 backend, #82 UI) ---------------------------------------
+
+/**
+ * The two scopes a key can hold, as the wire spells them.
+ *
+ * These are the STRING NAMES and nothing else. AdminApiKeyEndpoints parses the
+ * incoming scope by matching these two names explicitly and REJECTS the numeric
+ * form, because Enum.TryParse would have let `{"scope":"1"}` mint an Admin key.
+ * A widening of this type to `string`, or a UI that ever posts an index, walks
+ * straight back into that hole — so the union is the client-side half of the
+ * same closure.
+ */
+export type ApiKeyScope = 'ReadOnly' | 'Admin';
+
+/**
+ * AdminApiKeyEndpoints.cs — ApiKeyResponse.
+ *
+ * NOTE WHAT IS ABSENT: there is no field for the key value, and deliberately no
+ * nullable one a future edit could start populating. The plaintext exists in
+ * exactly one response shape (`CreatedApiKeyResponse`) and nowhere else, because
+ * only the hash is stored — see that type.
+ *
+ * `id` is null only for the legacy row, which is synthesised at read time and
+ * addresses nothing, which is why `isLegacy` gates the revoke affordance rather
+ * than a null-check on the id doing it implicitly.
+ */
+export interface ApiKeyEntry {
+  /** null for the legacy row — there is no row to address, so nothing to DELETE. */
+  id: number | null;
+  label: string;
+  scope: ApiKeyScope;
+  /** null for the legacy key: no creation was ever recorded, and inventing one would read as real. */
+  createdAt: string | null;
+  /** null until the key is first used. This is the field that makes revocation safe rather than a guess. */
+  lastUsedAt: string | null;
+  /** Non-null means revoked. The row stays in the list as a tombstone; it never disappears. */
+  revokedAt: string | null;
+  /**
+   * True for the synthetic row standing for the pre-#58 shared key. It comes from
+   * the environment/configuration, not the key table, so there is nothing for a
+   * revoke button to delete — the UI renders the explanation instead of the button.
+   */
+  isLegacy: boolean;
+}
+
+/** The create POST's body. An absent scope means the NARROWER one, server-side. */
+export interface CreateApiKeyRequest {
+  label: string;
+  scope: ApiKeyScope;
+}
+
+/**
+ * AdminApiKeyEndpoints.cs — CreatedApiKeyResponse, THE ONLY RESPONSE IN THIS API
+ * THAT EVER CARRIES A LIVE CREDENTIAL.
+ *
+ * `plaintextKey` is generated, hashed and returned without ever being persisted.
+ * There is no route that can produce it again — not because one was omitted, but
+ * because after this response no copy exists anywhere in the system. Which is why
+ * the UI states that at the point of creation: no later screen could.
+ *
+ * It must therefore never be written to `localStorage`, `sessionStorage`, a query
+ * string, or the query cache. It lives in component state for exactly as long as
+ * the reveal panel is open. `ApiKeys.test.tsx` holds that assertion with a
+ * positive control.
+ */
+export interface CreatedApiKeyResponse {
+  key: ApiKeyEntry;
+  plaintextKey: string;
+}

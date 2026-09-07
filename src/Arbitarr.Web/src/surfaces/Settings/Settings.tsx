@@ -6,6 +6,7 @@ import type { SettingCatalogEntry } from '../../api/types';
 import styles from '../surface.module.css';
 import local from './Settings.module.css';
 import { useSettingsQuery, useUpdateSettingMutation } from './queries';
+import { ApiKeysSection } from './ApiKeys/ApiKeys';
 
 /** Groups the flat catalog into its declared groups, preserving server order. */
 export function groupSettings(entries: SettingCatalogEntry[]): [string, SettingCatalogEntry[]][] {
@@ -177,6 +178,8 @@ export default function SettingsPage() {
         title="Settings"
         description="Tunable values, with the bounds and rationale the server enforces."
       />
+
+      <ApiKeysSection />
 
       <QueryState isPending={settings.isPending} error={settings.error} data={settings.data}>
         {(entries) =>
