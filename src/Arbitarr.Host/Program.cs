@@ -407,7 +407,20 @@ builder.Services.AddScoped<Arbitarr.Data.Notifications.NotificationRepository>()
 // answer. The URL itself is a secret (providers embed the token in the path), so the transport
 // returns a closed enum and never surfaces the target, the response body, or an exception message.
 builder.Services.AddHttpClient<Arbitarr.Core.Notifications.WebhookNotificationTransport>()
-    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false })
+    // AND THE REQUEST URI MUST NOT BE LOGGED. IHttpClientFactory attaches its own logging handler
+    // to every named client, which writes "Sending HTTP request POST {Uri}" at Information -- with
+    // the FULL absolute URI. For every other client here that is merely noisy; for this one the URI
+    // IS the credential (providers embed the token in the path), and since #65 the log store is a
+    // persistent SQLite database read back through GET /api/admin/logs, so it would be a DURABLE
+    // credential leak rather than a line that scrolls away.
+    //
+    // The transport's own care -- a closed-enum return, never reading the body, never inspecting
+    // exception text -- cannot prevent this, because the leak is in framework code the transport
+    // never calls. Suppressing the two logging categories the factory uses is what actually closes
+    // it. An integration test drives a real delivery and asserts the URL reaches no log row, so
+    // this cannot silently regress if the factory's categories change shape.
+    .RemoveAllLoggers();
 
 // #57: the notifier's evaluation loop. POLLS the shared event store through EventRepository's
 // seek-cursor read path (#55 step 3) -- there is deliberately no subscribe/observer mechanism over

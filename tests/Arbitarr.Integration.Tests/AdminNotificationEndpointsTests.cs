@@ -44,6 +44,12 @@ public sealed class AdminNotificationEndpointsTests : IClassFixture<ArbitarrWebA
     /// </summary>
     private const string SecretWebhookUrl = "https://example.com/hooks/placeholder-super-secret-webhook-token";
 
+    /// <summary>
+    /// The token half of <see cref="SecretWebhookUrl"/>. Searched for separately so a change that
+    /// logged only the path or the query — rather than the whole absolute URL — still fails.
+    /// </summary>
+    private const string WebhookTokenFragment = "placeholder-super-secret-webhook-token";
+
     private readonly ArbitarrWebApplicationFactory _factory;
 
     public AdminNotificationEndpointsTests(ArbitarrWebApplicationFactory factory)
@@ -255,16 +261,41 @@ public sealed class AdminNotificationEndpointsTests : IClassFixture<ArbitarrWebA
             Assert.DoesNotContain(SecretWebhookUrl, activityBody, StringComparison.Ordinal);
         }
 
-        // NON-VACUOUS, HALF THREE: no log row carries it either. Logs are surfaced in the UI, so a
-        // URL in a warning line is the same disclosure by another route — which is why the
-        // dispatcher logs the trigger and the outcome (both closed enums) and never the target.
-        using var log = await client.GetAsync("/api/searches/recent");
-        if (log.StatusCode == HttpStatusCode.OK)
+        // NON-VACUOUS, HALF THREE: no log row carries it either. Since #65 the log store is
+        // PERSISTENT (a standalone arbitarr-logs.db), so a webhook URL reaching a log line is a
+        // durable leak readable from the System page's Logs tab, not a transient one that scrolls
+        // away — which is why the dispatcher logs the trigger and the outcome, both closed enums,
+        // and never the target. Asserted over every field, not just Message: the exception text is
+        // the field most likely to carry a URI.
+        await FlushLogSinkAsync();
+
+        var logStore = _factory.Services.GetRequiredService<Arbitarr.Data.Logging.LogStore>();
+        var logPage = await logStore.ReadAsync(
+            level: null, logger: null, page: 1, pageSize: Arbitarr.Data.Logging.LogStore.MaxPageSize);
+
+        // Non-vacuous: the sink really is recording, so the absence assertion has something to be
+        // true of rather than passing against an empty table.
+        Assert.NotEmpty(logPage.Entries);
+
+        foreach (var entry in logPage.Entries)
         {
-            var logBody = await log.Content.ReadAsStringAsync();
-            Assert.DoesNotContain(SecretWebhookUrl, logBody, StringComparison.Ordinal);
+            Assert.DoesNotContain(SecretWebhookUrl, entry.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(SecretWebhookUrl, entry.Exception ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(SecretWebhookUrl, entry.Logger, StringComparison.OrdinalIgnoreCase);
+
+            // Also the bare token, in case a future change logs only the path or the query.
+            Assert.DoesNotContain(WebhookTokenFragment, entry.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(WebhookTokenFragment, entry.Exception ?? string.Empty, StringComparison.OrdinalIgnoreCase);
         }
     }
+
+    /// <summary>
+    /// Waits for #65's log sink to drain. The provider batches on an interval by design (it must
+    /// never write on the caller's thread), so a read taken immediately after a request can
+    /// legitimately see nothing yet — which would make the assertion above vacuous.
+    /// </summary>
+    private static async Task FlushLogSinkAsync() =>
+        await Task.Delay(Arbitarr.Data.Logging.SqliteLoggerProvider.FlushInterval + TimeSpan.FromMilliseconds(750));
 
     [Fact]
     public async Task The_test_button_reports_a_distinct_outcome_without_naming_the_target()
