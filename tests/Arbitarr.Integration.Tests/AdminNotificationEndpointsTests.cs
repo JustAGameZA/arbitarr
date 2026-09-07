@@ -21,10 +21,24 @@ namespace Arbitarr.Integration.Tests;
 /// routes because all four are concrete rather than <c>{id}</c>-templated; the per-route assertions
 /// here pin it by name anyway so no notification route is gated only by assumption.</para>
 ///
-/// <para>Every leak assertion is <b>non-vacuous</b>: it establishes that the URL really is stored
-/// (via the store, and via the surface's own <c>hasWebhookUrl</c> indicator) BEFORE asserting it is
-/// absent from responses, event rows and log rows. Without that first half a passing assertion
-/// would prove only that nothing was ever configured.</para>
+/// <para>Every leak assertion here carries <b>both halves of a positive control</b>, and the
+/// difference between them is the point. <b>Existence</b> — the URL really is stored, via the store
+/// and via the surface's own <c>hasWebhookUrl</c> indicator — stops an assertion passing merely
+/// because nothing was ever configured. <b>Detectability</b> — the search used to assert absence is
+/// first shown to go RED against a body of the same shape that does carry the value — stops it
+/// passing because the search itself was incapable of finding anything. CLAUDE.md §4 is explicit
+/// that the first does not imply the second: "asserting the fixture was created proves the secret
+/// exists. It does not prove it would be detectable if it leaked."</para>
+///
+/// <para>Two assertions in this file originally had existence controls only (the settings-catalog
+/// sweep and the config-response sweep), which is the shape that let three earlier leaks through
+/// review. Their detectability halves are built by <see cref="SerializeAsALeakWould"/> and
+/// <see cref="ProjectSettingsTableAsALeakWouldAsync"/>, which construct the body the corresponding
+/// regression WOULD have produced rather than planting a literal — so the control is a real
+/// mutation of the projection under test, and no vulnerable code enters the product to provide it.
+/// The event-row and log-row sweeps were already doubly controlled (a real
+/// <c>NotificationDispatcher</c> cycle asserted non-empty; the log page asserted non-empty after a
+/// flush) and are unchanged.</para>
 ///
 /// <para>All URLs are obviously-fake <c>example.com</c> forms and all key material is
 /// <c>placeholder-*</c>: no real endpoint or secret ever enters committed content.</para>
@@ -125,13 +139,26 @@ public sealed class AdminNotificationEndpointsTests : IClassFixture<ArbitarrWebA
         var config = System.Text.Json.JsonSerializer.Deserialize<NotificationConfigResponse>(
             body, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
 
-        // NON-VACUOUS: the URL really was accepted and stored — the surface says so itself...
+        // NON-VACUOUS, HALF ONE — EXISTENCE: the URL really was accepted and stored, so the
+        // response below is reporting on a configuration that actually holds one...
         Assert.NotNull(config);
         Assert.True(config!.HasWebhookUrl);
 
-        // ...and yet the response that reports its presence does not contain the value.
+        // NON-VACUOUS, HALF TWO — DETECTABILITY: ...and the searches used below really would find
+        // it. HasWebhookUrl == true proves the secret EXISTS; on its own it says nothing about
+        // whether a leak into THIS body would be caught, which is the distinction CLAUDE.md §4
+        // draws. Serializing the response record's leaky counterpart through the same serializer
+        // gives the body a regression would have produced — a record that grew the nullable "url"
+        // property NotificationConfigResponse's doc warns against — and proves both searches go red
+        // against it.
+        var bodyIfTheResponseCarriedTheUrl = SerializeAsALeakWould(config);
+
+        Assert.Contains(SecretWebhookUrl, bodyIfTheResponseCarriedTheUrl, StringComparison.Ordinal);
+        Assert.Contains(WebhookTokenFragment, bodyIfTheResponseCarriedTheUrl, StringComparison.Ordinal);
+
+        // The real assertions, now known to be capable of failing.
         Assert.DoesNotContain(SecretWebhookUrl, body, StringComparison.Ordinal);
-        Assert.DoesNotContain("placeholder-super-secret-webhook-token", body, StringComparison.Ordinal);
+        Assert.DoesNotContain(WebhookTokenFragment, body, StringComparison.Ordinal);
 
         // The same on the read path, which is the projection an operator's browser actually loads.
         using var get = await SendAsync(client, HttpMethod.Get, NotificationsRoute);
@@ -139,7 +166,33 @@ public sealed class AdminNotificationEndpointsTests : IClassFixture<ArbitarrWebA
 
         Assert.Contains("\"hasWebhookUrl\":true", readBody, StringComparison.Ordinal);
         Assert.DoesNotContain(SecretWebhookUrl, readBody, StringComparison.Ordinal);
+        Assert.DoesNotContain(WebhookTokenFragment, readBody, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// The response body a LEAKY <see cref="NotificationConfigResponse"/> would have serialized —
+    /// the mutation this test's control needs, expressed as a local shape rather than by putting a
+    /// vulnerable record in the product (CLAUDE.md §4).
+    ///
+    /// <para><see cref="NotificationConfigResponse"/>'s own doc states that it has no field for the
+    /// URL and deliberately no nullable one "that a future edit could start populating". This is
+    /// that future edit, written down once, in the tests, purely so the absence assertions above
+    /// have something they are demonstrably able to catch. Serialized with the same Web defaults
+    /// the Minimal API uses, so the control body is shaped exactly like the real one.</para>
+    /// </summary>
+    private static string SerializeAsALeakWould(NotificationConfigResponse config) =>
+        System.Text.Json.JsonSerializer.Serialize(
+            new
+            {
+                config.Enabled,
+                config.HasWebhookUrl,
+                // The property the real record does not have, and must never grow.
+                WebhookUrl = SecretWebhookUrl,
+                config.ConsecutiveFailureThreshold,
+                config.EnabledTriggers,
+                config.LastDeliveryOutcome,
+            },
+            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
 
     [Fact]
     public async Task The_webhook_url_never_surfaces_on_the_settings_catalog_endpoint()
@@ -158,14 +211,60 @@ public sealed class AdminNotificationEndpointsTests : IClassFixture<ArbitarrWebA
         });
         Assert.Equal(HttpStatusCode.OK, put.StatusCode);
 
-        // NON-VACUOUS: prove it is stored before proving the catalog does not show it.
+        // NON-VACUOUS, HALF ONE — EXISTENCE: the URL really is in the table this endpoint reads
+        // from, so there is something for the projection to leak.
         await AssertWebhookUrlIsActuallyStoredAsync();
 
         using var settings = await SendAsync(client, HttpMethod.Get, "/api/admin/settings");
         var settingsBody = await settings.Content.ReadAsStringAsync();
 
+        // NON-VACUOUS, HALF TWO — DETECTABILITY: existence is not enough, and this is the half the
+        // original assertion was missing. AssertWebhookUrlIsActuallyStoredAsync proves the secret
+        // sits in the STORE; it says nothing about whether a leak on the RESPONSE side would be
+        // caught, because its control lives on the wrong side of the boundary under test. CLAUDE.md
+        // §4 names exactly this shape: "asserting the fixture was created proves the secret exists.
+        // It does not prove it would be detectable if it leaked."
+        //
+        // So build the body a LEAKY projection would have produced — the same endpoint's real
+        // response with the table's own rows appended, which is precisely what projecting from the
+        // Settings table instead of from SettingsCatalog.Entries would yield — and prove the two
+        // searches below go red against it. Only then does their silence on the real body mean
+        // anything.
+        var bodyIfTheProjectionLeaked = settingsBody + await ProjectSettingsTableAsALeakWouldAsync();
+
+        Assert.Contains(SecretWebhookUrl, bodyIfTheProjectionLeaked, StringComparison.Ordinal);
+        Assert.Contains(
+            NotificationRepository.WebhookUrlSettingName,
+            bodyIfTheProjectionLeaked,
+            StringComparison.Ordinal);
+
+        // The real assertions, now known to be capable of failing.
         Assert.DoesNotContain(SecretWebhookUrl, settingsBody, StringComparison.Ordinal);
         Assert.DoesNotContain(NotificationRepository.WebhookUrlSettingName, settingsBody, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Serializes the Settings TABLE the way a leaky <c>GET /api/admin/settings</c> would — the
+    /// mutation this test's control needs, produced without putting vulnerable code in the
+    /// repository (CLAUDE.md §4: prove it by construction, never by mutating a file in place).
+    ///
+    /// <para>The real endpoint projects from <see cref="Arbitarr.Core.Settings.SettingsCatalog"/>
+    /// entries, whose values are all typed (TimeSpan, bool, int, double) and therefore structurally
+    /// incapable of carrying a URL. A regression that made it enumerate the table instead — the one
+    /// realistic way the colon-namespaced row could ever reach the wire — would produce a body of
+    /// this shape. Appending it to the real response yields a positive control that is a genuine
+    /// mutation of the projection rather than a planted literal.</para>
+    /// </summary>
+    private async Task<string> ProjectSettingsTableAsALeakWouldAsync()
+    {
+        using var scope = _factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<Arbitarr.Data.ArbitarrDbContext>();
+
+        var rows = await db.Settings.AsNoTracking()
+            .Select(e => new { key = e.Name, value = e.Value })
+            .ToListAsync();
+
+        return System.Text.Json.JsonSerializer.Serialize(rows);
     }
 
     /// <summary>
@@ -254,12 +353,17 @@ public sealed class AdminNotificationEndpointsTests : IClassFixture<ArbitarrWebA
             }
         }
 
+        // Asserted UNCONDITIONALLY. This was wrapped in `if (StatusCode == OK)`, which made it the
+        // one assertion here that could not fail: any non-200 skipped it silently, so the feed most
+        // worth sweeping — /api/activity is deliberately UN-GATED, readable by any client on the
+        // network — was checked only when it felt like answering. The endpoint is un-gated by
+        // design, so 200 is the contract and a different status is itself a finding.
         using var activity = await client.GetAsync("/api/activity");
-        if (activity.StatusCode == HttpStatusCode.OK)
-        {
-            var activityBody = await activity.Content.ReadAsStringAsync();
-            Assert.DoesNotContain(SecretWebhookUrl, activityBody, StringComparison.Ordinal);
-        }
+        Assert.Equal(HttpStatusCode.OK, activity.StatusCode);
+
+        var activityBody = await activity.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(SecretWebhookUrl, activityBody, StringComparison.Ordinal);
+        Assert.DoesNotContain(WebhookTokenFragment, activityBody, StringComparison.Ordinal);
 
         // NON-VACUOUS, HALF THREE: no log row carries it either. Since #65 the log store is
         // PERSISTENT (a standalone arbitarr-logs.db), so a webhook URL reaching a log line is a

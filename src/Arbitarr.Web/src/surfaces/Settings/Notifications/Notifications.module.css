@@ -1,0 +1,112 @@
+/*
+ * Notifications-section layout (#83). Colour comes from var(--token) only
+ * (AC3); the panel, badge, form, button and message chrome are all
+ * surface.module.css, so nothing here restates them.
+ */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* One labelled block within the section: the target, the thresholds, the
+   triggers, the last delivery. Separated by a rule rather than nested panels so
+   the section still reads as one panel among the catalog groups. */
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.groupHeading {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg-primary);
+}
+
+/* The Configured / Not configured line: badge, then what that means. */
+.status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
+  max-width: 80ch;
+}
+
+/* Wider than the shared .input default: a webhook URL with a token in the path
+   is long, and a field that shows a fraction of it invites a mistyped paste. */
+.urlInput {
+  min-width: 340px;
+  max-width: 100%;
+  padding: 5px 9px;
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--fg-primary);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+  max-width: 80ch;
+}
+
+/* The clear confirmation, inline rather than a window.confirm: the consequence
+   is worth reading, and a native dialog neither styles nor tests. */
+.confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--danger);
+  border-radius: 3px;
+  font-size: 12px;
+  color: var(--fg-primary);
+  max-width: 80ch;
+}
+
+.trigger {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--fg-primary);
+}
+
+.triggerText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.triggerReason {
+  font-size: 12px;
+  color: var(--fg-muted);
+  max-width: 80ch;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.lastDelivery {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
+}
