@@ -3,6 +3,8 @@ import { QueryState } from '../QueryState';
 import type { EffectiveConfigResponse, StatusResponse } from '../../api/types';
 import styles from '../surface.module.css';
 import local from './Dashboard.module.css';
+import { agreementRate, formatRate } from '../../format';
+import { useAgreementQuery } from '../Suppressions/decisionQueries';
 import { useEffectiveConfigQuery, useRecentSearchesQuery, useStatusQuery } from './queries';
 
 /** ISO-8601 timestamps render in the operator's own locale, as the legacy page did. */
@@ -134,6 +136,47 @@ function SourcesTable({
  * DTO it would appear on screen with no code change here to notice. Naming the
  * fields means a new one is invisible until someone adds it deliberately.
  */
+/**
+ * The agreement summary, rendered on the Shadow mode row (#54 step 6 / AC3).
+ *
+ * HERE, rather than on the review surface, because this is where the decision it
+ * informs is actually made: requirement 3's motivating sentence is "the pipeline
+ * has been right 47 of 52 times this week", and that figure is only useful next
+ * to the switch the operator is deciding whether to flip.
+ *
+ * THE RATIO IS FORMED HERE, AT THE POINT OF DISPLAY, AND THAT IS THE WHOLE
+ * POINT. The endpoint returns counts and never a rate, because with zero reviews
+ * there is no rate to return — 0/0 is not 0%, and a server-side 0 would assert a
+ * measured zero agreement rate, which is a far stronger and wronger claim than
+ * "nobody has reviewed anything yet". agreementRate answers null for that case
+ * and formatRate renders the em-dash, the same "no data yet" convention the
+ * System surface has always used. AC4 is exactly this: a dash, never "0%".
+ *
+ * A failed or pending fetch renders NOTHING rather than a placeholder rate. The
+ * shadow-mode state itself is the load-bearing fact on this row and is already
+ * rendered; a fabricated or half-loaded agreement figure beside it would be
+ * worse than its absence.
+ */
+function AgreementSummary() {
+  const agreement = useAgreementQuery();
+
+  if (agreement.data === undefined) {
+    return null;
+  }
+
+  const { agreed, reviewed, windowDays } = agreement.data;
+  const rate = agreementRate(agreed, reviewed);
+
+  return (
+    <span className={styles.muted}>
+      {rate === null
+        ? // Says what would fill it (#52): a verdict has to be recorded first.
+          ` — agreement ${formatRate(null)} (no decisions reviewed in the last ${windowDays} days)`
+        : ` — agreed with ${agreed} of ${reviewed} reviewed in the last ${windowDays} days (${formatRate(rate)})`}
+    </span>
+  );
+}
+
 function ConfigFacts({ config }: { config: EffectiveConfigResponse }) {
   const seconds = (value: number) => `${value}s`;
 
@@ -156,7 +199,10 @@ function ConfigFacts({ config }: { config: EffectiveConfigResponse }) {
       <dt>Query snapshot TTL</dt>
       <dd>{seconds(config.querySnapshotTtlSeconds)}</dd>
       <dt>Shadow mode</dt>
-      <dd>{config.shadowMode === null ? 'Not set' : config.shadowMode ? 'On' : 'Off'}</dd>
+      <dd>
+        {config.shadowMode === null ? 'Not set' : config.shadowMode ? 'On' : 'Off'}
+        <AgreementSummary />
+      </dd>
     </dl>
   );
 }

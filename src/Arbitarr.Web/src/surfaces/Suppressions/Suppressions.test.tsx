@@ -27,6 +27,15 @@ const entries = [
   },
 ];
 
+/**
+ * The decisions panel (#54) shares this surface, so every test here answers its
+ * GET too. Left EMPTY on purpose: these tests are about the audit-log table, and
+ * a populated decisions table would put a second "Shadow only" badge on the page
+ * and make their getByText assertions ambiguous. The decisions panel's own
+ * behaviour is covered in DecisionReview.test.tsx.
+ */
+const EMPTY_DECISIONS = { '/api/decisions': { body: { decisions: [], nextCursor: null } } };
+
 describe('Suppressions', () => {
   beforeEach(() => {
     useAdminKeyStore.setState({ key: null, serverKeyUnset: false });
@@ -37,7 +46,7 @@ describe('Suppressions', () => {
   });
 
   it('renders its title and the decisions table', async () => {
-    mockApi({ '/api/admin/suppressions': { body: entries } });
+    mockApi({ ...EMPTY_DECISIONS, '/api/admin/suppressions': { body: entries } });
     renderSurface(<SuppressionsPage />);
 
     expect(screen.getByRole('heading', { level: 1, name: 'Suppressions' })).toBeInTheDocument();
@@ -46,7 +55,7 @@ describe('Suppressions', () => {
   });
 
   it('reads as a healthy quiet state, not a missing thing, when nothing has been suppressed', async () => {
-    mockApi({ '/api/admin/suppressions': { body: [] } });
+    mockApi({ ...EMPTY_DECISIONS, '/api/admin/suppressions': { body: [] } });
     renderSurface(<SuppressionsPage />);
 
     expect(
@@ -57,7 +66,7 @@ describe('Suppressions', () => {
   });
 
   it('attributes each row to the acting layer and distinguishes shadow mode', async () => {
-    mockApi({ '/api/admin/suppressions': { body: entries } });
+    mockApi({ ...EMPTY_DECISIONS, '/api/admin/suppressions': { body: entries } });
     renderSurface(<SuppressionsPage />);
 
     // AC11: the layer that acted -- a rule name for the rule-engine layers, a
@@ -75,6 +84,7 @@ describe('Suppressions', () => {
   it('shows both title forms for a row that resolves (AC11)', async () => {
     const user = userEvent.setup();
     mockApi({
+      ...EMPTY_DECISIONS,
       '/api/admin/suppressions': { body: entries },
       '/api/admin/search/upstream-guid-1/explanation': {
         body: { title: 'Some Show S02E01 1080p', originalTitle: 'Some.Show.S02E01.1080p.WEB' },
@@ -93,7 +103,7 @@ describe('Suppressions', () => {
   it('filters by query key server-side and attaches the admin key to its GET', async () => {
     const user = userEvent.setup();
     useAdminKeyStore.getState().setKey('operator-key');
-    const api = mockApi({ '/api/admin/suppressions': { body: entries } });
+    const api = mockApi({ ...EMPTY_DECISIONS, '/api/admin/suppressions': { body: entries } });
     renderSurface(<SuppressionsPage />);
     await screen.findByText('upstream-guid-1');
 
@@ -116,6 +126,7 @@ describe('Suppressions', () => {
   it('keeps the affordance and the stored key on a 503 fresh install', async () => {
     useAdminKeyStore.getState().setKey('operator-key');
     mockApi({
+      ...EMPTY_DECISIONS,
       '/api/admin/suppressions': { status: 503, body: { error: 'admin key not configured' } },
     });
     renderSurface(<SuppressionsPage />);

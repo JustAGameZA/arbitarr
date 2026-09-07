@@ -24,3 +24,38 @@
 .titles dd {
   margin: 0;
 }
+
+/* The shadow-mode filter above the decisions table. Its own row so the select
+   does not stretch to the panel width the way a bare .field would. */
+.filterRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+/* The expanded review form for one decision. Stacked rather than inline so the
+   note keeps a usable width at the 768px breakpoint, where an inline row would
+   squeeze the input to a few characters. */
+.review {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 0;
+}
+
+.reviewNote {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  /* Bounded so the note does not run the full width of a wide table on a large
+     screen, which would put the two verdict buttons an eye-movement apart. */
+  max-width: 520px;
+}
+
+.reviewActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

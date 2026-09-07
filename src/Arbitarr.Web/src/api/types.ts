@@ -395,4 +395,58 @@ export interface LogsResponse {
   page: number;
   pageSize: number;
   loggers: string[];
+// --- Decisions (#54) ------------------------------------------------------
+
+/** The two verdicts a decision can carry. Unreviewed is null, never a third name. */
+export type ReviewVerdict = 'agree' | 'disagree';
+
+/**
+ * DecisionReviewEndpoints.cs — DecisionEntryResponse.
+ *
+ * `id` is the event row's real identity and is what the review POST takes. This is
+ * why the review affordance lives on THIS type and not on SuppressionViewEntry:
+ * that one is projected from the suppression audit log, which carries no id at all.
+ *
+ * `shadowMode` is the flag AS IT WAS WHEN THE DECISION WAS MADE, not the current
+ * setting, so flipping the switch does not retroactively relabel history.
+ */
+export interface DecisionEntry {
+  id: number;
+  occurredAt: string;
+  summary: string;
+  reason: string | null;
+  detail: string | null;
+  shadowMode: boolean | null;
+  /** null while nobody has reviewed this decision. */
+  reviewVerdict: ReviewVerdict | null;
+  reviewedAt: string | null;
+  reviewNote: string | null;
+}
+
+/** One page of decisions, most recent first. `nextCursor` is opaque — echo it, never compute it. */
+export interface DecisionPageResponse {
+  decisions: DecisionEntry[];
+  nextCursor: number | null;
+}
+
+/**
+ * DecisionReviewEndpoints.cs — DecisionAgreementResponse.
+ *
+ * COUNTS, NEVER A RATE, AND THAT IS DELIBERATE. With zero reviews there is no rate
+ * to state: 0/0 is not 0%. The ratio is formed at the point of display by
+ * `agreementRate`, which answers null here so `formatRate` renders the em-dash.
+ * Adding a `rate` field to this interface would re-import the bug the endpoint was
+ * written to avoid.
+ */
+export interface DecisionAgreementResponse {
+  agreed: number;
+  disagreed: number;
+  reviewed: number;
+  windowDays: number;
+}
+
+/** The review POST's body. `verdict` is required; a review without one is not a review. */
+export interface ReviewDecisionRequest {
+  verdict: ReviewVerdict;
+  note?: string;
 }
