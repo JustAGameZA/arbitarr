@@ -200,6 +200,13 @@ CONTRIBUTING.md lists the required checks. Additionally, for agent-opened PRs:
 
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:6cd5cc61 -->
+<!-- LOCALLY EDITED. Two deliberate changes to the generated block: the
+     TodoWrite/TaskCreate prohibition was removed, and the architecture line was
+     rewritten to state this repo's stealth reality (nothing pushed to origin).
+     Re-running `bd setup claude` REGENERATES this whole block and DISCARDS both
+     edits. `bd setup claude --check` validates only the marker, not the body, so
+     it reports "(current)" either way and will not detect the loss. Re-apply them
+     by hand after any setup re-run. -->
 ## Beads Issue Tracker
 
 This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
@@ -218,7 +225,7 @@ bd close <id>         # Complete work
 - Run `bd prime` for detailed command reference and session close protocol
 - Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
 
-**Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md for details and anti-patterns.
+**Architecture in one line:** issues live in a local Dolt DB. In this repo beads runs in **stealth mode** — the Dolt store and `.beads/issues.jsonl` are excluded via `.git/info/exclude`, and **nothing is pushed to `origin`**. Upstream's default topology, which syncs `refs/dolt/data` to the git remote, is *not* in use here and **must not be enabled on this public repo** — it would publish the tracker and every stored memory. See https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md for the upstream model and its anti-patterns.
 
 ## Agent Context Profiles
 
