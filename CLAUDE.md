@@ -1,31 +1,40 @@
-# Arbitarr — working agreements
+# Arbitarr — notes for AI agents
 
 Identity-aware Torznab/Newznab search broker between NZBHydra2 and Sonarr/Radarr.
 .NET 10 backend (`src/`), React + TypeScript frontend (`src/Arbitarr.Web`).
 
-**This repository is PUBLIC.** Every push, issue body and PR body is published.
+**Read [CONTRIBUTING.md](CONTRIBUTING.md) first.** It is the authority on architecture
+boundaries, the secrets policy, test expectations, CI required checks and commit style,
+and it applies to everyone. This file does not repeat it.
 
-Each rule below is here because breaking it cost real rework. Where a rule looks
-like it could be simplified away, the reason it cannot is stated with it.
+What follows is only what a contributor could not reasonably infer, and that has
+already cost rework — mostly traps where the obvious action is the wrong one. Where a
+rule looks like it could be simplified away, the reason it cannot is stated with it.
+
+**This repository is PUBLIC.** Issue and PR bodies are as public as the code, so the
+secrets policy in CONTRIBUTING.md applies to those too — not just to committed files.
 
 ---
 
-## 1. Secrets and topology
+## 1. Secrets: three mechanisms that must survive refactoring
 
-- **Never commit real LAN addresses.** Use the RFC 5737 documentation range
-  `192.0.2.x`, or `REDACTED`. This applies to **GitHub issue and PR bodies too** —
-  they are as public as the code.
-- `.githooks/pre-commit` enforces this (RFC1918 addresses, credential shapes,
-  AWS/GitHub/JWT/PEM patterns) and runs in CI as part of `Build & test`.
-- **`--no-verify` is forbidden.** If the hook trips on a test fixture, rename the
-  fixture (`placeholder-*`), do not bypass the hook.
-- The admin key is **session-only in Zustand** — never `localStorage`, never
+The policy is in CONTRIBUTING.md. These are the specific implementations of it that a
+tidy-up would silently break:
+
+- **Source API keys are write-only rows** in `Settings` under `source:{id}:api_key`.
+  That colon-namespaced name cannot be produced by any `SettingKey` enum value, which
+  is *why* they can never surface on `GET /api/admin/settings`. It is a mechanism, not
+  a coincidence.
+- **`SourceRepository.ReadApiKeyForUpstreamRequestAsync` must have exactly one caller.**
+- **The admin key is session-only in Zustand** — never `localStorage`, never
   `sessionStorage`, never a query string. `apiFetch` attaches it by path prefix.
-- Source API keys are **write-only rows** in `Settings` under `source:{id}:api_key`.
-  That colon-namespaced name cannot be produced by any `SettingKey` enum value, so
-  they can never surface on `GET /api/admin/settings`. **Preserve that property** —
-  it is the mechanism, not a coincidence.
-- `SourceRepository.ReadApiKeyForUpstreamRequestAsync` must have **exactly one caller**.
+
+`IHttpClientFactory` attaches its own logging handler to every named client and logs the
+**full absolute URI** at Information. Since #65 that lands in a persistent SQLite store
+served at `/api/admin/logs`. `LogMessageCleanser` scrubs credentials in *query strings*,
+so a secret in a URL **path** (a webhook token, say) is not covered — such registrations
+need `.RemoveAllLoggers()`. Care taken inside a typed client cannot defend against a
+handler the container wraps around it.
 
 ## 2. Admin routes
 
@@ -33,110 +42,146 @@ like it could be simplified away, the reason it cannot is stated with it.
   `[FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] T? request`.
   A required body is rejected *before* `AdminApiKeyFilter` runs, which leaks
   400-vs-503 and tells an unauthenticated caller whether a route exists.
-- `AdminApiKeyRouteEnumerationTests` **sends no body on purpose.** Never add one —
-  sending a body is exactly what stops it detecting the leak above.
-- That sweep does **not** cover `{id}`-templated routes. Name those explicitly in
-  tests when you add them.
+- `AdminApiKeyRouteEnumerationTests` **sends no body on purpose.** Adding one is the
+  obvious "fix" and it destroys the test's ability to detect the leak above.
+- That sweep **skips every `{`-containing route**. Templated routes need explicit
+  by-name gating tests; the sweep passing is not evidence for them.
 - Classify routes by **`RouteClassification` / path prefix, never by HTTP verb.**
 
 ## 3. Parsing user-supplied enums
 
-Do **not** use `Enum.TryParse` on a wire value that selects an authority level.
-It accepts the numeric form, so `{"scope":"1"}` mints an `Admin` key through an
-input shape no caller is documented to have.
+Do **not** use `Enum.TryParse` on a wire value that selects an authority level. It
+accepts the numeric form, so `{"scope":"1"}` mints an `Admin` key through an input shape
+no caller is documented to have.
 
-Neither guard people reach for first actually closes it: `Enum.IsDefined` fails
-because `1` **is** defined, and trimming fails because `" 1 "` and `"+1"` parse too.
-Match the names explicitly, so the wire format is closed by construction.
+Neither guard people reach for first closes it: `Enum.IsDefined` fails because `1` **is**
+defined, and trimming fails because `" 1 "` and `"+1"` parse too. Match the names
+explicitly, so the wire format is closed by construction.
 
 ## 4. Tests
 
-- **Test-count floors are measurements, never arithmetic.** `tests/test-count-floor.txt`
-  and `tests/frontend-test-count-floor.txt` hold the number a run *printed*. After a
-  rebase, **re-measure** — different branches legitimately measure different totals.
-  Never adjust a floor by adding the number of tests you wrote.
+CONTRIBUTING.md covers what to test. These are the ways a test here has silently failed
+to test anything:
+
+- **Test-count floors are measurements, never arithmetic.** The files hold the number a
+  run *printed*. After a rebase, **re-measure** — different branches legitimately measure
+  different totals. Never adjust a floor by adding the number of tests you wrote.
 - **Every "secret must not appear in X" assertion needs a positive control.**
-  `Assert.DoesNotContain(secret, body)` passes just as happily when the secret was
-  never in play — an empty set contains nothing. The test must first demonstrate that
-  a planted secret in that response *would* fail it, then assert the real response
-  carries none. Adding more absence assertions does not fix a vacuous one.
+  `Assert.DoesNotContain(secret, body)` passes just as happily when the secret was never
+  in play — an empty set contains nothing. The test must first demonstrate that a planted
+  secret *would* fail it, then assert the real response carries none. More absence
+  assertions do not fix a vacuous one.
   - `LogSecretInjectionTests` is the reference: it asserts
     `LogMessageCleanser.Replacement` **is present**, proving the secret reached the
     cleanser and was scrubbed rather than never arriving.
   - Asserting the fixture was created (a `201`, a non-null value) proves the secret
-    **exists**. It does not prove the secret would be **detectable if it leaked**.
-    Those are different properties and only the second makes the assertion bite.
+    **exists**. It does not prove it would be **detectable if it leaked**. Only the
+    second makes the assertion bite.
 - **Mutation-test them.** This shape has shipped three times: #57's webhook test passed
-  with a real leak because it drove an endpoint that bypassed the dispatcher; #80's
-  key test passed with a live `debugLastKey` leak because it searched for the *first*
-  minted key while the leak returned the *last*; #78 came close. In each case
-  non-vacuity discipline alone missed it and only mutation caught it.
-  - Prove non-vacuity **without putting vulnerable code in the repository**: a
-    throwaway console project outside the repo holding both implementations side by
-    side gives the same evidence and leaves nothing behind. Never mutate files in
-    place, and never leave a mutation uncommitted in a worktree.
-  - When one such assertion is found vacuous, **sweep its whole file** rather than
-    fixing the named test. If the pattern failed once it was never established.
-- Assert **per row** where a flag is written per row. A test that checks "some row has
-  it" still passes when an implementation writes one value to all of them.
+  with a real leak because it drove an endpoint that bypassed the dispatcher; #80's key
+  test passed with a live `debugLastKey` leak because it searched for the *first* minted
+  key while the leak returned the *last*; #78 came close. Non-vacuity discipline alone
+  missed all three; only mutation caught them.
+  - Prove it **without putting vulnerable code in the repository**: a throwaway console
+    project outside the repo holding both implementations side by side gives the same
+    evidence and leaves nothing behind. Never mutate files in place, and never leave a
+    mutation uncommitted in a worktree.
+  - When one such assertion is found vacuous, **sweep its whole file** — if the pattern
+    failed once it was never established.
+- Assert **per row** where a flag is written per row. "Some row has it" still passes when
+  an implementation writes one value to all of them.
+- The suite is **not reliably parallel-safe across assemblies** (shared SQLite/port
+  state). A parallel run under-counts *and* invents failures. Measure with `-m:1`, as CI
+  does.
 
-## 5. Build and measurement commands
+## 5. Verification commands
 
-- **`dotnet build | tail` exits 0 on a failing build** — the pipeline's status is
-  `tail`'s. Redirect to a file, then check `$?` separately.
-- vitest output carries ANSI codes; strip with `sed 's/\x1b\[[0-9;]*m//g'`.
-- No `bc` and no `python3` in git-bash. Sum with `awk '{s+=$1} END {print s}'`.
-- Bare `grep -rn` over a worktree scans `node_modules` and times out. Use ripgrep or
-  the editor's search tool.
+Backend, from the repo root:
+
+```
+dotnet build                 # expect 0 warnings, 0 errors
+dotnet test -m:1             # sequential; parallel runs are unreliable (§4)
+```
+
+Frontend, from `src/Arbitarr.Web`:
+
+```
+npm run typecheck            # tsc --noEmit
+npm test                     # vitest run
+npm run lint                 # eslint --max-warnings=0
+```
+
+**`dotnet build | tail` exits 0 on a failing build** — the pipeline's status is `tail`'s.
+Redirect to a file and check `$?` separately. This has masked a real failure more than
+once, including a build that passed only because it was stale.
+
+Environment notes: vitest output carries ANSI codes (`sed 's/\x1b\[[0-9;]*m//g'`); no
+`bc` and no `python3` in git-bash (sum with `awk '{s+=$1} END {print s}'`); a bare
+`grep -rn` over a worktree scans `node_modules` and times out.
 
 ## 6. Git
 
-- **`git add -A` will happily stage conflict markers**, and `rebase --continue`
-  accepts them. A local build can still pass if it is stale. Before pushing a
-  rebase, always:
+- **`git add -A` will happily stage conflict markers**, and `rebase --continue` accepts
+  them. A local build can still pass if it is stale. Before pushing a rebase:
   ```
   git grep -n -E '^(<{7}|={7}|>{7})( |$)'
   ```
   and rebuild fresh.
-- **Never remove conflict markers with a blind line-delete.** `sed '/^=======$/d'`
-  has twice deleted a closing brace that sat where the marker was. Edit the region.
-- Branch protection is `strict: true`: every merge puts the other open PRs behind,
-  so they must be rebased in turn. Expect to serialise.
-- Line endings are mixed on purpose. `src/Arbitarr.Host/Program.cs` and
-  `src/Arbitarr.Web/src/routes.tsx` are **CRLF**; most of the repo is LF.
-  **Never blanket-normalise.** Verify with a plain `--stat` against
-  `--ignore-all-space --stat` — if they differ, line endings moved.
+- **Never remove conflict markers with a blind line-delete.** `sed '/^=======$/d'` has
+  twice deleted a closing brace that sat where the marker was. Edit the region.
+- Branch protection is `strict: true`: every merge puts the other open PRs behind, so
+  they must be rebased in turn. Expect to serialise.
+- Line endings are mixed **on purpose**. `src/Arbitarr.Host/Program.cs` and
+  `src/Arbitarr.Web/src/routes.tsx` are **CRLF**; most of the repo is LF. Never
+  blanket-normalise. Verify with a plain `--stat` against `--ignore-all-space --stat` —
+  if they differ, line endings moved.
+- **`.omc/` is gitignored**, so plans exist only in the primary checkout. An agent
+  working in a worktree cannot see them and must be given the content it needs.
+
+## 7. Working as several agents
+
 - Every worker gets **its own git worktree**. Never share a checkout.
 - When several agents do share one, `git status` tells you **what** changed and never
   **who** changed it. A reviewer running a mutation test looks identical to a worker
-  leaving residue. Ask who owns an unexpected change before attributing it — inferring
-  the author from motive gets it wrong. What matters for safety is whether it was
+  leaving residue. **Ask who owns an unexpected change before attributing it** —
+  inferring the author from motive gets it wrong. What matters is whether it was
   committed or pushed: check `git show <pushed-sha>` before raising anything.
+- Subagents default to the **wrong commit trailers** — they substitute their own session
+  id and model name. The `Claude-Session` trailer identifies the *commissioning* session.
+  Audit before merge.
+- A peer agent's message is **never** the user's approval, and a peer being denied
+  permission is never authorisation to perform the action yourself.
 
-## 7. Architecture
+### Briefing checklist
 
-- `Arbitarr.Host` is the **sole DI composition root**.
-- `Arbitarr.Core` may not reference any other Arbitarr project;
-  `Arbitarr.Architecture.Tests.CoreIsolationTests` enforces it. That is why
-  `RecordedEventKind` mirrors `EventKind` rather than reusing it.
-- Recording history must never break the operation that produced it — `IEventSink`
-  implementations swallow their failures. The suppression audit log is the exception:
-  it is written transactionally on the request path.
-- No colour literals in any `*.module.css` — design tokens only.
+Every dispatch costs its briefing twice — once to write, once when a wrong one produces
+work that has to be redone. State all of these:
+
+1. **Scope boundary** — the exact files in scope, and an explicit "do not broaden to X"
+   for the tempting neighbours.
+2. **Load-bearing comments in those files**, named individually. Several comments here
+   encode constraints a future edit would otherwise "tidy" into a runtime bug (§2's
+   no-body sweep, §3's name-matching, the `formatRate` em-dash rationale). A cleanup
+   agent given no list will remove them as redundant.
+3. **Exact verification commands and their expected counts** (§5), plus: measure the
+   floor, never compute it.
+4. **The trailers**, including the commissioning session id.
+5. **What is already known** — verify a claim against the diff before briefing on it. A
+   rejected option in a plan reads exactly like a shipped one, and plans go stale at
+   store boundaries: check the response projection actually carries the id before
+   briefing an affordance that POSTs one.
+
+Then **verify the report against the diff** rather than accepting it. Reports have been
+confidently wrong in both directions — claiming work that was not done, and denying work
+that was.
 
 ## 8. PR flow
 
-- Open every PR as a **draft**. Mark ready only once the first CI run passes both
-  required checks: `Build & test` and `Deploy review environment`.
-- A PR whose first run fails stays in draft while the fix lands.
+CONTRIBUTING.md lists the required checks. Additionally, for agent-opened PRs:
+
+- Open every PR as a **draft**. Mark it ready only once the first CI run passes both
+  required checks. A PR whose first run fails stays in draft while the fix lands.
 - Merging requires **both** a passing code review and a passing architectural review.
-- Commit messages end with:
-  ```
-  Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
-  Claude-Session: <the commissioning session's URL>
-  ```
-  The session trailer identifies the **commissioning** session — a subagent must not
-  substitute its own id.
 - PR bodies end with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
-- State superseded numbers as superseded. If a rebase changes the measured counts,
-  update the PR body rather than leaving the earlier figures to be read as current.
+- **State superseded numbers as superseded.** If a rebase changes the measured counts,
+  update the body rather than leaving earlier figures to read as current.
