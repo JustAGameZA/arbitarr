@@ -1,8 +1,11 @@
-import { screen, within } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider, useMutation } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiKeysSection } from './ApiKeys';
+import { apiFetch } from '../../../api/client';
 import { useAdminKeyStore } from '../../../state/adminKeyStore';
 import { renderSurface } from '../../../test/renderSurface';
 
@@ -137,6 +140,103 @@ const created = {
   },
   plaintextKey: PLAINTEXT,
 };
+
+/**
+ * Mounts the section against a client the test can then inspect.
+ *
+ * `renderSurface` builds its QueryClient internally and does not hand it back,
+ * which is right for every other suite — none of them need to look inside the
+ * cache. This one does: the MutationCache is the thing under test. Rather than
+ * widen a helper five other suites depend on, this rebuilds its two providers
+ * locally, keeping the same retry-off defaults so behaviour is identical.
+ *
+ * The client's own defaults deliberately set NO gcTime, mirroring
+ * `src/api/queryClient.ts`. If the mutation's `gcTime: 0` were removed, the
+ * five-minute default would apply here exactly as it does in the app.
+ */
+function renderWithClient() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <ApiKeysSection />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+
+  return client;
+}
+
+/**
+ * Serialises everything the MutationCache is holding.
+ *
+ * `state.data` is where a settled create keeps its whole response — the plaintext
+ * with it — so this is the sweep an operator with the devtools open would be doing
+ * by hand. Whole mutation objects rather than just `state`, so a copy parked on
+ * any other field would be caught too.
+ */
+function sweepMutationCache(client: QueryClient): string {
+  return JSON.stringify(client.getMutationCache().getAll());
+}
+
+/**
+ * The POSITIVE CONTROL for the two cache tests below, and the reason they bite.
+ *
+ * This is the SAME create, against the same fetch double, through a mutation that
+ * differs from the shipped one in exactly one respect: no `gcTime: 0` and no
+ * reset. It reproduces the retention this change exists to remove, and proves the
+ * sweep FINDS a plaintext that is really there. Without it, `not.toContain` at the
+ * end of each test would pass just as happily against a cache that never held a
+ * create at all, or against a sweep pointed at the wrong place — an empty set
+ * contains nothing.
+ *
+ * It is spelled out here rather than planted as a hand-built cache entry because a
+ * planted object only proves `JSON.stringify` can see a string. Driving the real
+ * mutation proves the retention is a property of react-query's defaults, which is
+ * the claim the fix answers.
+ */
+function LeakyCreateHarness() {
+  const mutation = useMutation({
+    mutationFn: (request: { label: string; scope: string }) =>
+      apiFetch<unknown>('/api/admin/keys', {
+        method: 'POST',
+        body: JSON.stringify(request),
+      }),
+  });
+
+  return (
+    <button type="button" onClick={() => mutation.mutate({ label: 'Radarr', scope: 'ReadOnly' })}>
+      Leaky create
+    </button>
+  );
+}
+
+function renderLeakyHarness() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+
+  render(
+    <QueryClientProvider client={client}>
+      <LeakyCreateHarness />
+    </QueryClientProvider>,
+  );
+
+  return client;
+}
+
+/**
+ * Patience, not a behaviour change.
+ *
+ * The vitest config sets `css: true`, so every render here parses the real
+ * stylesheet, and the create-path tests each drive a full mutation round trip on
+ * top of that. On a loaded machine they sit close enough to the 5s default to turn
+ * an ordinary render into a spurious failure. The assertions are unchanged.
+ */
+const TEST_TIMEOUT_MS = 20_000;
 
 /** The row whose first cell holds `label`. */
 function rowFor(label: string): HTMLElement {
@@ -365,4 +465,79 @@ describe('ApiKeys', () => {
     expect(await screen.findByText(PLAINTEXT)).toBeInTheDocument();
     expect(screen.queryByText(/already exists/i)).not.toBeInTheDocument();
   });
+
+  it('retains the plaintext in the mutation cache without gcTime and reset', async () => {
+    const user = userEvent.setup();
+    const api = mockKeysApi({ [`POST ${KEYS}`]: { status: 201, body: created } });
+    const client = renderLeakyHarness();
+
+    // Nothing yet -- so the assertion below cannot be satisfied by a cache that
+    // was already dirty before the create ran.
+    expect(sweepMutationCache(client)).not.toContain(PLAINTEXT);
+
+    await user.click(screen.getByRole('button', { name: 'Leaky create' }));
+    await vi.waitFor(() => expect(api.of('POST')).toHaveLength(1));
+
+    // THE POSITIVE CONTROL. A create through a mutation with react-query's default
+    // gcTime and no reset leaves the whole response -- plaintext included -- sitting
+    // in the MutationCache after it settles. This is the retention the shipped
+    // mutation removes, and it is what makes the two absence assertions in the next
+    // test evidence rather than a search that could never have matched.
+    await vi.waitFor(() => expect(sweepMutationCache(client)).toContain(PLAINTEXT));
+  }, TEST_TIMEOUT_MS);
+
+  it('leaves no copy of the plaintext in the react-query mutation cache', async () => {
+    const user = userEvent.setup();
+    const api = mockKeysApi({ [`GET ${KEYS}`]: { body: keys } });
+    const client = renderWithClient();
+
+    await screen.findByRole('cell', { name: 'Sonarr' });
+    api.set(`POST ${KEYS}`, { status: 201, body: created });
+
+    await user.type(screen.getByLabelText('New key label'), 'Radarr');
+    await user.click(screen.getByRole('button', { name: 'Create key' }));
+
+    // The reveal still gets the key, exactly once. This is the half that fails if
+    // the reset is called synchronously from a hook-level onSettled: react-query
+    // awaits those callbacks BEFORE dispatching the success, and reset() removes
+    // the observer the dispatch would have notified, so the per-call onSuccess
+    // that captures the response never runs at all.
+    expect(await screen.findByText(PLAINTEXT)).toBeInTheDocument();
+    expect(screen.getAllByText(PLAINTEXT)).toHaveLength(1);
+
+    await user.click(screen.getByLabelText(/I have copied this key somewhere safe/i));
+    await user.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(screen.queryByText(PLAINTEXT)).not.toBeInTheDocument();
+
+    // And the cache kept nothing. Not the reveal being closed -- the value is gone
+    // from the last place on the client that could still hold it, which the test
+    // above proved would otherwise be holding it.
+    await vi.waitFor(() => expect(sweepMutationCache(client)).not.toContain(PLAINTEXT));
+  }, TEST_TIMEOUT_MS);
+
+  it('leaves nothing in the cache when the server rejects the create, and still shows its words', async () => {
+    const user = userEvent.setup();
+    // The repository's real duplicate-label refusal, verbatim. A client that
+    // paraphrased it, or substituted a guess, cannot satisfy this by accident.
+    const refusal = "An API key labelled 'Radarr' already exists.";
+    const api = mockKeysApi({ [`GET ${KEYS}`]: { body: keys } });
+    const client = renderWithClient();
+
+    await screen.findByRole('cell', { name: 'Sonarr' });
+    api.set(`POST ${KEYS}`, { status: 400, body: { error: refusal } });
+
+    await user.type(screen.getByLabelText('New key label'), 'Radarr');
+    await user.click(screen.getByRole('button', { name: 'Create key' }));
+
+    // The rejection still reaches the operator. This is the other half the
+    // same-tick reset destroys: the per-call onError never runs, so the refusal is
+    // swallowed and the form sits there looking as though nothing happened.
+    expect(await screen.findByText(refusal)).toBeInTheDocument();
+
+    // A rejected create never held a plaintext, so the interesting assertion is
+    // that the mutation itself is not left parked in the cache carrying the label
+    // and scope that were attempted.
+    await vi.waitFor(() => expect(sweepMutationCache(client)).not.toContain('Radarr'));
+    expect(sweepMutationCache(client)).not.toContain(PLAINTEXT);
+  }, TEST_TIMEOUT_MS);
 });
