@@ -40,6 +40,11 @@ var builder = WebApplication.CreateBuilder(args);
 // factory because there are five host-construction sites in the test suite and a sixth added later
 // would silently reintroduce the race. ClearProviders drops Console and Debug too, so both are
 // re-added explicitly below and container log output via docker logs is unchanged.
+//
+// #65 added a THIRD provider to this curated list — the SQLite sink behind the System page's Logs
+// tab. It is registered further down rather than here only because it needs configDirectory, which
+// is not computed until below; see that registration for its own reasoning. The point of this
+// comment stands unchanged: the provider list is deliberate, and every entry in it is explained.
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 builder.Logging.AddDebug();
@@ -59,6 +64,35 @@ const string UnconfiguredSourceBaseUrl = "http://192.0.2.1:1";
 var configDirectory = Environment.GetEnvironmentVariable("ARBITARR_CONFIG_DIR") ?? "/config";
 Arbitarr.Host.Provisioning.DatasetProvisioner.EnsureProvisioned(configDirectory);
 var databasePath = Path.Combine(configDirectory, "arbitarr.db");
+
+// #65: the application-log sink, the third entry in the curated provider list at the top of this
+// file (see the #69 comment there). A SEPARATE SQLite file from arbitarr.db above — LogStore's
+// remarks carry the full reasoning: log writes are bursty and would contend with the D1-critical
+// search path for the main database's writer lock, and #56's configuration backup must not drag a
+// log store around with it.
+//
+// Registered before Build() so the provider exists for startup logging, and EnsureCreated() runs
+// here — synchronously, once — so no log write can ever race schema creation.
+//
+// ARBITARR_LOGDB_ENABLED=false turns the sink off, the equivalent of Sonarr's LogDbEnabled. Console
+// is unaffected either way: docker logs is the raw view and must not regress, so this sink is
+// strictly additive to it. LogStore is registered regardless of the toggle so GET /api/admin/logs
+// still serves (an empty page, and previously-written rows) rather than 500ing when it is off.
+var logStore = new Arbitarr.Data.Logging.LogStore(
+    Path.Combine(configDirectory, Arbitarr.Data.Logging.LogStore.DatabaseFileName));
+logStore.EnsureCreated();
+builder.Services.AddSingleton(logStore);
+
+if (!string.Equals(
+        Environment.GetEnvironmentVariable("ARBITARR_LOGDB_ENABLED"),
+        "false",
+        StringComparison.OrdinalIgnoreCase))
+{
+    // Information matches the level Sonarr registers its own database target at.
+    builder.Logging.AddProvider(new Arbitarr.Data.Logging.SqliteLoggerProvider(
+        logStore,
+        LogLevel.Information));
+}
 
 builder.Services.AddSingleton(new SqliteConnectionOptions { DatabasePath = databasePath });
 builder.Services.AddSingleton<SqliteConnectionFactory>();
@@ -411,6 +445,7 @@ ActivityEndpoint.Map(app);
 Arbitarr.Api.SystemInfo.BuildInfoEndpoint.Map(app);
 AdminPingEndpoint.Map(app);
 ObservabilityEndpoint.Map(app);
+LogsEndpoint.Map(app);
 AdminSettingsEndpoints.Map(app);
 AdminSecurityEndpoints.Map(app);
 AdminSourceEndpoints.Map(app);
