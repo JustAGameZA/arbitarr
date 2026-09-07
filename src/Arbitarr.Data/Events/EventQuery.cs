@@ -59,7 +59,7 @@ public sealed record EventQuery(
     /// <c>PublicRead</c> (plan §3.2): an unbounded <c>limit</c> would let any LAN caller ask for
     /// the entire 180-day decision history in one query and serialize it into one response.
     ///
-    /// WHAT THIS BOUNDS IS THE RESPONSE, NOT THE SCAN, and the distinction is worth stating
+    /// WHAT THIS PRIMARILY BOUNDS IS THE RESPONSE, NOT THE SCAN, and the distinction is worth stating
     /// because the obvious reading is the wrong one (#77 item 3). The time filters
     /// (<see cref="Since"/>/<see cref="Until"/>) run CLIENT-SIDE — SQLite's EF Core provider
     /// cannot translate a <c>DateTimeOffset</c> comparison, which is why <c>GetAllAsync</c>,
