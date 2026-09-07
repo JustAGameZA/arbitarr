@@ -17,21 +17,20 @@ namespace Arbitarr.Data.Events;
 public sealed class EventRepository
 {
     /// <summary>
-<<<<<<< HEAD
     /// Floor on how many rows one scan batch asks SQLite for (see <see cref="QueryAsync"/>). Only the
     /// time filters can reject a fetched row, so a batch sized to the shortfall alone would degrade
     /// to one round trip per rejected row when a window is sparse. Over-fetching a little amortises
     /// that; the ceiling on total work stays the early exit, not this number.
     /// </summary>
     private const int MinimumScanBatch = 256;
-=======
+
+    /// <summary>
     /// Longest review note accepted, matching the <c>HasMaxLength(1024)</c> that
     /// <see cref="ArbitarrDbContext"/> declares on <see cref="EventEntry.ReviewNote"/>. Named here
     /// because this is where the bound is enforced; the two must stay equal, and the schema is the
     /// reason for the figure.
     /// </summary>
     public const int ReviewNoteMaxLength = 1024;
->>>>>>> 71a4afe (Add the decision review queue backend (#54, steps 3-5))
 
     private readonly ArbitarrDbContext _dbContext;
     private readonly TimeProvider _timeProvider;
@@ -201,7 +200,7 @@ public sealed class EventRepository
         {
             var batchSize = Math.Max(wanted - page.Count, MinimumScanBatch);
 
-            var batch = await BuildScanQuery(query.Kind, scanCursor)
+            var batch = await BuildScanQuery(query.Kind, query.ShadowMode, scanCursor)
                 .Take(batchSize)
                 .ToListAsync(cancellationToken);
 
@@ -244,49 +243,7 @@ public sealed class EventRepository
             }
         }
 
-<<<<<<< HEAD
         return BuildPage(page, limit);
-=======
-        if (query.Cursor is { } cursor)
-        {
-            filtered = filtered.Where(e => e.Id < cursor);
-        }
-
-        // #54's shadow-mode filter. Compared against the nullable column as a value rather than
-        // with HasValue/Value so EF translates it to `ShadowMode = 1`/`= 0` — SQL's three-valued
-        // logic then excludes NULL rows (the operational kinds) from both branches on its own,
-        // which is the wanted behaviour and not an accident: a row with no shadow-mode answer is
-        // neither a shadow-mode decision nor a live one.
-        if (query.ShadowMode is { } shadowMode)
-        {
-            filtered = filtered.Where(e => e.ShadowMode == shadowMode);
-        }
-
-        // The kind and cursor predicates translate to SQL, but the OccurredAt comparisons do not:
-        // this codebase's SQLite/EF Core combination cannot translate DateTimeOffset comparisons
-        // server-side, which is why GetAllAsync and PruneAsync (and MaintenanceJob before them) also
-        // compare that column client-side. Taking one row past the page is what reveals whether a
-        // further page exists without a second COUNT query.
-        var candidates = await filtered.ToListAsync(cancellationToken);
-
-        var page = candidates
-            .Where(e => query.Since is not { } since || e.OccurredAt >= since)
-            .Where(e => query.Until is not { } until || e.OccurredAt < until)
-            .OrderByDescending(e => e.Id)
-            .Take(limit + 1)
-            .ToList();
-
-        var hasMore = page.Count > limit;
-        if (hasMore)
-        {
-            page.RemoveAt(page.Count - 1);
-        }
-
-        // Null on the last page, so a caller stops rather than re-requesting forever.
-        var nextCursor = hasMore && page.Count > 0 ? page[^1].Id : (long?)null;
-
-        return new EventPage(page, nextCursor);
->>>>>>> 71a4afe (Add the decision review queue backend (#54, steps 3-5))
     }
 
     /// <summary>
@@ -407,19 +364,30 @@ public sealed class EventRepository
     }
 
     /// <summary>
-<<<<<<< HEAD
-    /// One SQL-bounded descending scan step: kind and cursor as WHERE clauses, Id DESC as ORDER BY.
+    /// One SQL-bounded descending scan step: kind, shadow mode and cursor as WHERE clauses, Id DESC
+    /// as ORDER BY.
     /// Every part of this translates to SQL on this provider (verified, not assumed — see
     /// <see cref="QueryAsync"/>), so the caller's <c>.Take()</c> becomes a real LIMIT rather than a
     /// client-side truncation of an already-materialized table.
     /// </summary>
-    private IQueryable<EventEntry> BuildScanQuery(EventKind? kind, long? cursor)
+    private IQueryable<EventEntry> BuildScanQuery(EventKind? kind, bool? shadowMode, long? cursor)
     {
         var scan = _dbContext.Events.AsNoTracking();
 
         if (kind is { } k)
         {
             scan = scan.Where(e => e.Kind == k);
+        }
+
+        // #54's shadow-mode filter, applied here rather than after materialization so it stays part
+        // of the SQL-bounded scan above. Compared against the nullable column as a value rather than
+        // with HasValue/Value so EF translates it to `ShadowMode = 1`/`= 0` — SQL's three-valued
+        // logic then excludes NULL rows (the operational kinds) from both branches on its own,
+        // which is the wanted behaviour and not an accident: a row with no shadow-mode answer is
+        // neither a shadow-mode decision nor a live one.
+        if (shadowMode is { } wantShadowMode)
+        {
+            scan = scan.Where(e => e.ShadowMode == wantShadowMode);
         }
 
         if (cursor is { } c)
@@ -447,7 +415,9 @@ public sealed class EventRepository
         var nextCursor = hasMore && collected.Count > 0 ? collected[^1].Id : (long?)null;
 
         return new EventPage(collected, nextCursor);
-=======
+    }
+
+    /// <summary>
     /// Rejects a note longer than the column allows, rather than truncating it (AC24's
     /// reject-never-clamp, the same posture <see cref="ValidateSummary"/> takes). Silently storing a
     /// shortened version of an operator's own reasoning is a worse answer than refusing it: the
@@ -460,7 +430,6 @@ public sealed class EventRepository
             throw new EventValidationException(
                 $"Review note must be {ReviewNoteMaxLength} characters or fewer.");
         }
->>>>>>> 71a4afe (Add the decision review queue backend (#54, steps 3-5))
     }
 
     private static void ValidateSummary(string summary)
