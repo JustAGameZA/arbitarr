@@ -70,9 +70,11 @@ public sealed record SessionResponse(bool Authenticated, string? Username, bool 
 ///
 /// <para><b>THE RECOVERY STORY.</b> There is none, deliberately (see <c>UserEntry</c>): no reset
 /// token, no recovery e-mail, no secret question. An operator locked out restores the config
-/// database from a #56 backup, or deletes the rows from the users table through the config bind
-/// mount. That is stated in README.md and in the login surface's own help text, because an
-/// undocumented "none" reads as an oversight rather than a decision.</para>
+/// database from a #56 backup, or clears the Users and Sessions tables through the config bind
+/// mount, which reopens first-run setup. That is stated in README.md under "Signing in, and what
+/// to do when you cannot" — with the rate-limit case and the still-working admin key alongside it —
+/// and in the login surface's own help text, because an undocumented "none" reads as an oversight
+/// rather than a decision.</para>
 /// </summary>
 public static class AuthEndpoints
 {

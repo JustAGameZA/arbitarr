@@ -5,6 +5,7 @@ using Arbitarr.Api.Rendering;
 using Arbitarr.Api.Routing;
 using Arbitarr.Api.Search;
 using Arbitarr.Api.Security;
+using Microsoft.AspNetCore.Identity;
 using Arbitarr.Core.Caching;
 using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Filtering;
@@ -387,6 +388,13 @@ builder.Services.AddSingleton<IApiKeyLastUsedRecorder, ThrottledApiKeyLastUsedRe
 // model — DbSessionAuthenticator returns the same AdminKeyResolution DbAdminKeyResolver does, and
 // AdminApiKeyFilter makes one scope check over whichever credential answered. Key authentication is
 // NOT replaced: machine callers cannot complete an interactive login.
+// #44: the KDF cost is a composition-root decision. ASP.NET's default is 100,000 iterations,
+// below OWASP's current figure for PBKDF2-HMAC-SHA256, so it is configured explicitly here rather
+// than inherited. Raising it is not a migration: the v3 hash format embeds the count, so existing
+// rows keep verifying at their own cost (AspNetPasswordHasher.Verify treats SuccessRehashNeeded as
+// success, and a test exercises that branch against a hash made at the old count).
+builder.Services.Configure<PasswordHasherOptions>(
+    options => options.IterationCount = AspNetPasswordHasher.IterationCount);
 builder.Services.AddScoped<IPasswordHasher, AspNetPasswordHasher>();
 builder.Services.AddScoped(sp => new UserRepository(
     sp.GetRequiredService<ArbitarrDbContext>(),

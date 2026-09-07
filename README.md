@@ -124,6 +124,59 @@ The key is **write-only** — there is no route that reads it back, it is delibe
 the settings catalog, and `GET /api/admin/settings` never carries it. Read-only admin pages stay
 ungated by design; only mutating routes check the key.
 
+### Signing in, and what to do when you cannot
+
+The admin UI has a login: a username and a password, created once on first run. Visit the instance
+from a machine on your local network and it offers account creation; after that first account
+exists, the setup screen is closed permanently and everyone signs in.
+
+The admin key above is **not** replaced by the login. It is what Sonarr, Radarr and any scripted
+caller present, because none of them can complete an interactive sign-in. Humans log in; machines
+use the key.
+
+> **There is no password reset. This is deliberate, not an omission.** A homelab appliance has no
+> mail transport to send one, and a reset path reachable from the LAN would be a second way in,
+> weaker than the first. Nothing will e-mail you a link.
+
+If you are locked out of the login, you are not locked out of the instance. In rough order of
+effort:
+
+1. **Wait, if you are being rate-limited.** Repeated failures answer `429` for up to 15 minutes.
+   Your account is *not* disabled — no number of failures can disable it — so the limit simply
+   drains and you can try again.
+2. **Machine access is unaffected.** The admin key still works on admin-mutating routes, so
+   anything scripted keeps running while you sort the login out.
+3. **Clear the accounts table** through the config bind mount and set the account up again. With
+   the container stopped, in your config directory:
+
+   ```bash
+   sqlite3 arbitarr.db 'DELETE FROM Users; DELETE FROM Sessions;'
+   ```
+
+   On the next start the instance has no accounts, so it offers first-run setup again — to a caller
+   on the local network only. Deleting the sessions too signs out any browser still holding a live
+   cookie.
+4. **Restore the configuration database from a backup**, if you would rather not edit it in place.
+
+Note that `arbitarr.db` is the configuration database; `arbitarr-logs.db` beside it holds only log
+entries and has nothing to do with sign-in.
+
+> **Behind a reverse proxy, the per-address login limit becomes one shared counter.** Login
+> failures are rate-limited per username *and* per source address, but the source address is taken
+> from the socket peer — never from `X-Forwarded-For`, which any caller can set. If you terminate
+> TLS at a proxy, every request arrives from the proxy's address, so the per-address budget (20
+> failures per 15 minutes) is shared by everyone: one attacker can exhaust it and other operators
+> then see `429` until the window drains. The per-username limit is unaffected and still bounds
+> guessing against any individual account, and no account is ever locked out, so this is a
+> temporary nuisance rather than a lockout.
+>
+> If you need to close it, register ASP.NET Core's `ForwardedHeaders` middleware with
+> `KnownProxies` (or `KnownNetworks`) populated with your proxy's address, so forwarded headers are
+> honoured *only* from that host. Do not enable forwarded headers without that allow-list: an
+> unconditionally trusted `X-Forwarded-For` lets any caller claim any address, which defeats the
+> per-address limit entirely and — more seriously — would let a remote caller present itself as
+> local to the first-run setup and bootstrap-bypass checks.
+
 ## Building
 
 Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download).

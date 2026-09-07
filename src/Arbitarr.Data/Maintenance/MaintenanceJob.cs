@@ -43,6 +43,13 @@ namespace Arbitarr.Data.Maintenance;
 /// this table has none. If a future change ever makes key rows machine-generated, that reasoning
 /// stops holding and it belongs in this list.
 ///
+/// #44 ADDED A SEVENTH TABLE, Sessions, AND IT IS PRUNED HERE — unlike ApiKeys above. The
+/// distinction is the one this list's rule turns on: session rows are machine-generated and grow
+/// per LOGIN, not per operator action, and a revoked or expired session is not a tombstone anybody
+/// reads. Nothing surfaces a dead session, so keeping one preserves no evidence; it only grows the
+/// file. Users are NOT pruned — an account is operator-created and its whole purpose is to persist.
+/// Only the config database is touched; arbitarr-logs.db has its own retention and no session rows.
+///
 /// Scheduling: run on an interval equal to the <c>maintenance_job_interval</c> setting. Per
 /// <see cref="SettingsValidator.ValidateMaintenanceJobInterval"/>, this is the one setting
 /// explicitly permitted to require a restart to take effect — callers that own a recurring timer
@@ -52,6 +59,14 @@ namespace Arbitarr.Data.Maintenance;
 /// </summary>
 public sealed class MaintenanceJob
 {
+    /// <summary>
+    /// How many multiples of the configured idle window a session must sit unused before this job
+    /// DELETES it. See <see cref="PruneExpiredSessionsAsync"/>: the security boundary uses the
+    /// exact window, and this looser one exists so a lengthened setting cannot find the rows it
+    /// would have revived already deleted.
+    /// </summary>
+    private const int IdleGraceFactor = 4;
+
     private readonly ArbitarrDbContext _dbContext;
     private readonly TimeProvider _timeProvider;
 
@@ -86,6 +101,10 @@ public sealed class MaintenanceJob
 
         var eventsPruned = await PruneEventsAsync(cancellationToken).ConfigureAwait(false);
 
+        var expiredSessionsPruned = await PruneExpiredSessionsAsync(
+                now, settings.SessionIdleTimeout, cancellationToken)
+            .ConfigureAwait(false);
+
         await RunIncrementalVacuumAsync(cancellationToken).ConfigureAwait(false);
 
         return new MaintenanceJobResult(
@@ -94,6 +113,7 @@ public sealed class MaintenanceJob
             SuppressionAuditLogRowsPruned: suppressionAuditPruned,
             AiVerdictCacheRowsPruned: aiVerdictCachePruned,
             EventRowsPruned: eventsPruned,
+            ExpiredSessionRowsPruned: expiredSessionsPruned,
             VacuumRan: true);
     }
 
@@ -219,6 +239,55 @@ public sealed class MaintenanceJob
         // Flattened to a total: MaintenanceJobResult reports one count per table, and the per-kind
         // breakdown PruneAsync returns is what its own tests assert the asymmetry against.
         return prunedByKind.Values.Sum();
+    }
+
+    /// <summary>
+    /// Drops session rows that can never authenticate again (#44) — past their absolute expiry, or
+    /// idle beyond the configured window.
+    ///
+    /// <para><b>THIS IS STORAGE HYGIENE, NEVER THE SECURITY BOUNDARY.</b> A session stops
+    /// authenticating the instant it is revoked or expires, because
+    /// <see cref="Security.SessionRepository.FindLiveByPresentedTokenAsync"/> evaluates both
+    /// expiries on every lookup rather than trusting a flag or waiting for a sweep. So this job
+    /// running late, or not at all, cannot let a dead session back in — which is exactly why it is
+    /// safe to prune on a timer instead of on the request path.</para>
+    ///
+    /// <para><b>THE TWO PREDICATES ARE NOT SYMMETRIC, AND THE IDLE ONE IS DELIBERATELY
+    /// CONSERVATIVE.</b> Absolute expiry is a property of the row, fixed at issue and never
+    /// extended, so a row past it is dead under every possible configuration — it is deleted
+    /// outright. Idle expiry is NOT a property of the row: it is measured against the CURRENT
+    /// <c>session_idle_timeout</c>, so a row that looks idle-dead today comes back to life if the
+    /// operator lengthens that setting. Deleting on the live setting alone would therefore destroy
+    /// sessions that a settings change would have revived, and the operator would be signed out by
+    /// a maintenance pass they did not connect to the change they made.
+    ///
+    /// The idle arm is applied against <see cref="Entities.SessionEntry.LastSeenAt"/> plus a
+    /// <see cref="IdleGraceFactor"/>x margin on the configured window, so a row is removed only
+    /// once it is idle far past any plausible re-lengthening. The exact figure is not load-bearing:
+    /// anything that keeps the delete well clear of the live boundary preserves the property. What
+    /// matters is that the boundary the SECURITY decision uses is the exact one in
+    /// <c>FindLiveByPresentedTokenAsync</c>, and the boundary this DELETE uses is looser.</para>
+    /// </summary>
+    private async Task<int> PruneExpiredSessionsAsync(
+        DateTimeOffset now, TimeSpan idleTimeout, CancellationToken cancellationToken)
+    {
+        // Client-side for the same reason as every prune above: SQLite's EF Core provider cannot
+        // reliably translate DateTimeOffset comparisons server-side.
+        var candidates = await _dbContext.Sessions
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        // Multiplied rather than added so the margin scales with the operator's own window: a
+        // 5-minute idle timeout and a 30-day one should not share one fixed grace period.
+        var idleDeleteAfter = idleTimeout * IdleGraceFactor;
+
+        var prunable = candidates
+            .Where(s => s.AbsoluteExpiresAt <= now || s.LastSeenAt.Add(idleDeleteAfter) <= now)
+            .ToList();
+
+        _dbContext.Sessions.RemoveRange(prunable);
+        await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return prunable.Count;
     }
 
     private async Task RunIncrementalVacuumAsync(CancellationToken cancellationToken)

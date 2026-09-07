@@ -43,6 +43,10 @@ public sealed class MaintenanceJobTests : IDisposable
         return new ArbitarrDbContext(optionsBuilder.Options);
     }
 
+    /// <summary>Defaults with a chosen session idle window, for the #44 prune tests.</summary>
+    private static SettingsSnapshot SettingsWithIdleTimeout(TimeSpan idleTimeout) =>
+        Settings(TimeSpan.FromDays(7)) with { SessionIdleTimeout = idleTimeout };
+
     private static SettingsSnapshot Settings(TimeSpan serveUntil) => SettingsSnapshot.Defaults(TimeSpan.FromMinutes(15)) with
     {
         ServeUntil = serveUntil,
@@ -266,6 +270,124 @@ public sealed class MaintenanceJobTests : IDisposable
     // writes. These tests assert the scheduled job actually prunes it, which is the thing whose
     // absence would have made EventRetentionPolicy decorative and grown the SQLite file without
     // bound.
+
+    /// <summary>
+    /// #44: the session prune, asserted PER ROW.
+    ///
+    /// <para>Three rows are planted — one past its absolute expiry, one idle far beyond the
+    /// configured window, and one live — and the survivors are checked BY IDENTITY, not by count.
+    /// A count alone would pass against a prune that deleted the live row and kept a dead one,
+    /// which is the failure that would sign the operator out on every maintenance pass. The live
+    /// row is the positive control: without it, "the table shrank" would be satisfied by a prune
+    /// that simply emptied the table.</para>
+    /// </summary>
+    [Fact]
+    public async Task RunAsync_PrunesExpiredAndIdleSessionRows_ButKeepsTheLiveOne()
+    {
+        using (var context = CreateContext())
+        {
+            context.Database.Migrate();
+            context.Users.Add(new UserEntry
+            {
+                Id = 1,
+                Username = "operator",
+                PasswordHash = "not-a-real-hash",
+                CreatedAt = Now,
+            });
+
+            // Past its absolute expiry: dead under every possible setting.
+            context.Sessions.Add(new SessionEntry
+            {
+                UserId = 1,
+                TokenHash = "absolutely-expired",
+                CreatedAt = Now - TimeSpan.FromDays(40),
+                LastSeenAt = Now - TimeSpan.FromDays(40),
+                AbsoluteExpiresAt = Now - TimeSpan.FromSeconds(1),
+            });
+
+            // Idle far past the window (defaults are days, so a year is unambiguous), but still
+            // inside its absolute expiry — so only the idle arm can remove it.
+            context.Sessions.Add(new SessionEntry
+            {
+                UserId = 1,
+                TokenHash = "long-idle",
+                CreatedAt = Now - TimeSpan.FromDays(365),
+                LastSeenAt = Now - TimeSpan.FromDays(365),
+                AbsoluteExpiresAt = Now + TimeSpan.FromDays(30),
+            });
+
+            // Live and recently seen.
+            context.Sessions.Add(new SessionEntry
+            {
+                UserId = 1,
+                TokenHash = "live",
+                CreatedAt = Now,
+                LastSeenAt = Now,
+                AbsoluteExpiresAt = Now + TimeSpan.FromDays(30),
+            });
+
+            context.SaveChanges();
+        }
+
+        using (var context = CreateContext())
+        {
+            var job = new MaintenanceJob(context, _timeProvider);
+            var result = await job.RunAsync(Settings(TimeSpan.FromDays(7)));
+
+            Assert.Equal(2, result.ExpiredSessionRowsPruned);
+
+            // PER ROW: the exact survivor, and the exact casualties.
+            var remaining = context.Sessions.Select(s => s.TokenHash).ToList();
+            Assert.Equal(new[] { "live" }, remaining);
+        }
+    }
+
+    /// <summary>
+    /// #44: a session idle beyond the CONFIGURED window but not beyond the delete margin is kept.
+    ///
+    /// <para>This is the settings-drift guard, and it is the reason the idle arm deletes on a
+    /// multiple of the window rather than on the window itself. Such a row does not authenticate —
+    /// <c>FindLiveByPresentedTokenAsync</c> refuses it against the exact window — but deleting it
+    /// here would destroy a session that lengthening <c>session_idle_timeout</c> would have
+    /// revived, signing the operator out because of a maintenance pass rather than their own
+    /// change. Refusing to authenticate and deleting the row are deliberately different
+    /// boundaries.</para>
+    /// </summary>
+    [Fact]
+    public async Task RunAsync_KeepsSessionRow_IdlePastTheWindowButInsideTheDeleteMargin()
+    {
+        using (var context = CreateContext())
+        {
+            context.Database.Migrate();
+            context.Users.Add(new UserEntry
+            {
+                Id = 1,
+                Username = "operator",
+                PasswordHash = "not-a-real-hash",
+                CreatedAt = Now,
+            });
+
+            // Settings below use a 7-day idle window; 10 days is past it, well inside the margin.
+            context.Sessions.Add(new SessionEntry
+            {
+                UserId = 1,
+                TokenHash = "idle-but-recoverable",
+                CreatedAt = Now - TimeSpan.FromDays(10),
+                LastSeenAt = Now - TimeSpan.FromDays(10),
+                AbsoluteExpiresAt = Now + TimeSpan.FromDays(30),
+            });
+            context.SaveChanges();
+        }
+
+        using (var context = CreateContext())
+        {
+            var job = new MaintenanceJob(context, _timeProvider);
+            var result = await job.RunAsync(SettingsWithIdleTimeout(TimeSpan.FromDays(7)));
+
+            Assert.Equal(0, result.ExpiredSessionRowsPruned);
+            Assert.Equal("idle-but-recoverable", Assert.Single(context.Sessions.ToList()).TokenHash);
+        }
+    }
 
     [Fact]
     public async Task RunAsync_PrunesOperationalEventRow_PastOperationalRetention()

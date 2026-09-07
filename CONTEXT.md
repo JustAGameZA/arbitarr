@@ -125,8 +125,24 @@ Conflating these is the most common misreading of the configuration surface.
 | **Client key** | inbound | Sonarr/Radarr authenticating *to* Arbitarr, on Torznab routes |
 | **Admin key** | inbound | Gating admin-**mutating** routes only, via `X-Admin-Api-Key` |
 
-The admin key is not a login. There is no user account model; the admin UI has
-no session of its own. Read-only admin pages are ungated by design.
+A fourth inbound credential joined these in #44: an **operator session**. It is
+not a key and has no row in the table above, but the admin gate accepts it
+exactly where it accepts the admin key — so "three keys" remains true, and
+"three credentials" does not.
+
+**The admin key is still not a login, and a login is not a key.** Since #44 the
+admin UI *does* have a session of its own, so the older claim that it has none is
+gone. The two credentials answer different callers and neither replaces the
+other: a human signs in, and Sonarr, Radarr and every scripted caller present a
+key because they cannot complete an interactive login. Read-only admin pages are
+ungated by design regardless of which is presented.
+
+**One resolution type, not two.** Both credentials resolve to an
+`AdminKeyResolution` carrying an `ApiKeyScope`, and the gate makes one scope
+check over whichever answered. The name says *key* for historical reasons and is
+deliberately **not** renamed: it is the credential resolution, and it carries
+session outcomes too. Renaming it would be a wide rename of a type that is
+already correct, and the cost of the slightly stale name is one sentence here.
 
 **Bootstrap bypass.** The state a fresh install is in: no admin key set, so
 admin-mutating routes are allowed from the local network and refused elsewhere,
@@ -134,6 +150,33 @@ letting the first key be set at all.
 
 **Write-only.** Said of a key with a write path and no read path anywhere — true
 of both the admin key and source API keys.
+
+**Account / operator.** A human sign-in identity: a username and a password hash.
+"Operator" is the person; "account" is the row. Arbitarr is single-operator by
+design — there is one role, so an account carries no per-user scope column, and a
+session authorises at `Admin`.
+
+**Session.** A server-side record that a particular operator signed in, with an
+idle expiry and an absolute expiry. Server-side is the load-bearing part: sign-out
+revokes the row, so a caller holding a copy of the token still cannot use it. A
+self-contained signed token would make sign-out a claim rather than a fact.
+
+**Session cookie.** The transport for a session token — `HttpOnly` (script can
+never read it), `SameSite=Lax`, and `Secure` only when the request arrived over
+TLS. Distinct from the *session*: revoking the row ends access whether or not the
+cookie is still in a browser.
+
+**First-run setup.** The one-time path that creates the first account. Requires
+zero accounts **and** a trusted-network caller — both, not either — and once an
+account exists it is closed permanently.
+
+**Trusted network.** The socket peer is loopback, RFC 1918, or RFC 4193
+unique-local. Since #44 this is its own type (`TrustedNetwork`) rather than a
+predicate inside the admin filter, because first-run setup needs the identical
+rule and two copies would drift into two trust boundaries. Being on a trusted
+network is **not** being authenticated: it gates bootstrap paths only — setting a
+first key, claiming a fresh install — each of which stops applying the moment the
+thing it bootstraps exists.
 
 Why each works the way it does, and what would break if it were "tidied", is in
 [ADR 0004](docs/adr/0004-admin-key-write-only-with-bootstrap-bypass.md).
