@@ -275,10 +275,11 @@ export function SourcesSection() {
    * The last write rejection, held HERE rather than read off the mutation.
    *
    * The mutations reset() on settle so no apiKey-bearing `variables` linger in
-   * the MutationCache (see queries.ts). reset() also clears `error`, so reading
-   * the message straight off `create.error`/`update.error` would blank the
-   * operator's rejection at the same instant. Capturing it first keeps the
-   * server's exact words on screen while the cached credential still goes away
+   * the MutationCache (see queries.ts). Holding the message here rather than
+   * reading `create.error` / `update.error` is what makes that reset free of
+   * consequence: reset() clears mutation `error`, so a banner sourced from it
+   * would blank at the same instant the credential does. Component state keeps
+   * the server's exact words on screen while the cached key still goes away
    * immediately.
    */
   const [writeError, setWriteError] = useState<string | null>(null);
@@ -300,13 +301,23 @@ export function SourcesSection() {
   /**
    * Settle handler shared by every write that can carry an apiKey.
    *
-   * ORDER IS LOAD-BEARING: capture the message the UI needs FIRST, then reset.
    * reset() drops the settled mutation from the MutationCache straight away —
    * which is the point, because its `variables` are the request body and can
-   * hold a plaintext key — but it also clears `error`, so a reset before the
-   * capture would erase the operator's rejection along with the credential.
-   * Runs on the failure path too: a rejected write cached the key just as a
-   * successful one did.
+   * hold a plaintext key. It runs on the failure path too: a rejected write
+   * cached the key just as a successful one did.
+   *
+   * CAPTURE-THEN-RESET IS A CONVENTION HERE, NOT A CORRECTNESS REQUIREMENT.
+   * An earlier version of this comment claimed the order was load-bearing;
+   * that was wrong, and mutation-testing the reverse order passes all 19 tests
+   * in this file. It cannot break as written, because the message is taken from
+   * onSettled's own `error` ARGUMENT into component state and nothing here
+   * reads `create.error` / `update.error` — so reset() has no message to blank.
+   *
+   * The order is kept anyway, because the moment anything reads the message off
+   * mutation state instead of the argument, reset-first silently swallows the
+   * server's rejection while every secret test stays green. The shared hook in
+   * bead arb-689 is exactly that change. Keep the capture first so that
+   * refactor does not have to rediscover this.
    */
   const settleWrite = (mutation: { reset: () => void }, error: unknown) => {
     // The error comes from onSettled's own argument rather than off the
@@ -507,8 +518,12 @@ export function SourcesSection() {
             ) : test.data !== undefined ? (
               <p role="status">
                 <strong>{tested.displayName}</strong>{' '}
+                {/* Keyed off the outcome enum, not the `success` boolean, so the
+                    badge cannot drift from the five outcomes: they are the
+                    contract, and `success` is a second encoding of the same
+                    fact that could disagree with it. */}
                 <span
-                  className={`${styles.badge} ${test.data.success ? styles.badgeOk : styles.badgeDanger}`}
+                  className={`${styles.badge} ${test.data.outcome === 'Ok' ? styles.badgeOk : styles.badgeDanger}`}
                 >
                   {outcomeLabel(test.data.outcome)}
                 </span>{' '}

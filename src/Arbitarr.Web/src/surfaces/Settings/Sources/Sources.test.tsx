@@ -258,31 +258,48 @@ describe('Sources section', () => {
    * nothing" -- it is "all five collapse to the same red 'failed'", which every
    * per-outcome assertion in isolation would happily pass.
    */
+  /**
+   * `message` is the EXACT literal `DescribeOutcome` returns for that outcome
+   * (AdminSourceEndpoints.cs:252-263), copied rather than paraphrased. A
+   * shortened stand-in still passes every assertion here while proving nothing
+   * about what the operator actually reads, and it hides the case these tests
+   * exist to catch: server wording that drifts, or is truncated on the way to
+   * the screen. Update these only by copying from the C# again.
+   */
   const outcomes = [
-    { outcome: 'Ok', success: true, label: 'Connected', message: 'Connected successfully.' },
+    {
+      outcome: 'Ok',
+      success: true,
+      label: 'Connected',
+      message: 'Connected successfully and the API key was accepted.',
+    },
     {
       outcome: 'Unreachable',
       success: false,
       label: 'Unreachable',
-      message: 'Could not reach the source before the timeout.',
+      message:
+        'Could not reach the source: no response from that address before the timeout. Check the base URL, the port, and that the service is running.',
     },
     {
       outcome: 'TlsFailure',
       success: false,
       label: 'TLS failure',
-      message: 'Reached the source but the TLS handshake failed.',
+      message:
+        'Reached the source but the TLS handshake failed. Check the certificate (expired, self-signed, or issued for a different hostname) or use http if the service is not serving TLS on that port.',
     },
     {
       outcome: 'AuthenticationFailed',
       success: false,
       label: 'API key rejected',
-      message: 'The source is reachable but rejected the API key.',
+      message:
+        'The source is reachable but rejected the API key. Check the key and that it has permission on this source.',
     },
     {
       outcome: 'UnexpectedResponse',
       success: false,
       label: 'Unexpected response',
-      message: 'The source answered but not with the API expected.',
+      message:
+        'The source answered but not with the API expected. The base URL is probably pointing at a different service, a login page, or a reverse proxy rather than the source itself.',
     },
   ];
 
