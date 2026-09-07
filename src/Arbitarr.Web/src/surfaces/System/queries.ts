@@ -1,7 +1,12 @@
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 
 import { apiFetch } from '../../api/client';
-import type { BuildInfoResponse, ObservabilityResponse, StalenessEnvelopeResponse } from '../../api/types';
+import type {
+  BuildInfoResponse,
+  LogsResponse,
+  ObservabilityResponse,
+  StalenessEnvelopeResponse,
+} from '../../api/types';
 
 /**
  * GET /api/system/build.
@@ -45,5 +50,87 @@ export function useStalenessQuery() {
   return useQuery({
     queryKey: ['health', 'staleness'],
     queryFn: () => apiFetch<StalenessEnvelopeResponse>('/api/health/staleness'),
+  });
+}
+
+/**
+ * The levels the filter offers, newest-first in severity order.
+ *
+ * These are Microsoft.Extensions.Logging.LogLevel NAMES and must match the server's
+ * spelling exactly — LogStore matches `Level = $level COLLATE NOCASE`, an EXACT
+ * comparison and not a prefix, so "Info" would silently match nothing rather than
+ * erroring. Trace and Debug are absent because SqliteLoggerProvider's minimum level is
+ * Information (plan §4.3): offering a filter that can only ever return zero rows would
+ * teach the operator that the log store is broken.
+ */
+export const LOG_LEVELS = ['Information', 'Warning', 'Error', 'Critical'] as const;
+
+export type LogLevelName = (typeof LOG_LEVELS)[number];
+
+export interface LogFilters {
+  level: LogLevelName | 'all';
+  /** Substring match against the logger category; empty means all loggers. */
+  logger: string;
+}
+
+/** Rows per page. Below LogStore.MaxPageSize (200), so the server never clamps this. */
+export const LOG_PAGE_SIZE = 50;
+
+/**
+ * Builds the query string for GET /api/admin/logs.
+ *
+ * Exported for its own test, exactly as buildActivityQuery is: the filter-to-URL mapping
+ * is the part that breaks silently. A dropped `level` widens the query to everything
+ * while the table still renders plausible rows, which no render-level assertion would
+ * catch.
+ *
+ * An empty or whitespace-only logger is OMITTED rather than sent as an empty string. The
+ * store treats a whitespace filter as absent anyway, so sending one would work by
+ * accident; leaving it out keeps the request honest about what was asked.
+ */
+export function buildLogsQuery(filters: LogFilters, page: number): string {
+  const params = new URLSearchParams();
+
+  if (filters.level !== 'all') {
+    params.set('level', filters.level);
+  }
+
+  const logger = filters.logger.trim();
+  if (logger !== '') {
+    params.set('logger', logger);
+  }
+
+  if (page > 1) {
+    params.set('page', String(page));
+  }
+
+  params.set('pageSize', String(LOG_PAGE_SIZE));
+
+  return `/api/admin/logs?${params.toString()}`;
+}
+
+/**
+ * One page of application logs.
+ *
+ * GET /api/admin/logs is ADMIN-GATED, so needsAdminKey() matches the /api/admin/ prefix
+ * and apiFetch attaches X-Admin-Api-Key — the same treatment useObservabilityQuery gets.
+ * That this read is gated while /api/activity is not is DELIBERATE and is not an
+ * inconsistency to tidy up: LogsEndpoint.cs carries the full reasoning (raw application
+ * logs are an unvetted surface — exception text, paths, internal names — where activity
+ * events are a curated one). Do not "fix" it here by dropping the prefix.
+ *
+ * `page` is part of the query key so each page caches separately, matching
+ * useActivityQuery's treatment of its cursor; without it, paging would overwrite a single
+ * cache entry and re-render the same rows.
+ *
+ * placeholderData keeps the previous page on screen while the next one loads. Without it
+ * the table unmounts to "Loading…" on every page step and every filter change, which
+ * makes the paging controls jump under the pointer.
+ */
+export function useLogsQuery(filters: LogFilters, page: number) {
+  return useQuery({
+    queryKey: ['admin', 'logs', filters.level, filters.logger.trim(), page],
+    queryFn: () => apiFetch<LogsResponse>(buildLogsQuery(filters, page)),
+    placeholderData: keepPreviousData,
   });
 }
