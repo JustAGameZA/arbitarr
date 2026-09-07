@@ -1,5 +1,7 @@
-import { screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NotificationsSection } from './Notifications';
@@ -184,6 +186,89 @@ describe('Notifications section', () => {
     // The real assertion, now that it is known to be capable of failing.
     expect(dump()).not.toContain(SECRET_URL);
     expect(dump()).not.toContain(SECRET_TOKEN);
+  });
+
+  /**
+   * Renders the section against a client the test can inspect.
+   *
+   * `renderSurface` builds its own QueryClient and does not hand it back, and it
+   * is shared by every surface test, so it is not widened just for this file.
+   * The options mirror it exactly (retries off both sides) so this is the same
+   * environment, only observable.
+   */
+  function renderWithClient() {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <NotificationsSection />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    return client;
+  }
+
+  /**
+   * THE LAST PLACE THE CLIENT CAN HOLD THE SECRET.
+   *
+   * Clearing the input and dropping it from React state is not enough on its
+   * own: react-query keeps every mutation's `variables` on the MutationCache
+   * after it settles, for `gcTime` (5 minutes by default, and
+   * `api/queryClient.ts` sets none for mutations). The webhook URL is a
+   * mutation variable, so without an explicit eviction it stays readable from
+   * the devtools or the console long after the field looks empty — and longest
+   * of all on the FAILED path, where nothing prompts a remount.
+   *
+   * Asserted over the serialised cache rather than a single field, so a future
+   * react-query that stores the variables somewhere else on the entry still
+   * fails this.
+   */
+  it.each([
+    ['a successful save', 200, { ...configured, hasWebhookUrl: true }],
+    ['a failed save', 400, { error: 'Consecutive failure threshold must be at least 2.' }],
+  ])('leaves no webhook URL in the mutation cache after %s', async (_label, status, body) => {
+    const user = userEvent.setup();
+    const api = mockApi({ [ROUTE]: { body: configured } });
+    const client = renderWithClient();
+
+    const field = await screen.findByLabelText('Replace the webhook URL');
+    await user.type(field, SECRET_URL);
+
+    const dumpMutationCache = () => JSON.stringify(client.getMutationCache().getAll());
+
+    // POSITIVE CONTROL: run a REAL mutation carrying the URL as its variables —
+    // exactly the shape production produces — and prove this sweep finds it
+    // while it is retained. Without this half, "the cache does not contain the
+    // URL" would pass just as happily against a cache that never held anything,
+    // the vacuous shape CLAUDE.md §4 names. Built with default (unset) gcTime
+    // rather than the section's own options, so it demonstrates what react-query
+    // retains BY DEFAULT — which is precisely the leak being closed.
+    const planted = client.getMutationCache().build(client, {
+      mutationFn: async (variables: unknown) => variables,
+    });
+    await planted.execute({ webhookUrl: SECRET_URL });
+    expect(dumpMutationCache()).toContain(SECRET_URL);
+    client.getMutationCache().remove(planted);
+    expect(dumpMutationCache()).not.toContain(SECRET_URL);
+
+    api.set(ROUTE, { status, body });
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    // NON-VACUOUS: the URL really was sent, so there was something for the
+    // cache to retain.
+    await waitFor(() => expect(lastPutBody(api).webhookUrl).toBe(SECRET_URL));
+
+    // The real assertion, now known to be capable of failing.
+    await waitFor(() => {
+      expect(dumpMutationCache()).not.toContain(SECRET_URL);
+      expect(dumpMutationCache()).not.toContain(SECRET_TOKEN);
+    });
+
+    // And still not in the DOM, on either path.
+    expect(document.body.innerHTML).not.toContain(SECRET_URL);
+    expect(document.body.innerHTML).not.toContain(SECRET_TOKEN);
   });
 
   it('clears the webhook only after an explicit confirmation', async () => {

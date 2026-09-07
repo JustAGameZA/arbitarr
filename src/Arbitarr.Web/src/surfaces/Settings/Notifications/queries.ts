@@ -32,17 +32,49 @@ export function useNotificationConfigQuery() {
  * read-and-reapply one, and sending an empty string on every threshold edit
  * would depend on the server normalizing it back to "leave alone". Omission is
  * the contract; the field appears only when there is a new value to write.
+ *
+ * <b>THE MUTATION CACHE IS THE LAST PLACE THE CLIENT CAN HOLD THIS SECRET, AND
+ * THAT IS WHAT `gcTime: 0` AND THE `reset()` BELOW ARE FOR.</b> Clearing the
+ * input and dropping the value from React state is not sufficient on its own:
+ * react-query retains every settled mutation's `variables` on the MutationCache
+ * for `gcTime`, which defaults to five minutes and which `api/queryClient.ts`
+ * does not set for mutations. Since the webhook URL travels as a mutation
+ * variable, without an explicit eviction it stays readable from the devtools or
+ * the console long after the field looks empty — and longest of all on the
+ * FAILED path, where nothing prompts the remount that would otherwise churn the
+ * cache. `gcTime: 0` makes the entry collectable the moment it settles and
+ * `reset()` in `onSettled` actually drops it, because a zero gcTime alone still
+ * leaves the entry alive while an observer is mounted. Both halves are needed;
+ * removing either reopens the retention.
  */
 export function useUpdateNotificationConfigMutation() {
   const client = useQueryClient();
-  return useMutation({
+  const mutation = useMutation({
     mutationFn: (request: UpdateNotificationConfigRequest) =>
       apiFetch<NotificationConfig>(NOTIFICATIONS_ROUTE, {
         method: 'PUT',
         body: JSON.stringify(request),
       }),
+    // Nothing to garbage-collect later: this mutation's variables may carry the
+    // webhook URL, so the entry must not outlive the request. See the doc above.
+    gcTime: 0,
     onSuccess: () => client.invalidateQueries({ queryKey: NOTIFICATIONS_KEY }),
+    // onSettled, NOT onSuccess: a rejected save is the case where the variables
+    // would otherwise linger longest.
+    //
+    // Deferred to a macrotask, not a microtask. react-query runs the hook-level
+    // onSettled BEFORE the per-call callbacks passed to `mutate`, and those
+    // per-call callbacks are what set the "Saved." and rejection states the
+    // operator reads. A microtask would therefore tear the mutation down in the
+    // same tick, before React had committed those updates, and the server's
+    // rejection would never reach the screen — silently defeating the
+    // reject-never-clamp rule. setTimeout(0) lets the callback chain and its
+    // render finish first, and still evicts the variables immediately after.
+    onSettled: () => {
+      setTimeout(() => mutation.reset(), 0);
+    },
   });
+  return mutation;
 }
 
 /**

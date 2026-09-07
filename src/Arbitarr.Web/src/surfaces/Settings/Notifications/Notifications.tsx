@@ -149,6 +149,14 @@ function NotificationForm({ config }: { config: NotificationConfig }) {
   const [evaluationWindow, setEvaluationWindow] = useState(config.suppressionRateWindow);
   const [triggers, setTriggers] = useState<NotificationTrigger[]>(config.enabledTriggers);
   const [saved, setSaved] = useState(false);
+  // The server's rejection is held HERE rather than read from `update.error`,
+  // because the mutation resets itself the moment it settles so the webhook URL
+  // cannot linger in the mutation cache as `variables` (see queries.ts). That
+  // reset also clears `error`, so the operator's rejection text has to be
+  // captured on the way past or it would vanish a tick after it appeared —
+  // which would quietly defeat the reject-never-clamp rule this surface exists
+  // to honour.
+  const [rejection, setRejection] = useState<string | null>(null);
   const [confirmingClear, setConfirmingClear] = useState(false);
 
   const toggleTrigger = (name: NotificationTrigger) =>
@@ -159,6 +167,7 @@ function NotificationForm({ config }: { config: NotificationConfig }) {
   const submit = (event: FormEvent) => {
     event.preventDefault();
     setSaved(false);
+    setRejection(null);
 
     // Sent as typed. No bounds pre-check of our own: the server owns validation,
     // rejects rather than clamps, and states its own reason — the same rule
@@ -184,7 +193,10 @@ function NotificationForm({ config }: { config: NotificationConfig }) {
     // network failure — leaves the secret in state to be rendered back.
     setWebhookUrl('');
 
-    update.mutate(request, { onSuccess: () => setSaved(true) });
+    update.mutate(request, {
+      onSuccess: () => setSaved(true),
+      onError: (error) => setRejection(errorMessage(error)),
+    });
   };
 
   return (
@@ -342,12 +354,12 @@ function NotificationForm({ config }: { config: NotificationConfig }) {
           <button type="submit" className={styles.button} disabled={update.isPending}>
             Save
           </button>
-          {update.isError && (
+          {rejection !== null && (
             <p className={styles.error} role="alert">
-              {errorMessage(update.error)}
+              {rejection}
             </p>
           )}
-          {saved && !update.isError && <p className={styles.success}>Saved.</p>}
+          {saved && rejection === null && <p className={styles.success}>Saved.</p>}
         </div>
       </form>
 
