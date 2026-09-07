@@ -342,3 +342,57 @@ export interface ActivityPageResponse {
   events: ActivityEntry[];
   nextCursor: number | null;
 }
+
+/**
+ * LogsEndpoint.cs — one row of GET /api/admin/logs (#65).
+ *
+ * The shape is Sonarr's `LogResource` (plan §1), which is why `exception` and
+ * `exceptionType` are two fields rather than one: the type name is what an
+ * operator scans a column for, while the full text is long enough that it only
+ * belongs behind a disclosure.
+ *
+ * `time` is an ISO-8601 instant WITH its offset, serialized from a C#
+ * DateTimeOffset — the same contract ActivityEntry.occurredAt carries, and for
+ * the same AC9 reason: a bare local-looking datetime would be ambiguous between
+ * two readers.
+ *
+ * `level` is a Microsoft.Extensions.Logging.LogLevel NAME ("Information",
+ * "Warning"), not an ordinal, and is matched case-insensitively by the store.
+ * It is typed as a bare string rather than a union because the sink writes
+ * whatever LogLevel it was handed: narrowing it here would make an unexpected
+ * level a type error at the one place that must still display it.
+ */
+export interface LogEntryResponse {
+  id: number;
+  time: string;
+  level: string;
+  logger: string;
+  message: string;
+  exception: string | null;
+  exceptionType: string | null;
+}
+
+/**
+ * LogsEndpoint.cs — response body of GET /api/admin/logs.
+ *
+ * OFFSET paging (`page`/`pageSize`/`total`), deliberately unlike ActivityPageResponse's
+ * opaque cursor. The two stores are read differently: activity is a growing feed read
+ * from its newest end, where an offset would skip and repeat rows, while the log store
+ * is filtered down to a level or logger and then paged through — a case where the
+ * operator wants "page 3 of 9", which a seek cursor cannot state.
+ *
+ * `page` and `pageSize` are what the server ACTUALLY served after clamping, not an echo
+ * of what was asked; the UI renders those rather than its own request so a clamped page
+ * size is visible instead of silently disagreeing with the row count.
+ *
+ * `loggers` is every distinct logger category in the store, sent with each page so the
+ * filter can populate without a second round trip. See the endpoint's own note on why it
+ * is not its own route.
+ */
+export interface LogsResponse {
+  entries: LogEntryResponse[];
+  total: number;
+  page: number;
+  pageSize: number;
+  loggers: string[];
+}

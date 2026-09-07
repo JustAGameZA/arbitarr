@@ -1,5 +1,8 @@
+import { useId, useState } from 'react';
+
 import { PageHeader } from '../../components/shell/PageHeader';
 import { QueryState } from '../QueryState';
+import { LogsTab } from './LogsTab';
 import type {
   BuildInfoResponse,
   MetadataCacheCoverage,
@@ -214,11 +217,14 @@ function Counters({
 }
 
 /**
- * System.
+ * The Status tab: build identity (issue #46 / audit R1), the AC25 staleness envelope
+ * (how old a served result can be, worst case), and the pipeline observability counters.
  *
- * Runtime diagnostics: build identity (issue #46 / audit R1), the AC25 staleness
- * envelope (how old a served result can be, worst case), and the pipeline
- * observability counters.
+ * These three panels are EXACTLY what the System page was before #65 made it tabbed
+ * (plan §3, AC6) -- extracted into a component, with their markup, headings, queries and
+ * copy unchanged. The extraction is what makes the tab switch unmount them, which is the
+ * point: leaving them mounted under a hidden tab would keep three queries refetching
+ * behind a table the operator is actually reading.
  *
  * The three panels are deliberately independent queries. Build identity and
  * staleness are PublicRead and observability is admin-gated, so on a server
@@ -226,15 +232,13 @@ function Counters({
  * the build and staleness halves still render while the counters half shows
  * the 503 affordance QueryState owns.
  */
-export default function SystemPage() {
+function StatusTab() {
   const buildInfo = useBuildInfoQuery();
   const staleness = useStalenessQuery();
   const observability = useObservabilityQuery();
 
   return (
     <>
-      <PageHeader title="System" description="Build information and runtime diagnostics." />
-
       <section className={styles.panel}>
         <h2 className={styles.panelHeading}>Build</h2>
         <div className={styles.panelBody}>
@@ -268,6 +272,101 @@ export default function SystemPage() {
           </QueryState>
         </div>
       </section>
+    </>
+  );
+}
+
+/**
+ * The System page's tabs, in order.
+ *
+ * `Backup` is #56's and is deliberately ABSENT rather than present-and-disabled: an
+ * inert tab invites a click that does nothing. Plan §3 leaves it the slot, not a stub.
+ *
+ * There is no `Updates` tab (Arbitarr is deployed by image tag; there is no in-app
+ * updater, and the Build panel already answers "what am I running") and no `Events` tab
+ * (the Activity surface is a domain event log and a better one than Sonarr's coarser
+ * system-event list). Both omissions are rulings in plan §3, not oversights -- do not add
+ * either back without revisiting it there.
+ */
+const TABS = [
+  ['status', 'Status'],
+  ['logs', 'Logs'],
+] as const;
+
+type TabId = (typeof TABS)[number][0];
+
+/**
+ * System.
+ *
+ * Tabbed as of #65 (plan §3): `Status | Logs`, adopting the *arr System page's shape
+ * adapted to Arbitarr's actual surfaces. The tabs live INSIDE this page and add no nav
+ * entry -- SidebarNav's count comment states seven and AC6 requires it to stay seven.
+ *
+ * Tab state is local component state and deliberately not a route. The nav highlights by
+ * path, so a /system/logs route would light the System entry from a URL the sidebar
+ * cannot represent, and routes.tsx's per-route document titles (#51) would need an entry
+ * per tab. If a tab ever needs to be linkable, that is the tradeoff to reopen.
+ *
+ * The tabs are a real ARIA tablist: arrow keys move between them and the panel is
+ * associated with its tab, which is the behaviour a keyboard operator expects from
+ * something that looks like tabs.
+ */
+export default function SystemPage() {
+  const [tab, setTab] = useState<TabId>('status');
+  const tabIds = useId();
+
+  const tabId = (id: TabId) => `${tabIds}-tab-${id}`;
+  const panelId = (id: TabId) => `${tabIds}-panel-${id}`;
+
+  /**
+   * Arrow-key roving focus (WAI-ARIA tabs pattern), wrapping at both ends.
+   *
+   * Without this the tablist is reachable but not operable by keyboard the way its
+   * appearance promises: Tab alone would step through every tab as a separate stop,
+   * which is precisely what `tabIndex={-1}` on the inactive tabs prevents.
+   */
+  const onTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    const delta = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+    if (delta === 0) {
+      return;
+    }
+
+    event.preventDefault();
+    const index = TABS.findIndex(([id]) => id === tab);
+    const next = TABS[(index + delta + TABS.length) % TABS.length][0];
+    setTab(next);
+    document.getElementById(tabId(next))?.focus();
+  };
+
+  return (
+    <>
+      <PageHeader title="System" description="Build information and runtime diagnostics." />
+
+      <div className={local.tabs} role="tablist" aria-label="System sections">
+        {TABS.map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            id={tabId(id)}
+            role="tab"
+            aria-selected={tab === id}
+            aria-controls={panelId(id)}
+            // Only the active tab is a tab stop; the arrow keys move between them.
+            tabIndex={tab === id ? 0 : -1}
+            className={tab === id ? `${local.tab} ${local.tabActive}` : local.tab}
+            onClick={() => setTab(id)}
+            onKeyDown={onTabKeyDown}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Only the active tab is rendered -- see StatusTab's note on why unmounting the
+          inactive one matters more here than keeping its scroll position would. */}
+      <div id={panelId(tab)} role="tabpanel" aria-labelledby={tabId(tab)} tabIndex={-1}>
+        {tab === 'status' ? <StatusTab /> : <LogsTab />}
+      </div>
     </>
   );
 }
