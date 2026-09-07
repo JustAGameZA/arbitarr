@@ -18,7 +18,9 @@ namespace Arbitarr.Api.Admin;
 /// <param name="IsLegacy">
 /// True for the synthetic row representing the pre-#58 shared key. The issue asks for that key to
 /// appear in the list so it is not invisible authority; this flag is how the UI explains why it has
-/// no revoke button and no creation date.
+/// no revoke button and no creation date. Since #82 it does: the legacy row renders in place of the
+/// revoke button an explanation that the key comes from the server configuration rather than this
+/// list, so the missing control reads as deliberate rather than as a bug.
 /// </param>
 public sealed record ApiKeyResponse(
     long? Id,
@@ -41,7 +43,9 @@ public sealed record CreateApiKeyRequest(string? Label, string? Scope);
 /// value is generated in <see cref="ApiKeyRepository.CreateAsync"/>, hashed, and returned here
 /// without being persisted, logged, or cached. There is no route that can produce it again — not
 /// because one was omitted, but because after this response no copy exists anywhere in the system.
-/// The UI says so at the point of creation, since no later screen could.</para>
+/// The UI says so at the point of creation, since no later screen could — since #82, in the reveal
+/// panel in <c>src/Arbitarr.Web/src/surfaces/Settings/ApiKeys/ApiKeys.tsx</c>, which holds the value
+/// in component state only and requires an explicit acknowledgement before dismissing it.</para>
 /// </summary>
 public sealed record CreatedApiKeyResponse(ApiKeyResponse Key, string PlaintextKey);
 

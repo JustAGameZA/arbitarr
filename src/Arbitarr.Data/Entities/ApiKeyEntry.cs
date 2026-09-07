@@ -12,7 +12,10 @@ namespace Arbitarr.Data.Entities;
 /// is a SHA-256 digest (see <see cref="ApiKeyHasher"/>). The plaintext exists exactly once, in the
 /// response to the create call that minted it, and is never written anywhere. "Show me that key
 /// again" is therefore impossible by construction rather than by policy, and the UI says so at
-/// creation time because there is no later screen that could.</para>
+/// creation time because there is no later screen that could. Since #82 that UI exists: the
+/// one-time reveal in <c>src/Arbitarr.Web/src/surfaces/Settings/ApiKeys/ApiKeys.tsx</c> states it
+/// at the point of creation and keeps the plaintext in component state alone — never browser
+/// storage, asserted with a positive control in <c>ApiKeys.test.tsx</c>.</para>
 ///
 /// <para>Distinct from <see cref="ApiKeyProfileEntry"/>, which maps a Torznab/Newznab CLIENT apikey
 /// to a filter profile — a different credential for a different surface. This type governs the
