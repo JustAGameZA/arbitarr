@@ -190,6 +190,38 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
     }
 
     [Fact]
+    public async Task Updating_a_source_with_apiKey_omitted_preserves_the_stored_key_value()
+    {
+        // Updating_a_source_changes_it_and_can_disable_it_without_deleting_it only asserts the
+        // HasApiKey boolean, which a write path that overwrote the row with a different (but still
+        // non-null) value would satisfy just as happily. This test is the positive control: it
+        // reads the actual stored row before and after the omitted-apiKey update and asserts the
+        // value itself, not just its presence, survived unchanged (CLAUDE.md §4).
+        await SeedAdminKeyAsync();
+        using var client = CreateAdminClient();
+
+        var created = await CreateSourceAsync(client, "Key-preserving " + Guid.NewGuid().ToString("N"), SecretApiKey);
+
+        using var response = await client.PutAsJsonAsync($"{SourcesRoute}/{created.Id}", new
+        {
+            kind = created.Kind,
+            displayName = created.DisplayName,
+            baseUrl = "http://192.0.2.32:5076",
+            // apiKey omitted on purpose — this is the "leave alone" contract under test.
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        await _factory.SeedAsync(db =>
+        {
+            var row = db.Settings.Find(SourceRepository.ApiKeySettingName(created.Id));
+            Assert.NotNull(row);
+            Assert.Equal(SecretApiKey, row!.Value);
+            return Task.CompletedTask;
+        });
+    }
+
+    [Fact]
     public async Task Deleting_a_source_also_removes_its_stored_key()
     {
         await SeedAdminKeyAsync();
