@@ -245,6 +245,10 @@ thing it bootstraps exists.
 Why each works the way it does, and what would break if it were "tidied", is in
 [ADR 0004](docs/adr/0004-admin-key-write-only-with-bootstrap-bypass.md).
 
+**Sources' key has no clear-in-place route.** Dropping a source's key while keeping the source
+configured is a real but currently hypothetical need; deferred until reported rather than solved
+speculatively. See [ADR 0010](docs/adr/0010-secrets-clear-route.md).
+
 ---
 
 ## Route classification

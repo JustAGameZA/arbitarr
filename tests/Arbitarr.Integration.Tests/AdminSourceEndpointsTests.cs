@@ -195,12 +195,22 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
         // Updating_a_source_changes_it_and_can_disable_it_without_deleting_it only asserts the
         // HasApiKey boolean, which a write path that overwrote the row with a different (but still
         // non-null) value would satisfy just as happily. This test is the positive control: it
-        // reads the actual stored row before and after the omitted-apiKey update and asserts the
-        // value itself, not just its presence, survived unchanged (CLAUDE.md §4).
+        // reads the actual stored row's value BEFORE the update (proving the seeded key really
+        // reached the row) and AGAIN afterward (proving the omitted-apiKey PUT left that exact
+        // value in place), rather than trusting the boolean or a single post-update read that
+        // could not tell "preserved" from "coincidentally re-seeded" (CLAUDE.md §4).
         await SeedAdminKeyAsync();
         using var client = CreateAdminClient();
 
         var created = await CreateSourceAsync(client, "Key-preserving " + Guid.NewGuid().ToString("N"), SecretApiKey);
+
+        await _factory.SeedAsync(db =>
+        {
+            var row = db.Settings.Find(SourceRepository.ApiKeySettingName(created.Id));
+            Assert.NotNull(row);
+            Assert.Equal(SecretApiKey, row!.Value);
+            return Task.CompletedTask;
+        });
 
         using var response = await client.PutAsJsonAsync($"{SourcesRoute}/{created.Id}", new
         {
