@@ -167,6 +167,14 @@ describe('System', () => {
     renderSurface(<SystemPage />);
 
     expect(await screen.findByText('a1b2c3d')).toBeInTheDocument();
+    // Pins the row layout, not just the text: with the old counter-tile classes
+    // every text assertion here still passes while the SHA is clipped. The
+    // value must be a dd in the facts list carrying the wrapping factValue rule.
+    const commit = screen.getByText('a1b2c3d');
+    expect(commit.tagName).toBe('DD');
+    expect(commit.className).toMatch(/factValue/);
+    expect(commit.closest('dl')?.className).toMatch(/facts/);
+    expect(screen.getByText('Commit').tagName).toBe('DT');
     expect(screen.getByText('arbitarr:a1b2c3d')).toBeInTheDocument();
     expect(screen.getByText('2026-09-06T12:00:00Z')).toBeInTheDocument();
     expect(screen.getByText('1.2.3+a1b2c3d')).toBeInTheDocument();

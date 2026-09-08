@@ -50,7 +50,9 @@
 
 .fact {
   /* A grid item can't span both columns as a block, so the wrapper is dissolved
-     and its dt/dd become the row's two cells directly. */
+     and its dt/dd become the row's two cells directly. The wrapper still has
+     to exist: the .fact:last-child rule below keys on it to drop the final
+     row's rule, so flattening dt/dd straight into the dl loses that. */
   display: contents;
 }
 
@@ -79,8 +81,19 @@
   /* A SHA or registry path has no spaces to break at; without this the column
      grows past the panel instead of wrapping. */
   overflow-wrap: anywhere;
-  /* Lets the value be selected and copied in one drag without the label. */
-  user-select: all;
+}
+
+/* Below the label column's worth of width, the two-column row leaves the value
+   a ribbon a few characters wide; stack label over value instead. */
+@media (max-width: 480px) {
+  .facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .factLabel {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
 }
 
 .subheading {
