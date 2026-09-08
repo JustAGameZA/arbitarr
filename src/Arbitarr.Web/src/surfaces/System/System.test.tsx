@@ -6,6 +6,8 @@ import { useAdminKeyStore } from '../../state/adminKeyStore';
 import { SERVER_KEY_UNSET_MESSAGE } from '../QueryState';
 import { mockApi } from '../../test/mockApi';
 import { renderSurface } from '../../test/renderSurface';
+import surfaceStyles from '../surface.module.css';
+import systemStyles from './System.module.css';
 
 const staleness = {
   worst_case_unjudged_age: '02:30:00',
@@ -170,10 +172,21 @@ describe('System', () => {
     // Pins the row layout, not just the text: with the old counter-tile classes
     // every text assertion here still passes while the SHA is clipped. The
     // value must be a dd in the facts list carrying the wrapping factValue rule.
+    //
+    // arb-9zm: the wrapping rule moved to the SHARED surface.module.css, while
+    // System.module.css keeps a same-NAMED local .factValue carrying only the
+    // monospace face. A bare /factValue/ substring match is therefore vacuous --
+    // the local class alone satisfies it, so the assertion stays green even if the
+    // shared wrapping rule is dropped entirely. Verified by mutation: replacing
+    // `${styles.factValue} ${local.factValue}` with `local.factValue` in System.tsx
+    // left all 10 tests in this file passing. Match the two hashed class names
+    // separately (css: true in vite.config.ts makes them real), so removing either
+    // one fails this test.
     const commit = screen.getByText('a1b2c3d');
     expect(commit.tagName).toBe('DD');
-    expect(commit.className).toMatch(/factValue/);
-    expect(commit.closest('dl')?.className).toMatch(/facts/);
+    expect(commit.classList).toContain(surfaceStyles.factValue);
+    expect(commit.classList).toContain(systemStyles.factValue);
+    expect(commit.closest('dl')?.classList).toContain(surfaceStyles.facts);
     expect(screen.getByText('Commit').tagName).toBe('DT');
     expect(screen.getByText('arbitarr:a1b2c3d')).toBeInTheDocument();
     expect(screen.getByText('2026-09-06T12:00:00Z')).toBeInTheDocument();

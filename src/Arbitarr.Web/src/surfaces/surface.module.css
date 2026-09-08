@@ -201,3 +201,77 @@
   border-color: var(--danger);
   color: var(--danger);
 }
+
+/* --- Fact grids (arb-9zm) ------------------------------------------------- */
+
+/*
+ * The label/value definition-list grid shared by the Dashboard's worker-health
+ * and effective-config panels and the System page's build panel. The two
+ * surfaces had grown independent copies with different narrow-viewport
+ * breakpoints (560px, 480px); this is the one shape, consolidated here so a
+ * future change to it moves in one place, matching every other shared
+ * primitive in this file.
+ *
+ * The 480px breakpoint is kept (System's, not Dashboard's 560px): the row
+ * only genuinely needs to stack once the value column is squeezed to a few
+ * characters, and System's build values (a 40-char SHA, a registry path) are
+ * the least forgiving content either surface renders into this grid — a
+ * breakpoint chosen for its hardest case works for the easier ones too, while
+ * the reverse is not guaranteed.
+ */
+.facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: 1.5rem;
+  margin: 0;
+}
+
+/* A grid item can't span both columns as a block, so a row wrapper (rendered
+   as a <div>) is dissolved with display: contents and its dt/dd become the
+   row's two cells directly. The wrapper still has to exist in the markup:
+   the .fact:last-child rule below keys on it to drop the final row's border,
+   which flattening dt/dd straight into the dl would lose. A surface with no
+   need for that border (Dashboard) can render dt/dd without the wrapper —
+   .factLabel/.factValue apply either way. */
+.fact {
+  display: contents;
+}
+
+.factLabel,
+.factValue {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+  margin: 0;
+}
+
+.fact:last-child .factLabel,
+.fact:last-child .factValue {
+  border-bottom: none;
+}
+
+.factLabel {
+  color: var(--fg-muted);
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+
+.factValue {
+  color: var(--fg-primary);
+  font-size: 0.8125rem;
+  /* A long identifier (a SHA, a registry path) has no spaces to break at;
+     without this the column grows past the panel instead of wrapping. */
+  overflow-wrap: anywhere;
+}
+
+/* Below the label column's worth of width, the two-column row leaves the
+   value a ribbon a few characters wide; stack label over value instead. */
+@media (max-width: 480px) {
+  .facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .factLabel {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+}
