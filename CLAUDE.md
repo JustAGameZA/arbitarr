@@ -254,7 +254,7 @@ bd close <id>         # Complete work
 - Run `bd prime` for detailed command reference and session close protocol
 - Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
 
-**Architecture in one line:** issues live in a local Dolt DB. In this repo beads runs in **stealth mode** — the Dolt store and `.beads/issues.jsonl` are excluded via `.git/info/exclude`, and **nothing is pushed to `origin`**. Upstream's default topology, which syncs `refs/dolt/data` to the git remote, is *not* in use here and **must not be enabled on this public repo** — it would publish the tracker and every stored memory. See https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md for the upstream model and its anti-patterns.
+**Architecture in one line:** issues live in a local Dolt DB. In this repo beads runs in **stealth mode** — the Dolt store and `.beads/issues.jsonl` are excluded via `.git/info/exclude`, and **nothing is pushed to `origin`**. Upstream's default topology, which syncs `refs/dolt/data` to the git remote, is *not* in use here and **must not be enabled on this public repo** — it would publish the tracker and every stored memory. That rule is now also a mechanism, not just prose: `.githooks/pre-push` rejects any pushed ref matching `refs/dolt/*` (see CONTRIBUTING.md's shareable pre-commit hook section). See https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md for the upstream model and its anti-patterns.
 
 ## Agent Context Profiles
 
