@@ -155,9 +155,11 @@ Environment notes: vitest output carries ANSI codes (`sed 's/\x1b\[[0-9;]*m//g'`
 - **`git add -A` will happily stage conflict markers**, and `rebase --continue` accepts
   them. A local build can still pass if it is stale. Before pushing a rebase:
   ```
-  git grep -n -E '^(<{7}|={7}|>{7})( |$)'
+  git grep -n -a -P '^(<{7}|={7}|>{7})( |\r?$)'
   ```
-  and rebuild fresh.
+  and rebuild fresh. Use `-a` (treat as text; CRLF files can trip binary detection) and `-P`
+  (Perl regex; POSIX `-E` does not interpret the `\r` escape, so `-E` silently fails to match
+  a bare `=======` line in a CRLF file such as `Program.cs`, `routes.tsx` or `Settings.tsx`).
 - **Never remove conflict markers with a blind line-delete.** `sed '/^=======$/d'` has
   twice deleted a closing brace that sat where the marker was. Edit the region.
 - Branch protection is `strict: true`: every merge puts the other open PRs behind, so
