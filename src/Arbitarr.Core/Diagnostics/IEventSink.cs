@@ -25,7 +25,15 @@ public enum RecordedEventKind
     /// <summary>A search was served, distinguishing cache-served from live-query-served.</summary>
     SearchServed,
 
-    /// <summary>A source failed, with the failure kind.</summary>
+    /// <summary>
+    /// A source failed, with the failure kind. When <c>SourceDisplayName</c> is populated, this
+    /// event feeds <c>NotificationPolicy.FoldSourceFailure</c>'s per-source consecutive-failure
+    /// counter (default threshold 3 — <c>NotificationSettings.DefaultConsecutiveFailureThreshold</c>,
+    /// operator-configurable) and, on reaching it, produces a "source is down" notification. A null
+    /// <c>SourceDisplayName</c> keeps the event out of that fold entirely — see the parameter doc
+    /// below. <c>Arbitarr.Api.Search.DownloadProxyEndpoint</c> is a caller that relies on this to
+    /// record a failure without arming the fold.
+    /// </summary>
     SourceFailed,
 }
 
@@ -38,7 +46,12 @@ public enum RecordedEventKind
 /// <param name="Kind">Which kind of event this is.</param>
 /// <param name="Summary">One line stating what happened. Required.</param>
 /// <param name="Reason">Why it happened (plan AC2 — a reason, not only an event name), or null.</param>
-/// <param name="SourceDisplayName">The source involved, by display name or id — NEVER a credential (plan §9).</param>
+/// <param name="SourceDisplayName">
+/// The source involved, by display name or id — NEVER a credential (plan §9). Populating this on
+/// a <see cref="RecordedEventKind.SourceFailed"/> event arms
+/// <c>NotificationPolicy.FoldSourceFailure</c>'s per-source consecutive-failure counter; passing
+/// null keeps the event out of that fold. See <see cref="RecordedEventKind.SourceFailed"/>.
+/// </param>
 /// <param name="Detail">Free-form kind-specific detail, or null.</param>
 /// <param name="ShadowMode">
 /// For a <see cref="RecordedEventKind.Decision"/>, whether the pipeline was in shadow mode when the
@@ -87,7 +100,13 @@ public interface IEventSink
     /// <param name="kind">Which kind of event this is.</param>
     /// <param name="summary">One line stating what happened. Required.</param>
     /// <param name="reason">Why it happened (plan AC2 — a reason, not only an event name), or null.</param>
-    /// <param name="sourceDisplayName">The source involved, by display name or id — NEVER a credential (plan §9).</param>
+    /// <param name="sourceDisplayName">
+    /// The source involved, by display name or id — NEVER a credential (plan §9). Populating this
+    /// on a <see cref="RecordedEventKind.SourceFailed"/> event arms
+    /// <c>NotificationPolicy.FoldSourceFailure</c>'s per-source consecutive-failure counter;
+    /// passing null keeps the event out of that fold. See
+    /// <see cref="RecordedEventKind.SourceFailed"/>.
+    /// </param>
     /// <param name="detail">Free-form kind-specific detail, or null.</param>
     /// <param name="shadowMode">
     /// For a <see cref="RecordedEventKind.Decision"/>, whether the pipeline was in shadow mode when
