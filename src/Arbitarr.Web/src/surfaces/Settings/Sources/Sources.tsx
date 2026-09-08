@@ -294,12 +294,6 @@ export function SourcesSection() {
     setEditDraft(draftOf(source));
   };
 
-  /**
-   * Enable/disable from the row, without opening the editor. It still sends the
-   * full body — `kind`, `displayName` and `baseUrl` included — because omitting
-   * them is a validation failure, not a no-op. `apiKey` stays absent, which is
-   * what keeps a toggle from wiping the stored credential.
-   */
   const { settle } = useSecretEvictingMutation();
 
   /**
@@ -329,6 +323,12 @@ export function SourcesSection() {
     setEditDraft((draft) => (draft.apiKey === '' ? draft : { ...draft, apiKey: '' }));
   };
 
+  /**
+   * Enable/disable from the row, without opening the editor. It still sends the
+   * full body — `kind`, `displayName` and `baseUrl` included — because omitting
+   * them is a validation failure, not a no-op. `apiKey` stays absent, which is
+   * what keeps a toggle from wiping the stored credential.
+   */
   const toggleEnabled = (source: SourceSummary) =>
     update.mutate(
       {
