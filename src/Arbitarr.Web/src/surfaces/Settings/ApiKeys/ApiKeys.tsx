@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { QueryState, errorMessage } from '../../QueryState';
 import type { ApiKeyEntry, ApiKeyScope, CreatedApiKeyResponse } from '../../../api/types';
 import styles from '../../surface.module.css';
+import { useSecretEvictingMutation } from '../useSecretEvictingMutation';
 import local from './ApiKeys.module.css';
 import {
   useApiKeysQuery,
@@ -323,45 +324,34 @@ export function ApiKeysSection() {
   const [created, setCreated] = useState<CreatedApiKeyResponse | null>(null);
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
   const [revokeFailedId, setRevokeFailedId] = useState<number | null>(null);
-  // #98's refusal, held as the id it belongs to plus a CAPTURED copy of the error
-  // — the arb-689 shape, and the same reason `createFailure` above is captured:
-  // `onRemove` resets the mutation once it settles, so `remove.error` is undefined
-  // by the time the row renders and a branch that consulted it would show nothing.
-  // Two pieces of state rather than one because the id is what routes the message
-  // to a row, and the message is what the row shows.
+  // #98's refusal, held as the id it belongs to plus a CAPTURED copy of the
+  // error: `onRemove` resets the mutation once it settles (for fresh state on
+  // the next attempt, not for secret eviction — remove's variables are a bare
+  // id, so this mutation never goes through `useSecretEvictingMutation`), so
+  // `remove.error` is undefined by the time the row renders and a branch that
+  // consulted it would show nothing. Two pieces of state rather than one
+  // because the id is what routes the message to a row, and the message is
+  // what the row shows.
   const [removeFailedId, setRemoveFailedId] = useState<number | null>(null);
   const [removeFailure, setRemoveFailure] = useState<unknown>(null);
   // Both outcomes of a create are held HERE rather than read back off the
-  // mutation, because the mutation is reset the moment it settles (see
-  // `dropCreateFromCache`): after that `create.data` and `create.error` are both
-  // undefined, so a render that consulted them would show neither the key nor the
-  // server's refusal.
+  // mutation, because the mutation is reset (via `settle`/`create.reset()`
+  // below) the moment it settles: after that `create.data` and `create.error`
+  // are both undefined, so a render that consulted them would show neither
+  // the key nor the server's refusal.
   const [createFailure, setCreateFailure] = useState<unknown>(null);
 
-  /**
-   * Drop the settled create from the MutationCache.
-   *
-   * `reset()` releases the mutation, and the `gcTime: 0` in `queries.ts` is what
-   * makes that collection immediate rather than five minutes late — together they
-   * are what stops `state.data`, plaintext and all, sitting in the cache where the
-   * devtools or the console can still read it.
-   *
-   * WHERE this is called from is load-bearing. It must run from the per-call
-   * callbacks passed to `mutate(vars, { ... })` below — never from a hook-level
-   * `onSuccess`/`onSettled` in `queries.ts`. `Mutation.execute` awaits the
-   * hook-level callbacks BEFORE it dispatches the settle action, and it is that
-   * dispatch which notifies the observer and runs these per-call ones. Since
-   * `MutationObserver.reset()` clears its current mutation and removes the
-   * observer, and the notify path is gated on `hasListeners()`, a reset from up
-   * there does not merely race the capture below: it deletes the callback's only
-   * delivery route, so the reveal never receives the key and a rejection is
-   * swallowed with no message shown. Called from here the capture has already
-   * happened, so a plain synchronous reset is correct and no deferral is needed.
-   */
-  const dropCreateFromCache = () => {
-    create.reset();
-  };
+  const { settle } = useSecretEvictingMutation();
 
+  /**
+   * Create is the one mutation in this file whose secret rides on `data`
+   * (the plaintext key), not on `variables` — so its success path captures
+   * `response` itself rather than going through `settle`'s error-only shape,
+   * while its failure path uses `settle` like every other secret-bearing
+   * write. Either way `create.reset()` runs from THIS per-call site; see
+   * `useSecretEvictingMutation` for why a hook-level reset in `queries.ts`
+   * would swallow the response before it reaches here.
+   */
   const onCreate = (label: string, scope: ApiKeyScope) => {
     setCreated(null);
     // Clear the previous attempt's error before starting a new one. Without this
@@ -374,12 +364,9 @@ export function ApiKeysSection() {
       {
         onSuccess: (response) => {
           setCreated(response);
-          dropCreateFromCache();
+          create.reset();
         },
-        onError: (error) => {
-          setCreateFailure(error);
-          dropCreateFromCache();
-        },
+        onError: (error) => settle(create, error, setCreateFailure),
       },
     );
   };
@@ -388,10 +375,9 @@ export function ApiKeysSection() {
    * Dropping the reveal drops the rendered copy — the last one left.
    *
    * There is deliberately no `create.reset()` here: the cached copy is already
-   * gone, dropped by `dropCreateFromCache` the moment the create settled, so this
-   * only has to clear the state the panel renders from. A reset here as well would
-   * be unfalsifiable — removing it changes no observable behaviour — and a line no
-   * test can hold accountable is one a later edit can quietly break.
+   * gone, evicted the moment the create settled (see `useSecretEvictingMutation`'s
+   * module doc for why no caller ever needs a second reset once settle has run),
+   * so this only has to clear the state the panel renders from.
    */
   const onDismissReveal = () => {
     setCreated(null);
