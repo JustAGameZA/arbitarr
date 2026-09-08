@@ -170,6 +170,14 @@ Environment notes: vitest output carries ANSI codes (`sed 's/\x1b\[[0-9;]*m//g'`
   if they differ, line endings moved.
 - **`.omc/` is gitignored**, so plans exist only in the primary checkout. An agent
   working in a worktree cannot see them and must be given the content it needs.
+- **Not every knowledge channel crosses the worktree boundary.** `CLAUDE.md` and
+  `.claude/settings.json` travel *with the branch* — a worktree checked out on a branch
+  older than e4ff9c8 has neither, so an agent there sees none of this file's rules and
+  the `SessionStart` hook (which needs `.claude/settings.json` to fire) never runs. `bd`
+  is the exception: it resolves through the git worktree link back to the primary
+  checkout's store, so `bd show`/`bd prime` work from any worktree regardless of branch
+  age — but only when run manually, since the hook that would run `bd prime`
+  automatically is itself gated on the missing settings file.
 
 ## 7. Working as several agents
 
