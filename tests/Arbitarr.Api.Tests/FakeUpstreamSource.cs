@@ -37,7 +37,7 @@ internal sealed class FakeUpstreamSource : IUpstreamSource
         return Task.FromResult(_searchResults);
     }
 
-    public Task<SourceCaps> GetCapsAsync(CancellationToken cancellationToken = default) =>
+    public Task<SourceCaps> GetCapsAsync(SearchProtocol protocol, CancellationToken cancellationToken = default) =>
         Task.FromResult(new SourceCaps(Array.Empty<int>(), false, false, null));
 
     public Task<Stream> FetchDownloadAsync(ReleaseCandidate release, CancellationToken cancellationToken = default)

@@ -125,7 +125,7 @@ public class CapsXmlGoldenTests
         public Task<IReadOnlyList<Arbitarr.Core.Releases.ReleaseCandidate>> SearchAsync(SearchQuery query, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<Arbitarr.Core.Releases.ReleaseCandidate>>(Array.Empty<Arbitarr.Core.Releases.ReleaseCandidate>());
 
-        public Task<SourceCaps> GetCapsAsync(CancellationToken cancellationToken = default) => Task.FromResult(_caps);
+        public Task<SourceCaps> GetCapsAsync(SearchProtocol protocol, CancellationToken cancellationToken = default) => Task.FromResult(_caps);
 
         public Task<Stream> FetchDownloadAsync(Arbitarr.Core.Releases.ReleaseCandidate release, CancellationToken cancellationToken = default) =>
             Task.FromResult<Stream>(new MemoryStream());

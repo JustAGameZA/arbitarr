@@ -113,7 +113,7 @@ public sealed class PaginationSnapshotService
     {
         ArgumentNullException.ThrowIfNull(query);
 
-        var snapshotToken = ComputeSnapshotToken(searchType, query.QueryText, query.Categories);
+        var snapshotToken = ComputeSnapshotToken(searchType, query.Protocol, query.QueryText, query.Categories);
         var now = _timeProvider.GetUtcNow();
 
         var cached = await _snapshotStore.GetAsync(snapshotToken, now, cancellationToken).ConfigureAwait(false);
@@ -176,11 +176,31 @@ public sealed class PaginationSnapshotService
     /// Deterministic snapshot key derived only from the query's identity-defining parameters —
     /// never <c>offset</c>/<c>limit</c>, since those are what legitimately varies between two
     /// pages of "the same query" and must resolve to the same snapshot row.
+    ///
+    /// <para>
+    /// The protocol IS identity-defining (#99): the two families are served from different
+    /// upstream endpoints, and NZBHydra2's torznab endpoint excludes usenet indexers entirely, so
+    /// the same q/cat under the two protocols legitimately resolves to two different release sets.
+    /// Without the protocol in this token a Torznab search would populate the snapshot a Newznab
+    /// caller then reads, handing a usenet client an all-torrent result set — the very failure
+    /// #99 is about, reintroduced one layer above the URL that was fixed.
+    /// </para>
+    ///
+    /// <para>
+    /// Components are separated by a unit separator (U+001F), which cannot occur in a search type,
+    /// a protocol name, or a category list, so two different component tuples cannot concatenate
+    /// into one token. The previous separator-free form could: ("tvsearch", "x") and ("tvsearc",
+    /// "hx") both flattened to the same string.
+    /// </para>
     /// </summary>
-    private static string ComputeSnapshotToken(string searchType, string? queryText, IReadOnlyList<int> categories)
+    private static string ComputeSnapshotToken(
+        string searchType,
+        SearchProtocol protocol,
+        string? queryText,
+        IReadOnlyList<int> categories)
     {
         var normalizedCategories = string.Join(",", categories.OrderBy(c => c));
-        var raw = $"{searchType}{queryText}{normalizedCategories}";
+        var raw = $"{searchType}\u001f{protocol}\u001f{queryText}\u001f{normalizedCategories}";
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
         return Convert.ToHexString(hash);
     }

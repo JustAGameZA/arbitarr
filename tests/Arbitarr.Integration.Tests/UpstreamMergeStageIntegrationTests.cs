@@ -36,7 +36,7 @@ public class UpstreamMergeStageIntegrationTests
 
         var mergeStage = new UpstreamMergeStage(new IUpstreamSource[] { sourceA, sourceB });
 
-        var result = await mergeStage.MergeAsync(new SearchQuery(null, Array.Empty<int>(), 50), CancellationToken.None);
+        var result = await mergeStage.MergeAsync(new SearchQuery(null, Array.Empty<int>(), 50, SearchProtocol.Torznab), CancellationToken.None);
 
         Assert.Equal(2, result.Releases.Count);
         Assert.Contains(result.Releases, r => r.Candidate.Guid == "source-a-1");
@@ -54,7 +54,7 @@ public class UpstreamMergeStageIntegrationTests
 
         var mergeStage = new UpstreamMergeStage(new IUpstreamSource[] { sourceA, rateLimited });
 
-        var result = await mergeStage.MergeAsync(new SearchQuery(null, Array.Empty<int>(), 50), CancellationToken.None);
+        var result = await mergeStage.MergeAsync(new SearchQuery(null, Array.Empty<int>(), 50, SearchProtocol.Torznab), CancellationToken.None);
 
         Assert.Single(result.Releases);
         Assert.Equal("source-a-1", result.Releases[0].Candidate.Guid);

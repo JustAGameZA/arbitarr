@@ -34,7 +34,7 @@ public class SearchResultRefresherTests
     [Fact]
     public async Task Refresh_re_runs_the_stored_query_and_returns_a_payload_carrying_the_same_query()
     {
-        var query = new SearchQuery("bleach", new[] { 5000 }, 50, 0, TvdbId: 74796, Season: 17, Episode: 36);
+        var query = new SearchQuery("bleach", new[] { 5000 }, 50, SearchProtocol.Torznab, 0, TvdbId: 74796, Season: 17, Episode: 36);
         var entry = MakeEntry(new CachedSearchPayload(query, Array.Empty<RenderedRelease>()).Serialize());
 
         var source = new FakeUpstreamSource("eztv", searchResults: new[] { MakeCandidate("fresh") });
@@ -72,7 +72,7 @@ public class SearchResultRefresherTests
     [Fact]
     public async Task Refresh_returns_null_when_the_merge_is_empty_and_the_source_was_rate_limited()
     {
-        var query = new SearchQuery("bleach", Array.Empty<int>(), 50);
+        var query = new SearchQuery("bleach", Array.Empty<int>(), 50, SearchProtocol.Torznab);
         var entry = MakeEntry(new CachedSearchPayload(query, Array.Empty<RenderedRelease>()).Serialize());
 
         var source = new FakeUpstreamSource("eztv", searchException: new RequestLimitReachedException());
@@ -84,7 +84,7 @@ public class SearchResultRefresherTests
     [Fact]
     public async Task Refresh_returns_an_empty_payload_when_a_healthy_source_genuinely_has_no_results()
     {
-        var query = new SearchQuery("bleach", Array.Empty<int>(), 50);
+        var query = new SearchQuery("bleach", Array.Empty<int>(), 50, SearchProtocol.Torznab);
         var entry = MakeEntry(new CachedSearchPayload(query, Array.Empty<RenderedRelease>()).Serialize());
 
         var refresher = new SearchResultRefresher(new UpstreamMergeStage(new[] { new FakeUpstreamSource("eztv") }));

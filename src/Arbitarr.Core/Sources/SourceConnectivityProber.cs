@@ -11,10 +11,32 @@ namespace Arbitarr.Core.Sources;
 ///
 /// <para><b>Real request, not URL validation.</b> The plan rejects a shape check outright — "a test
 /// that passes on a wrong key teaches operators to distrust it". So this issues the source's own
-/// capabilities call (<c>/api/?t=caps</c>, the same Torznab endpoint <c>NzbHydraSource</c> uses for
-/// caps) with the stored key attached, and only reports <see cref="SourceProbeOutcome.Ok"/> when
-/// the source answers with something that actually parses as that API. A wrong key produces
-/// <see cref="SourceProbeOutcome.AuthenticationFailed"/>, which is the entire point.</para>
+/// capabilities call with the stored key attached, and only reports
+/// <see cref="SourceProbeOutcome.Ok"/> when the source answers with something that actually parses
+/// as that API. A wrong key produces <see cref="SourceProbeOutcome.AuthenticationFailed"/>, which is
+/// the entire point.</para>
+///
+/// <para><b>Which endpoint, and why one is enough (#99).</b> This probes <c>{base}/api?t=caps</c> —
+/// the Newznab endpoint. Since #99, <c>NzbHydraSource</c> chooses between <c>{base}/api</c> and
+/// <c>{base}/torznab/api</c> per request, so "the endpoint NzbHydraSource uses" is no longer a
+/// single address and this probe covers one of the two.
+///
+/// That is sufficient because of what the four <see cref="SourceProbeOutcome"/> values actually
+/// discriminate, all of which are properties of the SOURCE rather than of an endpoint: DNS,
+/// routing and TCP reachability (<see cref="SourceProbeOutcome.Unreachable"/>), the TLS handshake
+/// (<see cref="SourceProbeOutcome.TlsFailure"/>), whether the stored key is accepted
+/// (<see cref="SourceProbeOutcome.AuthenticationFailed"/>), and whether the address points at an
+/// NZBHydra2 at all rather than some other service or a login page
+/// (<see cref="SourceProbeOutcome.UnexpectedResponse"/>). NZBHydra2 serves both endpoints from one
+/// process, one certificate and one API key, so none of those four can differ between them.
+///
+/// What a single probe does NOT cover is per-endpoint indexer SELECTION — the actual #99 symptom,
+/// where <c>/torznab/api</c> answers successfully but with no usenet indexers in the selection.
+/// Probing both endpoints would not detect that either: both would return a valid caps document
+/// and both would report Ok. That symptom is a search-results question, not a connectivity one, and
+/// it is covered where it lives: by the per-protocol upstream-URL tests on
+/// <c>NzbHydraSource</c>. Adding a second probe call here would double the probe's latency and its
+/// failure surface while answering nothing the first call has not already answered.</para>
 ///
 /// <para><b>Short timeout.</b> §3.3 requires a wrong host to fail in seconds rather than hang the
 /// UI, so the probe imposes <see cref="DefaultTimeout"/> itself through a linked cancellation token
@@ -191,8 +213,11 @@ public sealed class SourceConnectivityProber
     /// <summary>
     /// Builds the caps URI, preserving any base path the source is mounted under (a source behind a
     /// reverse proxy at <c>/hydra</c> must be probed at <c>/hydra/api</c>, not <c>/api</c>). The key
-    /// travels as a query parameter because that is what the Torznab API takes — the same choice
-    /// <c>NzbHydraSource</c> makes — and this URI is never logged or returned.
+    /// travels as a query parameter because that is what the Newznab/Torznab API takes — the same
+    /// choice <c>NzbHydraSource</c> makes — and this URI is never logged or returned.
+    ///
+    /// The <c>/api</c> suffix is the Newznab endpoint; see the type doc for why probing that one
+    /// alone establishes everything the four outcomes can distinguish (#99).
     /// </summary>
     private static Uri BuildCapsUri(string baseUrl, string? apiKey)
     {

@@ -19,7 +19,7 @@ public static class CapsEndpoint
         IReadOnlyList<IUpstreamSource> sources,
         CancellationToken cancellationToken)
     {
-        var caps = await aggregator.AggregateAsync(sources, cancellationToken).ConfigureAwait(false);
+        var caps = await aggregator.AggregateAsync(sources, SearchProtocol.Torznab, cancellationToken).ConfigureAwait(false);
         var xml = TorznabXmlWriter.WriteCaps(caps);
         return Results.Text(XmlDocumentRendering.ToXmlString(xml), TorznabXmlWriter.ContentType);
     }
@@ -29,7 +29,7 @@ public static class CapsEndpoint
         IReadOnlyList<IUpstreamSource> sources,
         CancellationToken cancellationToken)
     {
-        var caps = await aggregator.AggregateAsync(sources, cancellationToken).ConfigureAwait(false);
+        var caps = await aggregator.AggregateAsync(sources, SearchProtocol.Newznab, cancellationToken).ConfigureAwait(false);
         var xml = NewznabXmlWriter.WriteCaps(caps);
         return Results.Text(XmlDocumentRendering.ToXmlString(xml), NewznabXmlWriter.ContentType);
     }

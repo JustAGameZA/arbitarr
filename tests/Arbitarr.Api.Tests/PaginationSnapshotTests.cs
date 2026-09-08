@@ -37,8 +37,8 @@ public class PaginationSnapshotTests
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var service = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);
 
-        var firstPage = await service.GetPageAsync("search", new SearchQuery("x", Array.Empty<int>(), 50, 0));
-        var secondPage = await service.GetPageAsync("search", new SearchQuery("x", Array.Empty<int>(), 50, 50));
+        var firstPage = await service.GetPageAsync("search", new SearchQuery("x", Array.Empty<int>(), 50, SearchProtocol.Torznab, 0));
+        var secondPage = await service.GetPageAsync("search", new SearchQuery("x", Array.Empty<int>(), 50, SearchProtocol.Torznab, 50));
 
         Assert.Equal(50, firstPage.Releases.Count);
         Assert.Equal(50, secondPage.Releases.Count);
@@ -59,8 +59,8 @@ public class PaginationSnapshotTests
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var service = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);
 
-        await service.GetPageAsync("search", new SearchQuery("x", Array.Empty<int>(), 5, 0));
-        await service.GetPageAsync("search", new SearchQuery("x", Array.Empty<int>(), 5, 5));
+        await service.GetPageAsync("search", new SearchQuery("x", Array.Empty<int>(), 5, SearchProtocol.Torznab, 0));
+        await service.GetPageAsync("search", new SearchQuery("x", Array.Empty<int>(), 5, SearchProtocol.Torznab, 5));
 
         // Only the first (cache-miss) call should have persisted a snapshot.
         Assert.Equal(1, store.SaveCallCount);
@@ -75,8 +75,8 @@ public class PaginationSnapshotTests
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var service = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);
 
-        await service.GetPageAsync("search", new SearchQuery("bleach", Array.Empty<int>(), 5, 0));
-        await service.GetPageAsync("search", new SearchQuery("naruto", Array.Empty<int>(), 5, 0));
+        await service.GetPageAsync("search", new SearchQuery("bleach", Array.Empty<int>(), 5, SearchProtocol.Torznab, 0));
+        await service.GetPageAsync("search", new SearchQuery("naruto", Array.Empty<int>(), 5, SearchProtocol.Torznab, 0));
 
         Assert.Equal(2, store.SaveCallCount);
     }
@@ -90,12 +90,12 @@ public class PaginationSnapshotTests
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var service = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time, ttl: TimeSpan.FromSeconds(60));
 
-        await service.GetPageAsync("search", new SearchQuery("x", Array.Empty<int>(), 5, 0));
+        await service.GetPageAsync("search", new SearchQuery("x", Array.Empty<int>(), 5, SearchProtocol.Torznab, 0));
         Assert.Equal(1, store.SaveCallCount);
 
         time.Advance(TimeSpan.FromSeconds(61));
 
-        await service.GetPageAsync("search", new SearchQuery("x", Array.Empty<int>(), 5, 0));
+        await service.GetPageAsync("search", new SearchQuery("x", Array.Empty<int>(), 5, SearchProtocol.Torznab, 0));
         Assert.Equal(2, store.SaveCallCount);
     }
 
@@ -108,7 +108,7 @@ public class PaginationSnapshotTests
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var service = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);
 
-        var result = await service.GetPageAsync("search", new SearchQuery("x", Array.Empty<int>(), 5, 0));
+        var result = await service.GetPageAsync("search", new SearchQuery("x", Array.Empty<int>(), 5, SearchProtocol.Torznab, 0));
 
         Assert.Empty(result.Releases);
         Assert.Contains("eztv", result.RateLimitedSources);
@@ -124,9 +124,9 @@ public class PaginationSnapshotTests
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var service = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);
 
-        await service.GetPageAsync("search", new SearchQuery("x", Array.Empty<int>(), 3, 0));
-        await service.GetPageAsync("search", new SearchQuery("x", Array.Empty<int>(), 7, 3));
-        await service.GetPageAsync("search", new SearchQuery("x", Array.Empty<int>(), 1, 9));
+        await service.GetPageAsync("search", new SearchQuery("x", Array.Empty<int>(), 3, SearchProtocol.Torznab, 0));
+        await service.GetPageAsync("search", new SearchQuery("x", Array.Empty<int>(), 7, SearchProtocol.Torznab, 3));
+        await service.GetPageAsync("search", new SearchQuery("x", Array.Empty<int>(), 1, SearchProtocol.Torznab, 9));
 
         // All three requests share the same query identity (text/categories), differing only in
         // offset/limit — they must all resolve to the same materialized snapshot.

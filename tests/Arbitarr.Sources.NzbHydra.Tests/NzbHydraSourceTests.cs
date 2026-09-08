@@ -63,7 +63,7 @@ public class NzbHydraSourceTests
         var breaker = new FakeCircuitBreaker();
         var source = new NzbHydraSource(MakeOptions(), MakeHttpClient(handler), breaker);
 
-        var results = await source.SearchAsync(new SearchQuery("bleach", Array.Empty<int>(), Limit: 5));
+        var results = await source.SearchAsync(new SearchQuery("bleach", Array.Empty<int>(), Protocol: SearchProtocol.Torznab, Limit: 5));
 
         Assert.Equal(5, results.Count);
         Assert.Equal("Release 0", results[0].Title);
@@ -93,7 +93,7 @@ public class NzbHydraSourceTests
         var breaker = new FakeCircuitBreaker();
         var source = new NzbHydraSource(MakeOptions(), MakeHttpClient(handler), breaker);
 
-        var results = await source.SearchAsync(new SearchQuery("bleach", Array.Empty<int>(), Limit: 150));
+        var results = await source.SearchAsync(new SearchQuery("bleach", Array.Empty<int>(), Protocol: SearchProtocol.Torznab, Limit: 150));
 
         Assert.Equal(2, callCount);
         Assert.Equal(150, results.Count);
@@ -118,7 +118,7 @@ public class NzbHydraSourceTests
         var breaker = new FakeCircuitBreaker();
         var source = new NzbHydraSource(MakeOptions(maxUpstreamCallsPerSearch: 2), MakeHttpClient(handler), breaker);
 
-        var results = await source.SearchAsync(new SearchQuery(null, Array.Empty<int>(), Limit: 1000));
+        var results = await source.SearchAsync(new SearchQuery(null, Array.Empty<int>(), Protocol: SearchProtocol.Torznab, Limit: 1000));
 
         Assert.Equal(2, handler.RequestedUris.Count);
         Assert.Equal(200, results.Count);
@@ -134,7 +134,7 @@ public class NzbHydraSourceTests
         var breaker = new FakeCircuitBreaker();
         var source = new NzbHydraSource(MakeOptions(), MakeHttpClient(handler), breaker);
 
-        await source.SearchAsync(new SearchQuery("bleach", Array.Empty<int>(), Limit: 1));
+        await source.SearchAsync(new SearchQuery("bleach", Array.Empty<int>(), Protocol: SearchProtocol.Torznab, Limit: 1));
 
         var requestedUri = Assert.Single(handler.RequestedUris);
         var query = ParseQuery(requestedUri);
@@ -149,7 +149,7 @@ public class NzbHydraSourceTests
         breaker.SetCanCall(false);
         var source = new NzbHydraSource(MakeOptions(), MakeHttpClient(handler), breaker);
 
-        var results = await source.SearchAsync(new SearchQuery("bleach", Array.Empty<int>(), Limit: 10));
+        var results = await source.SearchAsync(new SearchQuery("bleach", Array.Empty<int>(), Protocol: SearchProtocol.Torznab, Limit: 10));
 
         Assert.Empty(results);
         Assert.Empty(handler.RequestedUris);
@@ -164,7 +164,7 @@ public class NzbHydraSourceTests
         var source = new NzbHydraSource(MakeOptions(), MakeHttpClient(handler), breaker);
 
         await Assert.ThrowsAsync<HttpRequestException>(() =>
-            source.SearchAsync(new SearchQuery("bleach", Array.Empty<int>(), Limit: 10)));
+            source.SearchAsync(new SearchQuery("bleach", Array.Empty<int>(), Protocol: SearchProtocol.Torznab, Limit: 10)));
 
         Assert.Single(breaker.Failures);
         Assert.Equal(0, breaker.SuccessCount);
@@ -195,7 +195,7 @@ public class NzbHydraSourceTests
         var breaker = new FakeCircuitBreaker();
         var source = new NzbHydraSource(MakeOptions(), MakeHttpClient(handler), breaker);
 
-        var caps = await source.GetCapsAsync();
+        var caps = await source.GetCapsAsync(SearchProtocol.Torznab);
 
         Assert.Contains(5000, caps.SupportedCategories);
         Assert.Contains(2000, caps.SupportedCategories);
@@ -212,7 +212,7 @@ public class NzbHydraSourceTests
         breaker.SetCanCall(false);
         var source = new NzbHydraSource(MakeOptions(), MakeHttpClient(handler), breaker);
 
-        var caps = await source.GetCapsAsync();
+        var caps = await source.GetCapsAsync(SearchProtocol.Torznab);
 
         Assert.Empty(caps.SupportedCategories);
         Assert.Empty(handler.RequestedUris);
@@ -253,7 +253,7 @@ public class NzbHydraSourceTests
         var breaker = new FakeCircuitBreaker();
         var source = new NzbHydraSource(MakeOptions(), MakeHttpClient(handler), breaker);
 
-        var results = await source.SearchAsync(new SearchQuery("bleach", Array.Empty<int>(), Limit: 5));
+        var results = await source.SearchAsync(new SearchQuery("bleach", Array.Empty<int>(), Protocol: SearchProtocol.Torznab, Limit: 5));
 
         var single = Assert.Single(results);
         Assert.Equal("Legit release", single.Title);
@@ -270,7 +270,7 @@ public class NzbHydraSourceTests
         var source = new NzbHydraSource(MakeOptions(), MakeHttpClient(handler), breaker);
 
         await Assert.ThrowsAsync<RequestLimitReachedException>(() =>
-            source.SearchAsync(new SearchQuery("bleach", Array.Empty<int>(), Limit: 5)));
+            source.SearchAsync(new SearchQuery("bleach", Array.Empty<int>(), Protocol: SearchProtocol.Torznab, Limit: 5)));
 
         Assert.Single(breaker.Failures);
     }
@@ -283,7 +283,7 @@ public class NzbHydraSourceTests
         var source = new NzbHydraSource(MakeOptions(), MakeHttpClient(handler), breaker);
 
         await Assert.ThrowsAsync<RequestLimitReachedException>(() =>
-            source.SearchAsync(new SearchQuery("bleach", Array.Empty<int>(), Limit: 5)));
+            source.SearchAsync(new SearchQuery("bleach", Array.Empty<int>(), Protocol: SearchProtocol.Torznab, Limit: 5)));
     }
 
     // SEC-M1 (SSRF): a <link> whose scheme doesn't match (e.g. an upstream trying to smuggle a
@@ -321,7 +321,7 @@ public class NzbHydraSourceTests
         var breaker = new FakeCircuitBreaker();
         var source = new NzbHydraSource(MakeOptions(), MakeHttpClient(handler), breaker);
 
-        var results = await source.SearchAsync(new SearchQuery("bleach", Array.Empty<int>(), Limit: 5));
+        var results = await source.SearchAsync(new SearchQuery("bleach", Array.Empty<int>(), Protocol: SearchProtocol.Torznab, Limit: 5));
 
         var single = Assert.Single(results);
         Assert.Equal("Legit release", single.Title);

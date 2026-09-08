@@ -50,7 +50,7 @@ public class SearchResultCacheStageTests
     {
         var time = new ManualTimeProvider(Start);
         var (stage, store, _) = Build(time);
-        var query = new SearchQuery("bleach", Array.Empty<int>(), 50);
+        var query = new SearchQuery("bleach", Array.Empty<int>(), 50, SearchProtocol.Torznab);
         var calls = 0;
 
         var result = await stage.GetAsync(query, Fetch(new[] { MakeRelease("a") }, degraded: false, onCall: () => calls++));
@@ -69,7 +69,7 @@ public class SearchResultCacheStageTests
     {
         var time = new ManualTimeProvider(Start);
         var (stage, store, _) = Build(time);
-        var query = new SearchQuery("bleach", Array.Empty<int>(), 50);
+        var query = new SearchQuery("bleach", Array.Empty<int>(), 50, SearchProtocol.Torznab);
 
         var result = await stage.GetAsync(query, Fetch(Array.Empty<RenderedRelease>(), degraded: true));
 
@@ -84,7 +84,7 @@ public class SearchResultCacheStageTests
     {
         var time = new ManualTimeProvider(Start);
         var (stage, store, _) = Build(time);
-        var query = new SearchQuery("bleach", Array.Empty<int>(), 50);
+        var query = new SearchQuery("bleach", Array.Empty<int>(), 50, SearchProtocol.Torznab);
 
         var result = await stage.GetAsync(query, Fetch(new[] { MakeRelease("a") }, degraded: true));
 
@@ -97,7 +97,7 @@ public class SearchResultCacheStageTests
     {
         var time = new ManualTimeProvider(Start);
         var (stage, _, _) = Build(time);
-        var query = new SearchQuery("bleach", Array.Empty<int>(), 50);
+        var query = new SearchQuery("bleach", Array.Empty<int>(), 50, SearchProtocol.Torznab);
         var calls = 0;
 
         await stage.GetAsync(query, Fetch(new[] { MakeRelease("a") }, degraded: false, onCall: () => calls++));
@@ -114,7 +114,7 @@ public class SearchResultCacheStageTests
     {
         var time = new ManualTimeProvider(Start);
         var (stage, _, _) = Build(time);
-        var query = new SearchQuery("bleach", Array.Empty<int>(), 50);
+        var query = new SearchQuery("bleach", Array.Empty<int>(), 50, SearchProtocol.Torznab);
         var calls = 0;
 
         await stage.GetAsync(query, Fetch(new[] { MakeRelease("a") }, degraded: false, onCall: () => calls++));
@@ -139,7 +139,7 @@ public class SearchResultCacheStageTests
     {
         var time = new ManualTimeProvider(Start);
         var (stage, _, _) = Build(time);
-        var query = new SearchQuery("bleach", Array.Empty<int>(), 50);
+        var query = new SearchQuery("bleach", Array.Empty<int>(), 50, SearchProtocol.Torznab);
         var calls = 0;
 
         await stage.GetAsync(query, Fetch(new[] { MakeRelease("a") }, degraded: false, onCall: () => calls++));
@@ -159,8 +159,8 @@ public class SearchResultCacheStageTests
         var calls = 0;
 
         // Same tvdbid/season/ep/categories, different free-text spellings of the same episode (M3-9).
-        var first = new SearchQuery("Bleach S17E36", new[] { 5000 }, 50, 0, TvdbId: 74796, Season: 17, Episode: 36);
-        var second = new SearchQuery("Bleach 17x36", new[] { 5000 }, 50, 0, TvdbId: 74796, Season: 17, Episode: 36);
+        var first = new SearchQuery("Bleach S17E36", new[] { 5000 }, 50, SearchProtocol.Torznab, 0, TvdbId: 74796, Season: 17, Episode: 36);
+        var second = new SearchQuery("Bleach 17x36", new[] { 5000 }, 50, SearchProtocol.Torznab, 0, TvdbId: 74796, Season: 17, Episode: 36);
 
         Assert.Equal(SearchResultCacheStage.BuildQueryKey(first), SearchResultCacheStage.BuildQueryKey(second));
 
@@ -179,8 +179,8 @@ public class SearchResultCacheStageTests
         var (stage, _, _) = Build(time);
         var calls = 0;
 
-        var first = new SearchQuery("bleach", Array.Empty<int>(), 50);
-        var second = new SearchQuery("naruto", Array.Empty<int>(), 50);
+        var first = new SearchQuery("bleach", Array.Empty<int>(), 50, SearchProtocol.Torznab);
+        var second = new SearchQuery("naruto", Array.Empty<int>(), 50, SearchProtocol.Torznab);
 
         Assert.NotEqual(SearchResultCacheStage.BuildQueryKey(first), SearchResultCacheStage.BuildQueryKey(second));
 
@@ -195,7 +195,7 @@ public class SearchResultCacheStageTests
     {
         // Security-m3 HIGH #1: an unbounded q-derived fallback text must not itself carry unbounded
         // length into the identity/key path, independent of SearchCacheKeyBuilder's own hashing.
-        var query = new SearchQuery(new string('x', 10_000), Array.Empty<int>(), 50);
+        var query = new SearchQuery(new string('x', 10_000), Array.Empty<int>(), 50, SearchProtocol.Torznab);
 
         var key = SearchResultCacheStage.BuildQueryKey(query);
 
@@ -208,8 +208,8 @@ public class SearchResultCacheStageTests
         // Two texts that agree within the 256-char cap must still collapse onto one key even though
         // their full raw text differs beyond that point.
         var prefix = new string('x', 256);
-        var first = new SearchQuery(prefix + "-tail-one", Array.Empty<int>(), 50);
-        var second = new SearchQuery(prefix + "-tail-two", Array.Empty<int>(), 50);
+        var first = new SearchQuery(prefix + "-tail-one", Array.Empty<int>(), 50, SearchProtocol.Torznab);
+        var second = new SearchQuery(prefix + "-tail-two", Array.Empty<int>(), 50, SearchProtocol.Torznab);
 
         Assert.Equal(SearchResultCacheStage.BuildQueryKey(first), SearchResultCacheStage.BuildQueryKey(second));
     }
@@ -217,8 +217,8 @@ public class SearchResultCacheStageTests
     [Fact]
     public void Categories_are_part_of_the_cache_key()
     {
-        var withCategory = new SearchQuery("bleach", new[] { 5000 }, 50, 0, TvdbId: 74796, Season: 17, Episode: 36);
-        var withoutCategory = new SearchQuery("bleach", Array.Empty<int>(), 50, 0, TvdbId: 74796, Season: 17, Episode: 36);
+        var withCategory = new SearchQuery("bleach", new[] { 5000 }, 50, SearchProtocol.Torznab, 0, TvdbId: 74796, Season: 17, Episode: 36);
+        var withoutCategory = new SearchQuery("bleach", Array.Empty<int>(), 50, SearchProtocol.Torznab, 0, TvdbId: 74796, Season: 17, Episode: 36);
 
         Assert.NotEqual(
             SearchResultCacheStage.BuildQueryKey(withCategory),
