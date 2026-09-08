@@ -228,11 +228,11 @@
 
 /* A grid item can't span both columns as a block, so a row wrapper (rendered
    as a <div>) is dissolved with display: contents and its dt/dd become the
-   row's two cells directly. The wrapper still has to exist in the markup:
-   the .fact:last-child rule below keys on it to drop the final row's border,
-   which flattening dt/dd straight into the dl would lose. A surface with no
-   need for that border (Dashboard) can render dt/dd without the wrapper —
-   .factLabel/.factValue apply either way. */
+   row's two cells directly. The wrapper must exist in the markup for every
+   row on every surface: the .fact:last-child rule below keys on it to drop
+   the final row's border, and skipping it on any surface (Dashboard included
+   — see Dashboard.tsx's FactRow) would flatten dt/dd straight into the dl and
+   lose that rule's target, putting a border on the final row. */
 .fact {
   display: contents;
 }
