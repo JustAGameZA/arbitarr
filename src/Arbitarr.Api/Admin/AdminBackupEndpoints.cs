@@ -130,6 +130,7 @@ public static class AdminBackupEndpoints
         HttpContext context,
         BackupService backupService,
         BackupStateStore state,
+        BackupPaths paths,
         TimeProvider timeProvider,
         CancellationToken cancellationToken)
     {
@@ -144,7 +145,10 @@ public static class AdminBackupEndpoints
         try
         {
             await backupService.WriteArchiveAsync(archivePath, cancellationToken);
-            state.RecordBackup(takenAt, automatic: false);
+
+            // arb-gk6: persists the instant to the backup directory's state file so it survives a
+            // restart, not just RecordBackup's in-memory record.
+            state.RecordManualDownload(takenAt, paths);
 
             // The response body is the instance's HMAC secret and every source API key, so it must
             // not be written to a shared cache, a disk cache, or a proxy's store. no-store is the

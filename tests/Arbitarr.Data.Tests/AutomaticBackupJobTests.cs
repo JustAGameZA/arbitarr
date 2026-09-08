@@ -222,6 +222,141 @@ public sealed class AutomaticBackupJobTests : IDisposable
         Assert.Equal(earlier.AddHours(1), state.LastBackup!.TakenAt);
     }
 
+    /// <summary>
+    /// arb-gk6: THE regression test. A manual download's instant used to be in-memory only, so a
+    /// fresh <see cref="BackupStateStore"/> (standing in for a process restart) reconciled from disk
+    /// would see nothing at all — the download had left no trace outside the process that took it.
+    /// </summary>
+    [Fact]
+    public void A_manual_download_survives_a_restart_as_the_last_backup_time()
+    {
+        var takenAt = new DateTimeOffset(2026, 9, 8, 12, 0, 0, TimeSpan.Zero);
+
+        var beforeRestart = new BackupStateStore();
+        beforeRestart.RecordManualDownload(takenAt, _paths);
+
+        // A fresh instance over the same directory, standing in for the process restart.
+        var afterRestart = new BackupStateStore();
+        Assert.Null(afterRestart.LastBackup);
+
+        afterRestart.ReconcileFromDisk(_paths);
+
+        Assert.Equal(takenAt, afterRestart.LastBackup!.TakenAt);
+        Assert.False(afterRestart.LastBackup.Automatic);
+    }
+
+    /// <summary>
+    /// arb-gk6, the HEADLINE scenario from the bead, end to end: automatic backups switched off
+    /// (retention 0), an operator takes a manual download, the process restarts. The Backup tab
+    /// used to report "never backed up" right beside a download taken five minutes earlier.
+    ///
+    /// <para>Distinct from the test above, not a duplicate of it. That one records a manual
+    /// download into a directory the automatic job has already populated; this one covers the
+    /// state <see cref="BackupStateStore.RecordManualDownload"/> newly creates — a backup
+    /// directory containing the state file and NO archive at all, which exists only because that
+    /// method now calls <c>Directory.CreateDirectory</c>. Reconciliation there has no automatic
+    /// archive to fall back on, so the manual instant is the only thing that can answer "when was
+    /// the last backup", and nothing else in this file exercises that shape.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_manual_download_survives_a_restart_when_automatic_backups_are_disabled()
+    {
+        var takenAt = new DateTimeOffset(2026, 9, 8, 15, 30, 0, TimeSpan.Zero);
+
+        // Retention 0 means "stop taking new ones": the job writes no archive at all, so the
+        // directory ends up holding the manual-download state file and nothing else.
+        var beforeRestart = new BackupStateStore();
+        var result = await NewJob(beforeRestart).RunAsync(retainedCount: 0);
+        Assert.False(result.BackupTaken);
+
+        beforeRestart.RecordManualDownload(takenAt, _paths);
+
+        // The precondition that makes this shape distinct: no automatic archive exists to be
+        // reconciled from, so the assertion below cannot pass on one by accident.
+        Assert.Empty(Directory.EnumerateFiles(
+            _paths.BackupDirectory, BackupPaths.AutomaticFilePrefix + "*.zip"));
+
+        var afterRestart = new BackupStateStore();
+        Assert.Null(afterRestart.LastBackup);
+
+        afterRestart.ReconcileFromDisk(_paths);
+
+        Assert.Equal(takenAt, afterRestart.LastBackup!.TakenAt);
+        Assert.False(afterRestart.LastBackup.Automatic);
+    }
+
+    /// <summary>
+    /// arb-89u: a manual archive placed in the backup directory (hand-copied, or otherwise not
+    /// produced by <see cref="AutomaticBackupJob"/> or a tracked manual download) is neither
+    /// reconciled into <see cref="BackupStateStore.LastBackup"/> nor swept by retention. Retention
+    /// only ever globs <see cref="BackupPaths.AutomaticFilePrefix"/>, so this also doubles as the
+    /// non-vacuous half: the file's continued existence after several retention passes proves
+    /// retention never even considered it, not merely that this run happened not to reach it.
+    ///
+    /// <para><b>Positive control first.</b> "LastBackup did not pick this file up" is an absence
+    /// assertion, and an absence assertion passes just as happily against a
+    /// <see cref="BackupStateStore.ReconcileFromDisk"/> that picks up NOTHING — a scan that was
+    /// broken outright, or a directory it never read, would satisfy it too. So the test plants an
+    /// <c>auto-</c>-prefixed archive carrying the SAME late mtime first and proves reconciliation
+    /// does reach that timestamp, establishing the assertion can fail, before showing the
+    /// differently-named file at the identical mtime is passed over. Only the pair distinguishes
+    /// "deliberately ignored because of its name" from "nothing was scanned at all".</para>
+    /// </summary>
+    [Fact]
+    public async Task A_manual_archive_in_the_backup_directory_is_neither_reconciled_nor_deleted_by_retention()
+    {
+        Directory.CreateDirectory(_paths.BackupDirectory);
+        var lateWriteTime = new DateTime(2026, 9, 8, 23, 0, 0, DateTimeKind.Utc);
+        var lateInstant = new DateTimeOffset(lateWriteTime, TimeSpan.Zero);
+
+        // POSITIVE CONTROL: the same mtime on an auto-prefixed name IS reconciled. Without this,
+        // every "not reconciled" assertion below would also pass against a ReconcileFromDisk that
+        // scanned nothing whatsoever.
+        var control = Path.Combine(
+            _paths.BackupDirectory, BackupPaths.AutomaticFilePrefix + "positive-control.zip");
+        File.WriteAllText(control, "automatic archive");
+        File.SetLastWriteTimeUtc(control, lateWriteTime);
+
+        var controlState = new BackupStateStore();
+        controlState.ReconcileFromDisk(_paths);
+        Assert.Equal(lateInstant, controlState.LastBackup!.TakenAt);
+
+        // The control has served its purpose; the real subject must be the ONLY file present, or
+        // its own "not reconciled" assertion could be satisfied by the control's absence instead.
+        File.Delete(control);
+
+        var manualArchive = Path.Combine(_paths.BackupDirectory, "my-own-copy.zip");
+        File.WriteAllText(manualArchive, "hand-placed archive");
+        File.SetLastWriteTimeUtc(manualArchive, lateWriteTime);
+
+        var state = new BackupStateStore();
+        state.ReconcileFromDisk(_paths);
+
+        // The identical mtime that just moved LastBackup for the auto-prefixed name leaves it null
+        // here. The ONLY difference between the two files is the name.
+        Assert.Null(state.LastBackup);
+
+        var job = NewJob(state);
+        for (var pass = 0; pass < 3; pass++)
+        {
+            await job.RunAsync(retainedCount: 1);
+            _time.Advance(TimeSpan.FromHours(1));
+            await Task.Delay(15);
+        }
+
+        // Not deleted: retention only globs BackupPaths.AutomaticFilePrefix, so a file without that
+        // prefix is never even a candidate, no matter how many passes run.
+        Assert.True(File.Exists(manualArchive));
+
+        // Not reconciled either: LastBackup reflects the automatic archives this job took, not the
+        // hand-placed file's mtime — which is LATER than any of them, so "newest wins" would have
+        // surfaced it had it ever been a candidate. The positive control above proves that exact
+        // instant is reachable through reconciliation when the name carries the automatic prefix.
+        Assert.True(state.LastBackup!.Automatic);
+        Assert.NotEqual(lateInstant, state.LastBackup.TakenAt);
+        Assert.True(state.LastBackup.TakenAt < lateInstant);
+    }
+
     private AutomaticBackupJob NewJob(BackupStateStore state) =>
         new(_paths, new BackupService(_paths, _time), state, _time);
 

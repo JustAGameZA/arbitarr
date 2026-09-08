@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace Arbitarr.Data.Backup;
 
 /// <summary>When the last backup was taken, and how it was triggered.</summary>
@@ -39,6 +41,20 @@ public sealed record LastRestore(DateTimeOffset AttemptedAt, bool Succeeded, str
 /// </summary>
 public sealed class BackupStateStore
 {
+    /// <summary>
+    /// arb-gk6/arb-89u: the ONLY thing persisted to disk for this type — the last manual-download
+    /// instant, as a single ISO 8601 UTC timestamp. Deliberately not a JSON document with room for
+    /// more fields: this is the one piece of <see cref="BackupStateStore"/>'s otherwise in-memory
+    /// state that has no other durable trace (an automatic backup's own file mtime IS its durable
+    /// record; a manual download is streamed and never kept, so its instant would otherwise be lost
+    /// on every restart). Lives in <see cref="BackupPaths.BackupDirectory"/> alongside the automatic
+    /// archives it is the sibling record of, not in the config database — see this type's own doc
+    /// comment for why a restore-surviving fact does not belong in the database a restore replaces.
+    /// </summary>
+    private const string ManualDownloadStateFileName = "last-manual-download.json";
+
+    private sealed record ManualDownloadState(DateTimeOffset LastManualDownloadAt);
+
     private readonly object _gate = new();
     private LastBackup? _lastBackup;
     private LastBackupFailure? _lastBackupFailure;
@@ -106,6 +122,51 @@ public sealed class BackupStateStore
     }
 
     /// <summary>
+    /// Records a manual download AND persists its instant to
+    /// <see cref="ManualDownloadStateFileName"/>, so it survives the restart that
+    /// <see cref="ReconcileFromDisk"/> would otherwise report right past (arb-gk6). The archive
+    /// itself is never kept (see <see cref="ReconcileFromDisk"/>'s doc comment), so this timestamp
+    /// is the only durable trace of it — deliberately narrower than a full backup-history file.
+    ///
+    /// <para>A write failure (read-only volume, full disk) is swallowed rather than failing the
+    /// download: the operator still gets their archive, all they lose is the state file's
+    /// contribution to the NEXT restart's summary, and a backup feature must not be the reason a
+    /// backup fails.</para>
+    /// </summary>
+    public void RecordManualDownload(DateTimeOffset takenAt, BackupPaths paths)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+
+        RecordBackup(takenAt, automatic: false);
+
+        try
+        {
+            Directory.CreateDirectory(paths.BackupDirectory);
+            var path = Path.Combine(paths.BackupDirectory, ManualDownloadStateFileName);
+            var json = JsonSerializer.Serialize(new ManualDownloadState(takenAt));
+            File.WriteAllText(path, json);
+        }
+        catch (Exception)
+        {
+            // Deliberately catch-all, and deliberately placed AFTER the in-memory RecordBackup
+            // above, which has already succeeded by the time anything here can throw.
+            //
+            // The narrow set this replaces (IOException, UnauthorizedAccessException) did not
+            // cover what the doc comment promises, and the gap is not theoretical: a path too
+            // long for the filesystem, a security policy refusing the directory creation, or a
+            // serializer failure all escape those two. Every one of them would have propagated
+            // out of a route whose job is to hand the operator an archive it has ALREADY
+            // generated successfully — failing the download because the bookkeeping about it
+            // could not be written is precisely the outcome this feature exists to prevent.
+            // So the catch is widened to match the promise, rather than the promise narrowed
+            // to match the catch.
+            //
+            // Nothing is logged: this type holds no logger, and the entire cost of the loss is
+            // one line in the next restart's summary.
+        }
+    }
+
+    /// <summary>
     /// Records that an automatic backup pass failed. Takes the reason as a string rather than an
     /// exception so the caller decides what is safe to render; see <see cref="LastBackupFailure"/>.
     /// </summary>
@@ -126,10 +187,22 @@ public sealed class BackupStateStore
     }
 
     /// <summary>
-    /// Seeds <see cref="LastBackup"/> from the newest automatic archive already on disk, so a
-    /// restart does not report "never backed up" beside a directory full of backups. Only automatic
-    /// archives are considered: a manual download is streamed and never kept server-side, so there
-    /// is no file whose age could stand in for it.
+    /// Seeds <see cref="LastBackup"/> from the newest automatic archive already on disk, plus the
+    /// persisted last-manual-download instant (arb-gk6/arb-89u), so a restart does not report "never
+    /// backed up" beside a directory full of backups OR beside a download the operator took five
+    /// minutes before restarting the container. <see cref="RecordBackup"/>'s "newest wins" rule then
+    /// decides which of the two is reported, exactly as it does when both happen live in one process
+    /// lifetime.
+    ///
+    /// <para><b>Deliberately excludes any OTHER manual archive found in the backup directory</b> —
+    /// a hand-copied or manually-created <c>.zip</c> dropped there is neither reconciled into
+    /// <see cref="LastBackup"/> nor a candidate for <see cref="AutomaticBackupJob"/>'s retention
+    /// pruning (arb-89u). Retention already only globs <see cref="BackupPaths.AutomaticFilePrefix"/>,
+    /// so such a file is safe from deletion by construction; it is simply invisible to this store,
+    /// the same as it always was. Reconciling arbitrary files by content or name pattern would risk
+    /// either treating a stray non-backup zip as a backup, or deleting a file an operator placed
+    /// there on purpose — neither is worth the very small feature (a hand-managed archive's own file
+    /// timestamp, visible to anyone who lists the directory) it would buy.</para>
     /// </summary>
     public void ReconcileFromDisk(BackupPaths paths)
     {
@@ -149,6 +222,31 @@ public sealed class BackupStateStore
         if (newest is not null)
         {
             RecordBackup(new DateTimeOffset(newest.LastWriteTimeUtc, TimeSpan.Zero), automatic: true);
+        }
+
+        var manualDownloadPath = Path.Combine(paths.BackupDirectory, ManualDownloadStateFileName);
+        if (File.Exists(manualDownloadPath))
+        {
+            try
+            {
+                var json = File.ReadAllText(manualDownloadPath);
+                var state = JsonSerializer.Deserialize<ManualDownloadState>(json);
+                if (state is not null)
+                {
+                    RecordBackup(state.LastManualDownloadAt, automatic: false);
+                }
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+            catch (JsonException)
+            {
+                // A corrupted or hand-edited state file must not fault startup — it is a durability
+                // aid for one field, not a source of truth worth crashing over.
+            }
         }
     }
 }
