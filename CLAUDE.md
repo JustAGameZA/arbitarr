@@ -89,9 +89,14 @@ explicitly, so the wire format is closed by construction.
 CONTRIBUTING.md covers what to test. These are the ways a test here has silently failed
 to test anything:
 
-- **Test-count floors are measurements, never arithmetic.** The files hold the number a
-  run *printed*. After a rebase, **re-measure** — different branches legitimately measure
-  different totals. Never adjust a floor by adding the number of tests you wrote.
+- **The test-count floor is a CI ratchet, not a committed file.** The floor is master's
+  last measured count, carried between runs as the `test-counts` artifact and resolved
+  from the latest successful master run other than the current one. There is nothing to
+  edit when you add tests, and **nothing to re-measure after a rebase** — that re-run is
+  exactly what the ratchet removed. The only hand-written numbers are the bootstrap
+  constants in `.github/workflows/build-test.yml`, used when no artifact is found; change
+  those **only to a number a master run actually printed**, never to the old value plus
+  the tests you wrote.
 - **Every "secret must not appear in X" assertion needs a positive control.**
   `Assert.DoesNotContain(secret, body)` passes just as happily when the secret was never
   in play — an empty set contains nothing. The test must first demonstrate that a planted

@@ -37,17 +37,30 @@ worktree scans `node_modules` and times out.
 
 ## Test-count floors
 
-`tests/test-count-floor.txt` (backend, parsed from `executed="N"` in the `.trx`) and
-`tests/frontend-test-count-floor.txt` (frontend, parsed from `numPassedTests` in
-`vitest-report.json`) hold the minimum that must pass.
+The floor is **master's last measured count**, and it lives in CI rather than in the tree. There
+is no floor file to edit, and none to conflict on.
 
-**Floors are measurements, never arithmetic.** The files hold the number a run *printed*. Never
-adjust a floor by adding the number of tests you wrote. After a rebase, **re-measure** — different
-branches legitimately measure different totals.
+Every `Build & test` run records what it measured — backend from `executed="N"` in the `.trx`,
+frontend from `numPassedTests` in `vitest-report.json` — into a `test-counts` artifact. Every run
+then resolves its floor by downloading that artifact from the latest *successful* `Build & test`
+run on `master` other than itself, and fails if either count came in below it. Selecting "other
+than itself" is what makes a push to master enforce the ratchet too: master is compared against its
+own predecessor, so a shrink merged by force is still caught.
 
-Two files and two parsers, deliberately, so neither suite's count can mask a collapse in the other.
-The frontend parses *passed*, not *total*, so a skipped or `todo` test cannot hold the floor up
-without running.
+**You never write a floor by hand.** Adding tests raises the floor automatically once the PR
+merges and master measures the new total. A rebase needs no re-measurement, which is the whole
+point: two PRs that both add tests no longer conflict, and neither has to re-run both suites to
+settle a number.
+
+The one exception is `BOOTSTRAP_BACKEND_FLOOR` / `BOOTSTRAP_FRONTEND_FLOOR` in
+`.github/workflows/build-test.yml`, used only when no artifact can be found (the first run after
+the ratchet landed, or an expired artifact). Those constants are still **measurements, never
+arithmetic** — change them only to a number a master run actually printed, never to the old value
+plus the tests you wrote.
+
+Two counts and two parsers, deliberately, so neither suite's count can mask a collapse in the
+other. The frontend parses *passed*, not *total*, so a skipped or `todo` test cannot hold the floor
+up without running. Both are ratcheted from the same master run, so the pair moves together.
 
 ---
 

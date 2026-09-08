@@ -76,7 +76,7 @@ Arbitarr never silently guesses. Any code path that degrades (source unreachable
 - Every behavioral change needs test coverage in the matching `tests/Arbitarr.*.Tests` project.
 - Real-world regression cases are first-class: the Bleach arc-relative numbering collision and the Ghost in the Shell franchise trio are canonical fixtures. If you fix an identity-resolution bug, add the release name that triggered it as a fixture-backed test.
 - Fixture data must be fully redacted — see the secrets policy below.
-- **Test-count floors are measurements, never arithmetic** — raise one to a number a run printed, never to the old floor plus the tests you wrote. See [docs/standards/process.md](docs/standards/process.md#test-count-floors).
+- **The test-count floor is a CI ratchet against master's last measured counts** — there is no floor file to update, and adding tests raises the floor on its own once the change merges. See [docs/standards/process.md](docs/standards/process.md#test-count-floors).
 - **Any "this secret must not appear in X" assertion needs a positive control**, or it passes just as happily when the secret was never in play. See [docs/standards/process.md](docs/standards/process.md#non-vacuous-assertions).
 
 ## Secrets and network topology — hard rule
@@ -100,9 +100,9 @@ Arbitarr never silently guesses. Any code path that degrades (source unreachable
 Every PR must pass two required checks before merge:
 
 - **`Build & test`** — restores, builds (`dotnet build -m:1`, sequential to bound memory use),
-  and runs the full test suite, backend and frontend. It also enforces both test-count floors
-  (`tests/test-count-floor.txt` and `tests/frontend-test-count-floor.txt`)
-  so the suite can't silently shrink, and re-runs the secret/topology guard over the whole tree.
+  and runs the full test suite, backend and frontend. It also ratchets both test counts against
+  master's last measured counts so the suite can't silently shrink, and re-runs the
+  secret/topology guard over the whole tree.
 - **`Deploy review environment`** — builds the container image from `Dockerfile` and smoke-checks
   that the running container answers `GET /health`. **A green tick here means the image builds
   and `/health` answers — nothing more.** It does not mean anything was deployed anywhere; no
