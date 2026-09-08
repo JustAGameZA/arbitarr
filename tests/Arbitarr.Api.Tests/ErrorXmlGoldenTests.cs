@@ -21,10 +21,11 @@ internal sealed class SingleKeyResolver : IClientApiKeyResolver
 
     public SingleKeyResolver(string? expectedKey) => _expectedKey = expectedKey;
 
-    public ClientKeyContext? Resolve(string? apikey) =>
-        !string.IsNullOrEmpty(_expectedKey) && string.Equals(apikey, _expectedKey, StringComparison.Ordinal)
-            ? new ClientKeyContext("default")
-            : null;
+    public Task<ClientKeyContext?> ResolveAsync(string? apikey, CancellationToken cancellationToken) =>
+        Task.FromResult(
+            !string.IsNullOrEmpty(_expectedKey) && string.Equals(apikey, _expectedKey, StringComparison.Ordinal)
+                ? new ClientKeyContext("default")
+                : null);
 }
 
 /// <summary>
@@ -81,9 +82,9 @@ public sealed class ErrorXmlGoldenTests : IDisposable
     }
 
     [Fact]
-    public void Missing_apikey_renders_code_100_in_torznab_wrapper()
+    public async Task Missing_apikey_renders_code_100_in_torznab_wrapper()
     {
-        var (context, error) = ApiKeyValidator.Validate(providedApiKey: null, new SingleKeyResolver("correct-key"), isTorznab: true);
+        var (context, error) = await ApiKeyValidator.ValidateAsync(providedApiKey: null, new SingleKeyResolver("correct-key"), isTorznab: true, CancellationToken.None);
 
         Assert.Null(context);
         Assert.NotNull(error);
@@ -93,9 +94,9 @@ public sealed class ErrorXmlGoldenTests : IDisposable
     }
 
     [Fact]
-    public void Wrong_apikey_renders_code_100_in_newznab_wrapper()
+    public async Task Wrong_apikey_renders_code_100_in_newznab_wrapper()
     {
-        var (context, error) = ApiKeyValidator.Validate(providedApiKey: "wrong-key", new SingleKeyResolver("correct-key"), isTorznab: false);
+        var (context, error) = await ApiKeyValidator.ValidateAsync(providedApiKey: "wrong-key", new SingleKeyResolver("correct-key"), isTorznab: false, CancellationToken.None);
 
         Assert.Null(context);
         Assert.NotNull(error);
@@ -104,18 +105,18 @@ public sealed class ErrorXmlGoldenTests : IDisposable
     }
 
     [Fact]
-    public void Correct_apikey_returns_no_error_result()
+    public async Task Correct_apikey_returns_no_error_result()
     {
-        var (context, error) = ApiKeyValidator.Validate(providedApiKey: "correct-key", new SingleKeyResolver("correct-key"), isTorznab: true);
+        var (context, error) = await ApiKeyValidator.ValidateAsync(providedApiKey: "correct-key", new SingleKeyResolver("correct-key"), isTorznab: true, CancellationToken.None);
 
         Assert.NotNull(context);
         Assert.Null(error);
     }
 
     [Fact]
-    public void Empty_configured_apikey_never_authenticates_any_request()
+    public async Task Empty_configured_apikey_never_authenticates_any_request()
     {
-        var (context, error) = ApiKeyValidator.Validate(providedApiKey: "anything", new SingleKeyResolver(null), isTorznab: true);
+        var (context, error) = await ApiKeyValidator.ValidateAsync(providedApiKey: "anything", new SingleKeyResolver(null), isTorznab: true, CancellationToken.None);
 
         Assert.Null(context);
         Assert.NotNull(error);
@@ -128,9 +129,9 @@ public sealed class ErrorXmlGoldenTests : IDisposable
     /// this as a network failure.
     /// </summary>
     [Fact]
-    public void Wrong_apikey_error_result_renders_with_http_status_200()
+    public async Task Wrong_apikey_error_result_renders_with_http_status_200()
     {
-        var (context, error) = ApiKeyValidator.Validate(providedApiKey: "wrong-key", new SingleKeyResolver("correct-key"), isTorznab: true);
+        var (context, error) = await ApiKeyValidator.ValidateAsync(providedApiKey: "wrong-key", new SingleKeyResolver("correct-key"), isTorznab: true, CancellationToken.None);
 
         Assert.Null(context);
         Assert.NotNull(error);

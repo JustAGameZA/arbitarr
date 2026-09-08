@@ -21,11 +21,17 @@ public static class ApiKeyValidator
     /// Resolves <paramref name="providedApiKey"/> via <paramref name="resolver"/>. Returns the
     /// matched <see cref="ClientKeyContext"/> on success; otherwise renders the error
     /// <see cref="IResult"/> for the given protocol family and returns <c>null</c> for the context.
+    ///
+    /// <para>#97: async because resolution may now be a database lookup (a key minted in the UI), not
+    /// only a comparison against an in-memory config array. The rendered failure is deliberately
+    /// unchanged — a minted key that is wrong, revoked, or absent produces the same error 100 body
+    /// and the same status as an unknown environment key, so a caller learns nothing about WHICH
+    /// kind of key it presented.</para>
     /// </summary>
-    public static (ClientKeyContext? Context, IResult? Error) Validate(
-        string? providedApiKey, IClientApiKeyResolver resolver, bool isTorznab)
+    public static async Task<(ClientKeyContext? Context, IResult? Error)> ValidateAsync(
+        string? providedApiKey, IClientApiKeyResolver resolver, bool isTorznab, CancellationToken cancellationToken)
     {
-        var context = resolver.Resolve(providedApiKey);
+        var context = await resolver.ResolveAsync(providedApiKey, cancellationToken).ConfigureAwait(false);
         if (context is not null)
         {
             return (context, null);

@@ -132,6 +132,15 @@ Conflating these is the most common misreading of the configuration surface.
 | **Client key** | inbound | Sonarr/Radarr authenticating *to* Arbitarr, on the indexer routes (both protocols) |
 | **Admin key** | inbound | Gating admin-**mutating** routes only, via `X-Admin-Api-Key` |
 
+**A client key has two sources, one meaning.** Since #97 the indexer routes
+accept both an environment-configured key (`Arbitarr:ApiKey` /
+`Arbitarr:ClientApiKeys`) and a key minted in Settings > API keys, resolved by
+the same `IClientApiKeyResolver` to the same `ClientKeyContext`, so attribution
+does not care which was presented. Either **scope** satisfies them — these are
+`PublicRead` routes and an admin key is not required. See
+`Arbitarr.Host.Security.DbClientApiKeyResolver` for the ordering and the upgrade
+guarantee.
+
 A fourth inbound credential joined these in #44: an **operator session**. It is
 not a key and has no row in the table above, but the admin gate accepts it
 exactly where it accepts the admin key — so "three keys" remains true, and
