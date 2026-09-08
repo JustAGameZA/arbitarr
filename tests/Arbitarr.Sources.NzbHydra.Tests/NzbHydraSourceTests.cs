@@ -396,10 +396,11 @@ public class NzbHydraSourceTests
     /// Redirect to indexer"), repeated on every download until the setting changes. Counting it
     /// against the breaker opened it after three downloads and, because the breaker is per source,
     /// served every search from cache for the backoff window (2026-09-08). Asserted as "no failure
-    /// recorded" AND "no success recorded": a redirect is neither.
+    /// recorded" AND "one success recorded": the upstream answered promptly, and a HalfOpen probe
+    /// that recorded neither would leave the breaker HalfOpen, refusing every caller.
     /// </summary>
     [Fact]
-    public async Task FetchDownloadAsync_On302Redirect_DoesNotTouchTheCircuitBreaker()
+    public async Task FetchDownloadAsync_On302Redirect_RecordsABreakerSuccessNotAFailure()
     {
         var handler = new FakeHttpMessageHandler(_ =>
         {
@@ -420,7 +421,7 @@ public class NzbHydraSourceTests
         await Assert.ThrowsAsync<UpstreamRedirectRefusedException>(() => source.FetchDownloadAsync(release));
 
         Assert.Empty(breaker.Failures);
-        Assert.Equal(0, breaker.SuccessCount);
+        Assert.Equal(1, breaker.SuccessCount);
     }
 
     /// <summary>

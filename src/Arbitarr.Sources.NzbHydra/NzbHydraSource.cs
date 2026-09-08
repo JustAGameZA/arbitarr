@@ -171,14 +171,36 @@ public sealed class NzbHydraSource : IUpstreamSource
             await _rateLimiter.WaitForTokenAsync(cancellationToken).ConfigureAwait(false);
 
             var response = await _httpClient.GetAsync(validatedLink, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-            ThrowIfRateLimited(response);
-            ThrowIfRedirected(response);
-            response.EnsureSuccessStatusCode();
+            try
+            {
+                ThrowIfRateLimited(response);
+                ThrowIfRedirected(response);
+                response.EnsureSuccessStatusCode();
+            }
+            catch
+            {
+                // The response is deliberately not using-scoped, because on success its content
+                // stream is handed to the caller. When a guard throws nobody else will dispose it,
+                // and a redirect repeats on every retry until the operator changes the setting, so
+                // an undisposed connection here would be a sustained leak rather than a one-off.
+                response.Dispose();
+                throw;
+            }
+
             var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
             await _circuitBreaker.RecordSuccessAsync(Name, cancellationToken).ConfigureAwait(false);
             return stream;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException and not UpstreamRedirectRefusedException)
+        catch (UpstreamRedirectRefusedException)
+        {
+            // Recorded as a success, not merely left alone: the upstream answered promptly, and the
+            // breaker's HalfOpen state is only left by a RecordSuccess or a RecordFailure. A probe
+            // that recorded neither would strand the breaker HalfOpen, refusing every caller —
+            // search included — until something else on this source recorded an outcome.
+            await _circuitBreaker.RecordSuccessAsync(Name, cancellationToken).ConfigureAwait(false);
+            throw;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             await _circuitBreaker.RecordFailureAsync(Name, ex, cancellationToken).ConfigureAwait(false);
             throw;
@@ -190,7 +212,9 @@ public sealed class NzbHydraSource : IUpstreamSource
     /// with <c>AllowAutoRedirect = false</c> (SEC-M1), so a 3xx reaches here as-is; before this
     /// check <c>EnsureSuccessStatusCode</c> turned it into a generic <see cref="HttpRequestException"/>
     /// that the catch below counted against the breaker. See
-    /// <see cref="UpstreamRedirectRefusedException"/> for why that took search down with it.
+    /// <see cref="UpstreamRedirectRefusedException"/> for why that took search down with it. The
+    /// whole 3xx range is refused, 304 included: the download request sends no conditional
+    /// headers, so a 304 cannot legitimately arise and is treated like any other non-payload answer.
     /// </summary>
     private void ThrowIfRedirected(HttpResponseMessage response)
     {

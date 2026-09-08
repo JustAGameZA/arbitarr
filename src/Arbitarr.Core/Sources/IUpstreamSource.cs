@@ -26,5 +26,10 @@ public interface IUpstreamSource
     Task<SourceCaps> GetCapsAsync(SearchProtocol protocol, CancellationToken cancellationToken = default);
 
     /// <summary>Fetches the raw download payload (torrent file or NZB) for a given release.</summary>
+    /// <exception cref="SourceUnavailableException">The source's circuit breaker is open and the
+    /// call was refused without touching upstream. Endpoints answer it as a retryable 503.</exception>
+    /// <exception cref="UpstreamRedirectRefusedException">Upstream answered with a redirect, which is
+    /// never followed (SEC-M1) and is not a breaker failure. Endpoints answer it as a 502.</exception>
+    /// <exception cref="RequestLimitReachedException">Upstream is rate limiting. Endpoints answer 429.</exception>
     Task<Stream> FetchDownloadAsync(ReleaseCandidate release, CancellationToken cancellationToken = default);
 }
