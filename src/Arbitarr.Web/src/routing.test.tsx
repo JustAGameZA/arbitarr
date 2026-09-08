@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { renderApp, renderAppWithBrowserHistory } from './test/renderApp';
 import { useAdminKeyStore } from './state/adminKeyStore';
-import { mockApi } from './test/mockApi';
+import { mockApi, signedIn } from './test/mockApi';
 
 describe('routing', () => {
   beforeEach(() => {
@@ -14,7 +14,14 @@ describe('routing', () => {
     // query state, so they would pass against a rejected fetch too -- but
     // "passes without a network" should be a property of this file, not a
     // coincidence of where the headings sit relative to the data.
-    mockApi({});
+    //
+    // #44: signedIn() is required, not decorative. These tests navigate WITHIN
+    // the guarded shell, so an unmocked /api/auth/session would answer 501, and
+    // RequireSession would render the children anyway (it fails open on error)
+    // -- meaning the tests would still pass while exercising a state the app
+    // does not normally serve. Mocking a real session keeps them about routing
+    // under the conditions an operator actually meets.
+    mockApi({ ...signedIn() });
   });
 
   afterEach(() => {

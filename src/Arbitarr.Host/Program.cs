@@ -4,6 +4,8 @@ using Arbitarr.Api.Dashboard;
 using Arbitarr.Api.Rendering;
 using Arbitarr.Api.Routing;
 using Arbitarr.Api.Search;
+using Arbitarr.Api.Security;
+using Microsoft.AspNetCore.Identity;
 using Arbitarr.Core.Caching;
 using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Filtering;
@@ -382,6 +384,34 @@ builder.Services.AddScoped<IAdminKeyResolver, DbAdminKeyResolver>();
 // ApiKeyRepository wraps the scoped ArbitarrDbContext, which is not thread-safe.
 builder.Services.AddSingleton<IApiKeyLastUsedRecorder, ThrottledApiKeyLastUsedRecorder>();
 
+// #44: human authentication. Sessions authorize against #58's primitive above rather than a second
+// model — DbSessionAuthenticator returns the same AdminKeyResolution DbAdminKeyResolver does, and
+// AdminApiKeyFilter makes one scope check over whichever credential answered. Key authentication is
+// NOT replaced: machine callers cannot complete an interactive login.
+// #44: the KDF cost is a composition-root decision. ASP.NET's default is 100,000 iterations,
+// below OWASP's current figure for PBKDF2-HMAC-SHA256, so it is configured explicitly here rather
+// than inherited. Raising it is not a migration: the v3 hash format embeds the count, so existing
+// rows keep verifying at their own cost (AspNetPasswordHasher.Verify treats SuccessRehashNeeded as
+// success, and a test exercises that branch against a hash made at the old count).
+builder.Services.Configure<PasswordHasherOptions>(
+    options => options.IterationCount = AspNetPasswordHasher.IterationCount);
+builder.Services.AddScoped<IPasswordHasher, AspNetPasswordHasher>();
+builder.Services.AddScoped(sp => new UserRepository(
+    sp.GetRequiredService<ArbitarrDbContext>(),
+    sp.GetRequiredService<IPasswordHasher>(),
+    sp.GetRequiredService<TimeProvider>()));
+builder.Services.AddScoped(sp => new SessionRepository(
+    sp.GetRequiredService<ArbitarrDbContext>(),
+    sp.GetRequiredService<TimeProvider>()));
+builder.Services.AddScoped<ISessionAuthenticator, DbSessionAuthenticator>();
+
+// Singleton for the same reason as the recorder above: the throttle state must outlive a request.
+builder.Services.AddSingleton<ISessionActivityRecorder, ThrottledSessionActivityRecorder>();
+
+// Singleton because the rate-limit counters must outlive a request — a per-request limiter would
+// count to one forever and defend against nothing.
+builder.Services.AddSingleton(sp => new LoginRateLimiter(sp.GetRequiredService<TimeProvider>()));
+
 // M7-5 settings write path: shares the same measured *arr RSS sync interval as EffectiveSettingsReader
 // above, so read and write validation agree on cross-field bounds (e.g. FreshUntilCeiling).
 builder.Services.AddScoped(sp => new SettingsRepository(
@@ -550,6 +580,10 @@ AdminSettingsEndpoints.Map(app);
 AdminSecurityEndpoints.Map(app);
 AdminBackupEndpoints.Map(app);
 AdminApiKeyEndpoints.Map(app);
+// #44: /api/auth/*. Classified PublicRead — meaning "not wrapped by AdminApiKeyFilter", which is
+// exactly right for a surface whose job is to authenticate a caller who has no credential yet.
+// Each route carries its own guard instead; see AuthEndpoints' type doc.
+AuthEndpoints.Map(app);
 AdminSourceEndpoints.Map(app);
 AdminNotificationEndpoints.Map(app);
 AdminRuleEndpoints.Map(app);

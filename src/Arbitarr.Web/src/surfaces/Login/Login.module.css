@@ -1,0 +1,63 @@
+/*
+ * #44: the signed-out surfaces (login and first-run setup).
+ *
+ * Colour comes from var(--token) only; the CI guard rejects a literal in any
+ * *.module.css. These two surfaces render OUTSIDE the AppShell -- there is no
+ * sidebar or top bar to sit inside when nobody is signed in -- so this file
+ * owns the page-level centring the shell would otherwise provide.
+ */
+
+.page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg-app);
+  color: var(--fg-primary);
+}
+
+.card {
+  width: 100%;
+  /* Narrow on purpose: a credential form with two fields reads badly stretched
+     across a desktop viewport, and a bounded measure keeps the label/field
+     relationship obvious. */
+  max-width: 380px;
+}
+
+.title {
+  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.subtitle {
+  margin: 0 0 20px;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+
+.actions {
+  margin-top: 16px;
+}
+
+/* Full-width submit: it is the only action on the card, so a right-aligned
+   button would leave the operator hunting for the one thing to click. */
+.submit {
+  width: 100%;
+}
+
+/*
+ * The recovery note. Deliberately present on the login surface rather than
+ * buried in docs: "there is no password recovery" is a decision (see UserEntry),
+ * and an operator discovers it at exactly the moment they need it -- which is
+ * here, having failed to sign in. An undocumented "none" reads as an oversight.
+ */
+.help {
+  margin: 20px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fg-muted);
+}

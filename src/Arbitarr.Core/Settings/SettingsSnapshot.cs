@@ -20,6 +20,17 @@ namespace Arbitarr.Core.Settings;
 /// <param name="SuppressionAuditRetention">Suppression audit log retention window.</param>
 /// <param name="QuerySnapshotTtl">Query snapshot TTL.</param>
 /// <param name="MaintenanceJobInterval">Maintenance job (prune + vacuum) interval.</param>
+/// <param name="SessionIdleTimeout">
+/// #44: how long a login session may sit unused before it stops authenticating.
+/// </param>
+/// <param name="SessionAbsoluteTimeout">
+/// #44: the hard ceiling on a session's life, fixed at issue time and never extended.
+///
+/// <para>These two live in the snapshot rather than behind a single-setting reader for exactly the
+/// reason this type exists: <see cref="SessionAbsoluteTimeout"/>'s floor IS the current
+/// <see cref="SessionIdleTimeout"/>, so validating a change to either requires knowing the other —
+/// the same cross-field shape as ServeUntil's dependence on FreshUntil.</para>
+/// </param>
 public sealed record SettingsSnapshot(
     TimeSpan FreshUntil,
     TimeSpan ServeUntil,
@@ -33,7 +44,9 @@ public sealed record SettingsSnapshot(
     TimeSpan MetadataNegativeTtl,
     TimeSpan SuppressionAuditRetention,
     TimeSpan QuerySnapshotTtl,
-    TimeSpan MaintenanceJobInterval)
+    TimeSpan MaintenanceJobInterval,
+    TimeSpan SessionIdleTimeout,
+    TimeSpan SessionAbsoluteTimeout)
 {
     /// <summary>
     /// The plan's documented defaults (table at plan lines ~1043-1056), anchored to a 15-minute
@@ -53,5 +66,10 @@ public sealed record SettingsSnapshot(
         MetadataNegativeTtl: TimeSpan.FromDays(30),
         SuppressionAuditRetention: TimeSpan.FromDays(30),
         QuerySnapshotTtl: TimeSpan.FromSeconds(300),
-        MaintenanceJobInterval: TimeSpan.FromHours(1));
+        MaintenanceJobInterval: TimeSpan.FromHours(1),
+        // #44. Kept identical to SettingsCatalog.GetDefault for these two keys — that method is what
+        // the single-setting reader path uses, and two defaults that disagreed would mean a session
+        // lifetime that changed depending on which path read it.
+        SessionIdleTimeout: TimeSpan.FromDays(7),
+        SessionAbsoluteTimeout: TimeSpan.FromDays(30));
 }

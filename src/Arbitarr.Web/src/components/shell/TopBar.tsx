@@ -1,8 +1,9 @@
-import { useState, type FormEvent, type Ref } from 'react';
+import { type Ref } from 'react';
 import { Link } from 'react-router-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faBars, faXmark } from '@fortawesome/free-solid-svg-icons';
 import { useAdminKeyStore } from '../../state/adminKeyStore';
+import { useLogoutMutation, useSessionQuery } from '../../state/sessionQueries';
 import styles from './TopBar.module.css';
 
 interface TopBarProps {
@@ -25,8 +26,16 @@ interface TopBarProps {
 }
 
 /**
- * The top bar carries the admin-key affordance, and below the 768px shell
- * breakpoint (#48) a drawer toggle, and nothing else.
+ * The top bar carries the signed-in identity and sign-out control, and below the
+ * 768px shell breakpoint (#48) a drawer toggle, and nothing else.
+ *
+ * #44 REPLACED THE ADMIN-KEY BOX THAT USED TO LIVE HERE. Humans now authenticate
+ * with a session (login page, HttpOnly cookie), so there is no longer a secret
+ * for a person to paste into the chrome of every page. The admin KEY is not
+ * gone and must not be removed: `adminKeyStore` and `apiFetch`'s header
+ * attachment remain, because Sonarr, Radarr and scripted callers cannot complete
+ * an interactive login, and because the #43 bootstrap path still needs them.
+ * What changed is that a HUMAN no longer needs to hold one.
  *
  * It deliberately does NOT render the page title (AC2b). The title belongs to
  * PageHeader inside the content pane, so exactly one <h1> exists per view --
@@ -36,22 +45,9 @@ interface TopBarProps {
  * it: it opens navigation, it does not name the page.
  */
 export function TopBar({ className, drawerOpen, onToggleDrawer, toggleRef }: TopBarProps) {
-  const key = useAdminKeyStore((s) => s.key);
   const serverKeyUnset = useAdminKeyStore((s) => s.serverKeyUnset);
-  const setKey = useAdminKeyStore((s) => s.setKey);
-  const clearKey = useAdminKeyStore((s) => s.clearKey);
-  const [draft, setDraft] = useState('');
-
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    const trimmed = draft.trim();
-    if (trimmed === '') {
-      return;
-    }
-    setKey(trimmed);
-    // Drop the plaintext out of component state as soon as the store has it.
-    setDraft('');
-  };
+  const { data: session } = useSessionQuery();
+  const logout = useLogoutMutation();
 
   const barClassName = className === undefined ? styles.topbar : `${styles.topbar} ${className}`;
 
@@ -87,6 +83,18 @@ export function TopBar({ className, drawerOpen, onToggleDrawer, toggleRef }: Top
     // configured, so an operator reading this can actually reach Settings and
     // set one. Hence a link rather than a bare statement of fact -- the old
     // copy described a problem the operator had no way to act on.
+    //
+    // #44 EXTENDS THE SAME CONCERN TO REDIRECTS, which is the shape it now takes.
+    // The original worry was an affordance that cannot succeed; a login redirect
+    // loop is that worry with a URL bar -- an operator bounced between /login and
+    // a guarded page, with no state they can reach and nothing to click. The
+    // defence is structural rather than a check written here: /login and /setup
+    // sit OUTSIDE RequireSession in routes.tsx, the guard redirects only on a
+    // definite "not authenticated" (never while loading, never on error), and it
+    // chooses between /login and /setup from a single response so it cannot
+    // oscillate. This branch is the same rule once more: it renders no sign-in
+    // affordance of its own, because the guard already owns that redirect and a
+    // second route to it from inside the guarded tree is how the loop returns.
     return (
       <header className={barClassName}>
         {drawerToggle}
@@ -107,48 +115,42 @@ export function TopBar({ className, drawerOpen, onToggleDrawer, toggleRef }: Top
     );
   }
 
-  if (key !== null) {
+  if (session?.authenticated === true) {
     return (
       <header className={barClassName}>
         {drawerToggle}
         <span className={styles.status}>
           <span className={`${styles.dot} ${styles.dotSet}`} aria-hidden="true" />
-          <span className={styles.statusText}>Admin key set</span>
+          <span className={styles.statusText}>Signed in as {session.username}</span>
         </span>
         <button
           type="button"
           className={`${styles.button} ${styles.buttonSecondary}`}
-          onClick={clearKey}
+          onClick={() => logout.mutate()}
+          disabled={logout.isPending}
         >
-          Clear admin key
+          Sign out
         </button>
       </header>
     );
   }
 
+  // Signed out, and the server HAS a key configured.
+  //
+  // #44: THIS BRANCH RENDERS NOTHING ACTIONABLE, AND THAT IS THE POINT.
+  // It is reached only in the window before the session query resolves, or when
+  // it failed -- RequireSession sends a definitively-unauthenticated visitor to
+  // /login, so the shell is not normally mounted in this state at all. There is
+  // deliberately no "sign in" link here: the guard owns that redirect, and a
+  // second path to /login rendered from inside the guarded tree is how a
+  // redirect loop gets built by accident.
   return (
     <header className={barClassName}>
       {drawerToggle}
       <span className={styles.status}>
         <span className={`${styles.dot} ${styles.dotUnset}`} aria-hidden="true" />
-        <span className={styles.statusText}>No admin key</span>
+        <span className={styles.statusText}>Not signed in</span>
       </span>
-      <form className={styles.form} onSubmit={submit}>
-        <input
-          className={styles.input}
-          // type="password" so the key is not shoulder-surfable, and
-          // autoComplete="off" so the browser never offers to save it.
-          type="password"
-          autoComplete="off"
-          aria-label="Admin API key"
-          placeholder="Admin API key"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-        />
-        <button type="submit" className={styles.button}>
-          Set admin key
-        </button>
-      </form>
     </header>
   );
 }

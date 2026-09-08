@@ -59,3 +59,5 @@ of a superseded ADR is what stops the same rejected option being proposed again.
 | [0005](0005-separate-log-database.md) | Logs live in a second SQLite database |
 | [0006](0006-generate-candidates-correctly-rather-than-filtering.md) | Numbering candidates are generated correctly, not filtered afterwards |
 | [0007](0007-restart-rather-than-reload-after-restore.md) | A restore stops the host and relies on the deployment restart policy |
+| [0008](0008-session-cookie-over-plain-http.md) | The session cookie is `Lax` over plain HTTP, with a custom header as the CSRF control |
+| [0009](0009-lockout-free-login-rate-limiting.md) | Login is rate-limited but never locks an account out |

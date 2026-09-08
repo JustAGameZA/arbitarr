@@ -66,6 +66,31 @@ function headersOf(init: RequestInit | undefined): Record<string, string> {
   return { ...(raw as Record<string, string>) };
 }
 
+/**
+ * #44: the session route answered as a signed-in operator.
+ *
+ * Spread into a `mockApi` call: `mockApi({ ...signedIn(), '/api/admin/x': ... })`.
+ * Any test that mounts the real App needs one of these three, because
+ * `RequireSession` consults `/api/auth/session` on mount and an unmocked route
+ * answers 501 here.
+ *
+ * Helpers rather than a literal per file so the shape lives in one place --
+ * `SessionResponse` gaining a field should not mean editing a dozen test files.
+ */
+export const signedIn = (username = 'operator'): MockRoutes => ({
+  '/api/auth/session': { body: { authenticated: true, username, setupRequired: false } },
+});
+
+/** The session route answered as an anonymous visitor on a CLAIMED instance. */
+export const signedOut = (): MockRoutes => ({
+  '/api/auth/session': { body: { authenticated: false, username: null, setupRequired: false } },
+});
+
+/** The session route answered as a fresh install with no accounts yet. */
+export const setupRequired = (): MockRoutes => ({
+  '/api/auth/session': { body: { authenticated: false, username: null, setupRequired: true } },
+});
+
 export function mockApi(routes: MockRoutes): MockApi {
   const table = new Map<string, MockRoute>(Object.entries(routes) as [string, MockRoute][]);
   const calls: CapturedCall[] = [];

@@ -47,4 +47,5 @@ public sealed record MaintenanceJobResult(
     int SuppressionAuditLogRowsPruned,
     int AiVerdictCacheRowsPruned,
     int EventRowsPruned,
+    int ExpiredSessionRowsPruned,
     bool VacuumRan);

@@ -363,6 +363,11 @@ public sealed class AdminApiKeyFilterTrustedNetworkTests
 
         var filter = new AdminApiKeyFilter(
             new StubAdminKeyResolver(configuredKey, namedKeyScope),
+            // #44: every case in this class is about the KEY path and presents no session cookie,
+            // so this authenticator never authorizes. That keeps each assertion here about exactly
+            // what it was about before sessions existed — including the #43 bypass cases, which
+            // must behave identically whether or not a session system is installed.
+            new StubSessionAuthenticator(),
             lastUsedRecorder ?? new RecordingLastUsedRecorder(),
             (ILogger<AdminApiKeyFilter>?)logger ?? NullLogger<AdminApiKeyFilter>.Instance);
 
@@ -479,5 +484,24 @@ public sealed class AdminApiKeyFilterTrustedNetworkTests
         public List<long> RecordedKeyIds { get; } = new();
 
         public void RecordUsed(long keyId) => RecordedKeyIds.Add(keyId);
+    }
+
+    /// <summary>
+    /// #44: an authenticator that authorizes nothing, used by every case in this class.
+    ///
+    /// <para>These tests present no session cookie, so the filter never calls this — but it must be
+    /// injectable for the class to compile, and returning Rejected unconditionally is the honest
+    /// stand-in: it asserts that none of the pre-#44 behaviours here (the keyed gate, the 401/403
+    /// split, and especially #43's unconfigured bypass) depend on a session existing. If any case
+    /// in this class ever starts passing only because a session authorized it, this stub is what
+    /// makes that impossible.</para>
+    /// </summary>
+    private sealed class StubSessionAuthenticator : ISessionAuthenticator
+    {
+        public Task<AdminKeyResolution> AuthenticateAsync(
+            string? presentedToken,
+            ApiKeyScope requiredScope,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(AdminKeyResolution.Rejected);
     }
 }

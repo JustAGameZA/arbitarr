@@ -58,6 +58,8 @@ public sealed class SettingsRepository
             SuppressionAuditRetention = ReadTimeSpan(rows, SettingKey.SuppressionAuditRetention, defaults.SuppressionAuditRetention),
             QuerySnapshotTtl = ReadTimeSpan(rows, SettingKey.QuerySnapshotTtl, defaults.QuerySnapshotTtl),
             MaintenanceJobInterval = ReadTimeSpan(rows, SettingKey.MaintenanceJobInterval, defaults.MaintenanceJobInterval),
+            SessionIdleTimeout = ReadTimeSpan(rows, SettingKey.SessionIdleTimeout, defaults.SessionIdleTimeout),
+            SessionAbsoluteTimeout = ReadTimeSpan(rows, SettingKey.SessionAbsoluteTimeout, defaults.SessionAbsoluteTimeout),
         };
     }
 
@@ -77,6 +79,30 @@ public sealed class SettingsRepository
         return row is not null && TimeSpan.TryParse(row.Value, CultureInfo.InvariantCulture, out var value)
             ? value
             : (TimeSpan)SettingsCatalog.GetDefault(SettingKey.SyncArbitrationBudget);
+    }
+
+    /// <summary>
+    /// #44: the two session lifetimes. Returned as a pair because every caller needs both — a
+    /// session is live only while it is inside BOTH bounds, so fetching one without the other is
+    /// never correct, and reading them in two round trips could observe an inconsistent pair.
+    ///
+    /// <para>Projected from <see cref="LoadSnapshotAsync"/> rather than reading the two rows
+    /// directly, so there is ONE parse-and-default path for these values. A second reader here
+    /// would be a place for the fallback behaviour to drift from the snapshot's — and since the
+    /// absolute timeout's floor is the idle timeout, a disagreement between the two paths would be
+    /// a validation rule enforced against values no reader ever produces.</para>
+    ///
+    /// <para><b>A NONSENSE STORED VALUE FALLS BACK TO THE DEFAULT</b> rather than throwing, which is
+    /// what <c>ReadTimeSpan</c> already does for every other setting. A malformed row here would
+    /// otherwise turn every authenticated request into a 500 — failing the whole application closed
+    /// on a parse error, when the honest response to "this value is unreadable" is to use the
+    /// documented default and keep serving.</para>
+    /// </summary>
+    public async Task<(TimeSpan IdleTimeout, TimeSpan AbsoluteTimeout)> GetSessionLifetimesAsync(
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await LoadSnapshotAsync(cancellationToken);
+        return (snapshot.SessionIdleTimeout, snapshot.SessionAbsoluteTimeout);
     }
 
     /// <summary>
@@ -151,6 +177,21 @@ public sealed class SettingsRepository
                 break;
             case SettingKey.ClassifierPollInterval:
                 SettingsValidator.ValidateClassifierPollInterval(ParseTimeSpan(key, proposed));
+                break;
+            case SettingKey.SessionIdleTimeout:
+            {
+                // #44. Both arms validate the CROSS-FIELD pair, not just the value being set, so
+                // the two can never be left in a state where the absolute timeout is below the idle
+                // one — which would make the idle setting silently do nothing.
+                var idle = ParseTimeSpan(key, proposed);
+                SettingsValidator.ValidateSessionIdleTimeout(idle);
+                SettingsValidator.ValidateSessionAbsoluteTimeout(current.SessionAbsoluteTimeout, idle);
+                break;
+            }
+            case SettingKey.SessionAbsoluteTimeout:
+                SettingsValidator.ValidateSessionAbsoluteTimeout(
+                    ParseTimeSpan(key, proposed),
+                    current.SessionIdleTimeout);
                 break;
             case SettingKey.AdminApiKey:
                 // #43: this arm USED TO `throw new SettingsValidationException(key,
