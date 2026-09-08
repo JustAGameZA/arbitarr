@@ -49,14 +49,29 @@ function BuildPanel({ buildInfo }: { buildInfo: BuildInfoResponse }) {
     <>
       {/* Build-time fields only change on a redeploy; uptime resets on every restart. Both
           belong in this panel, but conflating them would misread a restart as a new build. */}
-      <dl className={local.metrics}>
-        <Metric label="Commit" value={buildInfo.commitSha} />
-        <Metric label="Image tag" value={buildInfo.imageTag} />
-        <Metric label="Built" value={buildInfo.buildTimestampUtc} />
-        <Metric label="Version" value={buildInfo.informationalVersion} />
-        <Metric label="Uptime" value={formatUptime(buildInfo.uptimeSeconds)} />
+      <dl className={local.facts}>
+        <Fact label="Commit" value={buildInfo.commitSha} />
+        <Fact label="Image tag" value={buildInfo.imageTag} />
+        <Fact label="Built" value={buildInfo.buildTimestampUtc} />
+        <Fact label="Version" value={buildInfo.informationalVersion} />
+        <Fact label="Uptime" value={formatUptime(buildInfo.uptimeSeconds)} />
       </dl>
     </>
+  );
+}
+
+/**
+ * A labelled identifier. Unlike the counters below, these values are long machine-shaped
+ * strings (a 40-char SHA, a registry path, an ISO timestamp) that are read by copying or
+ * comparing, not at a glance -- so they are rows in a two-column list, not tiles, and the
+ * value wraps rather than being clipped by a fixed-width card.
+ */
+function Fact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className={local.fact}>
+      <dt className={local.factLabel}>{label}</dt>
+      <dd className={local.factValue}>{value}</dd>
+    </div>
   );
 }
 

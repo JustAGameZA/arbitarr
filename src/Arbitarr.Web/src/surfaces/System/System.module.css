@@ -37,6 +37,52 @@
   margin: 0;
 }
 
+/* Build facts: long identifiers (a full SHA, a registry path, an ISO timestamp)
+   that are copied or compared rather than read at a glance. Rows, not tiles --
+   the counter tiles above clip anything wider than 11rem, which is every one of
+   these values. */
+.facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: 1.5rem;
+  margin: 0;
+}
+
+.fact {
+  /* A grid item can't span both columns as a block, so the wrapper is dissolved
+     and its dt/dd become the row's two cells directly. */
+  display: contents;
+}
+
+.factLabel,
+.factValue {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+  margin: 0;
+}
+
+.fact:last-child .factLabel,
+.fact:last-child .factValue {
+  border-bottom: none;
+}
+
+.factLabel {
+  color: var(--fg-muted);
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+
+.factValue {
+  color: var(--fg-primary);
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  /* A SHA or registry path has no spaces to break at; without this the column
+     grows past the panel instead of wrapping. */
+  overflow-wrap: anywhere;
+  /* Lets the value be selected and copied in one drag without the label. */
+  user-select: all;
+}
+
 .subheading {
   color: var(--fg-primary);
   font-size: 0.875rem;
