@@ -34,22 +34,27 @@ export function useNotificationConfigQuery() {
  * the contract; the field appears only when there is a new value to write.
  *
  * <b>THE MUTATION CACHE IS THE LAST PLACE THE CLIENT CAN HOLD THIS SECRET, AND
- * THAT IS WHAT `gcTime: 0` AND THE `reset()` BELOW ARE FOR.</b> Clearing the
- * input and dropping the value from React state is not sufficient on its own:
- * react-query retains every settled mutation's `variables` on the MutationCache
- * for `gcTime`, which defaults to five minutes and which `api/queryClient.ts`
- * does not set for mutations. Since the webhook URL travels as a mutation
- * variable, without an explicit eviction it stays readable from the devtools or
- * the console long after the field looks empty — and longest of all on the
- * FAILED path, where nothing prompts the remount that would otherwise churn the
- * cache. `gcTime: 0` makes the entry collectable the moment it settles and
- * `reset()` in `onSettled` actually drops it, because a zero gcTime alone still
- * leaves the entry alive while an observer is mounted. Both halves are needed;
- * removing either reopens the retention.
+ * THAT IS WHAT `gcTime: 0` PLUS A SETTLE-TIME EVICTION ARE FOR.</b> Clearing
+ * the input and dropping the value from React state is not sufficient on its
+ * own: react-query retains every settled mutation's `variables` on the
+ * MutationCache for `gcTime`, which defaults to five minutes and which
+ * `api/queryClient.ts` does not set for mutations. Since the webhook URL
+ * travels as a mutation variable, without an explicit eviction it stays
+ * readable from the devtools or the console long after the field looks empty.
+ * `gcTime: 0` makes the entry collectable the moment it settles; the actual
+ * `reset()` that collects it belongs to the PER-CALL site in
+ * `Notifications.tsx` via `useSecretEvictingMutation` (arb-689), not to a
+ * hook-level callback here — see that hook's module doc for why a hook-level
+ * `reset()` would delete the delivery route to the per-call callbacks before
+ * they run, silently swallowing the server's rejection. This mutation
+ * previously worked around that with a `setTimeout(..., 0)` deferral in a
+ * hook-level `onSettled`; that workaround is gone now that eviction happens
+ * from the per-call site, which needs no deferral because it runs after the
+ * dispatch by construction.
  */
 export function useUpdateNotificationConfigMutation() {
   const client = useQueryClient();
-  const mutation = useMutation({
+  return useMutation({
     mutationFn: (request: UpdateNotificationConfigRequest) =>
       apiFetch<NotificationConfig>(NOTIFICATIONS_ROUTE, {
         method: 'PUT',
@@ -59,33 +64,7 @@ export function useUpdateNotificationConfigMutation() {
     // webhook URL, so the entry must not outlive the request. See the doc above.
     gcTime: 0,
     onSuccess: () => client.invalidateQueries({ queryKey: NOTIFICATIONS_KEY }),
-    // onSettled, NOT onSuccess: a rejected save is the case where the variables
-    // would otherwise linger longest.
-    //
-    // Deferred to a macrotask. The reason is SEQUENCING INSIDE REACT-QUERY, not
-    // React rendering. `Mutation.execute` AWAITS this hook-level onSettled and
-    // only THEN dispatches the success/error action (query-core
-    // mutation.ts:266-274), and that dispatch is the ONLY route to the per-call
-    // callbacks passed to `mutate`: `MutationObserver.#notify` fires
-    // `#mutateOptions` solely for an action it is handed
-    // (mutationObserver.ts:127-134, 172). Those per-call callbacks are what set
-    // the "Saved." and rejection states the operator reads. `reset()` removes
-    // the observer from the mutation, so calling it synchronously here would
-    // delete the delivery route before the dispatch that uses it, and the
-    // server's rejection would never reach the screen — silently defeating the
-    // reject-never-clamp rule. The macrotask works because it lands after that
-    // dispatch, and still evicts the variables immediately after.
-    //
-    // The shape that is correct BY CONSTRUCTION is evicting from the per-call
-    // callbacks instead, as the ApiKeys and Sources sections do: there is
-    // nothing to sequence, because such a callback runs after delivery by
-    // definition. A shared hook will adopt that shape as a follow-up; this path
-    // is deliberately left alone until then.
-    onSettled: () => {
-      setTimeout(() => mutation.reset(), 0);
-    },
   });
-  return mutation;
 }
 
 /**

@@ -80,16 +80,20 @@ export function useCreateApiKeyMutation() {
  * either block a revocation the server allows or invent a refusal it never issued
  * — the same reason the settings editor pre-checks no bounds.
  *
- * `gcTime: 0` for consistency with the create above. This mutation's variables are
- * an id and its data is void, so nothing sensitive is retained either way — but
- * one rule for this file's mutations is one fewer thing to get wrong when the next
- * one is added, and a reader who finds the zero only on the create is invited to
- * conclude it was arbitrary there.
+ * No `gcTime: 0` here (arb-689 settled this): this mutation's variables are a
+ * bare id and its data is void, so there is nothing sensitive for the
+ * MutationCache to retain either way. The rule as of arb-689's shared hook
+ * (`useSecretEvictingMutation`) is that `gcTime: 0` marks a mutation whose
+ * request or response can actually carry a secret — not a blanket applied for
+ * consistency's own sake. An earlier version of this comment set the zero
+ * anyway "for consistency with the create", which is exactly the divergence
+ * arb-689 was filed to settle: `useDeleteSourceMutation` (Sources) never had
+ * a matching zero, so "for consistency" was inconsistent across the two
+ * sections it was meant to unify.
  */
 export function useRevokeApiKeyMutation() {
   const client = useQueryClient();
   return useMutation({
-    gcTime: 0,
     mutationFn: (id: number) => apiFetch<void>(`${KEYS_ROUTE}/${id}`, { method: 'DELETE' }),
     onSuccess: () => client.invalidateQueries({ queryKey: API_KEYS_KEY }),
   });
@@ -110,17 +114,16 @@ export function useRevokeApiKeyMutation() {
  * the key and stating the two-step, and a second opinion here would either block a
  * removal the server allows or invent a refusal it never issued.
  *
- * `gcTime: 0` under this file's one rule for its mutations, NOT because anything
- * sensitive is in flight — this mutation's variables are an id and its data is
- * void, so unlike the create there is no plaintext for the MutationCache to hold.
- * It is here because a reader who found the zero on two of three mutations would
- * be invited to conclude it was arbitrary on the create, where it is load-bearing.
- * See the revoke above, which carries it for exactly the same reason.
+ * No `gcTime: 0` here either, for the same reason as the revoke above: this
+ * mutation's variables are an id and its data is void, so unlike the create
+ * there is no plaintext for the MutationCache to hold. `ApiKeys.tsx`'s
+ * `onRemove` still calls `remove.reset()` on settle, but that is for fresh
+ * `.error` state on the next attempt, not secret eviction — it does not need
+ * `gcTime: 0` to work, and does not go through `useSecretEvictingMutation`.
  */
 export function useRemoveApiKeyMutation() {
   const client = useQueryClient();
   return useMutation({
-    gcTime: 0,
     mutationFn: (id: number) =>
       apiFetch<void>(`${KEYS_ROUTE}/${id}/tombstone`, { method: 'DELETE' }),
     onSuccess: () => client.invalidateQueries({ queryKey: API_KEYS_KEY }),

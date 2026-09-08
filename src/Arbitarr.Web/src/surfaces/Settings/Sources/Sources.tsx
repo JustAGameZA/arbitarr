@@ -2,6 +2,7 @@ import { useState } from 'react';
 
 import { errorMessage } from '../../QueryState';
 import styles from '../../surface.module.css';
+import { useSecretEvictingMutation } from '../useSecretEvictingMutation';
 import local from './Sources.module.css';
 import {
   useCreateSourceMutation,
@@ -299,41 +300,31 @@ export function SourcesSection() {
    * them is a validation failure, not a no-op. `apiKey` stays absent, which is
    * what keeps a toggle from wiping the stored credential.
    */
+  const { settle } = useSecretEvictingMutation();
+
   /**
    * Settle handler shared by every write that can carry an apiKey.
    *
-   * reset() drops the settled mutation from the MutationCache straight away —
-   * which is the point, because its `variables` are the request body and can
-   * hold a plaintext key. It runs on the failure path too: a rejected write
-   * cached the key just as a successful one did.
-   *
-   * CAPTURE-THEN-RESET IS A CONVENTION HERE, NOT A CORRECTNESS REQUIREMENT.
-   * An earlier version of this comment claimed the order was load-bearing;
-   * that was wrong, and mutation-testing the reverse order passes all 19 tests
-   * in this file. It cannot break as written, because the message is taken from
-   * onSettled's own `error` ARGUMENT into component state and nothing here
-   * reads `create.error` / `update.error` — so reset() has no message to blank.
-   *
-   * The order is kept anyway, because the moment anything reads the message off
-   * mutation state instead of the argument, reset-first silently swallows the
-   * server's rejection while every secret test stays green. The shared hook in
-   * bead arb-689 is exactly that change. Keep the capture first so that
-   * refactor does not have to rediscover this.
+   * Delegates the capture-then-evict half to `useSecretEvictingMutation`
+   * (arb-689) — see that module for why eviction must happen from here, a
+   * per-call site, and never from a hook-level callback in `queries.ts`. This
+   * function's own job is the part that hook cannot know: dropping the typed
+   * key from BOTH forms on settle. The rest of a rejected draft is
+   * deliberately kept so the operator can correct it and resubmit, but the
+   * secret is not part of what needs correcting — they can retype it — and
+   * holding it in component state (and therefore in the rendered input)
+   * after the request has settled keeps a copy alive for no benefit.
+   * Clearing it here is what makes the DOM sweep in the leak test true rather
+   * than merely close.
    */
   const settleWrite = (mutation: { reset: () => void }, error: unknown) => {
-    // The error comes from onSettled's own argument rather than off the
-    // mutation object: the closed-over `update`/`create` here are the values
-    // from the render that STARTED the write, so their `.error` has not been
-    // refreshed yet at this point. The argument is the settled result.
-    setWriteError(error === null || error === undefined ? null : errorMessage(error));
-    mutation.reset();
-    // Drop the typed key from the forms too, on BOTH paths. The rest of a
-    // rejected draft is deliberately kept so the operator can correct it and
-    // resubmit, but the secret is not part of what needs correcting — they can
-    // retype it — and holding it in component state (and therefore in the
-    // rendered input) after the request has settled keeps a copy alive for no
-    // benefit. Clearing it here is what makes the DOM sweep in the leak test
-    // true rather than merely close.
+    // `settle` hands back the RAW error — `writeError` here is a rendered
+    // string, unlike ApiKeys.tsx's `createFailure`, which stays `unknown` and
+    // is formatted at render time instead. Format it here, at the one place
+    // this file turns an error into displayed text.
+    settle(mutation, error, (captured) =>
+      setWriteError(captured === null ? null : errorMessage(captured)),
+    );
     setNewDraft((draft) => (draft.apiKey === '' ? draft : { ...draft, apiKey: '' }));
     setEditDraft((draft) => (draft.apiKey === '' ? draft : { ...draft, apiKey: '' }));
   };

@@ -9,6 +9,7 @@ import type {
   UpdateNotificationConfigRequest,
 } from '../../../api/types';
 import styles from '../../surface.module.css';
+import { useSecretEvictingMutation } from '../useSecretEvictingMutation';
 import local from './Notifications.module.css';
 import {
   useClearWebhookMutation,
@@ -157,6 +158,7 @@ function NotificationForm({
   const update = useUpdateNotificationConfigMutation();
   const clear = useClearWebhookMutation();
   const test = useSendTestNotificationMutation();
+  const { settle } = useSecretEvictingMutation();
 
   const [enabled, setEnabled] = useState(config.enabled);
   const [webhookUrl, setWebhookUrl] = useState('');
@@ -202,9 +204,26 @@ function NotificationForm({
     // network failure — leaves the secret in state to be rendered back.
     setWebhookUrl('');
 
+    // settle() evicts the settled entry from the MutationCache from THIS
+    // per-call site, on both the success and failure path — `request` can
+    // carry `webhookUrl`, so the entry must not outlive the request either
+    // way. See `useSecretEvictingMutation` (arb-689) for why this must not
+    // move to a hook-level onSuccess/onSettled in queries.ts.
+    //
+    // settle() hands back the RAW error; `rejection` here is a rendered
+    // string, so it is formatted with errorMessage() at this call site —
+    // the one place this component turns an error into displayed text.
     update.mutate(request, {
-      onSuccess: () => setSaved(true),
-      onError: (error) => setRejection(errorMessage(error)),
+      onSuccess: () => {
+        setSaved(true);
+        settle(update, null, (captured) =>
+          setRejection(captured === null ? null : errorMessage(captured)),
+        );
+      },
+      onError: (error) =>
+        settle(update, error, (captured) =>
+          setRejection(captured === null ? null : errorMessage(captured)),
+        ),
     });
   };
 
