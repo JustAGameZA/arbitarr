@@ -344,4 +344,108 @@ public sealed class ApiKeyRepositoryTests : IDisposable
         await repository.RevokeAsync(readOnly.Entry.Id, CancellationToken.None);
         Assert.False(await repository.AnyLiveKeyAsync(CancellationToken.None));
     }
+
+    [Fact]
+    public async Task Removing_a_revoked_key_deletes_only_that_row()
+    {
+        // #98 AC4, asserted PER ROW. "The list got shorter" would pass just as happily if the
+        // removal had taken a neighbour with it, so each surviving row is checked by identity —
+        // including the OTHER revoked one, which is the row a delete written against
+        // `RevokedAt is not null` rather than against the id would wrongly sweep up.
+        await using var context = CreateContext();
+        var repository = CreateRepository(context);
+
+        var live = await repository.CreateAsync("sonarr", ApiKeyScope.Admin, CancellationToken.None);
+        var doomed = await repository.CreateAsync("retired-laptop", ApiKeyScope.ReadOnly, CancellationToken.None);
+        var otherTombstone = await repository.CreateAsync("old-script", ApiKeyScope.ReadOnly, CancellationToken.None);
+
+        await repository.RevokeAsync(doomed.Entry.Id, CancellationToken.None);
+        await repository.RevokeAsync(otherTombstone.Entry.Id, CancellationToken.None);
+
+        Assert.True(await repository.RemoveRevokedAsync(doomed.Entry.Id, CancellationToken.None));
+
+        var remaining = await context.ApiKeys.AsNoTracking().ToListAsync();
+
+        Assert.DoesNotContain(remaining, k => k.Id == doomed.Entry.Id);
+
+        var survivingLive = Assert.Single(remaining, k => k.Id == live.Entry.Id);
+        Assert.Equal("sonarr", survivingLive.Label);
+        Assert.Null(survivingLive.RevokedAt);
+
+        var survivingTombstone = Assert.Single(remaining, k => k.Id == otherTombstone.Entry.Id);
+        Assert.Equal("old-script", survivingTombstone.Label);
+        Assert.NotNull(survivingTombstone.RevokedAt);
+
+        Assert.Equal(2, remaining.Count);
+    }
+
+    [Fact]
+    public async Task Removing_a_live_key_is_refused_and_leaves_the_row_untouched()
+    {
+        // The two-step is the feature: a live credential cannot be destroyed in one call. The
+        // refusal is asserted together with the row surviving intact, because a throw that had
+        // already deleted the row would satisfy an exception-only assertion.
+        await using var context = CreateContext();
+        var repository = CreateRepository(context);
+
+        await repository.CreateAsync("other-admin", ApiKeyScope.Admin, CancellationToken.None);
+        var live = await repository.CreateAsync("sonarr", ApiKeyScope.Admin, CancellationToken.None);
+
+        var refusal = await Assert.ThrowsAsync<ApiKeyValidationException>(
+            () => repository.RemoveRevokedAsync(live.Entry.Id, CancellationToken.None));
+
+        // The message names the key and states the two-step, so the UI can render it verbatim.
+        Assert.Contains("sonarr", refusal.Message, StringComparison.Ordinal);
+        Assert.Contains("Revoke it first", refusal.Message, StringComparison.Ordinal);
+
+        var reloaded = await context.ApiKeys.AsNoTracking().SingleAsync(k => k.Id == live.Entry.Id);
+        Assert.Null(reloaded.RevokedAt);
+    }
+
+    [Fact]
+    public async Task Removing_an_unknown_or_already_removed_id_reports_false_rather_than_throwing()
+    {
+        // Idempotence in the sense that matters: a repeat changes nothing and does not fault. The
+        // unknown id and the already-removed one are asserted TOGETHER because after a hard delete
+        // they are the same observable state — that indistinguishability is the reason the endpoint
+        // answers 404 for both instead of claiming a 204 success for any id at all.
+        await using var context = CreateContext();
+        var repository = CreateRepository(context);
+
+        Assert.False(await repository.RemoveRevokedAsync(4242, CancellationToken.None));
+
+        await repository.CreateAsync("other-admin", ApiKeyScope.Admin, CancellationToken.None);
+        var target = await repository.CreateAsync("retired", ApiKeyScope.ReadOnly, CancellationToken.None);
+        await repository.RevokeAsync(target.Entry.Id, CancellationToken.None);
+
+        Assert.True(await repository.RemoveRevokedAsync(target.Entry.Id, CancellationToken.None));
+        Assert.False(await repository.RemoveRevokedAsync(target.Entry.Id, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task The_last_admin_key_refusal_counts_only_live_keys_after_removals()
+    {
+        // #98 AC4's second half. Removing tombstones must not change WHICH revocation is refused:
+        // the AC5 count reads live keys, so a second admin key that has been revoked and then
+        // removed leaves the remaining one just as much the last one as it was before.
+        await using var context = CreateContext();
+        var repository = CreateRepository(context);
+
+        var spare = await repository.CreateAsync("spare-admin", ApiKeyScope.Admin, CancellationToken.None);
+        var survivor = await repository.CreateAsync("only-admin", ApiKeyScope.Admin, CancellationToken.None);
+
+        await repository.RevokeAsync(spare.Entry.Id, CancellationToken.None);
+        await repository.RemoveRevokedAsync(spare.Entry.Id, CancellationToken.None);
+
+        var refusal = await Assert.ThrowsAsync<ApiKeyValidationException>(
+            () => repository.RevokeAsync(survivor.Entry.Id, CancellationToken.None));
+        Assert.Contains("only-admin", refusal.Message, StringComparison.Ordinal);
+
+        // Positive control for the assertion above: the refusal is about the COUNT, not about the
+        // label. With a live second admin key present the same revocation is allowed, so the throw
+        // above is evidence the count is being read rather than the call being refused outright.
+        var replacement = await repository.CreateAsync("replacement-admin", ApiKeyScope.Admin, CancellationToken.None);
+        Assert.True(await repository.RevokeAsync(survivor.Entry.Id, CancellationToken.None));
+        Assert.NotNull(replacement);
+    }
 }

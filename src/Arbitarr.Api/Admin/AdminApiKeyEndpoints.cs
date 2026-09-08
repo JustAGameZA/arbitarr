@@ -50,7 +50,8 @@ public sealed record CreateApiKeyRequest(string? Label, string? Scope);
 public sealed record CreatedApiKeyResponse(ApiKeyResponse Key, string PlaintextKey);
 
 /// <summary>
-/// #58: the admin-gated CRUD surface for named, scoped API keys — create, list, revoke.
+/// #58: the admin-gated CRUD surface for named, scoped API keys — create, list, revoke, and (#98)
+/// remove an already-revoked one.
 ///
 /// <para><b>EVERY ROUTE IS ADMIN-SCOPED, INCLUDING THE GET.</b> The gate is by path prefix, never by
 /// verb, and none of these routes takes <see cref="ApiKeyScope.ReadOnly"/> the way the search and
@@ -98,6 +99,15 @@ public static class AdminApiKeyEndpoints
             .RequireAdminApiKey();
 
         endpoints.MapDelete($"{KeysRoute}/{{id:long}}", RevokeApiKeyAsync)
+            .RequireAdminApiKey();
+
+        // #98. A SEPARATE ROUTE RATHER THAN A FLAG ON THE REVOKE ABOVE, DELIBERATELY: the two-step
+        // is the feature. A `?hard=true` on the DELETE would put "revoke" and "destroy the history"
+        // one query parameter apart on the same verb and path, which is precisely the single-click
+        // destruction of a working credential this shape exists to prevent. The sub-path names what
+        // is being deleted — the tombstone, not the key, which is already dead by the time this
+        // route will answer at all.
+        endpoints.MapDelete($"{KeysRoute}/{{id:long}}/tombstone", RemoveRevokedApiKeyAsync)
             .RequireAdminApiKey();
     }
 
@@ -221,6 +231,48 @@ public static class AdminApiKeyEndpoints
         {
             // AC5: refusing to revoke the last admin-scope key. 400 rather than 409 to match the
             // one translation this codebase already makes for a repository refusal.
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// #98: removes an already-revoked key's row, so the list can be tidied after a few rotations.
+    ///
+    /// <para>Refuses a LIVE key with the repository's own message — the same 400 translation the
+    /// AC5 lockout refusal gets, and for the same reason: one validation floor, in one place. The
+    /// refusal is not advisory. Removal of a working credential stays two-step (revoke, then
+    /// remove) because a one-step delete of a live key destroys both the credential and the record
+    /// that it existed, with no moment in between where the operator can see something break.</para>
+    ///
+    /// <para><b>404 ON AN ALREADY-REMOVED ID, CHOSEN OVER 204.</b> The removal is a hard delete, so
+    /// an already-removed id and an id that never existed are the same observable state — nothing
+    /// distinguishes them. 204 would therefore have to claim success for any id at all. 404 keeps
+    /// one answer per state and matches <see cref="RevokeApiKeyAsync"/>'s treatment of an unknown
+    /// id; the call is still idempotent in the sense that matters, since a repeat changes nothing.
+    /// See <see cref="ApiKeyRepository.RemoveRevokedAsync"/> for the full argument.</para>
+    ///
+    /// <para>Takes no body, so no model binding runs ahead of the admin filter and no optional-body
+    /// treatment is needed — see the type doc's REQUIRED-BODY TRAP note. This route is TEMPLATED, so
+    /// <c>AdminApiKeyRouteEnumerationTests</c> skips it and its gating is asserted by name in
+    /// <c>AdminApiKeyEndpointsTests</c> instead; that sweep passing is not evidence about it.</para>
+    /// </summary>
+    private static async Task<IResult> RemoveRevokedApiKeyAsync(
+        long id,
+        ApiKeyRepository repository,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var removed = await repository.RemoveRevokedAsync(id, cancellationToken);
+
+            return removed
+                ? Results.NoContent()
+                : Results.NotFound(new { error = $"API key {id} does not exist." });
+        }
+        catch (ApiKeyValidationException ex)
+        {
+            // The still-live refusal. 400 rather than 409, matching the one translation this
+            // codebase already makes for a repository refusal (see RevokeApiKeyAsync).
             return Results.BadRequest(new { error = ex.Message });
         }
     }
