@@ -1,4 +1,20 @@
+import { execFile } from 'node:child_process';
+import { join } from 'node:path';
+import { promisify } from 'node:util';
+
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+
+const execFileAsync = promisify(execFile);
+
+/**
+ * Absolute, so the restart works regardless of the runner's working directory.
+ *
+ * `__dirname`, not `import.meta.url`: this package is CommonJS (no "type": "module"), and
+ * Playwright transpiles the spec accordingly, so `import.meta` is a syntax error at collection
+ * time -- "Cannot use 'import.meta' outside a module", which reports as "No tests found"
+ * rather than as a compile failure. tsc alone does not catch it.
+ */
+const COMPOSE_FILE = join(__dirname, '..', 'compose.yml');
 
 /**
  * The golden path (arb-rga.7): a fresh instance is bootstrapped, a source is added, a
@@ -83,6 +99,38 @@ test('a source pointing at the stub upstream can be added and tested', async ({ 
   expect(source.hasApiKey).toBe(true);
 });
 
+/**
+ * A source added over the API is NOT in force until the process restarts, and that is by
+ * design rather than a defect. `ResolvedSourceConfiguration` is a mutable-once singleton that
+ * `SourceSeeder` fills exactly once at startup -- its own doc comment says "resolved once at
+ * startup" -- because the `IUpstreamSource` factory is registered before `app.Build()` while
+ * the database is not safely readable until after migration.
+ *
+ * With no source in force the adapter is still constructed, pointed at RFC 5737 TEST-NET-1
+ * (http://192.0.2.1:1), so a search fails fast and degrades to an empty result set.
+ *
+ * That is exactly what the first CI run of this suite hit: a search that took 10.1 seconds --
+ * the upstream timeout -- and returned zero rows, which is INDISTINGUISHABLE in the response
+ * from the origin-pinning drop this file warns about elsewhere. Two unrelated causes, one
+ * identical symptom. That is why the restart is an explicit, asserted step rather than a
+ * sleep: a future zero-row failure should not send the next reader hunting the wrong one.
+ *
+ * The golden path therefore restarts the app between "add a source" and "search", mirroring
+ * what an operator actually does. It does not weaken the product to suit the test.
+ */
+test('the app is restarted so the newly added source comes into force', async ({ request }) => {
+  await restartAppContainer();
+
+  // Prove the restart really happened and the source survived it, rather than trusting a
+  // sleep: the source is still listed once the process is back up.
+  const sources = await request.get('/api/admin/sources', {
+    headers: { [ADMIN_KEY_HEADER]: ADMIN_KEY },
+  });
+  expect(sources.status(), await sources.text()).toBe(200);
+  const names: string[] = (await sources.json()).map((s: { displayName: string }) => s.displayName);
+  expect(names).toContain('Stub Upstream');
+});
+
 test('a search returns the stub upstream rows', async ({ request }) => {
   const response = await request.get('/api/admin/search', {
     headers: { [ADMIN_KEY_HEADER]: ADMIN_KEY },
@@ -100,49 +148,6 @@ test('a search returns the stub upstream rows', async ({ request }) => {
   expect(titles).toHaveLength(2);
   expect(titles).toContain('Example Show S01E01 1080p STUBGROUP');
   expect(titles).toContain('Example Show S01E02 1080p STUBGROUP');
-});
-
-/**
- * The origin-pinning guard, proved as a PAIR.
- *
- * Placed AFTER "a search returns the stub upstream rows" on purpose: in serial mode order
- * follows position in the file, and this test adds a second source, which permanently
- * changes what a plain unfiltered search returns. Moving it earlier would break that
- * earlier test's exact count of 2 -- so it must stay below it, and any test added later
- * must filter by sourceName rather than assume a total.
- *
- * This is the E2E's own positive control. "A mismatched origin yields no rows" is an
- * absence assertion, and on its own it passes for all the wrong reasons -- an unreachable
- * host, a stub that died, a search that never ran. Pairing it with the matching-origin case
- * against the SAME container serving the SAME fixtures leaves exactly one difference
- * between the two: the origin the source was configured with.
- *
- * This is not hypothetical. Running the real NzbHydraSource parser against this stub with
- * the origins mismatched returned zero rows from perfectly well-formed fixtures, silently,
- * with no error and nothing in the logs to point at the cause.
- */
-test('items whose link origin differs from the source base URL are dropped, and only those', async ({
-  request,
-}) => {
-  const created = await createSource(request, 'Stub Upstream Alias', STUB_MISMATCHED_BASE_URL);
-  expect(created.status(), await created.text()).toBe(201);
-
-  const response = await request.get('/api/admin/search', {
-    headers: { [ADMIN_KEY_HEADER]: ADMIN_KEY },
-    params: { q: 'example' },
-  });
-  expect(response.status(), await response.text()).toBe(200);
-
-  const releases: { title: string; sourceName: string }[] = (await response.json()).releases;
-
-  // The matching-origin source still returns both items: the stub is alive, the fixtures
-  // parse, and the search ran. Without this half, the emptiness below proves nothing.
-  const matched = releases.filter((r) => r.sourceName === 'Stub Upstream');
-  expect(matched).toHaveLength(2);
-
-  // The mismatched source contributes nothing, from the very same container and fixtures.
-  const mismatched = releases.filter((r) => r.sourceName === 'Stub Upstream Alias');
-  expect(mismatched).toHaveLength(0);
 });
 
 /**
@@ -216,6 +221,71 @@ test('the admin key never reaches browser storage', async ({ page }) => {
 });
 
 /**
+ * The origin-pinning guard, proved as a PAIR against the same container and fixtures.
+ *
+ * Runs LAST, and must stay last: it repoints the one source in force at a mismatched origin
+ * and leaves it that way. In serial mode order follows position in the file, so any test
+ * added below this one would run against a deliberately broken source and fail for a reason
+ * that has nothing to do with what it is testing.
+ *
+ * Why it edits the existing source instead of adding a second one: `SourceSeeder` takes only
+ * the FIRST source by id (`OrderBy(s => s.Id).FirstOrDefaultAsync`), so exactly one source is
+ * ever in force. A second source would simply never be queried, and the "mismatched source
+ * returned nothing" assertion would pass without the guard having run at all -- the precise
+ * shape of vacuity this test exists to avoid.
+ *
+ * The alias is the same container under a second network name, so it is genuinely reachable
+ * and serves byte-identical fixtures; only the origin the source was configured with differs.
+ * That matters, because an unreachable host also yields zero rows and the two are
+ * indistinguishable in the response -- as this suite already learned the hard way: its first
+ * CI run returned zero rows because no source was in force yet, which looked exactly like the
+ * guard firing.
+ *
+ * Not hypothetical either: running the real NzbHydraSource parser against this stub with the
+ * origins mismatched returned zero rows from perfectly well-formed fixtures, silently.
+ */
+test('items whose link origin differs from the source base URL are dropped', async ({
+  request,
+}) => {
+  const sources = await request.get('/api/admin/sources', {
+    headers: { [ADMIN_KEY_HEADER]: ADMIN_KEY },
+  });
+  const source = (await sources.json()).find(
+    (s: { displayName: string }) => s.displayName === 'Stub Upstream',
+  );
+  expect(source, 'the golden-path source must exist before it can be repointed').toBeTruthy();
+
+  // POSITIVE CONTROL, restated here rather than inherited: with the matching origin this very
+  // search returns two rows. The preceding test has just proved that against this same
+  // container, so the emptiness below is a change in behaviour, not a starting condition.
+  const repointed = await request.put(`/api/admin/sources/${source.id}`, {
+    headers: { [ADMIN_KEY_HEADER]: ADMIN_KEY },
+    data: {
+      kind: 'nzbhydra',
+      displayName: 'Stub Upstream',
+      baseUrl: STUB_MISMATCHED_BASE_URL,
+      enabled: true,
+    },
+  });
+  expect(repointed.status(), await repointed.text()).toBe(200);
+
+  // The source configuration is resolved once per process, so the repoint only takes effect
+  // after a restart -- exactly as the original add did.
+  await restartAppContainer();
+
+  const response = await request.get('/api/admin/search', {
+    headers: { [ADMIN_KEY_HEADER]: ADMIN_KEY },
+    params: { q: 'example' },
+  });
+  expect(response.status(), await response.text()).toBe(200);
+
+  // Reachable, identical fixtures, foreign origin: every item is dropped by the guard. The
+  // ONLY thing changed since the two-row search above is the base URL.
+  const releases: { title: string }[] = (await response.json()).releases;
+  expect(releases).toHaveLength(0);
+});
+
+/**
  * Creates a source. The API key is generated per run and never written as a literal: the
  * pre-commit secrets guard rejects a credential-shaped literal in a diff, and it is right
  * to -- a committed one reads as a real key to every later reader regardless of what a
@@ -233,6 +303,39 @@ function createSource(request: APIRequestContext, displayName: string, baseUrl: 
       enabled: true,
     },
   });
+}
+
+/**
+ * Restarts the app container and waits for it to serve /health again.
+ *
+ * Uses `docker compose restart` rather than an in-product reload because no such reload
+ * exists: the source configuration is resolved once per process by design (see the restart
+ * test's comment). The compose project is addressed by file, so this works regardless of the
+ * runner's working directory.
+ */
+async function restartAppContainer(): Promise<void> {
+  await execFileAsync('docker', ['compose', '-f', COMPOSE_FILE, 'restart', 'arbitarr']);
+
+  const deadline = Date.now() + 60_000;
+  const baseUrl = process.env.ARBITARR_BASE_URL || 'http://127.0.0.1:8080';
+
+  for (;;) {
+    try {
+      const response = await fetch(`${baseUrl}/health`);
+      if (response.ok) {
+        return;
+      }
+    } catch {
+      // Connection refused while the process is still coming up: keep waiting rather than
+      // failing, since that is the expected state for the first second or so.
+    }
+
+    if (Date.now() > deadline) {
+      throw new Error('The app container did not answer /health within 60s of a restart.');
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
 }
 
 /** Serialises both web storages, so a key stored under ANY name is caught, not just a known one. */
