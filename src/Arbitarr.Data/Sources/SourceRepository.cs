@@ -250,13 +250,32 @@ public sealed class SourceRepository
         }
     }
 
-    private static void ValidateBaseUrl(string baseUrl)
+    /// <summary>
+    /// Rejects anything that isn't a well-formed absolute http(s) URL, AND a URL whose host is the
+    /// RFC 2606 reserved <c>.invalid</c> domain (or the bare host <c>invalid</c>) — a name documented
+    /// to never resolve, so seeding or storing one degrades a source to an unreachable upstream that
+    /// nothing will ever fix without an operator noticing and correcting it by hand (arb-c29:
+    /// docker-compose.yml's own placeholder is exactly such a value, and the seed-once ruling means an
+    /// unrejected seed of it is authoritative forever). Public because both write paths that can
+    /// create or change a source row must hit this same rule: this type's own <see cref="AddAsync"/>
+    /// and <see cref="UpdateAsync"/>, and <see cref="Arbitarr.Host.Sources.SourceSeeder"/>, which
+    /// writes a row directly against the DbContext rather than through this repository.
+    /// </summary>
+    public static void ValidateBaseUrl(string baseUrl)
     {
         if (string.IsNullOrWhiteSpace(baseUrl)
             || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri)
             || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
         {
             throw new SourceValidationException($"'{baseUrl}' is not a valid absolute http(s) URL.");
+        }
+
+        if (uri.Host.EndsWith(".invalid", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(uri.Host, "invalid", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new SourceValidationException(
+                $"'{baseUrl}' uses the reserved .invalid domain, which can never resolve. It is a " +
+                "documentation/test address; enter the address your source actually serves on.");
         }
     }
 }

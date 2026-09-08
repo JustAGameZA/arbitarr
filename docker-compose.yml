@@ -1,8 +1,18 @@
 # M7-9: reference compose file for running Arbitarr as a container.
 #
 # Every value below is a placeholder (RFC 5737/2606 example addresses, "REDACTED" secrets) — copy
-# this file and replace them with your real NZBHydra2 endpoint, API keys, and desired admin key
-# before use. Never commit real hosts or keys here (AC21/D2).
+# this file and replace them with your real NZBHydra2 endpoint and API keys before use. Never
+# commit real hosts or keys here (AC21/D2).
+#
+# arb-c29: the NZBHydra2 base URL below is a .invalid address on purpose — the seeder and the
+# Sources admin endpoints both reject a .invalid host at seed/write time (SourceRepository.
+# ValidateBaseUrl) rather than silently seeding an unreachable upstream, so leaving this placeholder
+# in place on first run seeds nothing instead of a broken source. Replace it with your real
+# NZBHydra2 endpoint.
+#
+# There is no admin-key environment variable, and there cannot be one (ADR 0004): the admin key has
+# no env-var write path by design. Set it after the container is up, over the API — see the
+# README's "Admin key setup" section (PUT /api/admin/security/admin-key).
 services:
   arbitarr:
     build: .

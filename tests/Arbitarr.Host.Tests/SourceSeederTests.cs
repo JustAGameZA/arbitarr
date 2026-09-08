@@ -102,6 +102,28 @@ public sealed class SourceSeederTests : IDisposable
             Assert.DoesNotContain("placeholder-seed-key", e.Message, StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// arb-c29: docker-compose.yml's own placeholder base URL is an RFC 2606 .invalid host, and the
+    /// seed-once ruling means an unrejected seed of it would be authoritative forever, degrading the
+    /// deployment to a permanently unreachable NZBHydra2 with nothing logging why. The seeder must
+    /// reject it at seed time and seed nothing, exactly like the no-environment-configured branch.
+    /// </summary>
+    [Fact]
+    public async Task Does_not_seed_a_dot_invalid_environment_base_url()
+    {
+        using var context = CreateContext();
+        var resolved = new ResolvedSourceConfiguration();
+        var logger = new RecordingLogger();
+
+        await SourceSeeder.SeedAndResolveAsync(
+            context, resolved, EnvConfig(baseUrl: "http://nzbhydra2.example.invalid:5076"), logger);
+
+        Assert.Empty(await context.Sources.AsNoTracking().ToListAsync());
+        Assert.False(resolved.IsConfigured);
+        Assert.Contains(logger.Entries, e =>
+            e.Level == LogLevel.Warning && e.Message.Contains("not a usable address"));
+    }
+
     [Fact]
     public async Task Does_not_re_seed_or_overwrite_on_a_second_run()
     {

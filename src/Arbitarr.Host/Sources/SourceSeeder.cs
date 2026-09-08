@@ -96,6 +96,28 @@ public static class SourceSeeder
             return;
         }
 
+        // arb-c29: this is the SECOND write path, not an exemption from the validation the admin
+        // endpoints already enforce via SourceRepository.AddAsync/UpdateAsync -- this method writes
+        // the row directly against the DbContext instead of through that repository, so it must call
+        // SourceRepository.ValidateBaseUrl itself or the rule only closes one of the two doors.
+        // Reusing it (rather than a second, possibly-divergent check) is why the .invalid rejection
+        // added there also protects this path. A rejected value seeds NOTHING, exactly like the
+        // no-configuration-supplied branch above -- there is no compiled-in default base URL for a
+        // source (unlike Ollama), so "seed nothing, let the operator configure it" is the only safe
+        // fallback; seeding docker-compose.yml's own placeholder unrejected is the arb-c29 incident.
+        try
+        {
+            Arbitarr.Data.Sources.SourceRepository.ValidateBaseUrl(environmentConfiguration.BaseUrl);
+        }
+        catch (Arbitarr.Data.Sources.SourceValidationException)
+        {
+            logger.LogWarning(
+                "Sources: the NZBHydra2 environment base URL is not a usable address and was NOT " +
+                "seeded; no source was created. Configure a source in the database instead. The " +
+                "rejected value is deliberately not shown here.");
+            return;
+        }
+
         var now = DateTimeOffset.UtcNow;
         var seeded = new Source
         {
