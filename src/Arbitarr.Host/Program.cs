@@ -560,6 +560,16 @@ builder.Services.AddScoped<Arbitarr.Data.Media.ArrInstanceRepository>();
 // asserts both layers, with a positive control matching what is genuinely logged so it cannot pass
 // vacuously. If either URI builder is ever changed to put the key in a path segment, NEITHER layer
 // covers it and this registration needs .RemoveAllLoggers().
+//
+// THIS ALSO DEPENDS ON A PROCESS-WIDE SWITCH THIS REPOSITORY DOES NOT SET. The "?*" collapse above is
+// gated by the System.Net.Http.DisableUriRedaction AppContext switch (name inverted from what it
+// sounds like: setting it to true DISABLES the redaction, i.e. restores the full query string,
+// key included, to the log line). Nothing here sets it, so the default (false, redaction ON) is what
+// this registration's safety rests on. DisableUriRedactionSwitchTests proves both states — the
+// default redacting the key, and the switch flipped defeating that redaction with the same handler —
+// so this dependency is executable rather than folklore. If anything ever sets this switch true
+// process-wide (a host default, a runtimeconfig.json entry, a future dependency), this registration
+// needs .RemoveAllLoggers() regardless of where the key sits in the URI.
 builder.Services.AddHttpClient<Arbitarr.Core.Media.SonarrConnectivityProber>()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 
