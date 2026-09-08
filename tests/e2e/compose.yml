@@ -62,8 +62,15 @@ services:
       #
       # No admin key either: there is no env var for it and there cannot be one (ADR 0004).
       ARBITARR__LOGGING__LOGLEVEL__DEFAULT: "Information"
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8080/health || exit 1"]
-      interval: 2s
-      timeout: 2s
-      retries: 30
+    # NO healthcheck, deliberately. The runtime image is mcr.microsoft.com/dotnet/aspnet,
+    # which ships neither wget nor curl, so an in-container HTTP probe cannot work without
+    # adding a tool to the production image purely to serve a test -- which would change the
+    # very artifact under test, and is the wrong trade.
+    #
+    # A first attempt used `wget` here and failed CI with "container e2e-arbitarr-1 is
+    # unhealthy" while the application had in fact started perfectly ("Now listening on:
+    # http://[::]:8080" in the logs). Readiness is therefore waited for from the RUNNER,
+    # which has curl, in the workflow step that follows `compose up`.
+    #
+    # Consequence, stated rather than hidden: `depends_on` cannot gate on this service, so
+    # nothing else here may declare a service_healthy dependency on arbitarr.
