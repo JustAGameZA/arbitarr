@@ -48,7 +48,7 @@ function BuildPanel({ buildInfo }: { buildInfo: BuildInfoResponse }) {
   // Build-time fields only change on a redeploy; uptime resets on every restart. Both belong
   // in this panel, but conflating them would misread a restart as a new build.
   return (
-    <dl className={local.facts}>
+    <dl className={styles.facts}>
       <Fact label="Commit" value={buildInfo.commitSha} />
       <Fact label="Image tag" value={buildInfo.imageTag} />
       <Fact label="Built" value={buildInfo.buildTimestampUtc} />
@@ -67,9 +67,9 @@ function BuildPanel({ buildInfo }: { buildInfo: BuildInfoResponse }) {
  */
 function Fact({ label, value }: { label: string; value: string }) {
   return (
-    <div className={local.fact}>
-      <dt className={local.factLabel}>{label}</dt>
-      <dd className={local.factValue}>{value}</dd>
+    <div className={styles.fact}>
+      <dt className={styles.factLabel}>{label}</dt>
+      <dd className={`${styles.factValue} ${local.factValue}`}>{value}</dd>
     </div>
   );
 }

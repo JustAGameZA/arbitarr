@@ -6,6 +6,7 @@ import { ADMIN_KEY_HEADER } from '../../api/client';
 import { useAdminKeyStore } from '../../state/adminKeyStore';
 import { mockApi } from '../../test/mockApi';
 import { renderSurface } from '../../test/renderSurface';
+import surfaceStyles from '../surface.module.css';
 
 const status = {
   status: 'ok',
@@ -78,6 +79,30 @@ describe('Dashboard', () => {
     expect(await screen.findByRole('heading', { name: 'Status' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Recent searches' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Effective configuration' })).toBeInTheDocument();
+  });
+
+  it('renders its fact rows through the shared surface fact grid', async () => {
+    // arb-9zm: this surface had its own copy of the label/value grid in a local
+    // Dashboard.module.css, now deleted in favour of surface.module.css. Nothing
+    // else here would notice the regression: every text assertion in this file
+    // passes just as happily on unstyled dt/dd, so dropping the shared classes
+    // would silently return the page to an unformatted definition list.
+    //
+    // Keyed on the resolved hashed class name (css: true in vite.config.ts), not a
+    // /fact/ substring, so it cannot be satisfied by some other similarly-named
+    // class -- the vacuity that the same assertion in System.test.tsx fell into
+    // once a same-named local .factValue existed alongside the shared one.
+    mockApi(allOk);
+    renderSurface(<DashboardPage />);
+
+    const value = await screen.findByText('42 candidates · 40 refreshed · 2 failed');
+    expect(value.tagName).toBe('DD');
+    expect(value.classList).toContain(surfaceStyles.factValue);
+
+    const row = value.parentElement;
+    expect(row?.classList).toContain(surfaceStyles.fact);
+    expect(row?.querySelector('dt')?.classList).toContain(surfaceStyles.factLabel);
+    expect(value.closest('dl')?.classList).toContain(surfaceStyles.facts);
   });
 
   it('renders worker health, sources and config from the fetched data', async () => {

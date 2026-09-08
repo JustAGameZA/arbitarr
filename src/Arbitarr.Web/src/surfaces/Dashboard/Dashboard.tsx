@@ -1,8 +1,9 @@
+import type { ReactNode } from 'react';
+
 import { PageHeader } from '../../components/shell/PageHeader';
 import { QueryState } from '../QueryState';
 import type { EffectiveConfigResponse, StatusResponse } from '../../api/types';
 import styles from '../surface.module.css';
-import local from './Dashboard.module.css';
 import { agreementRate, formatRate } from '../../format';
 import { useAgreementQuery } from '../Suppressions/decisionQueries';
 import { useEffectiveConfigQuery, useRecentSearchesQuery, useStatusQuery } from './queries';
@@ -23,38 +24,56 @@ function stateBadgeClass(state: string): string {
   return `${styles.badge} ${styles.badgeWarn}`;
 }
 
+/**
+ * One row of the shared fact grid (surface.module.css, arb-9zm). `value` takes a node
+ * rather than a plain string, unlike System's `Fact` -- this surface's rows render a
+ * badge and an agreement summary alongside their text, not just an identifier.
+ */
+function FactRow({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className={styles.fact}>
+      <dt className={styles.factLabel}>{label}</dt>
+      <dd className={styles.factValue}>{value}</dd>
+    </div>
+  );
+}
+
 function WorkerHealth({ status }: { status: StatusResponse }) {
   const { worker } = status;
   return (
-    <dl className={local.facts}>
-      <dt>Worker</dt>
-      <dd>
-        <span className={worker.enabled ? `${styles.badge} ${styles.badgeOk}` : styles.badge}>
-          {worker.enabled ? 'Enabled' : 'Disabled'}
-        </span>
-      </dd>
-      <dt>Last cycle started</dt>
-      <dd>
-        {worker.lastCycleStartedUtc === null ? '—' : formatTimestamp(worker.lastCycleStartedUtc)}
-      </dd>
-      <dt>Last cycle completed</dt>
-      <dd>
-        {worker.lastCycleCompletedUtc === null
-          ? '—'
-          : formatTimestamp(worker.lastCycleCompletedUtc)}
-      </dd>
-      <dt>Last cycle</dt>
-      <dd>
-        {worker.lastCycleCandidates} candidates · {worker.lastCycleRefreshed} refreshed ·{' '}
-        {worker.lastCycleFailed} failed
-      </dd>
-      <dt>Consecutive failed cycles</dt>
-      <dd>{worker.consecutiveFailedCycles}</dd>
+    <dl className={styles.facts}>
+      <FactRow
+        label="Worker"
+        value={
+          <span className={worker.enabled ? `${styles.badge} ${styles.badgeOk}` : styles.badge}>
+            {worker.enabled ? 'Enabled' : 'Disabled'}
+          </span>
+        }
+      />
+      <FactRow
+        label="Last cycle started"
+        value={worker.lastCycleStartedUtc === null ? '—' : formatTimestamp(worker.lastCycleStartedUtc)}
+      />
+      <FactRow
+        label="Last cycle completed"
+        value={
+          worker.lastCycleCompletedUtc === null
+            ? '—'
+            : formatTimestamp(worker.lastCycleCompletedUtc)
+        }
+      />
+      <FactRow
+        label="Last cycle"
+        value={
+          <>
+            {worker.lastCycleCandidates} candidates · {worker.lastCycleRefreshed} refreshed ·{' '}
+            {worker.lastCycleFailed} failed
+          </>
+        }
+      />
+      <FactRow label="Consecutive failed cycles" value={worker.consecutiveFailedCycles} />
       {worker.lastError !== null && (
-        <>
-          <dt>Last error</dt>
-          <dd className={styles.error}>{worker.lastError}</dd>
-        </>
+        <FactRow label="Last error" value={<span className={styles.error}>{worker.lastError}</span>} />
       )}
     </dl>
   );
@@ -192,28 +211,24 @@ function ConfigFacts({ config }: { config: EffectiveConfigResponse }) {
   const seconds = (value: number) => `${value}s`;
 
   return (
-    <dl className={local.facts}>
-      <dt>NZBHydra configured</dt>
-      <dd>{config.nzbHydraConfigured ? 'Yes' : 'No'}</dd>
-      <dt>Fresh until</dt>
-      <dd>{seconds(config.freshUntilSeconds)}</dd>
-      <dt>Serve until</dt>
-      <dd>{seconds(config.serveUntilSeconds)}</dd>
-      <dt>Active window</dt>
-      <dd>{seconds(config.activeWindowSeconds)}</dd>
-      <dt>Refresh lead</dt>
-      <dd>{seconds(config.refreshLeadSeconds)}</dd>
-      <dt>Worker cycle interval</dt>
-      <dd>{seconds(config.workerCycleIntervalSeconds)}</dd>
-      <dt>Worker enabled</dt>
-      <dd>{config.workerEnabled ? 'Yes' : 'No'}</dd>
-      <dt>Query snapshot TTL</dt>
-      <dd>{seconds(config.querySnapshotTtlSeconds)}</dd>
-      <dt>Shadow mode</dt>
-      <dd>
-        {config.shadowMode === null ? 'Not set' : config.shadowMode ? 'On' : 'Off'}
-        <AgreementSummary />
-      </dd>
+    <dl className={styles.facts}>
+      <FactRow label="NZBHydra configured" value={config.nzbHydraConfigured ? 'Yes' : 'No'} />
+      <FactRow label="Fresh until" value={seconds(config.freshUntilSeconds)} />
+      <FactRow label="Serve until" value={seconds(config.serveUntilSeconds)} />
+      <FactRow label="Active window" value={seconds(config.activeWindowSeconds)} />
+      <FactRow label="Refresh lead" value={seconds(config.refreshLeadSeconds)} />
+      <FactRow label="Worker cycle interval" value={seconds(config.workerCycleIntervalSeconds)} />
+      <FactRow label="Worker enabled" value={config.workerEnabled ? 'Yes' : 'No'} />
+      <FactRow label="Query snapshot TTL" value={seconds(config.querySnapshotTtlSeconds)} />
+      <FactRow
+        label="Shadow mode"
+        value={
+          <>
+            {config.shadowMode === null ? 'Not set' : config.shadowMode ? 'On' : 'Off'}
+            <AgreementSummary />
+          </>
+        }
+      />
     </dl>
   );
 }
