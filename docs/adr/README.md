@@ -61,3 +61,4 @@ of a superseded ADR is what stops the same rejected option being proposed again.
 | [0007](0007-restart-rather-than-reload-after-restore.md) | A restore stops the host and relies on the deployment restart policy |
 | [0008](0008-session-cookie-over-plain-http.md) | The session cookie is `Lax` over plain HTTP, with a custom header as the CSRF control |
 | [0009](0009-lockout-free-login-rate-limiting.md) | Login is rate-limited but never locks an account out |
+| [0011](0011-test-strategy-lanes-isolation-quarantine.md) | PR lane runs the full suite parallelised; affected-test selection stays local-only; quarantine (with a bead) replaces retries |
