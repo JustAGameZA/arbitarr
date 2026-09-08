@@ -16,7 +16,7 @@ A second review pass inverted the question, and a third reviewer plus the repo o
 inversion: **Notifications is not the outlier.** The shared rule across every secret in this
 codebase is already "never readable, and omission never clears" — `UpdateSourceRequest.ApiKey`
 being `null` means "leave alone" by design (`AdminSourceEndpoints.cs`'s `UpdateSourceAsync`, and
-the `.omc/plans/issues/053` hand-off it implements says omission must **never** mean clear), and
+bead arb-c26, PR #131, which implements it, says omission must **never** mean clear), and
 ADR 0004 gives the admin key that same replace-never-read posture with, deliberately, no clear
 route whatsoever.
 
@@ -82,8 +82,9 @@ admin write.
 ## Consequences
 
 - Sources currently has no way to keep a source configured while dropping its key. This is a
-  known, accepted gap rather than an oversight — CONTEXT.md and this ADR record it as deferred, so
-  a future contributor does not "fix" it without first checking whether the deferral still holds.
+  known, accepted gap rather than an oversight — CONTEXT.md's Keys section and this ADR record it
+  as deferred, so a future contributor does not "fix" it without first checking whether the
+  deferral still holds.
 - The admin key can only be replaced, never returned to `NotConfigured`. An operator who loses the
   key has no in-app recovery; ADR 0004 already documents that this is intentional and the only
   recovery is a direct `Settings` table edit.

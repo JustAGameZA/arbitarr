@@ -362,7 +362,7 @@ public sealed class AdminApiKeyFilterTrustedNetworkTests
         }
 
         var filter = new AdminApiKeyFilter(
-            new StubAdminKeyResolver(configuredKey, namedKeyScope),
+            new StubCredentialResolver(configuredKey, namedKeyScope),
             // #44: every case in this class is about the KEY path and presents no session cookie,
             // so this authenticator never authorizes. That keeps each assertion here about exactly
             // what it was about before sessions existed — including the #43 bypass cases, which
@@ -414,12 +414,12 @@ public sealed class AdminApiKeyFilterTrustedNetworkTests
     /// behaviour they were written for. Supplying a scope instead models a NAMED key, which is how
     /// the bypass-closing and scope-refusal cases are exercised.</para>
     /// </summary>
-    private sealed class StubAdminKeyResolver : ICredentialResolver
+    private sealed class StubCredentialResolver : ICredentialResolver
     {
         private readonly string? _configuredKey;
         private readonly ApiKeyScope _scope;
 
-        public StubAdminKeyResolver(string? configuredKey, ApiKeyScope? namedKeyScope = null)
+        public StubCredentialResolver(string? configuredKey, ApiKeyScope? namedKeyScope = null)
         {
             _configuredKey = configuredKey;
             // The legacy shared key is always full scope; a named key carries whatever it was minted with.
