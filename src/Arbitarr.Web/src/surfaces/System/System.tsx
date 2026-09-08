@@ -49,7 +49,7 @@ function BuildPanel({ buildInfo }: { buildInfo: BuildInfoResponse }) {
   // in this panel, but conflating them would misread a restart as a new build.
   return (
     <dl className={local.facts}>
-        <Fact label="Commit" value={buildInfo.commitSha} />
+      <Fact label="Commit" value={buildInfo.commitSha} />
       <Fact label="Image tag" value={buildInfo.imageTag} />
       <Fact label="Built" value={buildInfo.buildTimestampUtc} />
       <Fact label="Version" value={buildInfo.informationalVersion} />

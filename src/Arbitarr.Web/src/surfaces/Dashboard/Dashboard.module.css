@@ -3,7 +3,7 @@
  *
  * The definition-list grid is the one shape the shared surface.module.css does
  * not carry. The System page's build panel has its own variant (System.module.css
- * .facts); consolidating the two into the shared sheet is tracked as a follow-up.
+ * .facts); consolidating the two into the shared sheet is tracked as arb-9zm (local beads).
  * The tables, panels and badges this page uses are all shared.
  */
 
