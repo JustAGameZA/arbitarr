@@ -413,14 +413,25 @@ public sealed class NzbHydraSource : IUpstreamSource
     {
         var doc = XDocument.Parse(xml);
 
-        var categoryIds = doc.Descendants("category")
-            .Select(c => c.Attribute("id")?.Value)
-            .Where(v => v is not null)
-            .Select(v => int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id) ? id : (int?)null)
-            .Where(v => v.HasValue)
-            .Select(v => v!.Value)
+        var categories = doc.Descendants()
+            .Where(element => element.Name.LocalName is "category" or "subcat")
+            .Select(element => new
+            {
+                Id = int.TryParse(element.Attribute("id")?.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id) ? id : (int?)null,
+                Name = element.Attribute("name")?.Value,
+            })
+            .Where(category => category.Id.HasValue)
+            .ToArray();
+
+        var categoryIds = categories
+            .Select(category => category.Id!.Value)
             .Distinct()
             .ToArray();
+
+        var categoryNames = categories
+            .Where(category => string.IsNullOrWhiteSpace(category.Name) is false)
+            .GroupBy(category => category.Id!.Value)
+            .ToDictionary(group => group.Key, group => group.First().Name!);
 
         var searchingElement = doc.Descendants("searching").FirstOrDefault();
         var supportsTv = string.Equals(
@@ -449,6 +460,6 @@ public sealed class NzbHydraSource : IUpstreamSource
             maxPageSize = max;
         }
 
-        return new SourceCaps(categoryIds, supportsTv, supportsMovie, maxPageSize, supportedParams);
+        return new SourceCaps(categoryIds, supportsTv, supportsMovie, maxPageSize, supportedParams, CategoryNames: categoryNames);
     }
 }

@@ -183,7 +183,7 @@ internal static class IndexerXmlWriter
         var categories = new XElement("categories",
             caps.SupportedCategories.Select(id => new XElement("category",
                 new XAttribute("id", id),
-                new XAttribute("name", CategoryName(id)))));
+                new XAttribute("name", CategoryName(id, caps.CategoryNames)))));
 
         var limits = new XElement("limits", new XAttribute("max", caps.MaxPageSize ?? CapsAggregator.EnforcedMaxPageSize), new XAttribute("default", caps.MaxPageSize ?? CapsAggregator.EnforcedMaxPageSize));
 
@@ -196,7 +196,12 @@ internal static class IndexerXmlWriter
         return new XDocument(new XDeclaration("1.0", "UTF-8", "yes"), caps_);
     }
 
-    private static string CategoryName(int id) => id switch
+    private static string CategoryName(int id, IReadOnlyDictionary<int, string>? categoryNames) =>
+        categoryNames?.TryGetValue(id, out var categoryName) == true
+            ? categoryName
+            : FallbackCategoryName(id);
+
+    private static string FallbackCategoryName(int id) => id switch
     {
         >= 5000 and < 6000 => "TV",
         >= 2000 and < 3000 => "Movies",
