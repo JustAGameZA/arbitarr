@@ -5,6 +5,25 @@ using Microsoft.EntityFrameworkCore;
 namespace Arbitarr.Data.Security;
 
 /// <summary>
+/// #96: the outcome of <see cref="UserRepository.ChangePasswordAsync"/>.
+///
+/// <para>Two cases, not three: a rejected NEW password is a
+/// <see cref="UserValidationException"/> carrying the server's own words, exactly as it is on the
+/// setup route, because the caller must render that text verbatim. Only the current-password
+/// failure is a status, and it deliberately carries no detail — the caller renders one generic
+/// message for it, matching <see cref="UserRepository.VerifyCredentialsAsync"/>'s one-answer
+/// posture.</para>
+/// </summary>
+public enum ChangePasswordResult
+{
+    /// <summary>The password was verified and replaced.</summary>
+    Ok,
+
+    /// <summary>The presented current password did not verify. No further detail, by design.</summary>
+    CurrentPasswordIncorrect,
+}
+
+/// <summary>
 /// #44: persistence and verification for human operator accounts, with the same
 /// validate-at-the-repository-boundary posture as <see cref="ApiKeyRepository"/> and
 /// <see cref="Settings.SettingsRepository"/>.
@@ -184,6 +203,77 @@ public sealed class UserRepository
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         return user;
+    }
+
+    /// <summary>
+    /// #96: rotation by the operator who is already signed in — verify the current password, then
+    /// write a new hash. Returns <see cref="ChangePasswordResult.CurrentPasswordIncorrect"/> when
+    /// verification fails, and throws <see cref="UserValidationException"/> when the NEW password is
+    /// rejected by <see cref="ValidatePassword"/> or is the same as the current one.
+    ///
+    /// <para><b>THIS IS NOT THE RECOVERY PATH, AND THERE STILL IS NONE.</b> It requires the current
+    /// password, so an operator who has forgotten it is exactly where <see cref="UserEntry"/> says
+    /// they are: restore a backup, or clear the Users and Sessions tables. Rotation is not recovery
+    /// and adding it does not weaken that.</para>
+    ///
+    /// <para><b>THE REHASH-NEEDED BRANCH IS SATISFIED BY CONSTRUCTION, NOT BY A SPECIAL CASE.</b>
+    /// <c>AspNetPasswordHasher.Verify</c> already treats
+    /// <c>PasswordVerificationResult.SuccessRehashNeeded</c> as success (see its note on why the
+    /// alternative locks every existing operator out), and a successful change writes a brand-new
+    /// hash at the CURRENT iteration count regardless of what the old row used. So a hash written at
+    /// PBKDF2/100,000 verifies here and the row lands at the configured cost afterwards, with no
+    /// branch to get wrong. Asserted by
+    /// <c>AuthEndpointsTests.A_password_hashed_at_the_old_iteration_count_can_still_be_changed</c>.</para>
+    ///
+    /// <para><b>BOTH KDF INVOCATIONS HAPPEN OUTSIDE THE TRANSACTION</b>, for the reason
+    /// <see cref="CreateFirstUserAsync"/> records — and more strongly, because this path runs TWO of
+    /// them. Holding SQLite's write lock across a deliberately slow KDF would serialise every other
+    /// writer in the application behind one password change.</para>
+    /// </summary>
+    public async Task<ChangePasswordResult> ChangePasswordAsync(
+        long userId,
+        string? currentPassword,
+        string? newPassword,
+        CancellationToken cancellationToken)
+    {
+        var current = currentPassword ?? string.Empty;
+
+        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+
+        if (user is null)
+        {
+            // The caller authenticated as this id moments ago, so this is a deleted-underneath-us
+            // race rather than an authorization question. Answered as a failed verification: there
+            // is nothing for the caller to do differently, and it is the same one answer
+            // VerifyCredentialsAsync gives every failure.
+            return ChangePasswordResult.CurrentPasswordIncorrect;
+        }
+
+        // Bounded before the KDF, for the reason MaxPasswordLength documents. Checked on the CURRENT
+        // password too, not only the new one — an over-long current password would otherwise reach
+        // the verifier and make the length bound decorative on the one route that runs two hashes.
+        if (current.Length is 0 or > MaxPasswordLength || !_passwordHasher.Verify(user.PasswordHash, current))
+        {
+            return ChangePasswordResult.CurrentPasswordIncorrect;
+        }
+
+        // Validated only AFTER the current password is verified, so an unverified caller cannot use
+        // this route to learn the password policy by probing it.
+        ValidatePassword(newPassword);
+
+        var replacement = newPassword ?? string.Empty;
+
+        if (string.Equals(replacement, current, StringComparison.Ordinal))
+        {
+            // Cheap, and it prevents a "rotation" that rotates nothing while still revoking every
+            // other session — which an operator would read as the feature having worked.
+            throw new UserValidationException("The new password must differ from the current one.");
+        }
+
+        user.PasswordHash = _passwordHasher.Hash(replacement);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return ChangePasswordResult.Ok;
     }
 
     /// <summary>Looks an account up by id, for rendering the signed-in identity.</summary>

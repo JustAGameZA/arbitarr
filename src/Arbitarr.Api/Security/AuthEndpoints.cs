@@ -1,3 +1,4 @@
+using Arbitarr.Api.Admin;
 using Arbitarr.Api.Routing;
 using Arbitarr.Core.Security;
 using Arbitarr.Data.Security;
@@ -12,6 +13,22 @@ namespace Arbitarr.Api.Security;
 
 /// <summary>Request body for <c>POST /api/auth/setup</c> and <c>POST /api/auth/login</c>.</summary>
 public sealed record CredentialsRequest(string? Username, string? Password);
+
+/// <summary>
+/// #96: request body for <c>POST /api/auth/password</c>.
+///
+/// <para>No username and no user id: the account is whichever one the session resolves to, so there
+/// is no field a caller could aim at somebody else's account. That is the same posture
+/// <c>LogoutAsync</c> takes and it is what keeps this route from needing an authorization check
+/// beyond "is this a live session".</para>
+///
+/// <para><b>NO <c>ToString</c> OVERRIDE, AND DO NOT ADD ONE.</b> A positional record's generated
+/// <c>ToString</c> prints every property, so any log line that interpolated one of these would put
+/// both passwords into the persistent log store (#65). Nothing on this path logs it today —
+/// <c>PasswordLogInjectionTests</c> is what fails if that changes — and the record staying
+/// unremarkable is half of why.</para>
+/// </summary>
+public sealed record ChangePasswordRequest(string? CurrentPassword, string? NewPassword);
 
 /// <summary>
 /// The answer to <c>GET /api/auth/session</c> — who, if anyone, this request is.
@@ -57,7 +74,20 @@ public sealed record SessionResponse(bool Authenticated, string? Username, bool 
 /// <item><b>logout</b> — acts only on the session the caller can already present; it cannot be
 /// aimed at anyone else's.</item>
 /// <item><b>session</b> — returns only what the caller already knows about itself.</item>
+/// <item><b>password</b> (#96) — requires a LIVE SESSION, resolved by the handler itself, and
+/// deliberately refuses the admin key. See <see cref="ChangePasswordAsync"/>.</item>
 /// </list>
+///
+/// <para><b>WHY THE PASSWORD ROUTE IS PublicRead EVEN THOUGH IT 401s.</b> This looks like a
+/// contradiction and is not, because of the paragraph above: the classification says only "not
+/// wrapped by <c>AdminApiKeyFilter</c>", which is exactly true here and is the whole point.
+/// Classifying it <see cref="RouteClassification.AdminMutating"/> would attach that filter, and the
+/// filter accepts EITHER credential — so an admin key would then be able to rotate a human's
+/// password, which is the one thing #96 exists to forbid. The route 401s because it requires a
+/// SESSION, which is a different gate from the one the classification names. Because the sweep in
+/// <c>AdminApiKeyRouteEnumerationTests</c> asserts that no PublicRead route ever answers 401, this
+/// route is named there as an explicit, positively-asserted exemption — see
+/// <c>Every_PublicRead_route_never_requires_the_admin_key</c>.</para>
 ///
 /// <para><b>THE REQUIRED-BODY TRAP.</b> Bodies are bound OPTIONALLY
 /// (<c>[FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)]</c>) and null-checked in the
@@ -83,6 +113,14 @@ public static class AuthEndpoints
     public const string LogoutRoute = "/api/auth/logout";
     public const string SessionRoute = "/api/auth/session";
 
+    /// <summary>
+    /// #96. Under <c>/api/auth/</c> rather than <c>/api/admin/</c> on purpose: the admin prefix is
+    /// what <c>apiFetch</c>'s <c>needsAdminKey</c> and <c>AdminApiKeyFilter</c> both key off, and
+    /// both attach or accept the machine credential this route must refuse. A human-credential route
+    /// under the machine-credential prefix would invite exactly that confusion.
+    /// </summary>
+    public const string PasswordRoute = "/api/auth/password";
+
     public static void Map(IEndpointRouteBuilder endpoints)
     {
         // See the type doc for why PublicRead is the correct — and the only passing —
@@ -98,6 +136,12 @@ public static class AuthEndpoints
             .WithClassification(RouteClassification.PublicRead);
 
         endpoints.MapPost(LogoutRoute, LogoutAsync)
+            .WithClassification(RouteClassification.PublicRead);
+
+        // #96. PublicRead here means "not wrapped by AdminApiKeyFilter" and nothing else — see the
+        // type doc's note on why that is the correct classification for a route that nonetheless
+        // requires a session, and where the enumeration sweep names it as an exemption.
+        endpoints.MapPost(PasswordRoute, ChangePasswordAsync)
             .WithClassification(RouteClassification.PublicRead);
     }
 
@@ -287,4 +331,156 @@ public static class AuthEndpoints
 
         return Results.NoContent();
     }
+
+    /// <summary>
+    /// #96: rotation by the signed-in operator. Requires a LIVE SESSION and nothing else; returns
+    /// 204 on success.
+    ///
+    /// <para><b>THE ADMIN KEY IS NEVER READ HERE.</b> Not consulted, not fallen back to. A machine
+    /// credential must not be able to rotate a human's password, and the property is structural
+    /// rather than a check: <c>AdminApiKeyFilter</c> is the only thing in the codebase that reads
+    /// <c>X-Admin-Api-Key</c>, and this route is not wrapped by it. Asserted by
+    /// <c>Changing_a_password_with_only_an_admin_key_is_refused</c>.</para>
+    ///
+    /// <para><b>#43's BOOTSTRAP BYPASS CANNOT REACH THIS ROUTE EITHER</b>, which is worth stating
+    /// because it is the one way "session only" could silently become "anyone on the LAN". That
+    /// bypass lives entirely inside <c>AdminApiKeyFilter.HandleUnconfiguredAsync</c>; this route
+    /// never calls the filter, and <c>DbSessionAuthenticator</c> cannot return
+    /// <see cref="AdminKeyResolutionOutcome.NotConfigured"/> by construction. So on a fresh install
+    /// with no admin key configured, this route still requires a live session — asserted by
+    /// <c>Changing_a_password_requires_a_session_even_when_no_admin_key_is_configured</c>, which
+    /// deliberately does NOT seed a key.</para>
+    ///
+    /// <para><b>THE ORDER OF THE CHECKS IS LOAD-BEARING.</b> Session first, so an unauthenticated
+    /// caller learns nothing about the body schema. Rate limit next, BEFORE the body is inspected
+    /// and before either KDF invocation, for the reason <c>LoginRateLimiter.IsAllowed</c> states —
+    /// checking after verification would bound guessing but leave the CPU-exhaustion path open, and
+    /// this route runs TWO hashes rather than one.</para>
+    ///
+    /// <para><b>NO <c>Set-Cookie</c> ON SUCCESS.</b> The current session is not re-issued: it is
+    /// still valid, and re-issuing would be a second code path for issuing sessions on a route with
+    /// no need to issue one. Asserted, because a future "refresh the cookie while we are here" would
+    /// otherwise pass silently.</para>
+    /// </summary>
+    // Body bound optionally — see the type doc's REQUIRED-BODY TRAP note. Do not make it required.
+    private static async Task<IResult> ChangePasswordAsync(
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] ChangePasswordRequest? request,
+        HttpContext httpContext,
+        ISessionAuthenticator authenticator,
+        UserRepository users,
+        SessionRepository sessions,
+        SettingsRepository settings,
+        LoginRateLimiter rateLimiter,
+        CancellationToken cancellationToken)
+    {
+        if (!httpContext.Request.Cookies.TryGetValue(ISessionAuthenticator.CookieName, out var token)
+            || string.IsNullOrEmpty(token))
+        {
+            return NotSignedIn();
+        }
+
+        // The CSRF control from ADR 0008. A cookie is ambient — a browser attaches it to a
+        // cross-site request automatically — so this header is what a forged request cannot supply.
+        // Its absence is treated as NO credential, matching AdminApiKeyFilter's posture exactly:
+        // this is a state-changing cookie-authenticated POST and needs the same control the gate
+        // applies to every other one.
+        if (!httpContext.Request.Headers.ContainsKey(AdminApiKeyFilter.SessionRequestHeaderName))
+        {
+            return NotSignedIn();
+        }
+
+        var resolution = await authenticator.AuthenticateAsync(token, ApiKeyScope.Admin, cancellationToken);
+        if (resolution.Outcome is not AdminKeyResolutionOutcome.Authorized)
+        {
+            return NotSignedIn();
+        }
+
+        // The same two-step GetSessionAsync does: the authenticator says "yes, live session", and
+        // this resolves WHICH one — yielding both the account to re-hash and the session id to spare
+        // when the others are revoked.
+        var (idleTimeout, _) = await settings.GetSessionLifetimesAsync(cancellationToken);
+        var session = await sessions.FindLiveByPresentedTokenAsync(token, idleTimeout, cancellationToken);
+        if (session is null)
+        {
+            return NotSignedIn();
+        }
+
+        var remoteAddress = httpContext.Connection.RemoteIpAddress?.ToString();
+
+        // Keyed by USER ID, not username. The id is the stable identity, and the "u:"/"a:" prefixes
+        // LoginRateLimiter applies mean a "pw:" sub-prefix cannot collide with a real username's
+        // budget — so a login-guessing spree cannot consume the rotation budget of a signed-in
+        // operator, or vice versa. Two different attacks, two budgets.
+        var limiterKey = RateLimiterKey(session.UserId);
+
+        if (!rateLimiter.IsAllowed(limiterKey, remoteAddress))
+        {
+            // Delays, never disables — ADR 0009 unchanged. The wording is the login route's.
+            return Results.Problem(
+                title: "Too many password change attempts",
+                detail: $"Too many failed attempts. Try again in up to {LoginRateLimiter.Window.TotalMinutes:0} minutes.",
+                statusCode: StatusCodes.Status429TooManyRequests);
+        }
+
+        if (request is null)
+        {
+            return Results.BadRequest(new { error = "A request body with 'currentPassword' and 'newPassword' properties is required." });
+        }
+
+        try
+        {
+            var result = await users.ChangePasswordAsync(
+                session.UserId,
+                request.CurrentPassword,
+                request.NewPassword,
+                cancellationToken);
+
+            if (result is ChangePasswordResult.CurrentPasswordIncorrect)
+            {
+                rateLimiter.RecordFailure(limiterKey, remoteAddress);
+
+                // ONE GENERIC MESSAGE, matching VerifyCredentialsAsync's posture. There is no
+                // username oracle to protect here — the caller is already authenticated as a known
+                // account — so naming WHICH field was wrong is fine; what it must not do is say
+                // anything about the stored value.
+                return Results.Problem(
+                    title: "Password change failed",
+                    detail: "The current password is incorrect.",
+                    statusCode: StatusCodes.Status401Unauthorized);
+            }
+
+            rateLimiter.RecordSuccess(limiterKey);
+
+            // Every OTHER session of this account is revoked; the one that made the request is
+            // spared. Revoking all of them would sign the operator out of the tab they just used,
+            // which reads as the change having failed; revoking none would make a rotation prompted
+            // by "I think someone else has my password" achieve nothing.
+            await sessions.RevokeAllForUserExceptAsync(session.UserId, session.Id, cancellationToken);
+
+            return Results.NoContent();
+        }
+        catch (UserValidationException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// The one answer this route gives to every way of not being signed in — no cookie, no CSRF
+    /// header, an unauthorized resolution, or a token whose row is no longer live.
+    ///
+    /// <para>One shape for all four so the response cannot be read as an oracle for which of them
+    /// applied, and so a fifth arm added later cannot accidentally answer differently.</para>
+    /// </summary>
+    private static IResult NotSignedIn() =>
+        Results.Problem(
+            title: "Not signed in",
+            detail: "Changing a password requires a signed-in session.",
+            statusCode: StatusCodes.Status401Unauthorized);
+
+    /// <summary>
+    /// The <see cref="LoginRateLimiter"/> key for a password change. The "pw:" prefix keeps this
+    /// budget separate from the login budget the same limiter holds under "u:" — see the call site.
+    /// </summary>
+    private static string RateLimiterKey(long userId) => $"pw:{userId}";
 }

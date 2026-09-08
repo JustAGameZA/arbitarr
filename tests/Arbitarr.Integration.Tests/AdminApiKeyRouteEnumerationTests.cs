@@ -1,6 +1,7 @@
 using System.Net;
 using Arbitarr.Api.Admin;
 using Arbitarr.Api.Routing;
+using Arbitarr.Api.Security;
 using Arbitarr.Core.Settings;
 using Arbitarr.Data.Entities;
 using Microsoft.AspNetCore.Http;
@@ -102,10 +103,47 @@ public sealed class AdminApiKeyRouteEnumerationTests : IClassFixture<ArbitarrWeb
 
         using var client = _factory.CreateClient();
 
-        foreach (var (method, path) in GetRoutesByClassification(RouteClassification.PublicRead))
+        var routes = GetRoutesByClassification(RouteClassification.PublicRead).ToList();
+        Assert.NotEmpty(routes);
+
+        // #96 IS THE ONE DELIBERATE EXCEPTION, and it is listed rather than filtered by a pattern so
+        // that adding a second one is a decision somebody has to write down here.
+        //
+        // POST /api/auth/password is PublicRead because PublicRead means exactly one thing in this
+        // codebase — "not wrapped by AdminApiKeyFilter" — and this route must not be wrapped by it:
+        // that filter accepts EITHER credential, so an admin key would then be able to rotate a
+        // human's password, which is the one thing #96 forbids. It nonetheless answers 401 to the
+        // bare request this sweep sends, because it requires a live SESSION. The two facts are not
+        // in conflict; the classification names the admin-key gate, and the session gate is a
+        // different one that lives in the handler. See AuthEndpoints' type doc.
+        var sessionGated = new HashSet<string>(StringComparer.Ordinal)
+        {
+            AuthEndpoints.PasswordRoute,
+        };
+
+        // The exemption must name a route that actually exists, or a rename would silently turn this
+        // into a sweep with a dead entry and one fewer route covered.
+        Assert.Contains(routes, r => sessionGated.Contains(r.Path));
+
+        foreach (var (method, path) in routes)
         {
             using var request = new HttpRequestMessage(method, path);
             using var response = await client.SendAsync(request);
+
+            if (sessionGated.Contains(path))
+            {
+                // Asserted POSITIVELY rather than merely skipped: "this route refuses an
+                // unauthenticated caller" is a SECURITY property, so it has to keep holding, not
+                // just be tolerated. A skip would let a change that made this route reachable
+                // without a session pass this file in silence.
+                Assert.True(
+                    response.StatusCode is HttpStatusCode.Unauthorized,
+                    $"Expected {method} {path} to REFUSE a request carrying neither a session nor an " +
+                    $"admin key with 401, but it returned {(int)response.StatusCode} " +
+                    $"{response.StatusCode}. This route is session-gated in its handler; if it stops " +
+                    "refusing, an unauthenticated caller can rotate the operator's password.");
+                continue;
+            }
 
             Assert.False(
                 response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.ServiceUnavailable,

@@ -137,6 +137,51 @@ public sealed class SessionRepository
     }
 
     /// <summary>
+    /// #96: revokes every live session of <paramref name="userId"/> EXCEPT
+    /// <paramref name="exceptSessionId"/>, returning the number revoked. What a password change does,
+    /// and the only caller.
+    ///
+    /// <para><b><paramref name="exceptSessionId"/> IS REQUIRED, NOT A NULLABLE CONVENIENCE.</b> An
+    /// overload that revoked everything would be one call site away from signing the operator out of
+    /// the tab they just used — which reads as the change having failed, and leaves them re-typing a
+    /// password they set five seconds ago on a machine they are already sitting at. Nothing in the
+    /// codebase needs revoke-all, so the parameter that prevents it is mandatory.</para>
+    ///
+    /// <para><b>ROWS ARE TOMBSTONED, NOT DELETED</b>, exactly as
+    /// <see cref="RevokeByPresentedTokenAsync"/> and <see cref="ApiKeyRepository"/> do it. #95's
+    /// maintenance prune is what removes them, and it is a storage concern, never the security
+    /// boundary — see this type's note on why the rows exist at all.</para>
+    ///
+    /// <para><b>EXPIRY IS NOT RE-EVALUATED HERE.</b> An already-expired row is revoked too, which is
+    /// harmless. The liveness rule lives in <see cref="FindLiveByPresentedTokenAsync"/>; duplicating
+    /// it here would be a second place for it to drift.</para>
+    /// </summary>
+    public async Task<int> RevokeAllForUserExceptAsync(
+        long userId,
+        long exceptSessionId,
+        CancellationToken cancellationToken)
+    {
+        var doomed = await _dbContext.Sessions
+            .Where(s => s.UserId == userId && s.Id != exceptSessionId && s.RevokedAt == null)
+            .ToListAsync(cancellationToken);
+
+        if (doomed.Count == 0)
+        {
+            return 0;
+        }
+
+        var now = _timeProvider.GetUtcNow();
+        foreach (var session in doomed)
+        {
+            session.RevokedAt = now;
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return doomed.Count;
+    }
+
+    /// <summary>
     /// Stamps <see cref="SessionEntry.LastSeenAt"/>, which is what keeps an active session from
     /// hitting its idle expiry. Called only from <c>ThrottledSessionActivityRecorder</c>, which
     /// coalesces it — see <see cref="IApiKeyLastUsedRecorder"/> for why this must not become a
