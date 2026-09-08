@@ -78,11 +78,18 @@ public sealed class ClassifierPollingWorker : BackgroundService
     /// Constructs a worker that resolves its scoped dependencies from a fresh DI scope on every
     /// cycle. This is the Host wiring: the worker is a singleton hosted service, but
     /// <see cref="ClassifierWorker"/> and the EF-backed verdict cache reader/writer are scoped.
+    ///
+    /// <para><b>#112: <see cref="AiModelIdentity"/> comes from the per-cycle SCOPE now, and no
+    /// longer from a captured singleton.</b> The identity follows the resolved Ollama model, which
+    /// an operator can change from the Settings page at any time — captured once at construction it
+    /// would have pinned the boot-time model name into every verdict cache key for the life of the
+    /// process, so a model change would keep writing and reading verdicts under a model that was no
+    /// longer being asked (the exact invalidation R17 requires). Taking it from the scope the cycle
+    /// already creates costs nothing extra: that scope exists for the cache reader/writer anyway.</para>
     /// </summary>
     public ClassifierPollingWorker(
         IServiceScopeFactory scopeFactory,
         InMemoryReleaseLookup releaseLookup,
-        AiModelIdentity modelIdentity,
         TimeProvider timeProvider,
         TitleNormalizer? titleNormalizer = null,
         ILogger<ClassifierPollingWorker>? logger = null)
@@ -99,7 +106,7 @@ public sealed class ClassifierPollingWorker : BackgroundService
                         releaseLookup,
                         provider.GetRequiredService<IVerdictCacheReader>(),
                         provider.GetRequiredService<IVerdictCacheWriter>(),
-                        modelIdentity,
+                        provider.GetRequiredService<AiModelIdentity>(),
                         settingsReader.GetClassifierPollIntervalAsync,
                         settingsReader.GetTitleNormalizationEnabledAsync);
                     return (dependencies, scope);
@@ -116,7 +123,6 @@ public sealed class ClassifierPollingWorker : BackgroundService
     {
         ArgumentNullException.ThrowIfNull(scopeFactory);
         ArgumentNullException.ThrowIfNull(releaseLookup);
-        ArgumentNullException.ThrowIfNull(modelIdentity);
     }
 
     private ClassifierPollingWorker(

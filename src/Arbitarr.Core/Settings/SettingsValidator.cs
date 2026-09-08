@@ -573,6 +573,77 @@ public static class SettingsValidator
     }
 
     /// <summary>
+    /// #112: validates a proposed <see cref="SettingKey.OllamaModel"/> value — the model name sent
+    /// as Ollama's <c>model</c> field in every classification request.
+    ///
+    /// <para><b>Three rejections, and no fourth.</b>
+    /// <list type="bullet">
+    /// <item><b>Blank</b> — an empty model makes every <c>/api/chat</c> call a 400 for a reason the
+    /// operator cannot see from the settings page. Rejected here rather than defaulted, because
+    /// substituting a name the operator did not choose is exactly the clamp AC24 forbids.</item>
+    /// <item><b>Whitespace or control characters anywhere in the value</b> — an Ollama tag is
+    /// <c>family:tag</c> and never contains a space, so a value carrying one is a paste accident
+    /// (a copied line, a trailing newline) that would otherwise be stored verbatim and fail every
+    /// call. Rejecting rather than TRIMMING is the AC24 rule: trimming would silently store a
+    /// different value than the one submitted, and the operator would never learn their paste was
+    /// wrong. A control character additionally has no business in a value that is echoed back on
+    /// the GET and rendered into a page.</item>
+    /// <item><b>Longer than <see cref="OllamaModelMaxLength"/> characters</b> — real tags are well
+    /// under 100 (<c>qwen2.5:7b-instruct-q4_K_M</c> is 25). The cap is a sanity bound on a
+    /// free-text field that lands in a database column and a request body, not a statement about
+    /// what Ollama accepts, which is why it sits far above any plausible name.</item>
+    /// </list></para>
+    ///
+    /// <para><b>No check that the model EXISTS.</b> That is not this layer's question and could not
+    /// be answered here without a network call on the settings write path. The instance's real list
+    /// reaches the operator through the connectivity probe (<c>OllamaProbeResult.Models</c>), which
+    /// is what turns the field into a picker; a name typed before a probe has run, or pulled after
+    /// one, must still be storable.</para>
+    /// </summary>
+    public static void ValidateOllamaModel(string proposed)
+    {
+        if (string.IsNullOrWhiteSpace(proposed))
+        {
+            throw new SettingsValidationException(SettingKey.OllamaModel,
+                "the Ollama model must not be blank. Run the connection test and choose one of the " +
+                "models your instance reports.");
+        }
+
+        foreach (var character in proposed)
+        {
+            if (char.IsWhiteSpace(character) || char.IsControl(character))
+            {
+                // The value IS echoed: it is not a secret (see the SettingKey member's doc), and an
+                // operator who pasted the wrong thing needs to see what was rejected. Control
+                // characters are stripped from the echo rather than the value being trimmed into
+                // acceptance, so the rejection stays a rejection.
+                throw new SettingsValidationException(SettingKey.OllamaModel,
+                    $"'{Printable(proposed)}' is not a valid Ollama model name: it contains whitespace " +
+                    "or a control character. A model tag looks like 'qwen2.5:7b-instruct-q4_K_M'.");
+            }
+        }
+
+        if (proposed.Length > OllamaModelMaxLength)
+        {
+            throw new SettingsValidationException(SettingKey.OllamaModel,
+                $"the Ollama model name must be at most {OllamaModelMaxLength} characters, got {proposed.Length}.");
+        }
+    }
+
+    /// <summary>
+    /// The ceiling <see cref="ValidateOllamaModel"/> applies. Far above any real tag on purpose —
+    /// it bounds a free-text field rather than encoding a limit Ollama itself imposes.
+    /// </summary>
+    public const int OllamaModelMaxLength = 200;
+
+    /// <summary>
+    /// Renders a rejected model name safely for the message. Control characters would otherwise
+    /// travel into a JSON error body and from there into the page that displays it.
+    /// </summary>
+    private static string Printable(string value) =>
+        new(value.Select(c => char.IsControl(c) ? '?' : c).ToArray());
+
+    /// <summary>
     /// Validates a proposed <see cref="SettingKey.AdminApiKey"/> value (AC24-style: rejects
     /// rather than silently accepting a weak value, since a short/blank key defeats the D2
     /// mutation gate entirely). Floor: 16 characters (minimum length to resist casual guessing on

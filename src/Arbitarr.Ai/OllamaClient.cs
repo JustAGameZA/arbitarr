@@ -31,6 +31,7 @@ public sealed class OllamaClient : IOllamaClient
     private readonly IAsyncCircuitBreaker _circuitBreaker;
     private readonly SemaphoreSlim _inFlightGate;
     private readonly Func<CancellationToken, ValueTask<Uri>> _resolveBaseUrl;
+    private readonly Func<CancellationToken, ValueTask<string>> _resolveModel;
 
     /// <param name="resolveBaseUrl">
     /// #89: resolves the base URL PER CALL rather than pinning it at construction, which is what
@@ -46,17 +47,28 @@ public sealed class OllamaClient : IOllamaClient
     /// such lifetime, and it is why <c>ClassifyAsync</c> posts to a resolved absolute URI rather
     /// than to the relative "/api/chat" it used before.</para>
     /// </param>
+    /// <param name="resolveModel">
+    /// #112: resolves the MODEL per call, for exactly the same reason and with exactly the same
+    /// fallback shape as <paramref name="resolveBaseUrl"/>. Before #112 the model was pinned in
+    /// <see cref="OllamaOptions.Model"/> at start-up, so an operator whose instance had never pulled
+    /// it could see a green connectivity test while every classification failed open — and could not
+    /// correct it without recycling the process. Optional: when omitted the model falls back to
+    /// <see cref="OllamaOptions.Model"/>, which is the shape every existing test constructs and the
+    /// honest behaviour for a caller with no settings store behind it.
+    /// </param>
     public OllamaClient(
         OllamaOptions options,
         HttpClient httpClient,
         IAsyncCircuitBreaker circuitBreaker,
-        Func<CancellationToken, ValueTask<Uri>>? resolveBaseUrl = null)
+        Func<CancellationToken, ValueTask<Uri>>? resolveBaseUrl = null,
+        Func<CancellationToken, ValueTask<string>>? resolveModel = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _circuitBreaker = circuitBreaker ?? throw new ArgumentNullException(nameof(circuitBreaker));
         _inFlightGate = new SemaphoreSlim(OllamaOptions.MaxInFlight, OllamaOptions.MaxInFlight);
         _resolveBaseUrl = resolveBaseUrl ?? (_ => ValueTask.FromResult(options.BaseUrl));
+        _resolveModel = resolveModel ?? (_ => ValueTask.FromResult(options.Model));
 
         // M5 security review (MED): bound the response body size the underlying handler will
         // buffer — Ollama is local/trusted infrastructure, but a misbehaving or misconfigured
@@ -80,21 +92,29 @@ public sealed class OllamaClient : IOllamaClient
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeoutCts.CancelAfter(OllamaOptions.CallTimeout);
 
-            var request = new OllamaChatRequest(
-                _options.Model,
-                ClassificationPrompt.Build(candidate).Select(m => new OllamaChatRequestMessage(m.Role, m.Content)).ToArray(),
-                Stream: false,
-                Format: JsonDocument.Parse(VerdictSchema.Object).RootElement.Clone(),
-                KeepAlive: _options.KeepAlive);
+            var messages = ClassificationPrompt.Build(candidate)
+                .Select(m => new OllamaChatRequestMessage(m.Role, m.Content))
+                .ToArray();
 
             try
             {
-                // #89: resolved here, inside the call, so an operator who changes the base URL in
-                // the settings UI has the NEXT classification use it. Resolution happens before the
-                // circuit breaker records anything, and a failure to resolve is a genuine call
-                // failure like any other.
+                // #89/#112: BOTH the address and the model are resolved here, inside the call, so an
+                // operator who changes either in the settings UI has the NEXT classification use it.
+                // Resolution happens before the circuit breaker records anything, and a failure to
+                // resolve is a genuine call failure like any other. The request is built AFTER the
+                // resolution rather than before it, which is why it moved inside this block — built
+                // above, it would have carried the model that was in force when the method was
+                // entered and silently reintroduced the restart requirement for that field alone.
                 var baseUrl = await _resolveBaseUrl(timeoutCts.Token).ConfigureAwait(false);
+                var model = await _resolveModel(timeoutCts.Token).ConfigureAwait(false);
                 var chatUri = BuildChatUri(baseUrl);
+
+                var request = new OllamaChatRequest(
+                    model,
+                    messages,
+                    Stream: false,
+                    Format: JsonDocument.Parse(VerdictSchema.Object).RootElement.Clone(),
+                    KeepAlive: _options.KeepAlive);
 
                 using var response = await _httpClient
                     .PostAsJsonAsync(chatUri, request, JsonOptions, timeoutCts.Token)

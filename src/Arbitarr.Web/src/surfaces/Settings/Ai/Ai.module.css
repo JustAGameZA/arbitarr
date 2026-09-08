@@ -45,6 +45,30 @@
   max-width: 80ch;
 }
 
+/* #112. The stored model before any test has run: read-only text, not a
+   disabled input. A disabled field reads as "you may not change this", which is
+   the opposite of true — the test button is how you get the choices. */
+.modelValue {
+  font-family: ui-monospace, 'Cascadia Mono', 'Consolas', monospace;
+  font-size: 13px;
+  color: var(--fg-primary);
+}
+
+/* The picker, sized like .urlInput rather than the browser default: a model tag
+   such as hf.co/bartowski/Qwen2.5-7B-GGUF:Q4_K_M is long, and a select that
+   truncates it hides exactly the part that distinguishes two quantisations. */
+.modelSelect {
+  min-width: 340px;
+  max-width: 100%;
+  padding: 5px 9px;
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--fg-primary);
+  font-size: 13px;
+  font-family: inherit;
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;

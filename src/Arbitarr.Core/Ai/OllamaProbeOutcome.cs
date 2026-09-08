@@ -50,3 +50,30 @@ public enum OllamaProbeOutcome
     /// </summary>
     UnexpectedResponse,
 }
+
+/// <summary>
+/// #112: what a probe learned — the closed <see cref="OllamaProbeOutcome"/> plus, on
+/// <see cref="OllamaProbeOutcome.Ok"/>, the model NAMES the instance reported.
+///
+/// <para><b>The names are a SEPARATE FIELD, and that is the whole design.</b> #89's guarantee is
+/// that no free text derived from the upstream body reaches the operator-facing wording, and that
+/// guarantee is enforced by <see cref="OllamaProbeOutcome"/> having no string member at all. Adding
+/// a fifth outcome, or a message field, to carry the model list would have destroyed it. Instead the
+/// enum is untouched and the names travel beside it, so the endpoint still derives its sentence from
+/// the enum alone and the names are only ever rendered as list items the operator picks from.</para>
+///
+/// <para><b>Empty is not a failure.</b> A healthy instance that has pulled nothing answers
+/// <c>{"models":[]}</c>, which is <see cref="OllamaProbeOutcome.Ok"/> with no names — see
+/// <c>OllamaConnectivityProber.LooksLikeTagsResponse</c>. Every non-Ok outcome carries an empty
+/// list, because there was no model list to read.</para>
+/// </summary>
+/// <param name="Outcome">The classification. Closed, and the only thing the wording is derived from.</param>
+/// <param name="Models">
+/// The <c>name</c> of each entry in <c>/api/tags</c>, in the order Ollama listed them. Empty for
+/// every outcome other than <see cref="OllamaProbeOutcome.Ok"/>, and possibly empty for that one.
+/// </param>
+public sealed record OllamaProbeResult(OllamaProbeOutcome Outcome, IReadOnlyList<string> Models)
+{
+    /// <summary>An outcome with no model list — every failure, and the shape callers build for one.</summary>
+    public static OllamaProbeResult From(OllamaProbeOutcome outcome) => new(outcome, []);
+}

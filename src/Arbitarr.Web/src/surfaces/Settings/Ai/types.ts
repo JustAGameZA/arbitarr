@@ -17,9 +17,16 @@
  * the server rejects a URL containing credentials precisely so this stays true.
  * Making the operator retype an address they cannot see, to defend a secret that
  * does not exist, would be cargo-culting the pattern rather than applying it.
+ *
+ * `model` (#112) is present for the same reason and is likewise NOT a secret: it
+ * is the name of a file the operator pulled, and the whole point of #112 is that
+ * it stops being invisible. Before it, the model lived only in server config and
+ * an operator could get a green "Connected" from an instance that had never
+ * pulled it.
  */
 export interface OllamaConfig {
   baseUrl: string;
+  model: string;
 }
 
 /**
@@ -49,9 +56,29 @@ export interface OllamaTestResult {
    * backend's response, an exception message, or the configured address.
    */
   message: string;
+  /**
+   * #112: the model names the instance reported, on an `Ok` outcome only — and
+   * possibly empty even then, because an instance that has pulled nothing is
+   * perfectly healthy.
+   *
+   * A SEPARATE FIELD FROM `message`, and that separation is why the outcome union
+   * above is still four members. Carrying the names inside the wording would have
+   * meant a server message derived from the upstream body, which is exactly the
+   * shape the closed enum exists to prevent. These are rendered only as options in
+   * a picker, never as prose.
+   */
+  models: string[];
 }
 
-/** Body for `PUT /api/admin/ai/ollama`. */
+/**
+ * Body for `PUT /api/admin/ai/ollama`.
+ *
+ * `model` is OPTIONAL because the server made it optional: #89 shipped this route
+ * taking `baseUrl` alone, and omitting the field means "leave the stored model
+ * alone" rather than "clear it". This page always sends both, but the type states
+ * the server's contract rather than this page's habit.
+ */
 export interface UpdateOllamaConfigRequest {
   baseUrl: string;
+  model?: string;
 }
