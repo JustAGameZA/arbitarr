@@ -140,6 +140,49 @@ public sealed class SourceRepositoryTests : IDisposable
             CancellationToken.None));
     }
 
+    [Theory]
+    [InlineData("http://nzbhydra2.example.invalid:5076")]
+    [InlineData("http://invalid:5076")]
+    public async Task AddAsync_rejects_a_dot_invalid_host_and_persists_nothing(string baseUrl)
+    {
+        // arb-c29: an RFC 2606 .invalid host can never resolve, so seeding or storing one degrades a
+        // source to a permanently unreachable upstream (this is docker-compose.yml's own placeholder).
+        using var context = CreateContext();
+        var repository = new SourceRepository(context);
+
+        await Assert.ThrowsAsync<SourceValidationException>(() => repository.AddAsync(
+            kind: "NzbHydra",
+            displayName: "Invalid Host Source",
+            baseUrl: baseUrl,
+            apiKey: null,
+            enabled: true,
+            CancellationToken.None));
+
+        Assert.Empty(await repository.GetAllAsync(CancellationToken.None));
+    }
+
+    /// <summary>
+    /// Positive control for the .invalid rejection above: a normal, resolvable-looking address is
+    /// still accepted, so the new check rejects only the reserved domain rather than every address.
+    /// </summary>
+    [Fact]
+    public async Task AddAsync_still_accepts_a_normal_base_url()
+    {
+        using var context = CreateContext();
+        var repository = new SourceRepository(context);
+
+        var source = await repository.AddAsync(
+            kind: "NzbHydra",
+            displayName: "Normal Source",
+            baseUrl: "http://192.0.2.21:5076",
+            apiKey: null,
+            enabled: true,
+            CancellationToken.None);
+
+        Assert.True(source.Id > 0);
+        Assert.Single(await repository.GetAllAsync(CancellationToken.None));
+    }
+
     [Fact]
     public async Task AddAsync_rejects_a_duplicate_display_name_case_insensitively()
     {
