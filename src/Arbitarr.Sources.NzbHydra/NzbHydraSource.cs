@@ -432,6 +432,15 @@ public sealed class NzbHydraSource : IUpstreamSource
             "yes",
             StringComparison.OrdinalIgnoreCase);
 
+        var supportedParams = searchingElement?
+            .Elements()
+            .SelectMany(search => (search.Attribute("supportedParams")?.Value ?? string.Empty)
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(parameter => parameter, StringComparer.OrdinalIgnoreCase)
+            .ToArray()
+            ?? Array.Empty<string>();
+
         var limitsElement = doc.Descendants("limits").FirstOrDefault();
         int? maxPageSize = null;
         if (limitsElement is not null
@@ -440,6 +449,6 @@ public sealed class NzbHydraSource : IUpstreamSource
             maxPageSize = max;
         }
 
-        return new SourceCaps(categoryIds, supportsTv, supportsMovie, maxPageSize);
+        return new SourceCaps(categoryIds, supportsTv, supportsMovie, maxPageSize, supportedParams);
     }
 }

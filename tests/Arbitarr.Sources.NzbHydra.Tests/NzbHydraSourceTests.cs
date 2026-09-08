@@ -178,7 +178,7 @@ public class NzbHydraSourceTests
             <caps>
               <searching>
                 <search available="yes" supportedParams="q" />
-                <tv-search available="yes" supportedParams="q,season,ep" />
+                <tv-search available="yes" supportedParams="q,tvdbid,season,ep" />
                 <movie-search available="no" supportedParams="q" />
               </searching>
               <categories>
@@ -202,6 +202,7 @@ public class NzbHydraSourceTests
         Assert.True(caps.SupportsTvSearch);
         Assert.False(caps.SupportsMovieSearch);
         Assert.Equal(100, caps.MaxPageSize);
+        Assert.Equal(new[] { "ep", "q", "season", "tvdbid" }, caps.SupportedParams);
     }
 
     [Fact]
