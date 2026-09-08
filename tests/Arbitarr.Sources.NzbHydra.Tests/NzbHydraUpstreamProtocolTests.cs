@@ -246,6 +246,78 @@ public class NzbHydraUpstreamProtocolTests
         Assert.False(query.ContainsKey("ep"));
     }
 
+    // ---- Sonarr's anime shape: tvdbid + q=<absolute number> ------------------------------------
+
+    /// <summary>
+    /// Sonarr's anime episode search is <c>t=tvsearch&amp;tvdbid=81797&amp;q=92</c>: the id names
+    /// the series, the number is the absolute episode. NZBHydra2 reads a present <c>q</c> as the
+    /// whole query and, for indexers without id support, drops the id and sends <c>q=92</c> alone —
+    /// which returned episode 92 of every anime on the feed. The id goes up; the bare number must not.
+    /// </summary>
+    [Fact]
+    public async Task SearchAsync_TvSearchWithATvdbIdAndANumericOnlyQuery_SendsTheIdAndWithholdsTheNumber()
+    {
+        var (handler, source) = MakeSource();
+
+        await source.SearchAsync(new SearchQuery(
+            "92", Array.Empty<int>(), 10, SearchProtocol.Newznab, TvdbId: 81797, Type: SearchType.TvSearch));
+
+        var query = ParseQuery(Assert.Single(handler.RequestedUris));
+        Assert.Equal("tvsearch", query["t"]);
+        Assert.Equal("81797", query["tvdbid"]);
+        Assert.False(query.ContainsKey("q"));
+    }
+
+    /// <summary>
+    /// The withholding is keyed on the text being nothing but digits. Sonarr's zero-padded form
+    /// (<c>q=07</c>) and surrounding whitespace are the same shape; a title next to the id is not.
+    /// The padded title row also pins that the text sent up is the trimmed text — the same value
+    /// the predicate classified, not the raw one.
+    /// </summary>
+    [Theory]
+    [InlineData("07", false)]
+    [InlineData(" 1100 ", false)]
+    [InlineData("bleach", true)]
+    [InlineData(" bleach ", true)]
+    [InlineData("one piece 92", true)]
+    [InlineData("S07E01", true)]
+    public async Task SearchAsync_TvSearchWithATvdbId_WithholdsQOnlyWhenItIsEntirelyDigits(string queryText, bool expectQ)
+    {
+        var (handler, source) = MakeSource();
+
+        await source.SearchAsync(new SearchQuery(
+            queryText, Array.Empty<int>(), 10, SearchProtocol.Newznab, TvdbId: 81797, Type: SearchType.TvSearch));
+
+        var query = ParseQuery(Assert.Single(handler.RequestedUris));
+        Assert.Equal("81797", query["tvdbid"]);
+        Assert.Equal(expectQ, query.ContainsKey("q"));
+        if (expectQ)
+        {
+            Assert.Equal(queryText.Trim(), query["q"]);
+        }
+    }
+
+    /// <summary>
+    /// Without an id there is nothing else to scope the search to, so a numeric <c>q</c> stays:
+    /// dropping it would turn the request into a category-wide feed. Asserted for both the
+    /// explicit <c>tvsearch</c> and the plain <c>search</c> mode.
+    /// </summary>
+    [Theory]
+    [InlineData(SearchType.TvSearch, "tvsearch")]
+    [InlineData(SearchType.Search, "search")]
+    public async Task SearchAsync_NumericQueryWithoutATvdbId_IsForwardedAsIs(SearchType type, string expectedMode)
+    {
+        var (handler, source) = MakeSource();
+
+        await source.SearchAsync(new SearchQuery(
+            "92", Array.Empty<int>(), 10, SearchProtocol.Newznab, Type: type));
+
+        var query = ParseQuery(Assert.Single(handler.RequestedUris));
+        Assert.Equal(expectedMode, query["t"]);
+        Assert.Equal("92", query["q"]);
+        Assert.False(query.ContainsKey("tvdbid"));
+    }
+
     /// <summary>
     /// The categories and paging parameters the pre-#99 code already sent must be unaffected by the
     /// new mode selection — asserted per parameter alongside it.

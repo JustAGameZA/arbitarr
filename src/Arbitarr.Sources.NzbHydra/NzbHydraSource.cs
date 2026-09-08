@@ -18,7 +18,10 @@ namespace Arbitarr.Sources.NzbHydra;
 /// Newznab caller's search there returns zero usenet results while still looking like a successful,
 /// empty search. The search type follows the same principle: <c>t=tvsearch</c> with
 /// <c>tvdbid</c>/<c>season</c>/<c>ep</c> and <c>t=movie</c> with <c>tmdbid</c> are sent as their own
-/// parameters when the query carries those ids, never folded into <c>q</c>.
+/// parameters when the query carries those ids, never folded into <c>q</c>. The one shape where
+/// <c>q</c> is withheld is Sonarr's anime search (<c>tvdbid</c> plus a bare episode number as
+/// <c>q</c>) — see <see cref="IsIdScopedAbsoluteNumberQuery"/> for why NZBHydra2 turns that into a
+/// feed-wide search for the number.
 /// </para>
 ///
 /// <para>
@@ -249,6 +252,46 @@ public sealed class NzbHydraSource : IUpstreamSource
     /// the URI carries and the mode the id/numbering emission below branches on cannot drift.</summary>
     private const string TvSearchMode = "tvsearch";
 
+    /// <summary>
+    /// True for Sonarr's anime episode search shape — <c>t=tvsearch</c>, a <c>tvdbid</c>, and a
+    /// <c>q</c> that is nothing but the absolute episode number (<c>tvdbid=81797&amp;q=92</c>,
+    /// "One Piece, absolute 92"). Sonarr's <c>NewznabRequestGenerator</c> builds it as
+    /// <c>ids + "&amp;q={AbsoluteEpisodeNumber:00}"</c>: the id is meant to select the series and
+    /// the number to filter within it.
+    /// </summary>
+    /// <remarks>
+    /// NZBHydra2 cannot honour that split. When a request carries a <c>q</c> it treats the text as
+    /// the whole query, and for every indexer that does not support the id it drops the id and
+    /// sends the bare number as the free-text term — observed 2026-09-08 as
+    /// <c>t=search&amp;q=92</c> reaching Animetosho and ameNZB, which returned episode 92 of every
+    /// anime on the feed and nothing for the series Sonarr asked about. A number alone identifies
+    /// nothing, so it must never reach upstream as free text. With the id and no <c>q</c>, NZBHydra2
+    /// passes the id to indexers that accept it and converts it to the series title for the rest —
+    /// the closest shape to "this series" that it can actually execute. The exact-episode text form
+    /// is not lost: Sonarr sends <c>t=search&amp;q={title}+{absolute:00}</c> alongside this request
+    /// for every scene title it knows, and that one goes upstream verbatim.
+    ///
+    /// Scoped deliberately narrowly: only a <c>tvsearch</c> that will actually emit its
+    /// <c>tvdbid</c>, and only when the text is entirely digits. A textual <c>q</c> next to an id
+    /// (<c>tvdbid=74796&amp;q=bleach</c>) is a title and stays; a numeric <c>q</c> without an id has
+    /// nothing else to identify the series and stays, since dropping it would turn the request into
+    /// a category-wide feed. <c>char.IsAsciiDigit</c> rather than <c>char.IsDigit</c> because Sonarr
+    /// formats the number with the invariant culture: only ASCII digits are the shape being matched,
+    /// and a non-ASCII numeral is text like any other.
+    ///
+    /// <paramref name="queryText"/> is the already-trimmed text <see cref="BuildSearchUri"/> emits,
+    /// so the value classified and the value sent are the same string.
+    /// </remarks>
+    private static bool IsIdScopedAbsoluteNumberQuery(string queryText, string mode, int? tvdbId)
+    {
+        if (!string.Equals(mode, TvSearchMode, StringComparison.Ordinal) || tvdbId is null)
+        {
+            return false;
+        }
+
+        return queryText.Length > 0 && queryText.All(char.IsAsciiDigit);
+    }
+
     private Uri BuildSearchUri(SearchQuery query, int limit, int offset)
     {
         var mode = SearchMode(query);
@@ -260,9 +303,12 @@ public sealed class NzbHydraSource : IUpstreamSource
             "offset=" + offset.ToString(CultureInfo.InvariantCulture),
         };
 
-        if (!string.IsNullOrWhiteSpace(query.QueryText))
+        // Trimmed once here and the same value is both classified and emitted, so the predicate
+        // cannot say "withhold" about a string different from the one that would have gone up.
+        var queryText = query.QueryText?.Trim() ?? string.Empty;
+        if (queryText.Length > 0 && !IsIdScopedAbsoluteNumberQuery(queryText, mode, query.TvdbId))
         {
-            queryParams.Add("q=" + Uri.EscapeDataString(query.QueryText));
+            queryParams.Add("q=" + Uri.EscapeDataString(queryText));
         }
 
         // Id parameters are emitted only for the mode that accepts them, so a query carrying both a
