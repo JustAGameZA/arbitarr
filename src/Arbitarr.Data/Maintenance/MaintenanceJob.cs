@@ -43,6 +43,13 @@ namespace Arbitarr.Data.Maintenance;
 /// this table has none. If a future change ever makes key rows machine-generated, that reasoning
 /// stops holding and it belongs in this list.
 ///
+/// #98 GAVE THE OPERATOR A REMOVE ACTION FOR AN ALREADY-REVOKED KEY, AND THAT DOES NOT CHANGE THE
+/// ABOVE. The distinction this list turns on is who decides: a scheduled prune would delete
+/// tombstones on a timer, taking the evidence with it and without anybody asking. Removal is a
+/// deliberate second act by the operator on a key they have already revoked — the same "bounded by
+/// operator action" category minting is — so it belongs on the admin surface
+/// (<c>ApiKeyRepository.RemoveRevokedAsync</c>) and still not here.
+///
 /// #44 ADDED A SEVENTH TABLE, Sessions, AND IT IS PRUNED HERE — unlike ApiKeys above. The
 /// distinction is the one this list's rule turns on: session rows are machine-generated and grow
 /// per LOGIN, not per operator action, and a revoked or expired session is not a tombstone anybody

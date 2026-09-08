@@ -94,3 +94,35 @@ export function useRevokeApiKeyMutation() {
     onSuccess: () => client.invalidateQueries({ queryKey: API_KEYS_KEY }),
   });
 }
+
+/**
+ * DELETE /api/admin/keys/{id}/tombstone (#98).
+ *
+ * Removal is a HARD DELETE of an already-revoked key's row, and a SEPARATE route
+ * from the revoke above rather than a flag on it. The two-step is the feature: a
+ * live credential cannot be destroyed in one call, so there is no client state in
+ * which a single click both revokes and erases. The sub-path names what is being
+ * deleted — the tombstone, not the key, which is already dead by the time this
+ * route answers at all.
+ *
+ * There is NO client-side guard against removing a live key, for the same reason
+ * the revoke has none: the server refuses it with an explanatory message naming
+ * the key and stating the two-step, and a second opinion here would either block a
+ * removal the server allows or invent a refusal it never issued.
+ *
+ * `gcTime: 0` under this file's one rule for its mutations, NOT because anything
+ * sensitive is in flight — this mutation's variables are an id and its data is
+ * void, so unlike the create there is no plaintext for the MutationCache to hold.
+ * It is here because a reader who found the zero on two of three mutations would
+ * be invited to conclude it was arbitrary on the create, where it is load-bearing.
+ * See the revoke above, which carries it for exactly the same reason.
+ */
+export function useRemoveApiKeyMutation() {
+  const client = useQueryClient();
+  return useMutation({
+    gcTime: 0,
+    mutationFn: (id: number) =>
+      apiFetch<void>(`${KEYS_ROUTE}/${id}/tombstone`, { method: 'DELETE' }),
+    onSuccess: () => client.invalidateQueries({ queryKey: API_KEYS_KEY }),
+  });
+}

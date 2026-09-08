@@ -492,4 +492,150 @@ public sealed class AdminApiKeyEndpointsTests
         using var parsed = JsonDocument.Parse(body);
         Assert.NotEmpty(parsed.RootElement.EnumerateArray());
     }
+
+    [Fact]
+    public async Task Removing_a_revoked_key_drops_only_that_row_from_the_list()
+    {
+        // #98 AC4 over the wire, PER ROW. The list is asserted by label after the removal, so a
+        // handler that deleted a neighbour -- or every tombstone -- fails here rather than passing
+        // on a bare count.
+        await using var factory = await CreateSeededFactoryAsync();
+        using var client = CreateKeyedClient(factory, LegacyKey);
+
+        var (liveId, _) = await CreateKeyAsync(client, "sonarr", ApiKeyScope.Admin);
+        var (doomedId, _) = await CreateKeyAsync(client, "retired-laptop", ApiKeyScope.ReadOnly);
+        var (otherTombstoneId, _) = await CreateKeyAsync(client, "old-script", ApiKeyScope.ReadOnly);
+
+        using var revokeDoomed = await client.DeleteAsync($"{AdminApiKeyEndpoints.KeysRoute}/{doomedId}");
+        Assert.Equal(HttpStatusCode.NoContent, revokeDoomed.StatusCode);
+        using var revokeOther = await client.DeleteAsync($"{AdminApiKeyEndpoints.KeysRoute}/{otherTombstoneId}");
+        Assert.Equal(HttpStatusCode.NoContent, revokeOther.StatusCode);
+
+        using var removed = await client.DeleteAsync($"{AdminApiKeyEndpoints.KeysRoute}/{doomedId}/tombstone");
+        Assert.Equal(HttpStatusCode.NoContent, removed.StatusCode);
+
+        var keys = await client.GetFromJsonAsync<List<ApiKeyResponse>>(AdminApiKeyEndpoints.KeysRoute);
+
+        Assert.DoesNotContain(keys!, k => k.Id == doomedId);
+
+        var live = Assert.Single(keys!, k => k.Id == liveId);
+        Assert.Equal("sonarr", live.Label);
+        Assert.Null(live.RevokedAt);
+
+        var survivingTombstone = Assert.Single(keys!, k => k.Id == otherTombstoneId);
+        Assert.Equal("old-script", survivingTombstone.Label);
+        Assert.NotNull(survivingTombstone.RevokedAt);
+    }
+
+    [Fact]
+    public async Task Removing_a_live_key_is_refused_with_the_servers_own_message()
+    {
+        // The refusal the UI renders verbatim. Asserted on the message body as well as the status,
+        // because a 400 carrying a generic "Bad Request" would leave the operator no way to learn
+        // that revoking first is what unblocks them.
+        await using var factory = await CreateSeededFactoryAsync();
+        using var client = CreateKeyedClient(factory, LegacyKey);
+
+        var (liveId, _) = await CreateKeyAsync(client, "sonarr", ApiKeyScope.Admin);
+
+        using var refused = await client.DeleteAsync($"{AdminApiKeyEndpoints.KeysRoute}/{liveId}/tombstone");
+
+        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+        var body = await refused.Content.ReadAsStringAsync();
+        Assert.Contains("sonarr", body, StringComparison.Ordinal);
+        Assert.Contains("Revoke it first", body, StringComparison.Ordinal);
+
+        // And the key is still there, still live: the refusal is not a delete that also complained.
+        var keys = await client.GetFromJsonAsync<List<ApiKeyResponse>>(AdminApiKeyEndpoints.KeysRoute);
+        Assert.Null(Assert.Single(keys!, k => k.Id == liveId).RevokedAt);
+    }
+
+    [Fact]
+    public async Task Removing_an_unknown_or_already_removed_id_answers_404()
+    {
+        // The deliberate 404-over-204 choice (see RemoveRevokedApiKeyAsync's doc comment): after a
+        // hard delete an unknown id and an already-removed one are the same state, so both get the
+        // same answer rather than a 204 that would claim success for any id at all. The repeat is
+        // still a no-op, which is the idempotence that matters.
+        await using var factory = await CreateSeededFactoryAsync();
+        using var client = CreateKeyedClient(factory, LegacyKey);
+
+        using var unknown = await client.DeleteAsync($"{AdminApiKeyEndpoints.KeysRoute}/424242/tombstone");
+        Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
+
+        await CreateKeyAsync(client, "other-admin", ApiKeyScope.Admin);
+        var (id, _) = await CreateKeyAsync(client, "retired", ApiKeyScope.ReadOnly);
+
+        using var revoke = await client.DeleteAsync($"{AdminApiKeyEndpoints.KeysRoute}/{id}");
+        Assert.Equal(HttpStatusCode.NoContent, revoke.StatusCode);
+
+        using var first = await client.DeleteAsync($"{AdminApiKeyEndpoints.KeysRoute}/{id}/tombstone");
+        Assert.Equal(HttpStatusCode.NoContent, first.StatusCode);
+
+        using var second = await client.DeleteAsync($"{AdminApiKeyEndpoints.KeysRoute}/{id}/tombstone");
+        Assert.Equal(HttpStatusCode.NotFound, second.StatusCode);
+    }
+
+    [Fact]
+    public async Task The_remove_route_is_admin_gated_by_name_because_the_sweep_skips_it()
+    {
+        // CLAUDE.md section 2: the remove route is TEMPLATED, so AdminApiKeyRouteEnumerationTests
+        // skips it and that sweep passing is NOT evidence about this route. Its gating is therefore
+        // asserted here, by name, against all three callers -- and against the SAME status the
+        // concrete sibling route answers, so a route that silently fell out of the admin prefix
+        // classification cannot pass by answering something merely unhelpful.
+        await using var factory = await CreateSeededFactoryAsync();
+        using var client = CreateKeyedClient(factory, LegacyKey);
+
+        await CreateKeyAsync(client, "other-admin", ApiKeyScope.Admin);
+        var (id, _) = await CreateKeyAsync(client, "under-test", ApiKeyScope.ReadOnly);
+        var (_, readOnlyKey) = await CreateKeyAsync(client, "monitoring", ApiKeyScope.ReadOnly);
+
+        using var revoke = await client.DeleteAsync($"{AdminApiKeyEndpoints.KeysRoute}/{id}");
+        Assert.Equal(HttpStatusCode.NoContent, revoke.StatusCode);
+
+        var route = $"{AdminApiKeyEndpoints.KeysRoute}/{id}/tombstone";
+
+        // No key at all: the gate answers, and with the same status the sibling revoke gives.
+        using var unauthenticated = factory.CreateClient();
+        using var noKey = await unauthenticated.DeleteAsync(route);
+        using var siblingNoKey = await unauthenticated.DeleteAsync($"{AdminApiKeyEndpoints.KeysRoute}/{id}");
+        Assert.Equal(HttpStatusCode.Unauthorized, noKey.StatusCode);
+        Assert.Equal(siblingNoKey.StatusCode, noKey.StatusCode);
+
+        // A read-only key: authenticated, but these routes take no ReadOnly relaxation.
+        using var readOnlyClient = CreateKeyedClient(factory, readOnlyKey);
+        using var readOnly = await readOnlyClient.DeleteAsync(route);
+        Assert.Equal(HttpStatusCode.Forbidden, readOnly.StatusCode);
+
+        // The admin key is allowed through -- the positive control, without which the two refusals
+        // above would pass just as well against a route that rejected everybody or did not exist.
+        using var allowed = await client.DeleteAsync(route);
+        Assert.Equal(HttpStatusCode.NoContent, allowed.StatusCode);
+    }
+
+    [Fact]
+    public async Task The_remove_route_takes_no_body_so_the_gate_answers_an_unauthenticated_caller_first()
+    {
+        // The REQUIRED-BODY TRAP for this route. It binds no body at all, so nothing is model-bound
+        // ahead of AdminApiKeyFilter and an unauthenticated caller cannot tell a live id from an
+        // unknown one by the status it gets back.
+        await using var factory = await CreateSeededFactoryAsync();
+        using var client = CreateKeyedClient(factory, LegacyKey);
+
+        await CreateKeyAsync(client, "other-admin", ApiKeyScope.Admin);
+        var (liveId, _) = await CreateKeyAsync(client, "still-live", ApiKeyScope.ReadOnly);
+
+        using var unauthenticated = factory.CreateClient();
+
+        using var againstLive = await unauthenticated.DeleteAsync(
+            $"{AdminApiKeyEndpoints.KeysRoute}/{liveId}/tombstone");
+        using var againstUnknown = await unauthenticated.DeleteAsync(
+            $"{AdminApiKeyEndpoints.KeysRoute}/424242/tombstone");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, againstLive.StatusCode);
+        // Identical, so nothing about which ids exist leaks from outside the gate. Keyed, these two
+        // differ (400 vs 404) -- asserted above -- which is what makes this sameness meaningful.
+        Assert.Equal(againstLive.StatusCode, againstUnknown.StatusCode);
+    }
 }

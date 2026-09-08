@@ -4,7 +4,12 @@ import { QueryState, errorMessage } from '../../QueryState';
 import type { ApiKeyEntry, ApiKeyScope, CreatedApiKeyResponse } from '../../../api/types';
 import styles from '../../surface.module.css';
 import local from './ApiKeys.module.css';
-import { useApiKeysQuery, useCreateApiKeyMutation, useRevokeApiKeyMutation } from './queries';
+import {
+  useApiKeysQuery,
+  useCreateApiKeyMutation,
+  useRemoveApiKeyMutation,
+  useRevokeApiKeyMutation,
+} from './queries';
 
 /**
  * What each scope actually reaches, in the vocabulary the routing layer uses.
@@ -166,6 +171,7 @@ function KeyRow({
   onAskConfirm,
   onCancelConfirm,
   onRevoke,
+  onRemove,
   pending,
   failure,
 }: {
@@ -174,6 +180,8 @@ function KeyRow({
   onAskConfirm: (id: number) => void;
   onCancelConfirm: () => void;
   onRevoke: (id: number) => void;
+  /** #98. Offered on a REVOKED row only — see the branch below for why. */
+  onRemove: (id: number) => void;
   pending: boolean;
   /** The server's refusal for THIS key, or null. Never a client-side guess. */
   failure: unknown;
@@ -210,7 +218,44 @@ function KeyRow({
               The pre-existing shared key, from the server configuration rather than this list. It
               cannot be revoked here; remove it from the server configuration instead.
             </span>
-          ) : revoked || id === null ? null : confirming ? (
+          ) : id === null ? null : revoked ? (
+            // #98. The remove action exists ONLY on this branch, and that placement is
+            // the client half of the two-step: a live row has no control that could
+            // remove it, so no sequence of clicks on one screen destroys a working
+            // credential. The server refuses a live id regardless — this is not the
+            // guard, it is the affordance agreeing with the guard.
+            //
+            // Confirm-gated like the revoke, and for a sharper reason: unlike
+            // revocation, this one cannot be undone or inspected afterwards. The row
+            // is gone, so a misclick has no screen left to explain itself on.
+            confirming ? (
+              <>
+                <span className={local.confirm}>
+                  Remove &ldquo;{entry.label}&rdquo; from the list?
+                </span>
+                <button
+                  type="button"
+                  className={styles.buttonDanger}
+                  disabled={pending}
+                  onClick={() => onRemove(id)}
+                >
+                  Confirm remove
+                </button>
+                <button type="button" className={styles.buttonSecondary} onClick={onCancelConfirm}>
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className={styles.buttonSecondary}
+                onClick={() => onAskConfirm(id)}
+                aria-label={`Remove ${entry.label}`}
+              >
+                Remove
+              </button>
+            )
+          ) : confirming ? (
             <>
               <span className={local.confirm}>Revoke &ldquo;{entry.label}&rdquo;?</span>
               <button
@@ -257,8 +302,12 @@ function KeyRow({
  *    storage or the query cache, because only its hash is stored server-side and
  *    a copy anywhere else outlives the one-shot guarantee the API is built on.
  * 2. A revoked key stays rendered as a tombstone. The server keeps the row on
- *    purpose; removing it from the list here would hide the history the retention
- *    was for.
+ *    purpose; dropping it from the list here would hide the history the retention
+ *    was for. Since #98 the operator can remove one DELIBERATELY, and that is not
+ *    a softening of this: the row leaves because somebody asked for this key by
+ *    name, never because the client decided a tombstone had stopped being
+ *    interesting. The remove control exists on revoked rows only, so the live half
+ *    of the list has no affordance that could destroy a working credential.
  * 3. The AC5 last-admin-key refusal is the SERVER's message, verbatim, via
  *    `errorMessage`. There is no client-side count of admin keys, because a guess
  *    that disagreed with the server would either block a legal revocation or
@@ -268,11 +317,20 @@ export function ApiKeysSection() {
   const keys = useApiKeysQuery();
   const create = useCreateApiKeyMutation();
   const revoke = useRevokeApiKeyMutation();
+  const remove = useRemoveApiKeyMutation();
 
   // The plaintext's ONLY home. Not a ref, not storage, not the cache.
   const [created, setCreated] = useState<CreatedApiKeyResponse | null>(null);
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
   const [revokeFailedId, setRevokeFailedId] = useState<number | null>(null);
+  // #98's refusal, held as the id it belongs to plus a CAPTURED copy of the error
+  // — the arb-689 shape, and the same reason `createFailure` above is captured:
+  // `onRemove` resets the mutation once it settles, so `remove.error` is undefined
+  // by the time the row renders and a branch that consulted it would show nothing.
+  // Two pieces of state rather than one because the id is what routes the message
+  // to a row, and the message is what the row shows.
+  const [removeFailedId, setRemoveFailedId] = useState<number | null>(null);
+  const [removeFailure, setRemoveFailure] = useState<unknown>(null);
   // Both outcomes of a create are held HERE rather than read back off the
   // mutation, because the mutation is reset the moment it settles (see
   // `dropCreateFromCache`): after that `create.data` and `create.error` are both
@@ -349,6 +407,43 @@ export function ApiKeysSection() {
     });
   };
 
+  /**
+   * Remove an already-revoked key's row (#98).
+   *
+   * The capture-then-reset shape: both outcomes are recorded into component state
+   * from the PER-CALL callbacks, and only then is the mutation reset. The order is
+   * load-bearing for the same reason it is on the create — `Mutation.execute`
+   * awaits the hook-level callbacks BEFORE dispatching the settle action that runs
+   * these, so a reset from `queries.ts` would remove the observer these arrive on
+   * and swallow the server's refusal silently. Called from here the capture has
+   * already happened, so the synchronous reset is correct.
+   *
+   * The refusal itself is never generated here. A live key is refused by the
+   * server, in the server's words, and rendered verbatim through `errorMessage` —
+   * exactly as the AC5 last-admin-key refusal is. The client counts nothing and
+   * pre-checks nothing.
+   */
+  const onRemove = (id: number) => {
+    // The previous refusal must not outlive its attempt, or the operator reads a
+    // rejection the server has not issued for the row now under the cursor.
+    setRemoveFailedId(null);
+    setRemoveFailure(null);
+    remove.reset();
+    remove.mutate(id, {
+      onSuccess: () => {
+        // The row is gone from the refetched list, so the confirm it was showing
+        // has nothing left to confirm.
+        setConfirmingId(null);
+        remove.reset();
+      },
+      onError: (error) => {
+        setRemoveFailedId(id);
+        setRemoveFailure(error);
+        remove.reset();
+      },
+    });
+  };
+
   return (
     <section className={styles.panel}>
       <h2 className={styles.panelHeading}>API keys</h2>
@@ -399,7 +494,8 @@ export function ApiKeysSection() {
                           onAskConfirm={setConfirmingId}
                           onCancelConfirm={() => setConfirmingId(null)}
                           onRevoke={onRevoke}
-                          pending={revoke.isPending}
+                          onRemove={onRemove}
+                          pending={revoke.isPending || remove.isPending}
                           // The refusal belongs to ONE key. AC5's message names the
                           // key it refused ("'X' is the last API key with admin
                           // scope"), so it renders in that key's row rather than
@@ -410,8 +506,21 @@ export function ApiKeysSection() {
                           // revokeFailedId's initial value, so null === null would
                           // hand an unrevokable row somebody else's refusal the
                           // moment either of those invariants shifted.
+                          // #98 adds the remove refusal to the same slot. The two
+                          // cannot collide: a row is either live (revoke can fail on
+                          // it) or revoked (remove can), never both, so this reads
+                          // as "whichever refusal this row has" rather than as a
+                          // precedence rule that would need one. The remove side
+                          // uses the CAPTURED copy — `remove.error` is gone by now,
+                          // reset the moment the call settled.
                           failure={
-                            entry.id !== null && revokeFailedId === entry.id ? revoke.error : null
+                            entry.id === null
+                              ? null
+                              : removeFailedId === entry.id
+                                ? removeFailure
+                                : revokeFailedId === entry.id
+                                  ? revoke.error
+                                  : null
                           }
                         />
                       ))}

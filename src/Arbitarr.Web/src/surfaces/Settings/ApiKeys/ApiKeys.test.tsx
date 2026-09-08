@@ -82,10 +82,15 @@ function mockKeysApi(replies: Record<string, Reply>) {
 }
 
 /**
- * A list covering all four row shapes the section has to render distinctly:
- * an active read key, an active admin key, a REVOKED key (which must survive as a
- * tombstone rather than vanishing), and the synthetic LEGACY row, whose null id is
- * why it can carry no revoke button.
+ * A list covering every row shape the section has to render distinctly: an active
+ * read key, an active admin key, a REVOKED key (which must survive as a tombstone
+ * rather than vanishing), and the synthetic LEGACY row, whose null id is why it can
+ * carry no revoke button.
+ *
+ * There are TWO revoked rows on purpose (#98). A per-row assertion about removal
+ * needs a second tombstone to be an assertion at all: with only one, "the removed
+ * row is gone" is indistinguishable from "every revoked row was swept", which is
+ * precisely the bug the per-row check exists to catch.
  */
 const keys = [
   {
@@ -113,6 +118,15 @@ const keys = [
     createdAt: '2025-11-01T10:00:00Z',
     lastUsedAt: '2025-12-02T09:00:00Z',
     revokedAt: '2026-01-02T12:00:00Z',
+    isLegacy: false,
+  },
+  {
+    id: 4,
+    label: 'Old script',
+    scope: 'ReadOnly',
+    createdAt: '2025-10-01T10:00:00Z',
+    lastUsedAt: '2025-10-20T09:00:00Z',
+    revokedAt: '2025-11-15T12:00:00Z',
     isLegacy: false,
   },
   {
@@ -273,8 +287,12 @@ describe('ApiKeys', () => {
     await screen.findByRole('cell', { name: 'Retired laptop' });
     const row = within(rowFor('Retired laptop'));
     expect(row.getByText(/^Revoked /)).toBeInTheDocument();
-    // The tombstone offers no revoke affordance -- it is already revoked.
+    // The tombstone offers no revoke affordance -- it is already revoked. Since #98
+    // it does offer a REMOVE one, which is a different control with a different
+    // name; this assertion still bites because "Remove Retired laptop" does not
+    // match /revoke/i.
     expect(row.queryByRole('button', { name: /revoke/i })).not.toBeInTheDocument();
+    expect(row.getByRole('button', { name: 'Remove Retired laptop' })).toBeInTheDocument();
   });
 
   it('renders the legacy key with no revoke button and says why', async () => {
@@ -540,4 +558,145 @@ describe('ApiKeys', () => {
     await vi.waitFor(() => expect(sweepMutationCache(client)).not.toContain('Radarr'));
     expect(sweepMutationCache(client)).not.toContain(PLAINTEXT);
   }, TEST_TIMEOUT_MS);
+
+  it('offers the remove action on revoked rows only', async () => {
+    // #98 AC3's visibility rule, asserted across every row shape at once rather
+    // than only on the row that has the button. The live rows are the ones that
+    // matter: an affordance there would be a one-click path to destroying a working
+    // credential, which is exactly what the two-step exists to prevent.
+    mockKeysApi({ [`GET ${KEYS}`]: { body: keys } });
+    renderSurface(<ApiKeysSection />);
+
+    await screen.findByRole('cell', { name: 'Sonarr' });
+
+    // Both revoked rows carry it.
+    expect(
+      within(rowFor('Retired laptop')).getByRole('button', { name: 'Remove Retired laptop' }),
+    ).toBeInTheDocument();
+    expect(
+      within(rowFor('Old script')).getByRole('button', { name: 'Remove Old script' }),
+    ).toBeInTheDocument();
+
+    // Neither live row does, nor the legacy row, whose null id could address nothing.
+    expect(within(rowFor('Sonarr')).queryByRole('button', { name: /remove/i })).not.toBeInTheDocument();
+    expect(
+      within(rowFor('Maintenance script')).queryByRole('button', { name: /remove/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(rowFor('Shared admin key (legacy)')).queryByRole('button', { name: /remove/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('removes only after confirmation, and sends DELETE to that key\'s tombstone', async () => {
+    const user = userEvent.setup();
+    const api = mockKeysApi({ [`GET ${KEYS}`]: { body: keys } });
+    renderSurface(<ApiKeysSection />);
+
+    await screen.findByRole('cell', { name: 'Retired laptop' });
+    await user.click(screen.getByRole('button', { name: 'Remove Retired laptop' }));
+
+    // Asking is not doing. This one is worth asserting harder than the revoke's
+    // equivalent: a removal cannot be undone or inspected afterwards.
+    expect(api.of('DELETE')).toHaveLength(0);
+
+    api.set(`DELETE ${KEYS}/3/tombstone`, { status: 204 });
+    await user.click(screen.getByRole('button', { name: 'Confirm remove' }));
+
+    const del = api.of('DELETE')[0];
+    // The tombstone sub-path, not the bare id: that route revokes, and hitting it
+    // here would be a no-op on an already-revoked key rather than a removal.
+    expect(del?.path).toBe(`${KEYS}/3/tombstone`);
+    expect(api.of('DELETE')).toHaveLength(1);
+  });
+
+  it('drops only the removed row, leaving the live and the other revoked rows', async () => {
+    // #98 AC4 on the client. The refetched list is what the table renders from, so
+    // this asserts the section reflects the server's answer per row rather than
+    // inventing a disappearance -- and the SECOND tombstone is the assertion that
+    // bites: a client that hid every revoked row on success would pass without it.
+    const user = userEvent.setup();
+    const api = mockKeysApi({ [`GET ${KEYS}`]: { body: keys } });
+    renderSurface(<ApiKeysSection />);
+
+    await screen.findByRole('cell', { name: 'Retired laptop' });
+
+    api.set(`DELETE ${KEYS}/3/tombstone`, { status: 204 });
+    api.set(`GET ${KEYS}`, { body: keys.filter((key) => key.id !== 3) });
+
+    await user.click(screen.getByRole('button', { name: 'Remove Retired laptop' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm remove' }));
+
+    await vi.waitFor(() =>
+      expect(screen.queryByRole('cell', { name: 'Retired laptop' })).not.toBeInTheDocument(),
+    );
+
+    expect(screen.getByRole('cell', { name: 'Sonarr' })).toBeInTheDocument();
+    expect(screen.getByRole('cell', { name: 'Maintenance script' })).toBeInTheDocument();
+    // The other tombstone is untouched, still revoked, still removable.
+    expect(screen.getByRole('cell', { name: 'Old script' })).toBeInTheDocument();
+    expect(within(rowFor('Old script')).getByText(/^Revoked /)).toBeInTheDocument();
+    expect(
+      within(rowFor('Old script')).getByRole('button', { name: 'Remove Old script' }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders the server's refusal for a still-live key verbatim, in that key's row", async () => {
+    const user = userEvent.setup();
+    // ApiKeyRepository.RemoveRevokedAsync's actual wording, copied verbatim and
+    // asserted as one long literal: a client that paraphrased it, or substituted a
+    // guess of its own about why removal was refused, cannot satisfy this by
+    // accident. Nothing on the client decides which keys are removable.
+    const refusal =
+      "'Retired laptop' is still live and cannot be removed from the list. Revoke it first, " +
+      'then remove it \u2014 removing a working credential in one step would take a caller ' +
+      'offline with no confirmation that it had stopped being used.';
+    const api = mockKeysApi({ [`GET ${KEYS}`]: { body: keys } });
+    renderSurface(<ApiKeysSection />);
+
+    await screen.findByRole('cell', { name: 'Retired laptop' });
+
+    api.set(`DELETE ${KEYS}/3/tombstone`, { status: 400, body: { error: refusal } });
+    await user.click(screen.getByRole('button', { name: 'Remove Retired laptop' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm remove' }));
+
+    // Reaching the operator at all is the first half: the mutation is reset the
+    // moment it settles, so a render that read `remove.error` would show nothing.
+    expect(await screen.findByText(refusal)).toBeInTheDocument();
+
+    // And it renders in the row of the key it refused, not under the table -- the
+    // message names one key, so a floating copy would read as a statement about the
+    // list. The other tombstone carries no error.
+    expect(within(rowFor('Retired laptop')).getByText(refusal)).toBeInTheDocument();
+    expect(within(rowFor('Old script')).queryByRole('alert')).not.toBeInTheDocument();
+    expect(within(rowFor('Sonarr')).queryByRole('alert')).not.toBeInTheDocument();
+
+    // The row is still there: a refused removal removed nothing.
+    expect(screen.getByRole('cell', { name: 'Retired laptop' })).toBeInTheDocument();
+  });
+
+  it('does not carry a failed remove message into the next attempt', async () => {
+    // The capture-then-reset shape has to clear as well as capture. Without the
+    // reset of the previous refusal, the operator reads a rejection the server has
+    // not issued for the row now under the cursor.
+    const user = userEvent.setup();
+    const refusal = "'Retired laptop' is still live and cannot be removed from the list.";
+    const api = mockKeysApi({ [`GET ${KEYS}`]: { body: keys } });
+    renderSurface(<ApiKeysSection />);
+
+    await screen.findByRole('cell', { name: 'Retired laptop' });
+
+    api.set(`DELETE ${KEYS}/3/tombstone`, { status: 400, body: { error: refusal } });
+    await user.click(screen.getByRole('button', { name: 'Remove Retired laptop' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm remove' }));
+    expect(await screen.findByText(refusal)).toBeInTheDocument();
+
+    // A second attempt, this time accepted. The confirm controls are still up --
+    // a refused removal leaves the operator where they were rather than making them
+    // find the row again -- so this retries straight from the confirm.
+    api.set(`DELETE ${KEYS}/3/tombstone`, { status: 204 });
+    api.set(`GET ${KEYS}`, { body: keys.filter((key) => key.id !== 3) });
+    await user.click(screen.getByRole('button', { name: 'Confirm remove' }));
+
+    await vi.waitFor(() => expect(screen.queryByText(refusal)).not.toBeInTheDocument());
+  });
 });
