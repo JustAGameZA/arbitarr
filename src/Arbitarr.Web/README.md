@@ -72,16 +72,15 @@ surfaces.
 
 ## Test-count floor
 
-`tests/frontend-test-count-floor.txt` (repo root) holds the minimum number of
-tests that must pass. CI parses `numPassedTests` from `vitest-report.json` —
-*passed*, not *total*, so a skipped or `todo` test cannot hold the floor up
-without running. Raise the floor in the same commit that adds tests.
+The minimum number of tests that must pass is master's last measured count, held
+in CI rather than in a committed file. CI parses `numPassedTests` from
+`vitest-report.json` — *passed*, not *total*, so a skipped or `todo` test cannot
+hold the floor up without running. Adding tests raises the floor on its own once
+the change merges; there is nothing to update by hand.
 
-The new value is the number a run actually **printed**: run the suite, read
-`numPassedTests`, write that down. Never the old floor plus the tests you wrote —
-see [docs/standards/process.md](../../docs/standards/process.md#test-count-floors)
-for why, and for the rebase case.
+See [docs/standards/process.md](../../docs/standards/process.md#test-count-floors)
+for how the ratchet resolves the floor and what happens when no artifact exists.
 
-This is deliberately a separate file and a separate parser from the backend's
-`tests/test-count-floor.txt`, which parses `executed="N"` out of `.trx`. Two
-files, two parsers, so neither suite's count can mask a collapse in the other.
+This is deliberately a separate count and a separate parser from the backend's,
+which parses `executed="N"` out of `.trx`. Two counts, two parsers, so neither
+suite's count can mask a collapse in the other.

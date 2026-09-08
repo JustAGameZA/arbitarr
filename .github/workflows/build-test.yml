@@ -12,11 +12,91 @@ jobs:
   build-test:
     name: Build & test
     runs-on: ubuntu-latest
+    # contents: read is inherited from the workflow-level block above and repeated
+    # here because naming a job-level `permissions` replaces it rather than adding
+    # to it. actions: read is what lets the floor step query the Actions API for
+    # master's last successful run and download its test-counts artifact.
+    permissions:
+      contents: read
+      actions: read
     env:
       DOTNET_GCHeapHardLimit: "0x80000000"
+      # Bootstrap floors, used ONLY when no test-counts artifact can be found on
+      # master (first run after this lands, or the artifact has expired). These are
+      # the numbers the master push run for the #108 merge (run 34197814222)
+      # printed. They are the one place in the ratchet where a count is written by
+      # hand: never edit them to anything but a number a master push run actually
+      # printed -- a pull_request run measures the PR, not master.
+      BOOTSTRAP_BACKEND_FLOOR: "1189"
+      BOOTSTRAP_FRONTEND_FLOOR: "296"
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      # ----------------------------------------------------------------------
+      # The test-count floor is a ratchet, not a committed file. The floor is
+      # whatever master last measured: every run uploads a test-counts artifact,
+      # and every run resolves its floor from the latest successful `Build & test`
+      # run on master OTHER THAN ITSELF. Selecting "other than itself" is what
+      # makes a push to master enforce the ratchet too -- a shrink merged by force
+      # is still caught, because master is compared against its own predecessor
+      # rather than against nothing.
+      #
+      # A committed floor file made every two test-adding PRs conflict by
+      # construction, and the "measurements, never arithmetic" rule then forced a
+      # full re-run of both suites after each rebase. The ratchet keeps the
+      # guarantee (a suite cannot silently shrink) with no file to conflict on.
+      # ----------------------------------------------------------------------
+      - name: Resolve test-count floors from master
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          backend_floor="$BOOTSTRAP_BACKEND_FLOOR"
+          frontend_floor="$BOOTSTRAP_FRONTEND_FLOOR"
+          floor_source="bootstrap constant"
+
+          # `status=success` is the conclusion, so a run that failed for any reason
+          # (including on its own floor step) cannot become the floor. Ask for a
+          # handful and skip this run's own id: on a push to master, THIS run is a
+          # master run and would otherwise be compared against itself.
+          api_path="/repos/${GITHUB_REPOSITORY}/actions/workflows/build-test.yml/runs"
+          runs_json=$(gh api "${api_path}?branch=master&status=success&per_page=10" 2>/dev/null || echo '')
+
+          run_id=''
+          if [ -n "$runs_json" ]; then
+            jq_filter='[.workflow_runs[]? | select((.id | tostring) != $self)] | first | .id // empty'
+            run_id=$(printf '%s' "$runs_json" | jq -r --arg self "$GITHUB_RUN_ID" "$jq_filter")
+          fi
+
+          if [ -n "$run_id" ]; then
+            # download-artifact exits non-zero when the run has no such artifact
+            # (an older master run from before this ratchet landed, or an expired
+            # one). That is the bootstrap case, not a failure.
+            if gh run download "$run_id" --repo "$GITHUB_REPOSITORY" \
+                 --name test-counts --dir /tmp/floor >/dev/null 2>&1 \
+               && [ -f /tmp/floor/test-counts.json ]; then
+              b=$(jq -r '.backend // empty' /tmp/floor/test-counts.json)
+              f=$(jq -r '.frontend // empty' /tmp/floor/test-counts.json)
+              # Both counts must be present and numeric, or neither is used: a
+              # half-read artifact would silently drop one suite's floor to the
+              # bootstrap constant while looking like it had ratcheted.
+              if printf '%s' "$b" | grep -qE '^[0-9]+$' && printf '%s' "$f" | grep -qE '^[0-9]+$'; then
+                backend_floor="$b"
+                frontend_floor="$f"
+                floor_source="master run ${run_id}"
+              else
+                echo "test-counts artifact from run ${run_id} is unreadable; falling back to bootstrap constants." >&2
+              fi
+            fi
+          fi
+
+          echo "BACKEND_FLOOR=$backend_floor" >> "$GITHUB_ENV"
+          echo "FRONTEND_FLOOR=$frontend_floor" >> "$GITHUB_ENV"
+          echo "FLOOR_SOURCE=$floor_source" >> "$GITHUB_ENV"
+          echo "Test-count floor source: $floor_source (backend: $backend_floor, frontend: $frontend_floor)"
 
       - name: Setup .NET
         uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
@@ -37,12 +117,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          floor_file="tests/test-count-floor.txt"
-          if [ ! -f "$floor_file" ]; then
-            echo "BLOCKED: $floor_file is missing." >&2
-            exit 1
-          fi
-          floor=$(tr -d '[:space:]' < "$floor_file")
+          floor="$BACKEND_FLOOR"
 
           total=0
           for trx in ./TestResults/*.trx; do
@@ -56,8 +131,13 @@ jobs:
           done
 
           echo "Executed test count: $total (floor: $floor)"
+          echo "Backend floor source: $FLOOR_SOURCE"
+          # Recorded here rather than at the end of the job so the count is written
+          # even if a later step fails: the ratchet's input is what this run
+          # measured, not whether every other gate happened to pass.
+          echo "BACKEND_COUNT=$total" >> "$GITHUB_ENV"
           if [ "$total" -lt "$floor" ]; then
-            echo "BLOCKED: executed test count ($total) is below the committed floor ($floor) in $floor_file." >&2
+            echo "BLOCKED: executed test count ($total) is below master's last measured count ($floor, from $FLOOR_SOURCE)." >&2
             exit 1
           fi
 
@@ -65,8 +145,11 @@ jobs:
       # Frontend (src/Arbitarr.Web). These steps sit AFTER the .NET test-count
       # floor and BEFORE the tree-wide secret/topology guard deliberately: the
       # backend floor above parses executed="N" out of .trx, the frontend floor
-      # below parses numPassedTests out of the Vitest JSON report. Two files,
+      # below parses numPassedTests out of the Vitest JSON report. Two counts,
       # two parsers, so neither suite's count can mask a collapse in the other.
+      # Both are ratcheted against the SAME master run, so the pair moves
+      # together and one suite cannot be ratcheted from a run that never
+      # measured the other.
       # ----------------------------------------------------------------------
       - name: Setup Node
         uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
@@ -213,12 +296,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          floor_file="../../tests/frontend-test-count-floor.txt"
-          if [ ! -f "$floor_file" ]; then
-            echo "BLOCKED: $floor_file is missing." >&2
-            exit 1
-          fi
-          floor=$(tr -d '[:space:]' < "$floor_file")
+          floor="$FRONTEND_FLOOR"
 
           report="vitest-report.json"
           if [ ! -f "$report" ]; then
@@ -237,8 +315,10 @@ jobs:
           fi
 
           echo "Frontend passed test count: $total (floor: $floor)"
+          echo "Frontend floor source: $FLOOR_SOURCE"
+          echo "FRONTEND_COUNT=$total" >> "$GITHUB_ENV"
           if [ "$total" -lt "$floor" ]; then
-            echo "BLOCKED: frontend passed test count ($total) is below the committed floor ($floor) in tests/frontend-test-count-floor.txt." >&2
+            echo "BLOCKED: frontend passed test count ($total) is below master's last measured count ($floor, from $FLOOR_SOURCE)." >&2
             exit 1
           fi
 
@@ -274,7 +354,7 @@ jobs:
           p3="172\.(1[6-9]|2[0-9]|3[01])\.${oct2}\.${oct2}"
           ip_pattern="(^|[^0-9.])(${p1}|${p2}|${p3})([^0-9.]|\$)"
 
-          hits=$(run_grep git grep -aInE "$ip_pattern" -- . ':(exclude)tests/test-count-floor.txt')
+          hits=$(run_grep git grep -aInE "$ip_pattern" -- .)
           if [ -n "$hits" ]; then
             echo "BLOCKED: private LAN IP address found in tracked tree (use 192.0.2.x documentation range instead):" >&2
             echo "$hits" | head -20 >&2
@@ -331,3 +411,22 @@ jobs:
           fi
 
           echo "Tree-wide secret/topology guard passed."
+
+      # The next run's floor. Written only when every gate above passed, because
+      # this artifact is only ever read from a run whose conclusion was success --
+      # publishing a count from a run that failed would let a broken run set the
+      # bar. Uploaded on every branch: a PR's artifact is simply never selected,
+      # since the lookup filters on branch=master.
+      - name: Record test counts
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '{"backend": %s, "frontend": %s}\n' "$BACKEND_COUNT" "$FRONTEND_COUNT" > test-counts.json
+          cat test-counts.json
+
+      - name: Upload test counts
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
+        with:
+          name: test-counts
+          path: test-counts.json
+          if-no-files-found: error

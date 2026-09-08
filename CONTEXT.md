@@ -276,10 +276,11 @@ each family's caps come from the upstream endpoint that family's searches use:
 
 ## Process terms
 
-**Test-count floor.** The minimum number of tests that must pass, held in
-`tests/test-count-floor.txt` and `tests/frontend-test-count-floor.txt` so the
-suite cannot silently shrink. Always a *measured* number — the rule and its
-reasoning are in [docs/standards/process.md](docs/standards/process.md#test-count-floors).
+**Test-count floor.** The minimum number of tests that must pass, so the suite
+cannot silently shrink. Not a committed file: CI ratchets each run against
+master's last measured counts, carried between runs as the `test-counts`
+artifact. The rule and its reasoning are in
+[docs/standards/process.md](docs/standards/process.md#test-count-floors).
 
 **Positive control.** The demonstration that a "secret must not appear in X"
 assertion would actually fail if the secret leaked — without one the assertion is
