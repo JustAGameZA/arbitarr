@@ -322,6 +322,7 @@ describe('ApiKeys', () => {
     mockKeysApi({ [`GET ${KEYS}`]: { body: keys } });
     renderSurface(<ApiKeysSection />);
 
+    expect(await screen.findByText(/public search and download routes/i)).toBeInTheDocument();
     expect(await screen.findByText(/It cannot change rules, settings, sources or keys/i))
       .toBeInTheDocument();
 

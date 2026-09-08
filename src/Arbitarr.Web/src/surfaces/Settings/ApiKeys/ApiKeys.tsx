@@ -22,9 +22,9 @@ import {
  */
 const SCOPE_EXPLANATION: Record<ApiKeyScope, string> = {
   ReadOnly:
-    'Reaches read-only admin routes — search, match explanations, the suppression view and observability. It cannot change rules, settings, sources or keys. This is the scope to hand a Sonarr or Radarr instance.',
+    'Reaches public search and download routes plus read-only admin routes — search, match explanations, the suppression view and observability. It cannot change rules, settings, sources or keys. This is the scope to hand a Sonarr or Radarr instance.',
   Admin:
-    'Reaches everything a read key does, plus every mutating admin route — rules, settings, sources, and this key list itself. Give it only to a caller you would trust with the box.',
+    'Reaches public search and download routes, read-only admin routes, and every mutating admin route — rules, settings, sources, and this key list itself. Give it only to a caller you would trust with the box.',
 };
 
 function formatTimestamp(value: string | null): string {
@@ -469,7 +469,8 @@ export function ApiKeysSection() {
             entries.length === 0 ? (
               <p className={styles.empty}>
                 No API keys yet. Create one above to give a caller — a Sonarr or Radarr instance, or
-                a script — its own revocable credential.
+                a script — its own revocable credential. A key of either scope works on the search
+                and download routes, so a read-only key is all a Sonarr or Radarr instance needs.
               </p>
             ) : (
               <>

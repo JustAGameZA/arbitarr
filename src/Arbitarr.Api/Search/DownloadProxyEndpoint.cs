@@ -24,6 +24,10 @@ namespace Arbitarr.Api.Search;
 /// re-validated here via <see cref="IClientApiKeyResolver"/>. Missing/invalid keys receive a bare
 /// 401 (no XML body — this is not a Torznab/Newznab protocol response), and the endpoint fails
 /// closed if no client keys are configured at all.
+///
+/// #97: since the resolver became DB-backed, "the client apikey" means an environment key OR a key
+/// minted in Settings > API keys, of either scope — this route is PublicRead and requires no admin
+/// scope. A revoked minted key is refused here on the next request, with the same bare 401.
 /// </summary>
 public static class DownloadProxyEndpoint
 {
@@ -35,7 +39,7 @@ public static class DownloadProxyEndpoint
         IReadOnlyList<IUpstreamSource> sources,
         CancellationToken cancellationToken)
     {
-        if (apiKeyResolver.Resolve(apikey) is null)
+        if (await apiKeyResolver.ResolveAsync(apikey, cancellationToken).ConfigureAwait(false) is null)
         {
             return Results.StatusCode(StatusCodes.Status401Unauthorized);
         }

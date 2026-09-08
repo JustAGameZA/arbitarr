@@ -349,7 +349,7 @@ builder.Services.AddSingleton<IReleaseLookup>(sp => sp.GetRequiredService<InMemo
 // and from SettingKey.AdminApiKey (a separate M4/M7 concept). "Arbitarr:ClientApiKeys:<n>:Name"/
 // "...:Key" configures named keys; a single legacy "Arbitarr:ApiKey" value collapses to one named
 // key, "default", for backward compatibility.
-builder.Services.AddSingleton<IClientApiKeyResolver>(_ =>
+builder.Services.AddSingleton(_ =>
 {
     var namedKeys = builder.Configuration
         .GetSection("Arbitarr:ClientApiKeys")
@@ -364,6 +364,19 @@ builder.Services.AddSingleton<IClientApiKeyResolver>(_ =>
 
     return new ConfiguredClientApiKeyResolver(keys);
 });
+
+// #97: what the search routes resolve is the DB-backed composite, NOT the config resolver above --
+// that one is registered as its concrete type and is now the composite's environment half. A key
+// minted in Settings > API keys must open /torznab/api, /newznab/api and /download/{proxyGuid}, or
+// the API keys section is telling the operator something false. See DbClientApiKeyResolver for the
+// ordering (minted first) and for why the environment keys keep working across the upgrade.
+//
+// Singleton, resolving its own scope per call: the endpoints take IClientApiKeyResolver from the
+// root provider, and ApiKeyRepository wraps the scoped ArbitarrDbContext, which is not thread-safe.
+builder.Services.AddSingleton<IClientApiKeyResolver>(sp => new DbClientApiKeyResolver(
+    sp.GetRequiredService<IServiceScopeFactory>(),
+    sp.GetRequiredService<ConfiguredClientApiKeyResolver>(),
+    sp.GetRequiredService<IApiKeyLastUsedRecorder>()));
 
 // D2 admin API key gate (M7-6): reads SettingKey.AdminApiKey from the settings store, distinct
 // from the Torznab/Newznab client apikey resolved above. Scoped: captures the scoped ArbitarrDbContext.
@@ -614,7 +627,7 @@ app.MapGet("/torznab/api", async (
     HttpRequest request,
     CancellationToken cancellationToken) =>
 {
-    var (clientContext, apiKeyError) = ApiKeyValidator.Validate(apikey, apiKeyResolver, isTorznab: true);
+    var (clientContext, apiKeyError) = await ApiKeyValidator.ValidateAsync(apikey, apiKeyResolver, isTorznab: true, cancellationToken).ConfigureAwait(false);
     if (apiKeyError is not null)
     {
         return apiKeyError;
@@ -671,7 +684,7 @@ app.MapGet("/newznab/api", async (
     HttpRequest request,
     CancellationToken cancellationToken) =>
 {
-    var (clientContext, apiKeyError) = ApiKeyValidator.Validate(apikey, apiKeyResolver, isTorznab: false);
+    var (clientContext, apiKeyError) = await ApiKeyValidator.ValidateAsync(apikey, apiKeyResolver, isTorznab: false, cancellationToken).ConfigureAwait(false);
     if (apiKeyError is not null)
     {
         return apiKeyError;

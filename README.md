@@ -86,13 +86,19 @@ configured; the admin UI is served at `http://arbitarr.example.invalid:8080/admi
 |---|---|
 | `ARBITARR__SOURCES__NZBHYDRA__BASEURL` | Upstream NZBHydra2 instance Arbitarr queries (e.g. `http://nzbhydra2.example.invalid:5076`) |
 | `ARBITARR__SOURCES__NZBHYDRA__APIKEY` | NZBHydra2's own API key (outbound credential) |
-| `ARBITARR__APIKEY` | Single inbound Torznab/Newznab client key your *arr apps authenticate with |
-| `ARBITARR__CLIENTAPIKEYS__<n>__NAME` / `...__KEY` | Alternative to `ARBITARR__APIKEY`: multiple named client keys |
+| `ARBITARR__APIKEY` | Legacy single inbound Torznab/Newznab client key; remains accepted after upgrading |
+| `ARBITARR__CLIENTAPIKEYS__<n>__NAME` / `...__KEY` | Legacy named inbound client keys; remain accepted after upgrading |
 | `ARBITARR_CONFIG_DIR` | Runtime state directory (defaults to `/config`; mount a volume there) |
 
 Three distinct keys exist, deliberately: the **NZBHydra2 key** (Arbitarr calling out), the
 **client key(s)** (*arr apps calling in), and the **admin key** (below, gating mutating admin
 endpoints only).
+
+For new search clients, create a named `ReadOnly` key in **Settings > API keys** and configure it
+in Sonarr or Radarr. Minted keys work on Torznab, Newznab, and download links, can be revoked one
+at a time, and record their last use. Existing `ARBITARR__APIKEY` and
+`ARBITARR__CLIENTAPIKEYS__...` values continue to work unchanged after an upgrade, but are not
+stored in the database or individually revocable.
 
 ### Admin key setup
 
@@ -130,9 +136,9 @@ The admin UI has a login: a username and a password, created once on first run. 
 from a machine on your local network and it offers account creation; after that first account
 exists, the setup screen is closed permanently and everyone signs in.
 
-The admin key above is **not** replaced by the login. It is what Sonarr, Radarr and any scripted
-caller present, because none of them can complete an interactive sign-in. Humans log in; machines
-use the key.
+The admin key above is **not** replaced by the login. It gates mutating admin routes for scripted
+administration; humans log in. Sonarr, Radarr, and other search clients use a named client key from
+**Settings > API keys** on Torznab, Newznab, and download routes instead.
 
 When you are signed in, open **Settings** and use the **Account** section to change your password.
 You must enter your current password and a new passphrase of at least 12 characters. A successful

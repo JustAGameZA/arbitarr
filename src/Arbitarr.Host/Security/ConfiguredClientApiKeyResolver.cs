@@ -12,6 +12,12 @@ namespace Arbitarr.Host.Security;
 ///
 /// Comparison against every configured key is fixed-time (<see cref="CryptographicOperations.FixedTimeEquals"/>)
 /// so response timing cannot be used to narrow down a valid key.
+///
+/// <para>Since #97 this is no longer the resolver the endpoints see: it is the environment half of
+/// <c>DbClientApiKeyResolver</c>, which consults minted keys first and falls back to this. It stays
+/// a separate type rather than being folded in because the environment keys are a composition-root
+/// concern (they are bound from <see cref="Microsoft.Extensions.Configuration.IConfiguration"/> at
+/// startup) and the minted keys are a data-layer one.</para>
 /// </summary>
 public sealed class ConfiguredClientApiKeyResolver : IClientApiKeyResolver
 {
@@ -26,6 +32,18 @@ public sealed class ConfiguredClientApiKeyResolver : IClientApiKeyResolver
             .ToArray();
     }
 
+    /// <summary>
+    /// Resolves against the configured keys. Synchronous work behind an async signature — there is
+    /// nothing to await here, and <see cref="Task.FromResult{TResult}"/> keeps that honest rather
+    /// than spending a state machine on it.
+    /// </summary>
+    public Task<ClientKeyContext?> ResolveAsync(string? apikey, CancellationToken cancellationToken) =>
+        Task.FromResult(Resolve(apikey));
+
+    /// <summary>
+    /// The comparison itself, exposed synchronously so <c>DbClientApiKeyResolver</c> can call it
+    /// without an await on a path that never had one.
+    /// </summary>
     public ClientKeyContext? Resolve(string? apikey)
     {
         if (string.IsNullOrEmpty(apikey) || _keys.Count == 0)
@@ -44,6 +62,7 @@ public sealed class ConfiguredClientApiKeyResolver : IClientApiKeyResolver
                 && CryptographicOperations.FixedTimeEquals(providedBytes, keyBytes);
             if (isMatch)
             {
+                // KeyId null: an environment key has no row to stamp a last-used time onto.
                 match = new ClientKeyContext(name);
             }
         }
