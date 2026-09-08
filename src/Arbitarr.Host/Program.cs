@@ -531,6 +531,48 @@ builder.Services.AddScoped<SourceRepository>();
 builder.Services.AddHttpClient<SourceConnectivityProber>()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 
+// arb-u1c: the Sonarr instance's configuration (base URL + write-only API key), stored as two
+// colon-namespaced rows in the existing Settings table -- NO NEW TABLE, so there is nothing new for
+// MaintenanceJob to prune (the rows are fixed in number and do not accumulate). The key is stored
+// write-only under a name no SettingKey can produce, exactly as source API keys and the webhook URL
+// are, so it can never surface through GET /api/admin/settings.
+builder.Services.AddScoped<Arbitarr.Data.Media.ArrInstanceRepository>();
+
+// arb-u1c: the Sonarr connectivity probe. AllowAutoRedirect is disabled for the same SSRF reason as
+// the three clients above -- a misconfigured address answering 30x must not make this process issue
+// a request (carrying Sonarr's API key) at a host nobody configured.
+//
+// NO .RemoveAllLoggers() HERE, DELIBERATELY, and the reason was MEASURED rather than assumed --
+// because the webhook client below DOES need it. IHttpClientFactory's logging handler writes the
+// request URI at Information, which since #65 lands in the persistent log store served at
+// GET /api/admin/logs. The question is where this client's key rides: it rides in the QUERY STRING
+// (SonarrConnectivityProber.BuildStatusUri and ArrApiProvider.BuildEpisodeUri both put it there, the
+// same placement NzbHydraSource's own load-bearing comment pins), not in the URL PATH as a webhook
+// token does.
+//
+// TWO LAYERS COVER THAT, AND THE ONE THAT ACTUALLY FIRES HERE IS NOT THE ONE THE NEIGHBOURING
+// COMMENTS NAME. .NET's own logging handler collapses the whole query string to "?*" before the
+// message is formatted, so through this client the key never reaches LogMessageCleanser at all --
+// the stored row reads ".../api/v3/system/status?*". The cleanser (which scrubs query-string
+// credentials but NOT URL paths, CLAUDE.md §1) stays the guard for every OTHER way a key-bearing URI
+// can reach a log line: an exception message, or a hand-written one.
+// SonarrKeyIsScrubbedFromLogsTests drives THIS registered client through the real probe route and
+// asserts both layers, with a positive control matching what is genuinely logged so it cannot pass
+// vacuously. If either URI builder is ever changed to put the key in a path segment, NEITHER layer
+// covers it and this registration needs .RemoveAllLoggers().
+//
+// THIS ALSO DEPENDS ON A PROCESS-WIDE SWITCH THIS REPOSITORY DOES NOT SET. The "?*" collapse above is
+// gated by the System.Net.Http.DisableUriRedaction AppContext switch (name inverted from what it
+// sounds like: setting it to true DISABLES the redaction, i.e. restores the full query string,
+// key included, to the log line). Nothing here sets it, so the default (false, redaction ON) is what
+// this registration's safety rests on. DisableUriRedactionSwitchTests proves both states — the
+// default redacting the key, and the switch flipped defeating that redaction with the same handler —
+// so this dependency is executable rather than folklore. If anything ever sets this switch true
+// process-wide (a host default, a runtimeconfig.json entry, a future dependency), this registration
+// needs .RemoveAllLoggers() regardless of where the key sits in the URI.
+builder.Services.AddHttpClient<Arbitarr.Core.Media.SonarrConnectivityProber>()
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+
 // #89: the AI backend's connectivity probe. AllowAutoRedirect is disabled for the same SEC-M5 SSRF
 // reason as the OllamaClient registration above -- a misconfigured address answering 30x must not
 // make this process issue a request at a host nobody configured.
@@ -724,6 +766,11 @@ AdminNotificationEndpoints.Map(app);
 // #89: the AI backend's own admin surface (read/write/probe the Ollama base URL). Separate from
 // AdminSettingsEndpoints because the value is off SettingsCatalog.Entries -- see AdminAiEndpoints.
 AdminAiEndpoints.Map(app);
+// arb-u1c: the Sonarr instance's own admin surface (read/write/clear/probe the base URL and the
+// write-only API key). Separate from AdminSettingsEndpoints for BOTH of the reasons the codebase
+// already has: the key is a secret whose colon-namespaced row no SettingKey can produce, and the
+// base URL needs a connectivity probe the generic catalog row cannot offer. See AdminArrEndpoints.
+AdminArrEndpoints.Map(app);
 AdminRuleEndpoints.Map(app);
 AdHocSearchEndpoint.Map(app);
 MatchExplanationEndpoint.Map(app);
