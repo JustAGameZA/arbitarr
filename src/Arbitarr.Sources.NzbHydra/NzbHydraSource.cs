@@ -275,18 +275,21 @@ public sealed class NzbHydraSource : IUpstreamSource
     /// <c>tvdbid</c>, and only when the text is entirely digits. A textual <c>q</c> next to an id
     /// (<c>tvdbid=74796&amp;q=bleach</c>) is a title and stays; a numeric <c>q</c> without an id has
     /// nothing else to identify the series and stays, since dropping it would turn the request into
-    /// a category-wide feed. The two-age cache already keys an id-bearing query on the id rather than
-    /// its text (<c>SearchCacheKeyBuilder</c>), so what is cached and what is sent now agree.
+    /// a category-wide feed. <c>char.IsAsciiDigit</c> rather than <c>char.IsDigit</c> because Sonarr
+    /// formats the number with the invariant culture: only ASCII digits are the shape being matched,
+    /// and a non-ASCII numeral is text like any other.
+    ///
+    /// <paramref name="queryText"/> is the already-trimmed text <see cref="BuildSearchUri"/> emits,
+    /// so the value classified and the value sent are the same string.
     /// </remarks>
-    internal static bool IsIdScopedAbsoluteNumberQuery(SearchQuery query, string mode)
+    private static bool IsIdScopedAbsoluteNumberQuery(string queryText, string mode, int? tvdbId)
     {
-        if (!string.Equals(mode, TvSearchMode, StringComparison.Ordinal) || query.TvdbId is null)
+        if (!string.Equals(mode, TvSearchMode, StringComparison.Ordinal) || tvdbId is null)
         {
             return false;
         }
 
-        var text = query.QueryText?.Trim();
-        return !string.IsNullOrEmpty(text) && text.All(char.IsAsciiDigit);
+        return queryText.Length > 0 && queryText.All(char.IsAsciiDigit);
     }
 
     private Uri BuildSearchUri(SearchQuery query, int limit, int offset)
@@ -300,9 +303,12 @@ public sealed class NzbHydraSource : IUpstreamSource
             "offset=" + offset.ToString(CultureInfo.InvariantCulture),
         };
 
-        if (!string.IsNullOrWhiteSpace(query.QueryText) && !IsIdScopedAbsoluteNumberQuery(query, mode))
+        // Trimmed once here and the same value is both classified and emitted, so the predicate
+        // cannot say "withhold" about a string different from the one that would have gone up.
+        var queryText = query.QueryText?.Trim() ?? string.Empty;
+        if (queryText.Length > 0 && !IsIdScopedAbsoluteNumberQuery(queryText, mode, query.TvdbId))
         {
-            queryParams.Add("q=" + Uri.EscapeDataString(query.QueryText));
+            queryParams.Add("q=" + Uri.EscapeDataString(queryText));
         }
 
         // Id parameters are emitted only for the mode that accepts them, so a query carrying both a

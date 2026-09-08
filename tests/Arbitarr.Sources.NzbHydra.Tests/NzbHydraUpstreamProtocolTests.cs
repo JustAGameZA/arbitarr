@@ -271,11 +271,14 @@ public class NzbHydraUpstreamProtocolTests
     /// <summary>
     /// The withholding is keyed on the text being nothing but digits. Sonarr's zero-padded form
     /// (<c>q=07</c>) and surrounding whitespace are the same shape; a title next to the id is not.
+    /// The padded title row also pins that the text sent up is the trimmed text — the same value
+    /// the predicate classified, not the raw one.
     /// </summary>
     [Theory]
     [InlineData("07", false)]
     [InlineData(" 1100 ", false)]
     [InlineData("bleach", true)]
+    [InlineData(" bleach ", true)]
     [InlineData("one piece 92", true)]
     [InlineData("S07E01", true)]
     public async Task SearchAsync_TvSearchWithATvdbId_WithholdsQOnlyWhenItIsEntirelyDigits(string queryText, bool expectQ)
@@ -290,7 +293,7 @@ public class NzbHydraUpstreamProtocolTests
         Assert.Equal(expectQ, query.ContainsKey("q"));
         if (expectQ)
         {
-            Assert.Equal(queryText, query["q"]);
+            Assert.Equal(queryText.Trim(), query["q"]);
         }
     }
 
@@ -300,9 +303,9 @@ public class NzbHydraUpstreamProtocolTests
     /// explicit <c>tvsearch</c> and the plain <c>search</c> mode.
     /// </summary>
     [Theory]
-    [InlineData(SearchType.TvSearch)]
-    [InlineData(SearchType.Search)]
-    public async Task SearchAsync_NumericQueryWithoutATvdbId_IsForwardedAsIs(SearchType type)
+    [InlineData(SearchType.TvSearch, "tvsearch")]
+    [InlineData(SearchType.Search, "search")]
+    public async Task SearchAsync_NumericQueryWithoutATvdbId_IsForwardedAsIs(SearchType type, string expectedMode)
     {
         var (handler, source) = MakeSource();
 
@@ -310,6 +313,7 @@ public class NzbHydraUpstreamProtocolTests
             "92", Array.Empty<int>(), 10, SearchProtocol.Newznab, Type: type));
 
         var query = ParseQuery(Assert.Single(handler.RequestedUris));
+        Assert.Equal(expectedMode, query["t"]);
         Assert.Equal("92", query["q"]);
         Assert.False(query.ContainsKey("tvdbid"));
     }
