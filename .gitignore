@@ -2,6 +2,12 @@
 review-receipts/
 .claude/
 
+# Beads issue tracker runs in stealth mode in this public repo (bd init --stealth):
+# the Dolt store and its embedded memories must never reach a fresh clone. Until now
+# this was enforced only by .git/info/exclude, which is per-clone and local-only, so
+# a fresh clone inherited no protection at all. This entry is the durable half.
+.beads/
+
 # .NET build artifacts
 bin/
 obj/
