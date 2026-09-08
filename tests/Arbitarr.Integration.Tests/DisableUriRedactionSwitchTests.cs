@@ -99,6 +99,13 @@ public sealed class DisableUriRedactionSwitchTests
                 "test",
                 testAssemblyPath,
                 "--filter",
+                // A --filter that matches NOTHING still exits 0 -- vstest does not treat "ran zero
+                // tests" as a failure. So if WorkerMethodName is ever wrong (a rename of
+                // RunSonarrLikeClientOnceAsync that this constant is not updated to match), this
+                // process would exit 0 having silently run nothing at all. The marker-line check
+                // below (an InvalidOperationException when no "SONARR_LIKE_LOG_LINE::" line is found
+                // on a zero exit code) is what actually catches that: a real run always prints it,
+                // so its absence on a clean exit is the signal that the filter matched nothing.
                 $"FullyQualifiedName={WorkerMethodName}",
                 "--logger",
                 "console;verbosity=detailed",
@@ -178,13 +185,24 @@ public sealed class DisableUriRedactionSwitchTests
     }
 
     /// <summary>
-    /// THE WORKER, RUN ONLY INSIDE THE CHILD PROCESS SPAWNED ABOVE. Builds the same registration shape
-    /// as the Sonarr client in Program.cs (a named <see cref="IHttpClientFactory"/> client, no
-    /// <c>.RemoveAllLoggers()</c>) against a fake handler that never touches the network, issues one
-    /// request carrying <see cref="SonarrKey"/> in the query string, captures the resulting log
-    /// message, and prints it to stdout behind a marker for the parent process to read back. Runs (and
-    /// passes trivially) under a normal full-suite invocation too — its own assertion only checks that
-    /// SOME message was captured, never a value, so it adds no process-order dependency of its own.
+    /// THE WORKER. Builds the same registration shape as the Sonarr client in Program.cs (a named
+    /// <see cref="IHttpClientFactory"/> client, no <c>.RemoveAllLoggers()</c>) against a fake handler
+    /// that never touches the network, issues one request carrying <see cref="SonarrKey"/> in the
+    /// query string, captures the resulting log message, and prints it to stdout behind a marker for
+    /// the parent process to read back when run as the CHILD process the two <c>[Fact]</c>s above
+    /// spawn.
+    ///
+    /// <para><b>This method ALSO runs once, unfiltered, as part of a normal full-suite invocation of
+    /// this assembly</b> — xunit has no "child-only" concept, and the CI test-count ratchet counts
+    /// every executed test, so this must never be <c>Skip</c>ped or made to assert nothing in that
+    /// context. In the parent suite, <see cref="EnvVarName"/> is never set by anything in this
+    /// process (only the two <c>[Fact]</c>s above set it, and only for the CHILD they spawn — never
+    /// for themselves), so this method's own run always sees the DEFAULT state and its assertion below
+    /// is the same one <see cref="Default_process_state_redacts_the_query_string_the_Sonarr_client_relies_on"/>
+    /// makes: the key is redacted to <c>?*</c>. That means this method's body is exercised twice by a
+    /// full CI run — once directly (asserting the default case) and once per child process spawned
+    /// above (where its own assertion is this same one, and the PARENT re-checks the *marker line* for
+    /// the specific scenario under test) — which is intentional, not a duplicate to remove.</para>
     /// </summary>
     [Fact]
     public async Task RunSonarrLikeClientOnceAsync()
@@ -206,8 +224,19 @@ public sealed class DisableUriRedactionSwitchTests
 
         var message = await capture.WaitForMessageContainingAsync("Sending HTTP request", TimeSpan.FromSeconds(5));
 
-        // Printed for the PARENT process to read back; this process's own pass/fail is not what the
-        // outer [Fact]s check.
+        // ASSERT SOMETHING REAL IN BOTH CONTEXTS, not merely "a message was captured". When this
+        // process's own environment does not have the switch's variable set -- true whenever this
+        // runs directly in the parent suite, since only a CHILD process (spawned above) ever has it
+        // set -- the key must be redacted exactly as SonarrKeyIsScrubbedFromLogsTests and the sibling
+        // [Fact]s above rely on.
+        if (Environment.GetEnvironmentVariable(EnvVarName) is null)
+        {
+            Assert.Contains("system/status?*", message, StringComparison.Ordinal);
+            Assert.DoesNotContain(SonarrKey, message, StringComparison.OrdinalIgnoreCase);
+        }
+
+        // Printed for the PARENT process to read back when this runs as a spawned child; harmless
+        // extra stdout when this runs directly in the parent suite.
         Console.WriteLine($"SONARR_LIKE_LOG_LINE::{message}");
     }
 

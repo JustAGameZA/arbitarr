@@ -72,8 +72,12 @@ export interface ArrTestResult {
  * "LEAVE THE STORED KEY ALONE" rather than "clear it". That is the source-API-key
  * contract exactly: the client never had the stored value, so it cannot
  * read-and-reapply it, and an edit that changes only the address must not destroy
- * the key as a side effect. Clearing is its own route
- * (`DELETE /api/admin/arr/sonarr/key`) for the same reason.
+ * the key as a side effect. There is deliberately NO key-only clear route (ADR 0010:
+ * secrets are never readable, omission never clears, and a secret is cleared only by
+ * deleting the thing that owns it) -- `AdminArrEndpointsTests` asserts
+ * `DELETE /api/admin/arr/sonarr/key` does not exist. Clearing the key means
+ * unconfiguring the whole instance via `DELETE /api/admin/arr/sonarr`, which removes
+ * both the address and the key together.
  */
 export interface UpdateArrConfigRequest {
   baseUrl: string;
