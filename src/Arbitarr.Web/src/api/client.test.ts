@@ -4,6 +4,7 @@ import {
   ADMIN_KEY_HEADER,
   AdminKeyNotConfiguredError,
   AdminKeyRejectedError,
+  parseContentDispositionFileName,
   ApiError,
   apiFetch,
   needsAdminKey,
@@ -148,5 +149,82 @@ describe('apiFetch error branches', () => {
     mockFetch(204);
 
     await expect(apiFetch('/api/status')).resolves.toBeUndefined();
+  });
+});
+
+/**
+ * #56: apiFetch must NOT stamp a Content-Type onto a FormData body.
+ *
+ * A multipart request is only parseable if its Content-Type carries the boundary the
+ * browser generated, and that boundary is not knowable at the call site. Overwriting it
+ * with 'application/json' makes the server see a well-formed archive upload as having no
+ * form content at all -- and it fails at the RESTORE endpoint, the most destructive
+ * action in the product, which is the worst place to discover it. The JSON default must
+ * still apply to every other body, so both halves are asserted.
+ */
+describe('apiFetch content type', () => {
+  beforeEach(() => {
+    captured = [];
+    useAdminKeyStore.setState({ key: 'k-1', serverKeyUnset: false });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('leaves Content-Type unset for a FormData body so fetch can set the boundary', async () => {
+    mockFetch(200, { succeeded: true });
+
+    const body = new FormData();
+    body.append('archive', new Blob(['zip bytes']), 'backup.zip');
+    body.append('confirm', 'RESTORE');
+
+    await apiFetch('/api/admin/restore', { method: 'POST', body });
+
+    expect(captured[0].init.headers?.['Content-Type']).toBeUndefined();
+  });
+
+  it('still defaults a non-FormData body to JSON', async () => {
+    mockFetch(200, {});
+
+    await apiFetch('/api/admin/settings', { method: 'POST', body: JSON.stringify({ a: 1 }) });
+
+    expect(captured[0].init.headers?.['Content-Type']).toBe('application/json');
+  });
+});
+
+/**
+ * #56: the Content-Disposition parser behind the backup download's saved file name.
+ *
+ * Worth its own tests because it is the part that fails silently: a wrong file name still
+ * saves a working archive, so nothing visibly breaks while every backup an operator has
+ * lands under the same unsorted name.
+ */
+describe('parseContentDispositionFileName', () => {
+  it('reads the plain filename form', () => {
+    expect(
+      parseContentDispositionFileName('attachment; filename=arbitarr-backup-20260907T140509Z.zip'),
+    ).toBe('arbitarr-backup-20260907T140509Z.zip');
+  });
+
+  it('reads a quoted filename', () => {
+    expect(parseContentDispositionFileName('attachment; filename="arbitarr-backup.zip"')).toBe(
+      'arbitarr-backup.zip',
+    );
+  });
+
+  it('prefers the RFC 5987 extended form over the ASCII fallback', () => {
+    // Both are present in a real ASP.NET Core response. Reading the plain one would
+    // silently pick the fallback the server provided precisely because it is lossy.
+    expect(
+      parseContentDispositionFileName(
+        "attachment; filename=fallback.zip; filename*=UTF-8''arbitarr-backup-20260907T140509Z.zip",
+      ),
+    ).toBe('arbitarr-backup-20260907T140509Z.zip');
+  });
+
+  it('returns null when the header is absent, so the caller can fall back', () => {
+    expect(parseContentDispositionFileName(null)).toBeNull();
+    expect(parseContentDispositionFileName('attachment')).toBeNull();
   });
 });

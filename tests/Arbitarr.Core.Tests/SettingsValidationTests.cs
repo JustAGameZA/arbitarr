@@ -274,6 +274,33 @@ public class SettingsValidationTests
         Assert.Null(ex);
     }
 
+    // ---------- automatic backups retained (#56; floor 0, which is itself meaningful) ----------
+
+    [Fact]
+    public void AutomaticBackupRetainedCount_RejectsANegativeValue()
+    {
+        var ex = Assert.Throws<SettingsValidationException>(
+            () => SettingsValidator.ValidateAutomaticBackupRetainedCount(-1));
+        Assert.Equal(SettingKey.AutomaticBackupRetainedCount, ex.Key);
+    }
+
+    [Fact]
+    public void AutomaticBackupRetainedCount_AcceptsZeroBecauseZeroTurnsTheFeatureOff()
+    {
+        // Zero is not merely the smallest legal number here: it is how an operator who backs
+        // the config volume up externally declines to keep a second copy of their credentials
+        // on the same disk. A validator that rejected it would remove that choice.
+        var ex = Record.Exception(() => SettingsValidator.ValidateAutomaticBackupRetainedCount(0));
+        Assert.Null(ex);
+    }
+
+    [Fact]
+    public void AutomaticBackupRetainedCount_AcceptsArbitrarilyLargeValue_NoCeiling()
+    {
+        var ex = Record.Exception(() => SettingsValidator.ValidateAutomaticBackupRetainedCount(int.MaxValue));
+        Assert.Null(ex);
+    }
+
     // ---------- metadata refresh cadence (positive entries) ----------
 
     [Fact]

@@ -127,6 +127,10 @@ public sealed class SettingsRepository
             case SettingKey.QuerySnapshotTtl:
                 SettingsValidator.ValidateQuerySnapshotTtl(ParseTimeSpan(key, proposed));
                 break;
+            case SettingKey.AutomaticBackupRetainedCount:
+                SettingsValidator.ValidateAutomaticBackupRetainedCount(ParseInt(key, proposed));
+                break;
+
             case SettingKey.MaintenanceJobInterval:
                 SettingsValidator.ValidateMaintenanceJobInterval(ParseTimeSpan(key, proposed));
                 break;

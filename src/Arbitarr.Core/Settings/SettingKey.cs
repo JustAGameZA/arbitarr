@@ -47,6 +47,13 @@ public enum SettingKey
     MaintenanceJobInterval,
 
     /// <summary>
+    /// #56: how many automatic configuration backups are kept in the config directory. A COUNT and
+    /// not an age — a time-based policy would delete an operator's last backup for a box that was
+    /// simply switched off. 0 disables automatic backups entirely.
+    /// </summary>
+    AutomaticBackupRetainedCount,
+
+    /// <summary>
     /// Global shadow-mode toggle spanning ALL suppression sources (deterministic rule engine,
     /// identity layer, numbering scorer, AI verdicts). Defaults ON for fresh installs (D3):
     /// suppressions are recorded/annotated but never enforced until the operator flips this off.

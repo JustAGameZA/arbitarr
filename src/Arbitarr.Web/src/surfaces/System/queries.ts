@@ -1,10 +1,12 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 
-import { apiFetch } from '../../api/client';
+import { apiFetch, apiFetchBlob } from '../../api/client';
 import type {
+  BackupStatusResponse,
   BuildInfoResponse,
   LogsResponse,
   ObservabilityResponse,
+  RestoreResponse,
   StalenessEnvelopeResponse,
 } from '../../api/types';
 
@@ -133,4 +135,74 @@ export function useLogsQuery(filters: LogFilters, page: number) {
     queryFn: () => apiFetch<LogsResponse>(buildLogsQuery(filters, page)),
     placeholderData: keepPreviousData,
   });
+}
+
+// --- Backup and restore (#56) --------------------------------------------
+
+/** The word an operator types to confirm. Matches AdminBackupEndpoints.RestoreConfirmationWord. */
+export const RESTORE_CONFIRMATION_WORD = 'RESTORE';
+
+/**
+ * GET /api/admin/backup/status.
+ *
+ * Admin-gated like every /api/admin/ route, so apiFetch attaches the header by path
+ * prefix. Its own query rather than part of the Status tab's set, because the Backup tab
+ * is the only thing that reads it and the tabs unmount when switched.
+ */
+export function useBackupStatusQuery() {
+  return useQuery({
+    queryKey: ['admin', 'backup', 'status'],
+    queryFn: () => apiFetch<BackupStatusResponse>('/api/admin/backup/status'),
+  });
+}
+
+/**
+ * Downloads the backup archive and hands it to the browser to save.
+ *
+ * The two-step (fetch as a blob, then click a synthesised object-URL anchor) is not
+ * ceremony: the archive contains the release-GUID secret and every source API key, so it
+ * must be fetched with the X-Admin-Api-Key HEADER. A plain <a download href="..."> cannot
+ * send a header, so making a direct link work would mean a credential in the URL — into
+ * browser history, into any proxy's access log, and into the backend's own record of full
+ * absolute URIs. See AdminBackupEndpoints' remarks and client.ts's needsAdminKey note.
+ *
+ * The object URL is revoked immediately after the click. It is a live handle to a
+ * credential-bearing blob held in the page; leaving it un-revoked would keep those bytes
+ * reachable from the document for as long as it stays open.
+ */
+export async function downloadBackupArchive(): Promise<string> {
+  const { blob, fileName } = await apiFetchBlob('/api/admin/backup');
+
+  const name = fileName ?? 'arbitarr-backup.zip';
+  const objectUrl = URL.createObjectURL(blob);
+
+  try {
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = name;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+
+  return name;
+}
+
+/**
+ * POST /api/admin/restore — the destructive half.
+ *
+ * The confirmation word travels in the body rather than being checked only in the
+ * browser: a client-side-only gate is a suggestion, and this is the last thing standing
+ * in front of replacing the configuration database and the release-GUID secret.
+ */
+export async function restoreFromArchive(file: File): Promise<RestoreResponse> {
+  const body = new FormData();
+  body.append('archive', file);
+  body.append('confirm', RESTORE_CONFIRMATION_WORD);
+
+  // No Content-Type header: the browser must set the multipart boundary itself, and
+  // apiFetch only defaults a JSON content type when none was given for a non-FormData body.
+  return apiFetch<RestoreResponse>('/api/admin/restore', { method: 'POST', body });
 }

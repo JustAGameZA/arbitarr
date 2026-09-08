@@ -2,6 +2,7 @@ import { useId, useState } from 'react';
 
 import { PageHeader } from '../../components/shell/PageHeader';
 import { QueryState } from '../QueryState';
+import { BackupTab } from './BackupTab';
 import { LogsTab } from './LogsTab';
 import type {
   BuildInfoResponse,
@@ -270,8 +271,11 @@ function StatusTab() {
 /**
  * The System page's tabs, in order.
  *
- * `Backup` is #56's and is deliberately ABSENT rather than present-and-disabled: an
- * inert tab invites a click that does nothing. Plan §3 leaves it the slot, not a stub.
+ * `Backup` is #56's and now FILLS the slot #65's plan §3 reserved for it. It was
+ * deliberately absent rather than present-and-disabled until it did something, because an
+ * inert tab invites a click that does nothing -- the same rule still applies to any future
+ * tab, which is why that reasoning is kept here rather than deleted along with the
+ * placeholder it justified.
  *
  * There is no `Updates` tab (Arbitarr is deployed by image tag; there is no in-app
  * updater, and the Build panel already answers "what am I running") and no `Events` tab
@@ -282,6 +286,7 @@ function StatusTab() {
 const TABS = [
   ['status', 'Status'],
   ['logs', 'Logs'],
+  ['backup', 'Backup'],
 ] as const;
 
 type TabId = (typeof TABS)[number][0];
@@ -289,9 +294,11 @@ type TabId = (typeof TABS)[number][0];
 /**
  * System.
  *
- * Tabbed as of #65 (plan §3): `Status | Logs`, adopting the *arr System page's shape
- * adapted to Arbitarr's actual surfaces. The tabs live INSIDE this page and add no nav
- * entry -- SidebarNav's count comment states seven and AC6 requires it to stay seven.
+ * Tabbed as of #65 (plan §3) and `Status | Logs | Backup` since #56, adopting the *arr
+ * System page's shape adapted to Arbitarr's actual surfaces. The tabs live INSIDE this
+ * page and add no nav entry -- SidebarNav's count comment states seven and AC6 requires
+ * it to stay seven, which is precisely why Backup is a tab here and not an eighth nav
+ * entry.
  *
  * Tab state is local component state and deliberately not a route. The nav highlights by
  * path, so a /system/logs route would light the System entry from a URL the sidebar
@@ -356,7 +363,9 @@ export default function SystemPage() {
       {/* Only the active tab is rendered -- see StatusTab's note on why unmounting the
           inactive one matters more here than keeping its scroll position would. */}
       <div id={panelId(tab)} role="tabpanel" aria-labelledby={tabId(tab)} tabIndex={-1}>
-        {tab === 'status' ? <StatusTab /> : <LogsTab />}
+        {tab === 'status' && <StatusTab />}
+        {tab === 'logs' && <LogsTab />}
+        {tab === 'backup' && <BackupTab />}
       </div>
     </>
   );

@@ -122,16 +122,16 @@ describe('System tabs', () => {
     vi.unstubAllGlobals();
   });
 
-  it('exposes exactly the Status and Logs tabs', async () => {
+  it('exposes exactly the Status, Logs and Backup tabs', async () => {
     mockApi(allRoutes);
     renderSurface(<SystemPage />);
 
     const tabs = screen.getAllByRole('tab').map((tab) => tab.textContent);
 
-    // Exactly these two, asserted as an equality rather than a presence check: an
+    // Exactly these three, asserted as an equality rather than a presence check: an
     // Updates or Events tab is a plan §3 ruling to reopen, not something to add
-    // silently, and Backup is #56's.
-    expect(tabs).toEqual(['Status', 'Logs']);
+    // silently. Backup joined them with #56, filling the slot §3 reserved.
+    expect(tabs).toEqual(['Status', 'Logs', 'Backup']);
     await screen.findByText('02:30:00');
   });
 
@@ -172,9 +172,18 @@ describe('System tabs', () => {
     await user.keyboard('{ArrowRight}');
     expect(screen.getByRole('tab', { name: 'Logs' })).toHaveAttribute('aria-selected', 'true');
 
+    // Steps through every tab in order rather than stopping at the second, so a tab added
+    // to TABS without being reachable by keyboard fails here.
+    await user.keyboard('{ArrowRight}');
+    expect(screen.getByRole('tab', { name: 'Backup' })).toHaveAttribute('aria-selected', 'true');
+
     // Wraps rather than dead-ending at the last tab.
     await user.keyboard('{ArrowRight}');
     expect(screen.getByRole('tab', { name: 'Status' })).toHaveAttribute('aria-selected', 'true');
+
+    // And wraps backwards too -- the other end of the same rule.
+    await user.keyboard('{ArrowLeft}');
+    expect(screen.getByRole('tab', { name: 'Backup' })).toHaveAttribute('aria-selected', 'true');
   });
 });
 
