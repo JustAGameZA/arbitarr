@@ -37,6 +37,16 @@ public static class RuleEvaluator
     /// verdict has won so far (fail open, P1: never suppress on a budget cutoff — a candidate no
     /// rule has yet rejected still defaults to <see cref="Verdict.Accept"/>, exactly like the
     /// per-rule ReDoS timeout in <see cref="FilterRule.Evaluate"/>).
+    ///
+    /// arb-nk2: THE BUDGET CHECK RUNS BETWEEN ITERATIONS, NEVER BEFORE THE FIRST ONE. The clock is
+    /// read once up front, but if evaluation is delayed before this method is even entered (a GC
+    /// pause, a stalled caller, anything that lets <see cref="FilterProfile.TotalEvaluationBudget"/>
+    /// elapse before the loop starts), a check at the TOP of the loop would trip on the very first
+    /// rule and <c>break</c> before it ever runs — silently failing open past a deny rule on nothing
+    /// more than a slow clock. The fail-open contract above is about rules THIS EVALUATION did not
+    /// have time to reach, not about skipping the first one it was asked to run. So every rule always
+    /// gets evaluated at least once; the budget is only consulted after a rule has run, to decide
+    /// whether to continue to the next one.
     /// </summary>
     public static (Verdict Verdict, IFilterRule? MatchedRule) Evaluate(
         FilterProfile profile,
@@ -50,15 +60,19 @@ public static class RuleEvaluator
         IFilterRule? winningRule = null;
         var winningVerdict = Verdict.Unknown;
         var startedAt = timeProvider.GetTimestamp();
+        var isFirstRule = true;
 
         foreach (var rule in profile.Rules)
         {
-            if (timeProvider.GetElapsedTime(startedAt) >= profile.TotalEvaluationBudget)
+            if (!isFirstRule && timeProvider.GetElapsedTime(startedAt) >= profile.TotalEvaluationBudget)
             {
-                // Aggregate budget exhausted: stop evaluating further rules and fail open with
-                // whatever verdict has won so far (Accept/no-rule-matched if none has).
+                // Aggregate budget exhausted between iterations: stop evaluating further rules and
+                // fail open with whatever verdict has won so far (Accept/no-rule-matched if none
+                // has). The first rule is never skipped this way -- see the remarks above.
                 break;
             }
+
+            isFirstRule = false;
 
             var verdict = rule.Evaluate(candidate);
             if (verdict == Verdict.Unknown)
