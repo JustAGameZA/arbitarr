@@ -330,6 +330,8 @@ builder.Services.AddScoped<FilterStage>(sp => new FilterStage(
     sp.GetRequiredService<IEventSink>()));
 
 builder.Services.AddSingleton<InMemoryReleaseLookup>();
+builder.Services.AddScoped<DurableReleaseLookup>();
+builder.Services.AddScoped<IProxyGuidReleaseRegistry>(sp => sp.GetRequiredService<DurableReleaseLookup>());
 
 // ClassifierPollingWorker is the BackgroundService that drives ClassifierWorker (a plain Scoped
 // type): it snapshots InMemoryReleaseLookup each cycle and runs classification + (AC26b/R17)
@@ -342,7 +344,7 @@ builder.Services.AddHostedService(sp => new ClassifierPollingWorker(
     sp.GetRequiredService<AiModelIdentity>(),
     sp.GetRequiredService<TimeProvider>(),
     logger: sp.GetRequiredService<ILogger<ClassifierPollingWorker>>()));
-builder.Services.AddSingleton<IReleaseLookup>(sp => sp.GetRequiredService<InMemoryReleaseLookup>());
+builder.Services.AddScoped<IReleaseLookup>(sp => sp.GetRequiredService<DurableReleaseLookup>());
 
 // Inbound Torznab/Newznab client apikey (M1-9, security-hardened). Distinct from
 // Arbitarr:Sources:NzbHydra:ApiKey (the upstream NZBHydra2 credential Arbitarr uses to call out)
@@ -608,6 +610,7 @@ app.MapGet("/torznab/api", async (
     PaginationSnapshotService snapshotService,
     FilterStage filterStage,
     InMemoryReleaseLookup releaseLookup,
+    IProxyGuidReleaseRegistry proxyGuidRegistry,
     RecentSearchLog recentSearchLog,
     Arbitarr.Core.Diagnostics.IEventSink eventSink,
     IReadOnlyList<IUpstreamSource> sources,
@@ -636,6 +639,7 @@ app.MapGet("/torznab/api", async (
         snapshotService,
         filterStage,
         releaseLookup,
+        proxyGuidRegistry,
         recentSearchLog,
         eventSink,
         request,
@@ -665,6 +669,7 @@ app.MapGet("/newznab/api", async (
     PaginationSnapshotService snapshotService,
     FilterStage filterStage,
     InMemoryReleaseLookup releaseLookup,
+    IProxyGuidReleaseRegistry proxyGuidRegistry,
     RecentSearchLog recentSearchLog,
     Arbitarr.Core.Diagnostics.IEventSink eventSink,
     IReadOnlyList<IUpstreamSource> sources,
@@ -693,6 +698,7 @@ app.MapGet("/newznab/api", async (
         snapshotService,
         filterStage,
         releaseLookup,
+        proxyGuidRegistry,
         recentSearchLog,
         eventSink,
         request,

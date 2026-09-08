@@ -16,6 +16,7 @@ namespace Arbitarr.Data.Maintenance;
 /// (<see cref="Arbitarr.Core.Settings.PrunePredicates.IsAiVerdictCacheEntryPrunable"/>) with the
 /// row-ceiling LRU trim (M5 security review, MED).
 /// </param>
+/// <param name="ProxyGuidReleaseRowsPruned">Expired durable download-proxy registrations removed.</param>
 /// <param name="EventRowsPruned">
 /// Rows removed from the shared event store (#55), totalled across every kind. Retention there is
 /// per-KIND and lives in <see cref="Arbitarr.Data.Events.EventRetentionPolicy"/> (decisions are kept
@@ -46,6 +47,7 @@ public sealed record MaintenanceJobResult(
     int MetadataCacheRowsPruned,
     int SuppressionAuditLogRowsPruned,
     int AiVerdictCacheRowsPruned,
+    int ProxyGuidReleaseRowsPruned,
     int EventRowsPruned,
     int ExpiredSessionRowsPruned,
     bool VacuumRan);

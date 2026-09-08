@@ -116,7 +116,7 @@ public sealed class SearchEndpointFilterResolvabilityTests : IDisposable
         Link = new Uri("https://example.invalid/1"),
     };
 
-    private static async Task<(IReadOnlyList<RenderedRelease> Releases, string ProxyGuid, InMemoryReleaseLookup Lookup)> RunSearchAsync(
+    private static async Task<(IReadOnlyList<RenderedRelease> Releases, string ProxyGuid, InMemoryReleaseLookup Lookup, DurableReleaseLookup DurableLookup)> RunSearchAsync(
         ArbitarrDbContext context,
         ReleaseCandidate candidate)
     {
@@ -131,6 +131,7 @@ public sealed class SearchEndpointFilterResolvabilityTests : IDisposable
             context,
             time);
         var lookup = new InMemoryReleaseLookup();
+        var durableLookup = new DurableReleaseLookup(context, time);
 
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Scheme = "https";
@@ -148,6 +149,7 @@ public sealed class SearchEndpointFilterResolvabilityTests : IDisposable
             snapshotService,
             filterStage,
             lookup,
+            durableLookup,
             new RecentSearchLog(),
             NullEventSink.Instance,
             httpContext.Request,
@@ -157,7 +159,7 @@ public sealed class SearchEndpointFilterResolvabilityTests : IDisposable
         var merged = await mergeStage.MergeAsync(new SearchQuery("movie", Array.Empty<int>(), 100, 0));
         var filtered = await filterStage.ApplyAsync(merged.Releases, "movie");
 
-        return (filtered, expectedProxyGuid, lookup);
+        return (filtered, expectedProxyGuid, lookup, durableLookup);
     }
 
     [Fact]
@@ -167,11 +169,12 @@ public sealed class SearchEndpointFilterResolvabilityTests : IDisposable
         await SeedDenyRuleProfileAsync(context);
         await SetShadowModeAsync(context, shadowMode: false);
 
-        var (releases, proxyGuid, lookup) = await RunSearchAsync(context, DenyMatchedCandidate());
+        var (releases, proxyGuid, lookup, durableLookup) = await RunSearchAsync(context, DenyMatchedCandidate());
 
         Assert.Empty(releases);
         var resolved = await lookup.FindAsync(proxyGuid);
         Assert.Null(resolved);
+        Assert.Null(await durableLookup.FindAsync(proxyGuid));
     }
 
     [Fact]
@@ -181,12 +184,13 @@ public sealed class SearchEndpointFilterResolvabilityTests : IDisposable
         await SeedDenyRuleProfileAsync(context);
         await SetShadowModeAsync(context, shadowMode: true);
 
-        var (releases, proxyGuid, lookup) = await RunSearchAsync(context, DenyMatchedCandidate());
+        var (releases, proxyGuid, lookup, durableLookup) = await RunSearchAsync(context, DenyMatchedCandidate());
 
         var release = Assert.Single(releases);
         Assert.NotNull(release.SuppressionAnnotation);
         var resolved = await lookup.FindAsync(proxyGuid);
         Assert.NotNull(resolved);
         Assert.Equal(proxyGuid, resolved!.ProxyGuid);
+        Assert.NotNull(await durableLookup.FindAsync(proxyGuid));
     }
 }

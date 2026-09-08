@@ -502,4 +502,32 @@ public sealed class MaintenanceJobTests : IDisposable
             Assert.Equal(1, result.EventRowsPruned);
         }
     }
+
+    [Fact]
+    public async Task RunAsync_PrunesExpiredProxyGuidReleaseRows()
+    {
+        using (var context = CreateContext())
+        {
+            context.Database.Migrate();
+            context.ProxyGuidReleaseEntries.Add(new ProxyGuidReleaseEntry
+            {
+                ProxyGuid = "expired-proxy-guid",
+                SourceName = "source",
+                CandidateJson = "{}",
+                ExpiresAt = Now,
+            });
+            await context.SaveChangesAsync();
+        }
+
+        using (var context = CreateContext())
+        {
+            var result = await new MaintenanceJob(context, _timeProvider).RunAsync(Settings(TimeSpan.FromDays(7)));
+            Assert.Equal(1, result.ProxyGuidReleaseRowsPruned);
+        }
+
+        using (var context = CreateContext())
+        {
+            Assert.Empty(context.ProxyGuidReleaseEntries);
+        }
+    }
 }

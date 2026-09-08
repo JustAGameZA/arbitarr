@@ -35,6 +35,7 @@ public static class SearchEndpoint
         PaginationSnapshotService snapshotService,
         FilterStage filterStage,
         InMemoryReleaseLookup releaseLookup,
+        IProxyGuidReleaseRegistry proxyGuidRegistry,
         RecentSearchLog recentSearchLog,
         IEventSink eventSink,
         HttpRequest request,
@@ -45,7 +46,7 @@ public static class SearchEndpoint
         int? episode = null,
         string? clientName = null)
     {
-        var (result, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, eventSink, clientName, cancellationToken).ConfigureAwait(false);
+        var (result, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, proxyGuidRegistry, recentSearchLog, eventSink, clientName, cancellationToken).ConfigureAwait(false);
         if (rateLimited)
         {
             var errorXml = TorznabXmlWriter.WriteError(RateLimitErrorCode, "Request limit reached");
@@ -66,6 +67,7 @@ public static class SearchEndpoint
         PaginationSnapshotService snapshotService,
         FilterStage filterStage,
         InMemoryReleaseLookup releaseLookup,
+        IProxyGuidReleaseRegistry proxyGuidRegistry,
         RecentSearchLog recentSearchLog,
         IEventSink eventSink,
         HttpRequest request,
@@ -76,7 +78,7 @@ public static class SearchEndpoint
         int? episode = null,
         string? clientName = null)
     {
-        var (result, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, eventSink, clientName, cancellationToken).ConfigureAwait(false);
+        var (result, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, proxyGuidRegistry, recentSearchLog, eventSink, clientName, cancellationToken).ConfigureAwait(false);
         if (rateLimited)
         {
             var errorXml = NewznabXmlWriter.WriteError(RateLimitErrorCode, "Request limit reached");
@@ -100,6 +102,7 @@ public static class SearchEndpoint
         PaginationSnapshotService snapshotService,
         FilterStage filterStage,
         InMemoryReleaseLookup releaseLookup,
+        IProxyGuidReleaseRegistry proxyGuidRegistry,
         RecentSearchLog recentSearchLog,
         IEventSink eventSink,
         string? clientName,
@@ -127,6 +130,7 @@ public static class SearchEndpoint
         // Shadow-mode-suppressed releases stay in `filtered` (annotated), so they stay
         // downloadable.
         releaseLookup.RecordRange(filtered);
+        await proxyGuidRegistry.RecordRangeAsync(filtered, cancellationToken).ConfigureAwait(false);
 
         stopwatch.Stop();
 

@@ -1,4 +1,5 @@
 using System.Net;
+using Arbitarr.Api.Search;
 using Arbitarr.Data;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
@@ -61,6 +62,7 @@ public sealed class StartupSchemaProvisioningTests : IDisposable
         Assert.Contains("SourceHealthRecords", tableNames);
         Assert.Contains("Settings", tableNames);
         Assert.Contains("SuppressionAuditLogEntries", tableNames);
+        Assert.Contains("ProxyGuidReleaseEntries", tableNames);
 
         // Also confirm the EF migrations-history table records the InitialCreate migration as
         // applied, which is what Database.Migrate() being idempotent on a re-run depends on.
@@ -68,6 +70,23 @@ public sealed class StartupSchemaProvisioningTests : IDisposable
         var dbContext = scope.ServiceProvider.GetRequiredService<ArbitarrDbContext>();
         var appliedMigrations = await dbContext.Database.GetAppliedMigrationsAsync();
         Assert.Contains(appliedMigrations, m => m.Contains("InitialCreate", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(appliedMigrations, m => m.Contains("AddProxyGuidReleaseRegistry", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Host_ResolvesDurableReleaseLookup_InEachRequestScope()
+    {
+        Environment.SetEnvironmentVariable("ARBITARR_CONFIG_DIR", _configDirectory);
+        using var factory = new WebApplicationFactory<Program>();
+        using var firstScope = factory.Services.CreateScope();
+        using var secondScope = factory.Services.CreateScope();
+
+        var first = firstScope.ServiceProvider.GetRequiredService<IReleaseLookup>();
+        var second = secondScope.ServiceProvider.GetRequiredService<IReleaseLookup>();
+
+        Assert.IsType<DurableReleaseLookup>(first);
+        Assert.IsType<DurableReleaseLookup>(second);
+        Assert.NotSame(first, second);
     }
 
     public void Dispose()

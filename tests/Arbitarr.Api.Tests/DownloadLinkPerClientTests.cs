@@ -76,6 +76,7 @@ public sealed class DownloadLinkPerClientTests : IDisposable
             snapshotService,
             filterStage,
             releaseLookup,
+            releaseLookup,
             new RecentSearchLog(),
             NullEventSink.Instance,
             httpContext.Request,

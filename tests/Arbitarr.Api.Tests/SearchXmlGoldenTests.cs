@@ -133,6 +133,7 @@ public sealed class SearchXmlGoldenTests : IDisposable
             snapshotService,
             filterStage,
             releaseLookup,
+            releaseLookup,
             new RecentSearchLog(),
             NullEventSink.Instance,
             httpContext.Request,

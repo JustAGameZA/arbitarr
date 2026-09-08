@@ -63,6 +63,9 @@ public sealed class ArbitarrDbContext : DbContext
 
     public DbSet<VerdictCacheEntry> VerdictCacheEntries => Set<VerdictCacheEntry>();
 
+    /// <summary>Durable download-proxy registrations retained for their fixed seven-day lifetime.</summary>
+    public DbSet<ProxyGuidReleaseEntry> ProxyGuidReleaseEntries => Set<ProxyGuidReleaseEntry>();
+
     /// <summary>
     /// The shared event store (#55 step 1 / #54's decision store — plan §2). Nothing writes to or
     /// reads from this set outside of <see cref="Events.EventRepository"/> and its tests yet.
@@ -231,6 +234,15 @@ public sealed class ArbitarrDbContext : DbContext
             // M5 R17: rewritten title cached alongside the verdict. The bound is advisory on SQLite; it is
             // enforced in code by VerdictCacheLimits (producer + writer), which this must match.
             entity.Property(e => e.RewrittenTitle).HasMaxLength(VerdictCacheLimits.MaxRewrittenTitleLength);
+        });
+
+        modelBuilder.Entity<ProxyGuidReleaseEntry>(entity =>
+        {
+            entity.HasKey(e => e.ProxyGuid);
+            entity.HasIndex(e => e.ExpiresAt);
+            entity.Property(e => e.ProxyGuid).IsRequired();
+            entity.Property(e => e.SourceName).IsRequired().HasMaxLength(256);
+            entity.Property(e => e.CandidateJson).IsRequired();
         });
 
         modelBuilder.Entity<EventEntry>(entity =>

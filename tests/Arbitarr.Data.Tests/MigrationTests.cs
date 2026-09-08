@@ -62,6 +62,7 @@ public sealed class MigrationTests : IDisposable
             nameof(ArbitarrDbContext.CapsCacheEntries),
             nameof(ArbitarrDbContext.SourceHealthRecords),
             nameof(ArbitarrDbContext.SuppressionAuditLogEntries),
+            nameof(ArbitarrDbContext.ProxyGuidReleaseEntries),
             nameof(ArbitarrDbContext.Settings),
         };
 

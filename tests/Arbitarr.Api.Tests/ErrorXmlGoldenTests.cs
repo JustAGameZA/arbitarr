@@ -179,6 +179,7 @@ public sealed class ErrorXmlGoldenTests : IDisposable
             snapshotService,
             filterStage,
             releaseLookup,
+            releaseLookup,
             new RecentSearchLog(),
             NullEventSink.Instance,
             httpContext.Request,

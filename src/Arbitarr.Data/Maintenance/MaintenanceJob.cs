@@ -99,6 +99,9 @@ public sealed class MaintenanceJob
                 now, settings.AiVerdictCacheTtl, settings.AiVerdictCacheRowCeiling, cancellationToken)
             .ConfigureAwait(false);
 
+        var proxyGuidReleasesPruned = await PruneExpiredProxyGuidReleasesAsync(now, cancellationToken)
+            .ConfigureAwait(false);
+
         var eventsPruned = await PruneEventsAsync(cancellationToken).ConfigureAwait(false);
 
         var expiredSessionsPruned = await PruneExpiredSessionsAsync(
@@ -112,6 +115,7 @@ public sealed class MaintenanceJob
             MetadataCacheRowsPruned: metadataCachePruned,
             SuppressionAuditLogRowsPruned: suppressionAuditPruned,
             AiVerdictCacheRowsPruned: aiVerdictCachePruned,
+            ProxyGuidReleaseRowsPruned: proxyGuidReleasesPruned,
             EventRowsPruned: eventsPruned,
             ExpiredSessionRowsPruned: expiredSessionsPruned,
             VacuumRan: true);
@@ -209,6 +213,21 @@ public sealed class MaintenanceJob
         prunable.AddRange(overCeiling);
 
         _dbContext.VerdictCacheEntries.RemoveRange(prunable);
+        await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return prunable.Count;
+    }
+
+    private async Task<int> PruneExpiredProxyGuidReleasesAsync(DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        // SQLite cannot translate DateTimeOffset comparisons; match the established maintenance
+        // pattern by loading candidates and applying the fixed expiry boundary client-side.
+        var candidates = await _dbContext.ProxyGuidReleaseEntries
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var prunable = candidates.Where(entry => entry.ExpiresAt <= now).ToList();
+
+        _dbContext.ProxyGuidReleaseEntries.RemoveRange(prunable);
         await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return prunable.Count;
     }

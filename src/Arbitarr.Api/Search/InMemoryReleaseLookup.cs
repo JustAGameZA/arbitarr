@@ -18,7 +18,7 @@ namespace Arbitarr.Api.Search;
 /// entry (by insertion order) is evicted before a new one is added, and entries additionally expire
 /// after <see cref="EntryTtl"/> regardless of capacity pressure.
 /// </summary>
-public sealed class InMemoryReleaseLookup : IReleaseLookup
+public sealed class InMemoryReleaseLookup : IProxyGuidReleaseRegistry
 {
     /// <summary>Hard cap on the number of distinct proxy-guid entries retained at once.</summary>
     public const int MaxEntries = 10_000;
@@ -63,6 +63,12 @@ public sealed class InMemoryReleaseLookup : IReleaseLookup
         {
             Record(release);
         }
+    }
+
+    public Task RecordRangeAsync(IEnumerable<RenderedRelease> releases, CancellationToken cancellationToken = default)
+    {
+        RecordRange(releases);
+        return Task.CompletedTask;
     }
 
     public Task<RenderedRelease?> FindAsync(string proxyGuid, CancellationToken cancellationToken = default)
