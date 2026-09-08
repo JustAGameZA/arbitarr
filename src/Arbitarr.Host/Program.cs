@@ -273,14 +273,26 @@ builder.Services.AddHostedService(sp => new RefreshWorker(
 // shared circuit breaker (keyed by source name "Ollama", same IAsyncCircuitBreaker instance every
 // other adapter uses). Base URL defaults to the in-cluster service name, never a LAN IP; tests use
 // http://ollama.example.invalid.
+//
+// #89: OllamaOptions.BaseUrl is now only the STARTUP FALLBACK, not the live address. The value in
+// force is the OllamaBaseUrl settings row, resolved per call through OllamaBaseUrlResolver so a
+// change on the Settings page takes effect without a restart. This singleton still carries it
+// because Model/KeepAlive have no settings surface yet and the record needs a base URL, and because
+// an OllamaClient constructed without a resolver (every existing test) must still work.
 builder.Services.AddSingleton(_ =>
 {
     var section = builder.Configuration.GetSection("Arbitarr:Ai:Ollama");
-    var baseUrlRaw = section["BaseUrl"] ?? "http://ollama:11434";
+    var baseUrlRaw = section["BaseUrl"] ?? Arbitarr.Data.Settings.OllamaBaseUrlResolver.DefaultBaseUrl;
     var model = section["Model"] ?? "qwen2.5:7b-instruct-q4_K_M";
     var keepAlive = section["KeepAlive"] ?? "-1";
     return new OllamaOptions(new Uri(baseUrlRaw), model, keepAlive);
 });
+
+// #89: the process-wide cache of the base URL in force. Singleton because it must outlive a
+// request — the whole point is that a write in one request is seen by the next. The settings write
+// path invalidates it; OllamaBaseUrlResolver (scoped, it needs the DbContext) repopulates it.
+builder.Services.AddSingleton<Arbitarr.Core.Ai.OllamaBaseUrlCache>();
+builder.Services.AddScoped<Arbitarr.Data.Settings.OllamaBaseUrlResolver>();
 builder.Services.AddSingleton(sp =>
 {
     var section = builder.Configuration.GetSection("Arbitarr:Ai");
@@ -300,7 +312,16 @@ builder.Services.AddScoped<IOllamaClient>(sp =>
     var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
     var httpClient = httpClientFactory.CreateClient(nameof(OllamaClient));
     var circuitBreaker = sp.GetRequiredService<IAsyncCircuitBreaker>();
-    return new OllamaClient(options, httpClient, circuitBreaker);
+    // #89: the base URL is resolved PER CALL, from the database, so an operator changing it on the
+    // Settings page does not have to restart the host. The resolver is captured from THIS scope,
+    // which is correct because IOllamaClient is itself scoped; the cache behind it is the singleton
+    // that carries a write across scopes.
+    var resolver = sp.GetRequiredService<Arbitarr.Data.Settings.OllamaBaseUrlResolver>();
+    return new OllamaClient(
+        options,
+        httpClient,
+        circuitBreaker,
+        async ct => new Uri(await resolver.GetAsync(ct)));
 });
 builder.Services.AddScoped<ReleaseClassifier>();
 builder.Services.AddScoped<IVerdictCacheReader, VerdictCacheReader>();
@@ -445,6 +466,22 @@ builder.Services.AddScoped<SourceRepository>();
 builder.Services.AddHttpClient<SourceConnectivityProber>()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 
+// #89: the AI backend's connectivity probe. AllowAutoRedirect is disabled for the same SEC-M5 SSRF
+// reason as the OllamaClient registration above -- a misconfigured address answering 30x must not
+// make this process issue a request at a host nobody configured.
+//
+// NO .RemoveAllLoggers() HERE, DELIBERATELY, and the reason is worth stating because the webhook
+// client twenty lines below does need it. IHttpClientFactory's logging handler writes the FULL
+// absolute request URI at Information, which since #65 lands in the persistent log store served at
+// GET /api/admin/logs. That is a durable credential leak when the URI IS the credential (a webhook
+// token in the path) -- but Ollama has NO authentication, this probe sends no key, and the settings
+// write path rejects a base URL carrying userinfo (SettingsValidator.ValidateOllamaBaseUrl), so
+// there is no secret in this URI to leak. Logging the address an operator asked us to test is
+// useful rather than dangerous. If that validation is ever relaxed, this comment stops being true
+// and the registration needs .RemoveAllLoggers().
+builder.Services.AddHttpClient<Arbitarr.Core.Ai.OllamaConnectivityProber>()
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+
 
 // #55 (foundation shared with #54): the shared event store. Step 1 registered this while nothing
 // read or wrote it; steps 2-7 now do both — ScopedEventSink below writes through it, and
@@ -554,6 +591,16 @@ using (var scope = app.Services.CreateScope())
         resolvedSourceConfiguration,
         nzbHydraEnvironment,
         app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Arbitarr.Host.Sources"));
+
+    // #89: the same seed-once-then-DB ruling, applied to the Ollama base URL. Must run after
+    // Migrate() (the Settings table may not exist before it) and before app.Run(). Unlike the
+    // source resolution above, nothing is published to a singleton here: the value is read per use
+    // through OllamaBaseUrlResolver, which is what makes a later change take effect without a
+    // restart. This call only ensures the row exists and warns about a divergent environment value.
+    await Arbitarr.Host.Ai.OllamaBaseUrlSeeder.SeedAsync(
+        dbContext,
+        builder.Configuration.GetSection("Arbitarr:Ai:Ollama")["BaseUrl"],
+        app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Arbitarr.Host.Ai"));
 }
 
 app.UseDefaultFiles();
@@ -599,6 +646,9 @@ AdminApiKeyEndpoints.Map(app);
 AuthEndpoints.Map(app);
 AdminSourceEndpoints.Map(app);
 AdminNotificationEndpoints.Map(app);
+// #89: the AI backend's own admin surface (read/write/probe the Ollama base URL). Separate from
+// AdminSettingsEndpoints because the value is off SettingsCatalog.Entries -- see AdminAiEndpoints.
+AdminAiEndpoints.Map(app);
 AdminRuleEndpoints.Map(app);
 AdHocSearchEndpoint.Map(app);
 MatchExplanationEndpoint.Map(app);

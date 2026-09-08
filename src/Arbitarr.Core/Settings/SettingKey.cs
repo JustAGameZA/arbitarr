@@ -129,4 +129,23 @@ public enum SettingKey
     /// failure modes — an abandoned browser, and a credential that got out — and both are needed.</para>
     /// </summary>
     SessionAbsoluteTimeout,
+
+    /// <summary>
+    /// #89: base URL of the Ollama instance the AI layer classifies against.
+    ///
+    /// <para><b>Seeded once from <c>Arbitarr:Ai:Ollama:BaseUrl</c>, then the database is
+    /// authoritative</b> — the same ruling #53 settled for sources (see
+    /// <c>Arbitarr.Host.Ai.OllamaBaseUrlSeeder</c> for the full reasoning and the divergence
+    /// warning). After the first start the environment value is inert.</para>
+    ///
+    /// <para><b>Deliberately NOT in <see cref="SettingsCatalog.Entries"/></b>, and for a different
+    /// reason than <see cref="AdminApiKey"/>: this value is not a secret and may be read back
+    /// freely. It is off the catalog because it has its OWN section on the Settings surface, with a
+    /// connectivity probe the generic catalog row cannot offer; a catalog entry would render it a
+    /// second time as an unexplained text field beside the section that already owns it. Its write
+    /// path is <c>PUT /api/admin/ai/ollama</c> (<c>AdminAiEndpoints</c>), which reaches
+    /// <see cref="SettingsValidator.ValidateOllamaBaseUrl"/> through the same repository switch
+    /// every other setting takes.</para>
+    /// </summary>
+    OllamaBaseUrl,
 }

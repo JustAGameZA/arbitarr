@@ -30,15 +30,33 @@ public sealed class OllamaClient : IOllamaClient
     private readonly HttpClient _httpClient;
     private readonly IAsyncCircuitBreaker _circuitBreaker;
     private readonly SemaphoreSlim _inFlightGate;
+    private readonly Func<CancellationToken, ValueTask<Uri>> _resolveBaseUrl;
 
-    public OllamaClient(OllamaOptions options, HttpClient httpClient, IAsyncCircuitBreaker circuitBreaker)
+    /// <param name="resolveBaseUrl">
+    /// #89: resolves the base URL PER CALL rather than pinning it at construction, which is what
+    /// makes a base-URL change take effect without restarting the host. Optional: when omitted the
+    /// address falls back to <see cref="OllamaOptions.BaseUrl"/>, which is the shape every existing
+    /// test constructs and the honest behaviour for a caller that has no settings store behind it.
+    ///
+    /// <para><b>Why the URL is no longer set as <see cref="HttpClient.BaseAddress"/>.</b> That
+    /// property is write-once in practice (it may not be changed after the first request), and the
+    /// client here comes from <c>IHttpClientFactory</c>, whose handlers are pooled and reused across
+    /// scopes — so a BaseAddress captured on one scope's first call would outlive the setting it was
+    /// read from and silently pin the old address. Building an ABSOLUTE request URI per call has no
+    /// such lifetime, and it is why <c>ClassifyAsync</c> posts to a resolved absolute URI rather
+    /// than to the relative "/api/chat" it used before.</para>
+    /// </param>
+    public OllamaClient(
+        OllamaOptions options,
+        HttpClient httpClient,
+        IAsyncCircuitBreaker circuitBreaker,
+        Func<CancellationToken, ValueTask<Uri>>? resolveBaseUrl = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _circuitBreaker = circuitBreaker ?? throw new ArgumentNullException(nameof(circuitBreaker));
         _inFlightGate = new SemaphoreSlim(OllamaOptions.MaxInFlight, OllamaOptions.MaxInFlight);
-
-        _httpClient.BaseAddress ??= options.BaseUrl;
+        _resolveBaseUrl = resolveBaseUrl ?? (_ => ValueTask.FromResult(options.BaseUrl));
 
         // M5 security review (MED): bound the response body size the underlying handler will
         // buffer — Ollama is local/trusted infrastructure, but a misbehaving or misconfigured
@@ -71,8 +89,15 @@ public sealed class OllamaClient : IOllamaClient
 
             try
             {
+                // #89: resolved here, inside the call, so an operator who changes the base URL in
+                // the settings UI has the NEXT classification use it. Resolution happens before the
+                // circuit breaker records anything, and a failure to resolve is a genuine call
+                // failure like any other.
+                var baseUrl = await _resolveBaseUrl(timeoutCts.Token).ConfigureAwait(false);
+                var chatUri = BuildChatUri(baseUrl);
+
                 using var response = await _httpClient
-                    .PostAsJsonAsync("/api/chat", request, JsonOptions, timeoutCts.Token)
+                    .PostAsJsonAsync(chatUri, request, JsonOptions, timeoutCts.Token)
                     .ConfigureAwait(false);
                 response.EnsureSuccessStatusCode();
 
@@ -102,6 +127,21 @@ public sealed class OllamaClient : IOllamaClient
             _inFlightGate.Release();
         }
     }
+
+    /// <summary>
+    /// Appends <c>/api/chat</c> to the configured base URL, PRESERVING any path it is mounted under
+    /// — an Ollama behind a reverse proxy at <c>/ollama</c> must be called at
+    /// <c>/ollama/api/chat</c>. <c>new Uri(baseUrl, "/api/chat")</c> would silently discard that
+    /// prefix, since a leading slash makes the relative part root-anchored; this is the same
+    /// construction <c>OllamaConnectivityProber</c> uses, so the probe and the classifier cannot
+    /// disagree about which address they are talking to.
+    /// </summary>
+    private static Uri BuildChatUri(Uri baseUrl) =>
+        new UriBuilder(baseUrl)
+        {
+            Path = baseUrl.AbsolutePath.TrimEnd('/') + "/api/chat",
+            Query = string.Empty,
+        }.Uri;
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 

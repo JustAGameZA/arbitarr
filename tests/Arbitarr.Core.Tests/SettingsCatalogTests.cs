@@ -27,6 +27,24 @@ public sealed class SettingsCatalogTests
         Assert.DoesNotContain(SettingsCatalog.Entries, e => e.Key == SettingKey.AdminApiKey);
     }
 
+    /// <summary>
+    /// #89: the Ollama base URL is a SettingKey with a validator arm and a repository arm, but it
+    /// is deliberately off the catalog — for a different reason than AdminApiKey above. It is not a
+    /// secret; it is excluded because it owns its own Settings section with a connectivity probe
+    /// (AdminAiEndpoints), and a catalog entry would render it a second time as an unexplained text
+    /// field beside the section that already owns it.
+    ///
+    /// <para>This assertion is load-bearing in both directions: while the key is off the catalog,
+    /// PUT /api/admin/settings/OllamaBaseUrl is a 404 and AdminSettingsEndpoints' CurrentValue
+    /// switch needs no arm for it. Adding a catalog entry without also adding that arm throws
+    /// mid-serialization and breaks the WHOLE settings page, not just this row.</para>
+    /// </summary>
+    [Fact]
+    public void OllamaBaseUrl_is_never_in_the_catalog()
+    {
+        Assert.DoesNotContain(SettingsCatalog.Entries, e => e.Key == SettingKey.OllamaBaseUrl);
+    }
+
     [Fact]
     public void AiKillSwitch_is_present_and_boolean()
     {
