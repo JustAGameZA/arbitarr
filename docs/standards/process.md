@@ -113,8 +113,12 @@ implementation writes one value to all of them.
 build can still pass if it is stale. Before pushing a rebase:
 
 ```bash
-git grep -n -E '^(<{7}|={7}|>{7})( |$)'
+git grep -n -a -P '^(<{7}|={7}|>{7})( |\r?$)'
 ```
+
+Use `-a` (treat as text; CRLF files can trip binary detection) and `-P` (Perl regex; POSIX
+`-E` does not interpret the `\r` escape, so `-E` silently fails to match a bare `=======`
+line in a CRLF file such as `Program.cs`, `routes.tsx` or `Settings.tsx`).
 
 ...and rebuild fresh.
 
