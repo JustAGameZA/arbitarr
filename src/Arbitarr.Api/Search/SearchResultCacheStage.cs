@@ -98,7 +98,8 @@ public sealed class SearchResultCacheStage
 
     /// <summary>
     /// Resolves the two-age cache key for <paramref name="query"/>: provider-id identity when
-    /// available (M3-9 collapse), title-set fallback otherwise. Categories are part of the key.
+    /// available (M3-9 collapse), title-set fallback otherwise. Categories and the inbound protocol
+    /// (#99) are part of the key.
     /// </summary>
     public static string BuildQueryKey(SearchQuery query)
     {
@@ -107,7 +108,17 @@ public sealed class SearchResultCacheStage
         var identity = TryBuildIdentity(query.TvdbId, query.TmdbId, title: query.QueryText)
             ?? new SeriesIdentity(TvdbId: null, TmdbId: null, PrimaryTitle: BoundedFallbackText(query.QueryText), AlternateTitles: Array.Empty<string>());
         var candidate = BuildNumbering(query.Season, query.Episode);
-        return SearchCacheKeyBuilder.Build(identity, candidate, query.Categories, DefaultProfile);
+
+        // #99: the protocol is part of the key. Since the two families are now issued against
+        // different upstream endpoints (and NZBHydra2's torznab endpoint returns no usenet results
+        // at all), one q/identity legitimately has two different answers. Sharing one row would let
+        // a Torznab search's all-torrent set be served to a Newznab caller — #99's own bug, moved
+        // from the URL into the cache. It rides on the profile discriminator rather than as a new
+        // Build() parameter because that is exactly what profile is for (a scoping token that keeps
+        // otherwise-identical queries in separate rows), and reshaping the key's parameter list for
+        // this would touch every caller for no added separation.
+        var profile = $"{DefaultProfile}+{query.Protocol}";
+        return SearchCacheKeyBuilder.Build(identity, candidate, query.Categories, profile);
     }
 
     private static string BoundedFallbackText(string? queryText)

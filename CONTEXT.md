@@ -22,6 +22,13 @@ Sonarr/Radarr and NZBHydra2 speaking Torznab/Newznab on *both* sides, and its
 job is to answer whether a release actually is the episode that was asked for
 before results pass downstream.
 
+**Protocol.** Which of those two families a *request* belongs to — the
+`/torznab/api` route or the `/newznab/api` route — carried on `SearchQuery` as
+`SearchProtocol` (`src/Arbitarr.Core/Sources/SearchProtocol.cs`). It selects the
+upstream endpoint, because NZBHydra2 reads its `/torznab/api` as a torrent search
+and excludes usenet indexers from it. Distinct from `ProtocolKind`, which says
+what a returned *release* is; that type's doc comment carries the distinction.
+
 **Identity.** What a release *is*, independent of its display title —
 `SeriesIdentity` (`src/Arbitarr.Core.Identity/SeriesIdentity.cs`): a provider ID
 (TVDB/TMDB) plus every title the series is legitimately known by. Identity is
@@ -122,7 +129,7 @@ Conflating these is the most common misreading of the configuration surface.
 | Key | Direction | Purpose |
 |---|---|---|
 | **Source API key** | outbound | Arbitarr authenticating *to* NZBHydra2 |
-| **Client key** | inbound | Sonarr/Radarr authenticating *to* Arbitarr, on Torznab routes |
+| **Client key** | inbound | Sonarr/Radarr authenticating *to* Arbitarr, on the indexer routes (both protocols) |
 | **Admin key** | inbound | Gating admin-**mutating** routes only, via `X-Admin-Api-Key` |
 
 A fourth inbound credential joined these in #44: an **operator session**. It is
@@ -244,8 +251,9 @@ availability fallback — stale, but better than nothing when upstream is down.
 
 ## Caps aggregation
 
-When Arbitarr fronts several sources, the advertised Torznab `caps` is a merge,
-not a passthrough, and the merge rule differs per field:
+When Arbitarr fronts several sources, the advertised `caps` is a merge, not a
+passthrough, and the merge rule differs per field. The merge runs per protocol —
+each family's caps come from the upstream endpoint that family's searches use:
 
 - **Categories: unioned** — offered if *any* source supports it. Anime search is
   part of that union: `SupportsAnimeSearch` is `true` if any contributing source

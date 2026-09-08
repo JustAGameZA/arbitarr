@@ -42,7 +42,7 @@ internal sealed class SecondFakeUpstreamSource : IUpstreamSource
         return Task.FromResult(_searchResults);
     }
 
-    public Task<SourceCaps> GetCapsAsync(CancellationToken cancellationToken = default)
+    public Task<SourceCaps> GetCapsAsync(SearchProtocol protocol, CancellationToken cancellationToken = default)
     {
         return Task.FromResult(new SourceCaps(
             SupportedCategories: Array.Empty<int>(),

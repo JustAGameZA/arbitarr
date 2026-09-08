@@ -39,6 +39,7 @@ public sealed class CapsAggregator
     /// </summary>
     public async Task<SourceCaps> AggregateAsync(
         IReadOnlyList<IUpstreamSource> sources,
+        SearchProtocol protocol,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(sources);
@@ -47,7 +48,7 @@ public sealed class CapsAggregator
 
         foreach (var source in sources)
         {
-            var caps = await FetchWithFallbackAsync(source, cancellationToken).ConfigureAwait(false);
+            var caps = await FetchWithFallbackAsync(source, protocol, cancellationToken).ConfigureAwait(false);
             if (caps is not null)
             {
                 perSourceCaps.Add(caps);
@@ -108,12 +109,41 @@ public sealed class CapsAggregator
             SupportsAnimeSearch: perSourceCaps.Any(c => c.SupportsAnimeSearch));
     }
 
-    private async Task<SourceCaps?> FetchWithFallbackAsync(IUpstreamSource source, CancellationToken cancellationToken)
+    /// <summary>
+    /// The last-known-good cache key for one source under one protocol family (#99).
+    ///
+    /// <para>
+    /// Scoped by protocol, not just by source name. Caps are now fetched per protocol, and
+    /// NZBHydra2 answers its two endpoints differently (the torznab endpoint advertises only its
+    /// torrent indexers' categories). Keying on the source name alone would let a Torznab caps
+    /// fetch overwrite the Newznab last-known-good row and vice versa, so an upstream that went
+    /// down would be backfilled from the OTHER protocol's categories — a wrong answer that looks
+    /// like a working fallback. <see cref="ICapsCacheStore"/> treats the key as opaque, so this
+    /// needs no store or schema change.
+    /// </para>
+    ///
+    /// <para>
+    /// Public because it is the ONLY definition of the convention: anything that seeds or inspects
+    /// the store directly (a test pre-seeding a last-known-good row, say) has to agree with what
+    /// this type writes, and a second hand-built copy of the format would drift silently — the
+    /// seeded row would simply never be found, and the fallback it was meant to exercise would go
+    /// untested while still looking green.
+    /// </para>
+    /// </summary>
+    public static string CacheKey(string sourceName, SearchProtocol protocol) =>
+        $"{sourceName}#{protocol}";
+
+    private async Task<SourceCaps?> FetchWithFallbackAsync(
+        IUpstreamSource source,
+        SearchProtocol protocol,
+        CancellationToken cancellationToken)
     {
+        var cacheKey = CacheKey(source.Name, protocol);
+
         try
         {
-            var caps = await source.GetCapsAsync(cancellationToken).ConfigureAwait(false);
-            await _cacheStore.SaveAsync(source.Name, caps, cancellationToken).ConfigureAwait(false);
+            var caps = await source.GetCapsAsync(protocol, cancellationToken).ConfigureAwait(false);
+            await _cacheStore.SaveAsync(cacheKey, caps, cancellationToken).ConfigureAwait(false);
             return caps;
         }
         catch (Exception) when (cancellationToken.IsCancellationRequested is false)
@@ -121,7 +151,7 @@ public sealed class CapsAggregator
             // Fetch failed (exception, timeout, non-success surfaced as an exception by the
             // adapter) — fall back to the last-known-good cached caps for this source rather
             // than dropping it from the merge or contributing empty/default caps.
-            return await _cacheStore.GetLastKnownGoodAsync(source.Name, cancellationToken).ConfigureAwait(false);
+            return await _cacheStore.GetLastKnownGoodAsync(cacheKey, cancellationToken).ConfigureAwait(false);
         }
     }
 }

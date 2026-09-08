@@ -154,7 +154,7 @@ public class CapsAggregatorTests
         public Task<IReadOnlyList<ReleaseCandidate>> SearchAsync(SearchQuery query, CancellationToken cancellationToken = default)
             => throw new NotImplementedException();
 
-        public Task<SourceCaps> GetCapsAsync(CancellationToken cancellationToken = default) => _getCaps();
+        public Task<SourceCaps> GetCapsAsync(SearchProtocol protocol, CancellationToken cancellationToken = default) => _getCaps();
 
         public Task<Stream> FetchDownloadAsync(ReleaseCandidate release, CancellationToken cancellationToken = default)
             => throw new NotImplementedException();
@@ -189,14 +189,14 @@ public class CapsAggregatorTests
             throw new HttpRequestException("simulated upstream failure");
         });
 
-        var firstResult = await aggregator.AggregateAsync(new[] { flakySource });
+        var firstResult = await aggregator.AggregateAsync(new[] { flakySource }, SearchProtocol.Torznab);
         Assert.Equal(1, callCount);
         Assert.Contains(5000, firstResult.SupportedCategories);
 
         // Step (c): the second aggregation call hits the failure path (callCount becomes 2,
         // proving GetCapsAsync was actually invoked and actually threw) — assert the merge
         // still reflects the source's last-known-good caps, not empty/default caps.
-        var secondResult = await aggregator.AggregateAsync(new[] { flakySource });
+        var secondResult = await aggregator.AggregateAsync(new[] { flakySource }, SearchProtocol.Torznab);
 
         Assert.Equal(2, callCount); // proves the failure path was genuinely exercised, not skipped
         Assert.Contains(5000, secondResult.SupportedCategories);
@@ -216,7 +216,7 @@ public class CapsAggregatorTests
             "never-worked",
             () => throw new TimeoutException("simulated timeout, never succeeded, nothing cached"));
 
-        var result = await aggregator.AggregateAsync(new[] { alwaysFailingSource });
+        var result = await aggregator.AggregateAsync(new[] { alwaysFailingSource }, SearchProtocol.Torznab);
 
         Assert.Empty(result.SupportedCategories);
         Assert.Equal(100, result.MaxPageSize);
@@ -230,7 +230,11 @@ public class CapsAggregatorTests
 
         // Pre-seed last-known-good caps for a source that will fail on this fetch cycle.
         var deadSourceCachedCaps = new SourceCaps(new[] { 2000 }, false, true, 40);
-        await cacheStore.SaveAsync("dead-source", deadSourceCachedCaps);
+        // Seeded under the aggregator's own key convention (#99 scopes it by protocol). Built via
+        // CapsAggregator.CacheKey rather than hand-formatted, so a change to the convention cannot
+        // leave this row unfindable while the test still passes vacuously.
+        await cacheStore.SaveAsync(
+            CapsAggregator.CacheKey("dead-source", SearchProtocol.Torznab), deadSourceCachedCaps);
 
         var deadSource = new FakeUpstreamSource(
             "dead-source",
@@ -240,7 +244,7 @@ public class CapsAggregatorTests
             "healthy-source",
             () => Task.FromResult(new SourceCaps(new[] { 5000 }, true, false, 50)));
 
-        var merged = await aggregator.AggregateAsync(new[] { deadSource, healthySource });
+        var merged = await aggregator.AggregateAsync(new[] { deadSource, healthySource }, SearchProtocol.Torznab);
 
         Assert.Contains(2000, merged.SupportedCategories); // from dead source's last-known-good
         Assert.Contains(5000, merged.SupportedCategories); // from the healthy source

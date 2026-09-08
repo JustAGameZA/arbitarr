@@ -8,7 +8,18 @@ namespace Arbitarr.Sources.NzbHydra;
 
 /// <summary>
 /// <see cref="IUpstreamSource"/> implementation backed by a real NZBHydra2 instance's
-/// Torznab-compatible <c>/torznab/api</c> (search) and <c>/api</c> (caps) endpoints.
+/// Newznab-compatible API, at whichever endpoint the inbound request's protocol selects:
+/// <c>{base}/torznab/api</c> for <see cref="SearchProtocol.Torznab"/> and <c>{base}/api</c> for
+/// <see cref="SearchProtocol.Newznab"/>. Search and caps both follow that rule.
+///
+/// <para>
+/// The endpoint is not cosmetic (#99). NZBHydra2 reads a request to <c>/torznab/api</c> as "a
+/// torrent search is requested" and excludes every usenet indexer from the selection, so issuing a
+/// Newznab caller's search there returns zero usenet results while still looking like a successful,
+/// empty search. The search type follows the same principle: <c>t=tvsearch</c> with
+/// <c>tvdbid</c>/<c>season</c>/<c>ep</c> and <c>t=movie</c> with <c>tmdbid</c> are sent as their own
+/// parameters when the query carries those ids, never folded into <c>q</c>.
+/// </para>
 ///
 /// <para>
 /// Upstream fan-out: NZBHydra2 caps a single request at <see cref="NzbHydraSourceOptions.MaxUpstreamPageSize"/>
@@ -104,14 +115,14 @@ public sealed class NzbHydraSource : IUpstreamSource
         return results;
     }
 
-    public async Task<SourceCaps> GetCapsAsync(CancellationToken cancellationToken = default)
+    public async Task<SourceCaps> GetCapsAsync(SearchProtocol protocol, CancellationToken cancellationToken = default)
     {
         if (!await _circuitBreaker.CanCallAsync(Name, cancellationToken).ConfigureAwait(false))
         {
             return new SourceCaps(Array.Empty<int>(), false, false, null);
         }
 
-        var uri = BuildCapsUri();
+        var uri = BuildCapsUri(protocol);
 
         try
         {
@@ -187,12 +198,43 @@ public sealed class NzbHydraSource : IUpstreamSource
         }
     }
 
+    /// <summary>
+    /// The upstream path for an inbound protocol family (#99). NZBHydra2 does not treat these two
+    /// as aliases: it reads <c>/torznab/api</c> as "a torrent search is requested" and drops every
+    /// usenet indexer from the selection, so a Newznab caller routed here receives nothing from
+    /// usenet. Selecting the path from the inbound protocol is what makes the usenet half of the
+    /// broker work at all.
+    /// </summary>
+    private static string UpstreamPath(SearchProtocol protocol) => protocol switch
+    {
+        SearchProtocol.Torznab => "torznab/api",
+        SearchProtocol.Newznab => "api",
+        // No default arm that guesses: SearchProtocol has exactly two members and no zero value, so
+        // a new one must be routed here deliberately rather than silently inheriting torrents.
+        _ => throw new ArgumentOutOfRangeException(nameof(protocol), protocol, "Unknown search protocol."),
+    };
+
+    /// <summary>
+    /// The Newznab/Torznab <c>t=</c> mode for a query, chosen from the ids the caller actually
+    /// supplied. NZBHydra2's API is Newznab-compatible, so <c>tvsearch</c>/<c>movie</c> take
+    /// <c>tvdbid</c>/<c>season</c>/<c>ep</c> and <c>tmdbid</c> respectively; a query with neither id
+    /// is a plain <c>search</c>. The ids are sent as their own parameters and are never folded into
+    /// <c>q</c> — upstream matches an id exactly, where the same digits inside the free-text term
+    /// would just be noise that narrows the result set for no reason.
+    /// </summary>
+    private static string SearchMode(SearchQuery query) => query switch
+    {
+        { TvdbId: not null } => "tvsearch",
+        { TmdbId: not null } => "movie",
+        _ => "search",
+    };
+
     private Uri BuildSearchUri(SearchQuery query, int limit, int offset)
     {
-        var builder = new UriBuilder(new Uri(_options.BaseUrl, "torznab/api"));
+        var builder = new UriBuilder(new Uri(_options.BaseUrl, UpstreamPath(query.Protocol)));
         var queryParams = new List<string>
         {
-            "t=" + Uri.EscapeDataString(query.Categories.Count > 0 ? "search" : "search"),
+            "t=" + Uri.EscapeDataString(SearchMode(query)),
             "limit=" + limit.ToString(CultureInfo.InvariantCulture),
             "offset=" + offset.ToString(CultureInfo.InvariantCulture),
         };
@@ -202,21 +244,49 @@ public sealed class NzbHydraSource : IUpstreamSource
             queryParams.Add("q=" + Uri.EscapeDataString(query.QueryText));
         }
 
+        // Id parameters are emitted only for the mode that accepts them, so a query carrying both a
+        // tvdbid and a tmdbid does not send a tmdbid along with t=tvsearch (upstream would ignore
+        // it, but it would also become part of the request identity for no benefit). Season/ep ride
+        // with tvsearch only, matching the Newznab parameter set NZBHydra2 advertises in its caps.
+        if (query.TvdbId is int tvdbId)
+        {
+            queryParams.Add("tvdbid=" + tvdbId.ToString(CultureInfo.InvariantCulture));
+
+            if (query.Season is int season)
+            {
+                queryParams.Add("season=" + season.ToString(CultureInfo.InvariantCulture));
+            }
+
+            if (query.Episode is int episode)
+            {
+                queryParams.Add("ep=" + episode.ToString(CultureInfo.InvariantCulture));
+            }
+        }
+        else if (query.TmdbId is int tmdbId)
+        {
+            queryParams.Add("tmdbid=" + tmdbId.ToString(CultureInfo.InvariantCulture));
+        }
+
         if (query.Categories.Count > 0)
         {
             queryParams.Add("cat=" + Uri.EscapeDataString(string.Join(",", query.Categories)));
         }
 
         // apikey is passed as a query-string parameter, never a header, never logged.
+        //
+        // LOAD-BEARING (CLAUDE.md §1): IHttpClientFactory attaches its own logging handler to every
+        // named client and logs the full absolute URI at Information, which since #65 lands in the
+        // persistent log store. LogMessageCleanser scrubs credentials in QUERY STRINGS only — a
+        // secret moved into the URL path would not be covered. So the apikey must stay here.
         queryParams.Add("apikey=" + Uri.EscapeDataString(_options.ApiKey));
 
         builder.Query = string.Join("&", queryParams);
         return builder.Uri;
     }
 
-    private Uri BuildCapsUri()
+    private Uri BuildCapsUri(SearchProtocol protocol)
     {
-        var builder = new UriBuilder(new Uri(_options.BaseUrl, "torznab/api"));
+        var builder = new UriBuilder(new Uri(_options.BaseUrl, UpstreamPath(protocol)));
         builder.Query = "t=caps&apikey=" + Uri.EscapeDataString(_options.ApiKey);
         return builder.Uri;
     }

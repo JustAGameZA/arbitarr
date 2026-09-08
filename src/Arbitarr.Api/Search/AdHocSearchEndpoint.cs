@@ -91,6 +91,15 @@ public static class AdHocSearchEndpoint
             QueryText: string.IsNullOrWhiteSpace(q) ? null : q.Trim(),
             Categories: categories,
             Limit: limit ?? 50,
+            // #99: the dashboard's ad-hoc search has no inbound protocol of its own — it is not a
+            // Torznab or Newznab route — so this is a deliberate choice, spelled out rather than
+            // defaulted. Newznab, because it is the WIDER of the two upstream endpoints: NZBHydra2
+            // reads {base}/torznab/api as "a torrent search is requested" and drops every usenet
+            // indexer from the selection, while {base}/api applies no such exclusion. This surface
+            // exists so an operator can see what their sources actually hold, so the endpoint that
+            // hides a whole class of indexer is the wrong one to diagnose through. If this ever
+            // grows a protocol selector, pass the operator's choice here instead of this literal.
+            Protocol: SearchProtocol.Newznab,
             Offset: offset ?? 0,
             TvdbId: ParseId(tvdbid),
             TmdbId: ParseId(tmdbid),

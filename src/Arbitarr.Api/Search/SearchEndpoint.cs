@@ -45,7 +45,7 @@ public static class SearchEndpoint
         int? episode = null,
         string? clientName = null)
     {
-        var (result, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, eventSink, clientName, cancellationToken).ConfigureAwait(false);
+        var (result, rateLimited) = await ExecuteAsync(SearchProtocol.Torznab, searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, eventSink, clientName, cancellationToken).ConfigureAwait(false);
         if (rateLimited)
         {
             var errorXml = TorznabXmlWriter.WriteError(RateLimitErrorCode, "Request limit reached");
@@ -76,7 +76,7 @@ public static class SearchEndpoint
         int? episode = null,
         string? clientName = null)
     {
-        var (result, rateLimited) = await ExecuteAsync(searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, eventSink, clientName, cancellationToken).ConfigureAwait(false);
+        var (result, rateLimited) = await ExecuteAsync(SearchProtocol.Newznab, searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, eventSink, clientName, cancellationToken).ConfigureAwait(false);
         if (rateLimited)
         {
             var errorXml = NewznabXmlWriter.WriteError(RateLimitErrorCode, "Request limit reached");
@@ -88,6 +88,7 @@ public static class SearchEndpoint
     }
 
     private static async Task<(PagedMergeResult? Result, bool RateLimited)> ExecuteAsync(
+        SearchProtocol protocol,
         string? searchType,
         string? queryText,
         IReadOnlyList<int> categories,
@@ -106,7 +107,7 @@ public static class SearchEndpoint
         CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
-        var query = new SearchQuery(queryText, categories, limit, offset, tvdbId, tmdbId, season, episode);
+        var query = new SearchQuery(queryText, categories, limit, protocol, offset, tvdbId, tmdbId, season, episode);
         var result = await snapshotService.GetPageAsync(searchType ?? "search", query, cancellationToken).ConfigureAwait(false);
 
         // Only surface the rate-limit element when every configured source failed with

@@ -100,7 +100,7 @@ public sealed class SearchEndpointFilterResolvabilityTests : IDisposable
         public Task<IReadOnlyList<ReleaseCandidate>> SearchAsync(SearchQuery query, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<ReleaseCandidate>>(new[] { _candidate });
 
-        public Task<SourceCaps> GetCapsAsync(CancellationToken cancellationToken = default) =>
+        public Task<SourceCaps> GetCapsAsync(SearchProtocol protocol, CancellationToken cancellationToken = default) =>
             Task.FromResult(new SourceCaps(Array.Empty<int>(), false, false, null));
 
         public Task<Stream> FetchDownloadAsync(ReleaseCandidate release, CancellationToken cancellationToken = default) =>
