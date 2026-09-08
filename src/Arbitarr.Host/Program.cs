@@ -818,8 +818,9 @@ app.MapGet("/download/{proxyGuid}", async (
     IClientApiKeyResolver apiKeyResolver,
     IReleaseLookup releaseLookup,
     IReadOnlyList<IUpstreamSource> sources,
+    Arbitarr.Core.Diagnostics.IEventSink eventSink,
     CancellationToken cancellationToken) =>
-    await DownloadProxyEndpoint.HandleAsync(proxyGuid, apikey, apiKeyResolver, releaseLookup, sources, cancellationToken).ConfigureAwait(false))
+    await DownloadProxyEndpoint.HandleAsync(proxyGuid, apikey, apiKeyResolver, releaseLookup, sources, eventSink, cancellationToken).ConfigureAwait(false))
     .WithClassification(RouteClassification.PublicRead);
 
 // Terminal 404 for unmatched /api/ paths, so a typo'd, renamed or removed API route fails

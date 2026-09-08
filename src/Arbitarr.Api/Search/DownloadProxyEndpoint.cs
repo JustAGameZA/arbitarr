@@ -1,3 +1,4 @@
+using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Security;
 using Arbitarr.Core.Sources;
 using Microsoft.AspNetCore.Http;
@@ -7,8 +8,9 @@ namespace Arbitarr.Api.Search;
 /// <summary>
 /// Fetches an upstream release's download payload (torrent or NZB) back to the caller, resolving
 /// the proxy guid emitted by <see cref="SearchEndpoint"/> back to its originating
-/// <see cref="IUpstreamSource"/> via <see cref="IReleaseLookup"/>. This path performs zero
-/// database writes and invokes no AI logic.
+/// <see cref="IUpstreamSource"/> via <see cref="IReleaseLookup"/>. The success path performs zero
+/// database writes and invokes no AI logic; the one write is the activity event a refused
+/// redirect records (see the catch below).
 ///
 /// SEC-L3: the upstream body is read into memory through <see cref="MaxLengthStream"/> (bounded
 /// to <see cref="MaxLengthStream.MaxBytes"/>) BEFORE any response write, so a payload that exceeds
@@ -37,6 +39,7 @@ public static class DownloadProxyEndpoint
         IClientApiKeyResolver apiKeyResolver,
         IReleaseLookup releaseLookup,
         IReadOnlyList<IUpstreamSource> sources,
+        IEventSink eventSink,
         CancellationToken cancellationToken)
     {
         if (await apiKeyResolver.ResolveAsync(apikey, cancellationToken).ConfigureAwait(false) is null)
@@ -67,6 +70,44 @@ public static class DownloadProxyEndpoint
         catch (RequestLimitReachedException)
         {
             return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+        }
+        catch (SourceUnavailableException)
+        {
+            // The source's circuit breaker is open: it is resting after earlier failures, not
+            // broken for this request. 503 is the retryable answer Sonarr/Radarr already back off
+            // on; the bare InvalidOperationException this used to be escaped as an unhandled 500
+            // on every retry for as long as the breaker stayed open.
+            return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+        }
+        catch (UpstreamRedirectRefusedException ex)
+        {
+            // A redirect is a configuration answer from a healthy upstream (NZBHydra2's "NZB
+            // access type: Redirect to indexer"), and it will repeat on every download until the
+            // operator changes that setting. It is recorded as an event so the fix is visible on
+            // the dashboard rather than only in a swallowed exception; the source deliberately
+            // does not count it against the breaker (see the exception's remarks).
+            //
+            // sourceDisplayName is deliberately null. A SourceFailed event that names a source
+            // feeds NotificationPolicy.FoldSourceFailure, whose consecutive-failure counter would
+            // announce this healthy source as down after three of Sonarr's retries and only clear
+            // on an unrelated worker cycle — the same defect as the breaker one, moved to the
+            // notifier. A nameless SourceFailed is skipped by that fold and still lands on the
+            // Activity feed; the source is named in the summary instead.
+            //
+            // ex.Message is safe on the un-gated /api/activity surface only because the exception
+            // constructs it from the configured source name and an int status code — never from
+            // upstream-supplied text such as the Location header. Keep it that way, or route it
+            // through SanitizedErrorDescription as RefreshWorker does.
+            //
+            // CancellationToken.None: the event describes a request that has already failed and
+            // must outlive a client that disconnects mid-write; the sink rethrows a cancellation.
+            await eventSink.RecordAsync(
+                RecordedEventKind.SourceFailed,
+                summary: $"Download refused: {release.SourceName} redirected instead of serving the file",
+                reason: ex.Message,
+                sourceDisplayName: null,
+                cancellationToken: CancellationToken.None).ConfigureAwait(false);
+            return Results.StatusCode(StatusCodes.Status502BadGateway);
         }
         catch (DownloadTooLargeException)
         {

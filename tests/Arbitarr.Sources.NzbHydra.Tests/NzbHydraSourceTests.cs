@@ -362,7 +362,7 @@ public class NzbHydraSourceTests
 
     // SEC-M1: an upstream 302 redirect must not be silently followed to a possibly-different host.
     // The fake handler never auto-follows redirects (it just returns whatever response it's given),
-    // mirroring AllowAutoRedirect=false: EnsureSuccessStatusCode treats 302 as a failure, mapped to
+    // mirroring AllowAutoRedirect=false: the redirect is refused as a typed exception, mapped to
     // 502 by the download proxy, and no second request is made to the Location host.
     [Fact]
     public async Task FetchDownloadAsync_On302Redirect_ThrowsAndMakesNoSecondRequest()
@@ -384,9 +384,93 @@ public class NzbHydraSourceTests
             Link = new Uri("http://hydra.example.test:5076/download/redirect"),
         };
 
-        await Assert.ThrowsAsync<HttpRequestException>(() => source.FetchDownloadAsync(release));
+        var ex = await Assert.ThrowsAsync<UpstreamRedirectRefusedException>(() => source.FetchDownloadAsync(release));
+        Assert.Equal(302, ex.StatusCode);
 
         var requestedUri = Assert.Single(handler.RequestedUris);
         Assert.Equal("hydra.example.test", requestedUri.Host);
+    }
+
+    /// <summary>
+    /// A redirect is a configuration answer from a healthy upstream (NZBHydra2's "NZB access type:
+    /// Redirect to indexer"), repeated on every download until the setting changes. Counting it
+    /// against the breaker opened it after three downloads and, because the breaker is per source,
+    /// served every search from cache for the backoff window (2026-09-08). Asserted as "no failure
+    /// recorded" AND "one success recorded": the upstream answered promptly, and a HalfOpen probe
+    /// that recorded neither would leave the breaker HalfOpen, refusing every caller.
+    /// </summary>
+    [Fact]
+    public async Task FetchDownloadAsync_On302Redirect_RecordsABreakerSuccessNotAFailure()
+    {
+        var handler = new FakeHttpMessageHandler(_ =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.Found);
+            response.Headers.Location = new Uri("http://indexer.example.test/nzb/1");
+            return response;
+        });
+        var breaker = new FakeCircuitBreaker();
+        var source = new NzbHydraSource(MakeOptions(), MakeHttpClient(handler), breaker);
+        var release = new ReleaseCandidate
+        {
+            Title = "Redirecting release",
+            Guid = "guid-redirect",
+            PubDate = DateTimeOffset.UtcNow,
+            Link = new Uri("http://hydra.example.test:5076/getnzb/api/1"),
+        };
+
+        await Assert.ThrowsAsync<UpstreamRedirectRefusedException>(() => source.FetchDownloadAsync(release));
+
+        Assert.Empty(breaker.Failures);
+        Assert.Equal(1, breaker.SuccessCount);
+    }
+
+    /// <summary>
+    /// A genuine upstream error on the download path still counts against the breaker — the
+    /// positive control for the test above, so "no failure recorded" cannot pass vacuously
+    /// because nothing on this path records failures at all.
+    /// </summary>
+    [Fact]
+    public async Task FetchDownloadAsync_On500_StillRecordsABreakerFailure()
+    {
+        var handler = new FakeHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError));
+        var breaker = new FakeCircuitBreaker();
+        var source = new NzbHydraSource(MakeOptions(), MakeHttpClient(handler), breaker);
+        var release = new ReleaseCandidate
+        {
+            Title = "Broken release",
+            Guid = "guid-500",
+            PubDate = DateTimeOffset.UtcNow,
+            Link = new Uri("http://hydra.example.test:5076/getnzb/api/2"),
+        };
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => source.FetchDownloadAsync(release));
+
+        Assert.Single(breaker.Failures);
+    }
+
+    /// <summary>
+    /// An open breaker is a typed, retryable refusal, not a bare InvalidOperationException: the
+    /// download proxy maps it to 503, where the untyped exception escaped as an unhandled 500 on
+    /// every Sonarr retry for as long as the breaker stayed open.
+    /// </summary>
+    [Fact]
+    public async Task FetchDownloadAsync_WhenCircuitBreakerIsOpen_ThrowsSourceUnavailableWithoutCallingUpstream()
+    {
+        var handler = new FakeHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK));
+        var breaker = new FakeCircuitBreaker();
+        breaker.SetCanCall(false);
+        var source = new NzbHydraSource(MakeOptions(), MakeHttpClient(handler), breaker);
+        var release = new ReleaseCandidate
+        {
+            Title = "Rested release",
+            Guid = "guid-open",
+            PubDate = DateTimeOffset.UtcNow,
+            Link = new Uri("http://hydra.example.test:5076/getnzb/api/3"),
+        };
+
+        var ex = await Assert.ThrowsAsync<SourceUnavailableException>(() => source.FetchDownloadAsync(release));
+
+        Assert.Equal("test-hydra", ex.SourceName);
+        Assert.Empty(handler.RequestedUris);
     }
 }
