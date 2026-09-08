@@ -8,6 +8,7 @@ import local from './Settings.module.css';
 import { NotificationsSection } from './Notifications/Notifications';
 import { useSettingsQuery, useUpdateSettingMutation } from './queries';
 import { SourcesSection } from './Sources/Sources';
+import { SonarrSection } from './Sonarr/Sonarr';
 import { ApiKeysSection } from './ApiKeys/ApiKeys';
 import { AccountSection } from './Account/Account';
 import { AiSection } from './Ai/Ai';
@@ -187,6 +188,11 @@ export default function SettingsPage() {
       <AccountSection />
 
       <SourcesSection />
+
+      {/* Beside Sources rather than in it: Sonarr is the other machine Arbitarr
+          talks to, but it is not a source — it is not searched, and its probe
+          speaks its own API. See SonarrSection for the full distinction. */}
+      <SonarrSection />
 
       <ApiKeysSection />
 
