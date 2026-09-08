@@ -1,0 +1,69 @@
+# E2E golden path (arb-rga.7): the image under test plus the stub Torznab upstream.
+#
+# This file is for the E2E lane only. The repository-root docker-compose.yml remains the
+# reference deployment file; this one is deliberately separate so the operator-facing
+# example is never contorted to serve a test.
+#
+# The image is not built here. `Deploy review environment` has already built and tagged
+# arbitarr-review:ci by the time this runs, and rebuilding it would both waste the layer
+# cache and, worse, allow the E2E to pass against an image that is not the one the rest of
+# the job asserted on. IMAGE is overridable only so a developer can point at a local tag.
+
+services:
+  stub-upstream:
+    build:
+      context: ./stub-upstream
+    environment:
+      STUB_PORT: "5100"
+      # LOAD-BEARING. Every <link> the stub emits carries this origin, and
+      # NzbHydraSource's SSRF guard (TryValidateOriginPinnedLink) DROPS any item whose
+      # link origin differs from the source's configured base URL -- silently, producing
+      # zero search rows rather than an error. This value and the baseUrl the E2E creates
+      # the source with must stay identical. Verified: with these mismatched, the real
+      # parser returns 0 rows from fixtures that are otherwise perfectly well-formed.
+      STUB_PUBLIC_ORIGIN: "http://stub-upstream:5100"
+    # Not published to the host. Only arbitarr needs to reach it, over the compose network.
+    expose:
+      - "5100"
+    networks:
+      default:
+        aliases:
+          # A SECOND name for the same container, reachable and serving identical fixtures.
+          # It exists so the E2E can configure a source whose base URL differs from the
+          # origin the stub stamps into its <link> elements, while still being genuinely
+          # reachable -- that is the only way to demonstrate the SSRF origin-pinning guard
+          # dropping items for the RIGHT reason. An unreachable host would prove nothing:
+          # zero rows from a connection failure looks identical to zero rows from the guard.
+          - stub-upstream-alias
+    healthcheck:
+      # /ping is not a Torznab mode, so a healthy stub cannot be confused with a working
+      # search path -- that is what the E2E itself is for.
+      test: ["CMD", "node", "-e", "require('node:http').get('http://127.0.0.1:5100/ping', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  arbitarr:
+    image: ${IMAGE:-arbitarr-review:ci}
+    depends_on:
+      stub-upstream:
+        condition: service_healthy
+    ports:
+      # Bound to loopback on purpose, and not only for hygiene: ADR 0004's bootstrap
+      # bypass admits admin-mutating routes from loopback/RFC1918 while no admin key is
+      # set, and that decision is made from the socket's own peer address. The E2E drives
+      # the admin API through this published port precisely to land inside that window.
+      - "127.0.0.1:8080:8080"
+    environment:
+      # No ARBITARR__SOURCES__NZBHYDRA__BASEURL here. The E2E creates the source through
+      # POST /api/admin/sources instead, because "an operator can add a source and search
+      # it" is the golden path under test -- seeding it from config would prove the search
+      # pipeline while skipping the half most likely to regress.
+      #
+      # No admin key either: there is no env var for it and there cannot be one (ADR 0004).
+      ARBITARR__LOGGING__LOGLEVEL__DEFAULT: "Information"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8080/health || exit 1"]
+      interval: 2s
+      timeout: 2s
+      retries: 30

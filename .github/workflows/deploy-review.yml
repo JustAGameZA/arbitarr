@@ -104,6 +104,58 @@ jobs:
         if: failure()
         run: docker logs arbitarr-review || true
 
-      - name: Stop container
-        if: always()
+      # arb-rga.7: the E2E golden path runs AFTER the assertions above, against the same
+      # image they just vetted. The standalone container is stopped first because compose
+      # republishes 127.0.0.1:8080 and the two would collide on that port.
+      #
+      # Loopback is not incidental: ADR 0004's bootstrap bypass admits admin-mutating
+      # routes only from loopback/RFC 1918 while no admin key is set, decided from the
+      # socket's peer address, and the E2E bootstraps its key through exactly that window.
+      - name: Stop the standalone container before the E2E stack
         run: docker rm -f arbitarr-review || true
+
+      - name: Start the E2E stack (app under test plus stub upstream)
+        working-directory: tests/e2e
+        run: docker compose -f compose.yml up -d --wait
+
+      - name: Set up Node for Playwright
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tests/e2e/package-lock.json
+
+      - name: Install E2E dependencies
+        working-directory: tests/e2e
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        working-directory: tests/e2e
+        # Chromium only, matching playwright.config.ts's single project: pulling every
+        # browser would cost minutes for engines this lane does not exercise.
+        run: npx playwright install --with-deps chromium
+
+      - name: Run the E2E golden path
+        working-directory: tests/e2e
+        run: npm test
+
+      - name: E2E stack logs
+        if: failure()
+        working-directory: tests/e2e
+        run: docker compose -f compose.yml logs --no-color || true
+
+      - name: Upload the Playwright trace
+        if: failure()
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
+        with:
+          name: playwright-trace
+          path: |
+            tests/e2e/test-results/
+            tests/e2e/playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Stop the E2E stack
+        if: always()
+        working-directory: tests/e2e
+        run: docker compose -f compose.yml down -v || true
