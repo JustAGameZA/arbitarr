@@ -281,13 +281,37 @@ builder.Services.AddHostedService(sp => new RefreshWorker(
 // nothing about it is per-operator), and — the load-bearing reason — because an OllamaClient
 // constructed WITHOUT resolvers must still work: that is the shape every existing test constructs,
 // and the honest behaviour for a caller with no settings store behind it.
-builder.Services.AddSingleton(_ =>
+builder.Services.AddSingleton(sp =>
 {
     var section = builder.Configuration.GetSection("Arbitarr:Ai:Ollama");
     var baseUrlRaw = section["BaseUrl"] ?? Arbitarr.Data.Settings.OllamaBaseUrlResolver.DefaultBaseUrl;
     var model = section["Model"] ?? Arbitarr.Data.Settings.OllamaModelResolver.DefaultModel;
     var keepAlive = section["KeepAlive"] ?? "-1";
-    return new OllamaOptions(new Uri(baseUrlRaw), model, keepAlive);
+
+    // arb-6u6: this singleton's BaseUrl is only ever the STARTUP FALLBACK (see the comment above
+    // for why it must still work standalone) — it is never the live value once OllamaBaseUrlSeeder
+    // has run, so it must survive the same malformed-env-value case the seeder already handles
+    // rather than crashing the whole host with new Uri(...) before the seeder gets a chance to
+    // seed the working default. Reuses SettingsValidator.ValidateOllamaBaseUrl — the same check
+    // every write path already runs — rather than a second, possibly-divergent parse rule.
+    var baseUrl = baseUrlRaw;
+    try
+    {
+        Arbitarr.Core.Settings.SettingsValidator.ValidateOllamaBaseUrl(baseUrlRaw);
+    }
+    catch (Arbitarr.Core.Settings.SettingsValidationException)
+    {
+        var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("Arbitarr.Host.Program");
+        logger.LogWarning(
+            "AI: the Arbitarr:Ai:Ollama:BaseUrl environment variable is not a usable Ollama address " +
+            "and was not used for the startup-fallback client options; the built-in default ({BaseUrl}) " +
+            "was used instead. The rejected value is deliberately not shown here because it may " +
+            "contain a credential.",
+            Arbitarr.Data.Settings.OllamaBaseUrlResolver.DefaultBaseUrl);
+        baseUrl = Arbitarr.Data.Settings.OllamaBaseUrlResolver.DefaultBaseUrl;
+    }
+
+    return new OllamaOptions(new Uri(baseUrl), model, keepAlive);
 });
 
 // #89/#112: the process-wide caches of the base URL and model in force. Singletons because they
