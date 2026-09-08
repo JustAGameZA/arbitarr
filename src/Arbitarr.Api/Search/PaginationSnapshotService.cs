@@ -11,7 +11,8 @@ namespace Arbitarr.Api.Search;
 /// <summary>
 /// Materializes a merged query's full result set into a <see cref="IQuerySnapshotStore"/>-backed
 /// snapshot keyed deterministically by the query's identity — search type (<c>t</c>), query text
-/// (<c>q</c>), and categories (<c>cat</c>) — explicitly excluding <c>offset</c>/<c>limit</c>, so
+/// (<c>q</c>), categories (<c>cat</c>), and provider/episode identifiers — explicitly excluding
+/// <c>offset</c>/<c>limit</c>, so
 /// that <c>offset=0&amp;limit=50</c> and a subsequent <c>offset=50&amp;limit=50</c> against "the
 /// same query" are served disjoint, union-complete slices of the same materialized set (M1-5,
 /// AC16), even if the upstream source set mutates between the two calls.
@@ -113,7 +114,7 @@ public sealed class PaginationSnapshotService
     {
         ArgumentNullException.ThrowIfNull(query);
 
-        var snapshotToken = ComputeSnapshotToken(searchType, query.Protocol, query.QueryText, query.Categories);
+        var snapshotToken = ComputeSnapshotToken(searchType, query);
         var now = _timeProvider.GetUtcNow();
 
         var cached = await _snapshotStore.GetAsync(snapshotToken, now, cancellationToken).ConfigureAwait(false);
@@ -193,14 +194,11 @@ public sealed class PaginationSnapshotService
     /// "hx") both flattened to the same string.
     /// </para>
     /// </summary>
-    private static string ComputeSnapshotToken(
-        string searchType,
-        SearchProtocol protocol,
-        string? queryText,
-        IReadOnlyList<int> categories)
+    private static string ComputeSnapshotToken(string searchType, SearchQuery query)
     {
-        var normalizedCategories = string.Join(",", categories.OrderBy(c => c));
-        var raw = $"{searchType}\u001f{protocol}\u001f{queryText}\u001f{normalizedCategories}";
+        var normalizedCategories = string.Join(",", query.Categories.OrderBy(c => c));
+        var raw = $"{searchType}\u001f{query.Protocol}\u001f{query.QueryText}\u001f{normalizedCategories}" +
+                  $"\u001f{query.TvdbId}\u001f{query.TmdbId}\u001f{query.Season}\u001f{query.Episode}";
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
         return Convert.ToHexString(hash);
     }

@@ -81,6 +81,29 @@ public class PaginationSnapshotTests
         Assert.Equal(2, store.SaveCallCount);
     }
 
+    [Theory]
+    [InlineData(110382, 12345, 18, 5)]
+    [InlineData(110381, 12346, 18, 5)]
+    [InlineData(110381, 12345, 19, 5)]
+    [InlineData(110381, 12345, 18, 6)]
+    public async Task Different_tv_episode_identity_component_produces_a_different_snapshot(
+        int tvdbId,
+        int tmdbId,
+        int season,
+        int episode)
+    {
+        var source = MakeSourceWithReleases("eztv", 10);
+        var mergeStage = new UpstreamMergeStage(new[] { source });
+        var store = new FakeQuerySnapshotStore();
+        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
+        var service = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);
+
+        await service.GetPageAsync("tvsearch", new SearchQuery("", new[] { 5000 }, 5, SearchProtocol.Torznab, TvdbId: 110381, TmdbId: 12345, Season: 18, Episode: 5));
+        await service.GetPageAsync("tvsearch", new SearchQuery("", new[] { 5000 }, 5, SearchProtocol.Torznab, TvdbId: tvdbId, TmdbId: tmdbId, Season: season, Episode: episode));
+
+        Assert.Equal(2, store.SaveCallCount);
+    }
+
     [Fact]
     public async Task Expired_snapshot_triggers_a_fresh_merge_instead_of_serving_stale_data()
     {
