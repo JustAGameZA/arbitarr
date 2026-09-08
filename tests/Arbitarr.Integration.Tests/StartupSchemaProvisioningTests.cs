@@ -11,7 +11,7 @@ namespace Arbitarr.Integration.Tests;
 /// <summary>
 /// M7-11 (plan §M7: "container starts from a clean volume and self-provisions its schema").
 /// Boots the real Host composition root (<c>Program.cs</c>, unmodified — AC6) against a brand-new,
-/// never-before-used <c>ARBITARR_CONFIG_DIR</c> so the SQLite file does not exist until the Host
+/// never-before-used <c>Arbitarr:ConfigDir</c> so the SQLite file does not exist until the Host
 /// creates it, and asserts that <c>dbContext.Database.Migrate()</c> (called on a fresh scope before
 /// <c>app.Run()</c>) leaves behind a schema with the expected tables, and that a lite read-only
 /// dashboard route answers 200 against that freshly-provisioned database.
@@ -28,9 +28,10 @@ public sealed class StartupSchemaProvisioningTests : IDisposable
         // exist yet either — this is the "clean /config volume" scenario M7-11 targets.
         Assert.False(Directory.Exists(_configDirectory));
 
-        Environment.SetEnvironmentVariable("ARBITARR_CONFIG_DIR", _configDirectory);
-
-        await using var factory = new WebApplicationFactory<Program>();
+        // Deliberately NOT created first: the precondition above is the whole scenario, and the
+        // Host must provision the directory itself.
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(
+            builder => builder.UseSetting("Arbitarr:ConfigDir", _configDirectory));
         using var client = factory.CreateClient();
 
         // A lite, unauthenticated, read-only dashboard route (D1) must answer 200 once startup has
@@ -72,8 +73,6 @@ public sealed class StartupSchemaProvisioningTests : IDisposable
 
     public void Dispose()
     {
-        Environment.SetEnvironmentVariable("ARBITARR_CONFIG_DIR", null);
-
         try
         {
             if (Directory.Exists(_configDirectory))

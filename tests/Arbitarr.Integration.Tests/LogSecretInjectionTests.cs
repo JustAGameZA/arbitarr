@@ -45,10 +45,10 @@ public sealed class LogSecretInjectionTests : IClassFixture<WebApplicationFactor
         _configDirectory = Path.Combine(
             Path.GetTempPath(), "arbitarr-log-injection-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_configDirectory);
-        Environment.SetEnvironmentVariable("ARBITARR_CONFIG_DIR", _configDirectory);
 
         _factory = factory.WithWebHostBuilder(builder =>
         {
+            builder.UseSetting("Arbitarr:ConfigDir", _configDirectory);
             builder.UseSetting("Arbitarr:ApiKey", ApiKey);
 
             builder.ConfigureServices(services =>

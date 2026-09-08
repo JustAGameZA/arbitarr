@@ -3,6 +3,7 @@ using System.Text.Json;
 using Arbitarr.Data.Entities;
 using Arbitarr.Data.Sources;
 using Arbitarr.Host.Sources;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -39,10 +40,10 @@ public sealed class SourceResolutionTests
         string apiKey = "placeholder-seed-key",
         string sourceName = "NZBHydra2")
     {
-        Environment.SetEnvironmentVariable("ARBITARR_CONFIG_DIR", configDirectory);
-
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
+            builder.UseSetting("Arbitarr:ConfigDir", configDirectory);
+
             if (withEnvironmentVariables)
             {
                 builder.UseSetting("Arbitarr:Sources:NzbHydra:BaseUrl", baseUrl);
@@ -57,7 +58,6 @@ public sealed class SourceResolutionTests
 
     private static void Cleanup(string configDirectory)
     {
-        Environment.SetEnvironmentVariable("ARBITARR_CONFIG_DIR", null);
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try
         {

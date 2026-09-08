@@ -41,10 +41,17 @@ public sealed class RemoteAddressWebApplicationFactory : WebApplicationFactory<P
         _remoteAddress = remoteAddress;
     }
 
+    /// <summary>The per-instance <c>/config</c> directory this host was given.</summary>
+    public string ConfigDirectory => _configDirectory;
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         Directory.CreateDirectory(_configDirectory);
-        Environment.SetEnvironmentVariable("ARBITARR_CONFIG_DIR", _configDirectory);
+
+        // UseSetting, NEVER Environment.SetEnvironmentVariable — see the same note on
+        // ArbitarrWebApplicationFactory. The env var is process-wide and races every other host in
+        // the process; this setting belongs to this builder alone.
+        builder.UseSetting("Arbitarr:ConfigDir", _configDirectory);
 
         builder.ConfigureServices(services =>
             services.AddSingleton<IStartupFilter>(new RemoteAddressStartupFilter(_remoteAddress)));

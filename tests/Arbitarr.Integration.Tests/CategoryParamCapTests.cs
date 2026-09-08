@@ -24,10 +24,10 @@ public sealed class CategoryParamCapTests : IClassFixture<WebApplicationFactory<
     {
         var configDirectory = Path.Combine(Path.GetTempPath(), "arbitarr-m3-category-cap-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(configDirectory);
-        Environment.SetEnvironmentVariable("ARBITARR_CONFIG_DIR", configDirectory);
 
         _factory = factory.WithWebHostBuilder(builder =>
         {
+            builder.UseSetting("Arbitarr:ConfigDir", configDirectory);
             builder.UseSetting("Arbitarr:ApiKey", ApiKey);
         });
     }

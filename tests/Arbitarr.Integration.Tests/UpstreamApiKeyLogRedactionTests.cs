@@ -77,9 +77,9 @@ public sealed class UpstreamApiKeyLogRedactionTests : IClassFixture<WebApplicati
         var configDirectory = Path.Combine(
             Path.GetTempPath(), "arbitarr-upstream-key-log-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(configDirectory);
-        Environment.SetEnvironmentVariable("ARBITARR_CONFIG_DIR", configDirectory);
 
-        _factory = factory.WithWebHostBuilder(_ => { });
+        _factory = factory.WithWebHostBuilder(
+            builder => builder.UseSetting("Arbitarr:ConfigDir", configDirectory));
     }
 
     [Theory]

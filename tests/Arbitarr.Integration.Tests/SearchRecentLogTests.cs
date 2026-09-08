@@ -28,10 +28,10 @@ public sealed class SearchRecentLogTests : IClassFixture<WebApplicationFactory<P
     {
         var configDirectory = Path.Combine(Path.GetTempPath(), "arbitarr-m2-search-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(configDirectory);
-        Environment.SetEnvironmentVariable("ARBITARR_CONFIG_DIR", configDirectory);
 
         _factory = factory.WithWebHostBuilder(builder =>
         {
+            builder.UseSetting("Arbitarr:ConfigDir", configDirectory);
             builder.UseSetting("Arbitarr:ApiKey", ApiKey);
 
             builder.ConfigureServices(services =>

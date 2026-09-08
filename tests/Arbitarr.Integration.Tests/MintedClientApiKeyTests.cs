@@ -32,9 +32,9 @@ public sealed class MintedClientApiKeyTests : IAsyncDisposable
     public MintedClientApiKeyTests()
     {
         Directory.CreateDirectory(_configDirectory);
-        Environment.SetEnvironmentVariable("ARBITARR_CONFIG_DIR", _configDirectory);
         _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
+            builder.UseSetting("Arbitarr:ConfigDir", _configDirectory);
             builder.UseSetting("Arbitarr:ApiKey", EnvironmentKey);
             builder.ConfigureServices(services =>
             {

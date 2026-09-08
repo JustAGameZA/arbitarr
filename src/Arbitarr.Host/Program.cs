@@ -61,9 +61,24 @@ builder.Logging.AddDebug();
 // call to make once the UI can add sources.
 const string UnconfiguredSourceBaseUrl = "http://192.0.2.1:1";
 
-// Runtime state lives under /config (AC21), overridable via ARBITARR_CONFIG_DIR for local
-// dev/test so a real /config directory is never required outside the production container.
-var configDirectory = Environment.GetEnvironmentVariable("ARBITARR_CONFIG_DIR") ?? "/config";
+// Runtime state lives under /config (AC21), overridable for local dev/test so a real /config
+// directory is never required outside the production container.
+//
+// READ ORDER IS LOAD-BEARING and the configuration key must stay FIRST. The env var is
+// process-wide, so when several hosts run in one process — which is every test run — the last
+// writer wins and a host can open a neighbour's database. `Arbitarr:ConfigDir` is per-builder, so
+// `builder.UseSetting("Arbitarr:ConfigDir", dir)` gives each host its own directory with no shared
+// mutable state; that is what lets Integration.Tests run its classes in parallel. Swapping the two
+// reads back would silently reintroduce the race, because the env var an unrelated test set would
+// then override the value this host was explicitly handed.
+//
+// ARBITARR_CONFIG_DIR is retained and unchanged for production and local dev (it is the documented
+// knob in README.md). `builder.Configuration` does read environment variables, but only under the
+// double-underscore convention the other knobs use (`ARBITARR__CONFIGDIR`); this single-underscore
+// legacy name binds to nothing, so it is still read explicitly here.
+var configDirectory = builder.Configuration["Arbitarr:ConfigDir"]
+    ?? Environment.GetEnvironmentVariable("ARBITARR_CONFIG_DIR")
+    ?? "/config";
 Arbitarr.Host.Provisioning.DatasetProvisioner.EnsureProvisioned(configDirectory);
 var databasePath = Path.Combine(configDirectory, "arbitarr.db");
 

@@ -34,10 +34,11 @@ public sealed class AdHocSearchEndpointTests : IClassFixture<WebApplicationFacto
     {
         var configDirectory = Path.Combine(Path.GetTempPath(), "arbitarr-m7-adhoc-search-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(configDirectory);
-        Environment.SetEnvironmentVariable("ARBITARR_CONFIG_DIR", configDirectory);
 
         _factory = factory.WithWebHostBuilder(builder =>
         {
+            builder.UseSetting("Arbitarr:ConfigDir", configDirectory);
+
             builder.ConfigureServices(services =>
             {
                 // Replace the real, config-driven upstream source registrations with a single fake
