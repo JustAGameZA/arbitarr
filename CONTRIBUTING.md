@@ -61,6 +61,11 @@ CI also re-runs this guard's checks over the whole tree on every PR (the `Build 
 required check), so a missing local hook can't let something slip through — but installing it
 locally catches problems before you push.
 
+The same `.githooks` path also carries `pre-push`, which rejects any pushed ref matching
+`refs/dolt/*` — this repo runs the beads (`bd`) issue tracker in stealth mode, and that
+guard is the mechanism keeping its Dolt store off the public remote (see CLAUDE.md's
+Beads section). `git config core.hooksPath .githooks` installs both hooks at once.
+
 ## Project conventions
 
 ### Architecture boundaries

@@ -1,0 +1,32 @@
+#!/bin/sh
+# Beads stealth-mode guard: this repo runs beads (bd) in stealth mode -- the Dolt
+# store and .beads/issues.jsonl are gitignored and nothing is meant to reach
+# origin (see CLAUDE.md's Beads section). Upstream beads' default topology syncs
+# refs/dolt/data to the git remote; that command works today and only prose
+# discourages running it. This hook is the mechanism: reject any pushed ref
+# matching refs/dolt/*, so a stray 'bd dolt push' can't publish the tracker (and
+# every stored memory) to this public repo.
+#
+# Pre-push hook contract: git feeds one line per ref being pushed on stdin, as
+#   <local ref> <local sha1> <remote ref> <remote sha1>
+# We only care about the remote ref name.
+
+fail=0
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/dolt/*)
+      echo "BLOCKED: refusing to push $remote_ref -- beads runs in stealth mode in this repo" >&2
+      echo "and refs/dolt/* must never reach origin (it would publish the issue tracker and" >&2
+      echo "every stored memory on this public repo). See CLAUDE.md's Beads section." >&2
+      fail=1
+      ;;
+  esac
+done
+
+if [ $fail -ne 0 ]; then
+  echo "" >&2
+  echo "Push rejected by .git/hooks/pre-push stealth guard." >&2
+  exit 1
+fi
+exit 0
