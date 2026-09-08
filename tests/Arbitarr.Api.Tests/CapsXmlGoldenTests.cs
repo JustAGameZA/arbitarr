@@ -8,8 +8,8 @@ using Xunit;
 namespace Arbitarr.Api.Tests;
 
 /// <summary>
-/// Golden-XML tests for t=caps rendering: both protocol families, book categories never
-/// present (M1-12), and enforced max page size.
+/// Golden-XML tests for t=caps rendering: both protocol families, upstream category labels, and
+/// enforced max page size.
 /// </summary>
 public class CapsXmlGoldenTests
 {
@@ -18,7 +18,13 @@ public class CapsXmlGoldenTests
         SupportsTvSearch: true,
         SupportsMovieSearch: true,
         MaxPageSize: 100,
-        SupportedParams: new[] { "q", "season", "ep" });
+        SupportedParams: new[] { "q", "season", "ep" },
+        CategoryNames: new Dictionary<int, string>
+        {
+            [2000] = "Movies",
+            [3000] = "Audio/MP3",
+            [5000] = "TV/HD",
+        });
 
     [Fact]
     public void Torznab_caps_render_expected_namespace_and_categories()
@@ -27,9 +33,9 @@ public class CapsXmlGoldenTests
         var rendered = xml.ToString();
 
         Assert.Contains("<caps>", rendered);
-        Assert.Contains("<category id=\"5000\" name=\"TV\" />", rendered);
+        Assert.Contains("<category id=\"5000\" name=\"TV/HD\" />", rendered);
         Assert.Contains("<category id=\"2000\" name=\"Movies\" />", rendered);
-        Assert.Contains("<category id=\"3000\" name=\"Audio\" />", rendered);
+        Assert.Contains("<category id=\"3000\" name=\"Audio/MP3\" />", rendered);
         Assert.Contains("<limits max=\"100\" default=\"100\" />", rendered);
     }
 
@@ -86,8 +92,8 @@ public class CapsXmlGoldenTests
             "  </searching>\n" +
             "  <categories>\n" +
             "    <category id=\"2000\" name=\"Movies\" />\n" +
-            "    <category id=\"3000\" name=\"Audio\" />\n" +
-            "    <category id=\"5000\" name=\"TV\" />\n" +
+            "    <category id=\"3000\" name=\"Audio/MP3\" />\n" +
+            "    <category id=\"5000\" name=\"TV/HD\" />\n" +
             "  </categories>\n" +
             "</caps>";
 
@@ -97,10 +103,7 @@ public class CapsXmlGoldenTests
     [Fact]
     public void Caps_writer_renders_exactly_the_categories_it_is_given()
     {
-        // M1-12's "book categories never appear in caps" guarantee is enforced upstream by
-        // CapsAggregator (see CapsAggregatorTests), which never includes SourceCaps.BookCategoryIds
-        // in the SourceCaps it hands to this writer. The writer itself is a pure passthrough over
-        // whatever SupportedCategories it receives — this asserts that passthrough contract.
+        // The writer is a pure passthrough over supplied IDs and upstream labels.
         var rendered = TorznabXmlWriter.WriteCaps(SampleCaps).ToString();
 
         foreach (var categoryId in SampleCaps.SupportedCategories)

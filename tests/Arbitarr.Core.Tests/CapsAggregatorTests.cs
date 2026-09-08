@@ -4,8 +4,8 @@ using Arbitarr.Core.Sources;
 namespace Arbitarr.Core.Tests;
 
 /// <summary>
-/// Proves <see cref="CapsAggregator"/>'s merge semantics (AC5, AC5a-i): union of categories
-/// (including anime), a structural exclusion of "book" regardless of upstream input,
+/// Proves <see cref="CapsAggregator"/>'s merge semantics (AC5): union of categories
+/// (including anime), with upstream category names preserved,
 /// intersection of supported params, our own enforced limits-max of 100, and last-known-good
 /// fallback when a source's caps fetch fails.
 /// </summary>
@@ -36,50 +36,52 @@ public class CapsAggregatorTests
         Assert.Contains(5070, merged.SupportedCategories);
     }
 
-    // ---------- Book: structural, hard exclusion (the single most important behavior here) ----------
+    // ---------- Categories: preserve every upstream category and its label ----------
 
     [Fact]
-    public void Merge_NeverAdvertisesBookCategory_EvenIfSourceClaimsSupport()
+    public void Merge_PreservesBookCategoriesAndFirstConfiguredSourceNames()
     {
-        // A fake source's caps claim support for the standard Torznab "Books" category (7000)
-        // and one of its subcategories (7020, EBook), alongside legitimate TV categories.
         var bookClaimingCaps = new SourceCaps(
             SupportedCategories: new[] { 5000, 7000, 7020 },
             SupportsTvSearch: true,
             SupportsMovieSearch: false,
-            MaxPageSize: 100);
+            MaxPageSize: 100,
+            CategoryNames: new Dictionary<int, string> { [5000] = "TV", [7000] = "Books", [7020] = "Books/EBook" });
 
         var otherCaps = new SourceCaps(
             SupportedCategories: new[] { 2000 },
             SupportsTvSearch: false,
             SupportsMovieSearch: true,
-            MaxPageSize: 50);
+            MaxPageSize: 50,
+            CategoryNames: new Dictionary<int, string> { [2000] = "Movies" });
 
         var merged = CapsAggregator.Merge(new[] { bookClaimingCaps, otherCaps });
 
-        // This asserts the merge actually STRIPPED book categories that were genuinely present
-        // in the input, not merely that book never appeared because no input ever claimed it.
-        Assert.DoesNotContain(7000, merged.SupportedCategories);
-        Assert.DoesNotContain(7020, merged.SupportedCategories);
-        foreach (var bookId in SourceCaps.BookCategoryIds)
-        {
-            Assert.DoesNotContain(bookId, merged.SupportedCategories);
-        }
-
-        // Non-book categories from the same claiming source must still survive the merge —
-        // proving this isn't just an empty/degenerate result.
+        Assert.Equal(new[] { 2000, 5000, 7000, 7020 }, merged.SupportedCategories);
         Assert.Contains(5000, merged.SupportedCategories);
-        Assert.Contains(2000, merged.SupportedCategories);
+        Assert.Equal("Books", merged.CategoryNames![7000]);
+        Assert.Equal("Books/EBook", merged.CategoryNames[7020]);
     }
 
     [Fact]
-    public void Merge_NeverAdvertisesBookCategory_WhenBookIsTheOnlySourceCategory()
+    public void Merge_UsesFirstConfiguredSourceName_WhenSourcesDisagree()
     {
-        var onlyBookCaps = new SourceCaps(new[] { 7000 }, false, false, 100);
+        var first = new SourceCaps(
+            SupportedCategories: new[] { 5040 },
+            SupportsTvSearch: true,
+            SupportsMovieSearch: false,
+            MaxPageSize: 100,
+            CategoryNames: new Dictionary<int, string> { [5040] = "TV/HD" });
+        var second = new SourceCaps(
+            SupportedCategories: new[] { 5040 },
+            SupportsTvSearch: true,
+            SupportsMovieSearch: false,
+            MaxPageSize: 100,
+            CategoryNames: new Dictionary<int, string> { [5040] = "HD TV" });
 
-        var merged = CapsAggregator.Merge(new[] { onlyBookCaps });
+        var merged = CapsAggregator.Merge(new[] { first, second });
 
-        Assert.Empty(merged.SupportedCategories);
+        Assert.Equal("TV/HD", merged.CategoryNames![5040]);
     }
 
     // ---------- SupportedParams: intersection ----------

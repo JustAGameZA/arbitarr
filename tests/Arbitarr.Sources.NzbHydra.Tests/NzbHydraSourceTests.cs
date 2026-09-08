@@ -182,7 +182,10 @@ public class NzbHydraSourceTests
                 <movie-search available="no" supportedParams="q" />
               </searching>
               <categories>
-                <category id="5000" name="TV" />
+                                <category id="5000" name="TV">
+                                    <subcat id="5030" name="TV/SD" />
+                                    <subcat id="5040" name="TV/HD" />
+                                </category>
                 <category id="2000" name="Movies" />
               </categories>
               <limits max="100" default="100" />
@@ -198,7 +201,12 @@ public class NzbHydraSourceTests
         var caps = await source.GetCapsAsync(SearchProtocol.Torznab);
 
         Assert.Contains(5000, caps.SupportedCategories);
+        Assert.Contains(5030, caps.SupportedCategories);
+        Assert.Contains(5040, caps.SupportedCategories);
         Assert.Contains(2000, caps.SupportedCategories);
+        Assert.Equal("TV", caps.CategoryNames![5000]);
+        Assert.Equal("TV/SD", caps.CategoryNames[5030]);
+        Assert.Equal("TV/HD", caps.CategoryNames[5040]);
         Assert.True(caps.SupportsTvSearch);
         Assert.False(caps.SupportsMovieSearch);
         Assert.Equal(100, caps.MaxPageSize);

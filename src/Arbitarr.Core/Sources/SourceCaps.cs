@@ -19,19 +19,15 @@ namespace Arbitarr.Core.Sources;
 /// treats this as true if ANY contributing source reports true (union semantics), so anime
 /// remains selectable even if only one upstream provides it.
 /// </param>
+/// <param name="CategoryNames">
+/// Upstream-provided category display names keyed by category ID. A null value represents older
+/// cached caps that predate category-name preservation; consumers fall back to generic names.
+/// </param>
 public sealed record SourceCaps(
     IReadOnlyList<int> SupportedCategories,
     bool SupportsTvSearch,
     bool SupportsMovieSearch,
     int? MaxPageSize,
     IReadOnlyList<string>? SupportedParams = null,
-    bool SupportsAnimeSearch = false)
-{
-    /// <summary>
-    /// Torznab/Newznab category IDs considered "book" categories. Per AC5a-i, merged caps must
-    /// NEVER advertise any of these regardless of what an individual upstream reports. 7000 is
-    /// the standard Torznab "Books" parent category; 7010-7060 are its standard subcategories
-    /// (Mags, EBook, Comics, Technical, Foreign, Other) per the Torznab category convention.
-    /// </summary>
-    public static readonly IReadOnlyList<int> BookCategoryIds = new[] { 7000, 7010, 7020, 7030, 7040, 7050, 7060 };
-}
+    bool SupportsAnimeSearch = false,
+    IReadOnlyDictionary<int, string>? CategoryNames = null);

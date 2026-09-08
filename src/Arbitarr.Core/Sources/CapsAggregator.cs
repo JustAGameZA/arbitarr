@@ -4,10 +4,9 @@ namespace Arbitarr.Core.Sources;
 /// Merges per-source <see cref="SourceCaps"/> (fetched from one or more <see cref="IUpstreamSource"/>
 /// instances) into a single <see cref="SourceCaps"/> to advertise to *arr consumers.
 ///
-/// Aggregation rules (AC5, AC5a-i):
-/// - Categories: UNION across all sources, including anime as selectable if ANY source supports it.
-/// - Book: NEVER advertised, structurally, regardless of what any upstream reports. This is
-///   enforced unconditionally on every merge, not merely "happens to not appear".
+/// Aggregation rules (AC5):
+/// - Categories: UNION across all sources, retaining upstream names. Where sources disagree on a
+///   name for an ID, the first configured source wins.
 /// - SupportedParams: INTERSECTION across sources. A param missing from the merged set means at
 ///   least one source doesn't support it; callers should degrade to keyword search plus local
 ///   post-filtering for that source when using it — that degradation logic is out of scope here.
@@ -77,13 +76,29 @@ public sealed class CapsAggregator
                 SupportsAnimeSearch: false);
         }
 
-        // Categories: union, then structurally strip any book category no matter its source.
+        // Categories: preserve everything the configured sources expose, including books.
         var unionCategories = perSourceCaps
             .SelectMany(c => c.SupportedCategories)
             .Distinct()
-            .Except(SourceCaps.BookCategoryIds)
             .OrderBy(id => id)
             .ToArray();
+
+        var categoryNames = new Dictionary<int, string>();
+        foreach (var caps in perSourceCaps)
+        {
+            if (caps.CategoryNames is null)
+            {
+                continue;
+            }
+
+            foreach (var (categoryId, categoryName) in caps.CategoryNames)
+            {
+                if (unionCategories.Contains(categoryId) && string.IsNullOrWhiteSpace(categoryName) is false)
+                {
+                    categoryNames.TryAdd(categoryId, categoryName);
+                }
+            }
+        }
 
         // SupportedParams: intersection across all sources. Treat a null list as "no params
         // known/advertised" so it can never silently inflate the intersection.
@@ -106,7 +121,8 @@ public sealed class CapsAggregator
             SupportsMovieSearch: perSourceCaps.Any(c => c.SupportsMovieSearch),
             MaxPageSize: EnforcedMaxPageSize,
             SupportedParams: mergedParams,
-            SupportsAnimeSearch: perSourceCaps.Any(c => c.SupportsAnimeSearch));
+            SupportsAnimeSearch: perSourceCaps.Any(c => c.SupportsAnimeSearch),
+            CategoryNames: categoryNames);
     }
 
     /// <summary>
