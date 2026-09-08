@@ -60,11 +60,18 @@ const outcomeLabel = (outcome: string): string => OUTCOME_LABELS[outcome] ?? out
  * containing credentials so that stays true. An operator can therefore see and
  * correct the address rather than retyping it blind.
  *
+ * THE MODEL IS THE SAME KIND OF VALUE (#112) and is shown the same way, but with
+ * one difference: it is a PICKER once a successful test has reported what the
+ * instance actually has, and plain text before that. The reasoning for each half
+ * is on `offered`/`options` below.
+ *
  * `saved` and `rejection` are NOT held here. A successful save invalidates the
  * config, the refetch changes the key this form is mounted under, and the
  * remount would destroy any outcome state owned by this component — so "Saved."
  * would only ever survive a save that changed nothing. They live in
- * `AiSection`, above that boundary, and arrive as props.
+ * `AiSection`, above that boundary, and arrive as props. The probe result IS held
+ * here, and losing it on a save is correct: the list it offered described the
+ * instance before the save, and the operator can ask again in one click.
  */
 function OllamaForm({
   config,
@@ -83,6 +90,36 @@ function OllamaForm({
   const test = useTestOllamaMutation();
 
   const [baseUrl, setBaseUrl] = useState(config.baseUrl);
+  const [model, setModel] = useState(config.model);
+
+  /*
+    #112: the picker appears only once a test has actually reported models, and
+    the source is the LAST probe result rather than a remembered list. Before any
+    test the stored model is shown as plain text.
+
+    WHY NOT A FREE-TEXT FIELD THAT A TEST MERELY DECORATES. Typing a model name
+    blind is the failure this issue exists to remove: an operator could name a
+    model their instance had never pulled, get a green "Connected" from the probe
+    (which only asks whether the address is Ollama), and have every classification
+    fail open with nothing on screen saying why. A picker offering only what the
+    instance reported cannot produce that state.
+
+    WHY THE STORED VALUE IS TEXT AND NOT A ONE-OPTION SELECT. A select holding
+    only the current value looks like a choice and offers none, which reads as the
+    page being broken. Text plus the test button says what is true: this is what
+    is stored, and testing is how you see the alternatives. That is also why an
+    EMPTY reported list keeps the text rendering — an instance that has pulled
+    nothing answers Ok with no names, which is healthy but is not a list to pick
+    from, and turning it into a one-option select would produce exactly the
+    misleading control this avoids.
+  */
+  const offered =
+    test.isSuccess && test.data.success && test.data.models.length > 0 ? test.data.models : null;
+  // The stored model stays selectable even when the probe did not list it — a
+  // model pulled and then removed, or a name seeded from configuration. Dropping
+  // it would silently change what is saved the moment the operator touches Save.
+  const options =
+    offered === null ? null : offered.includes(model) ? offered : [model, ...offered];
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -90,9 +127,11 @@ function OllamaForm({
     setRejection(null);
 
     // Sent as typed. No client-side URL check of our own: the server owns
-    // validation, rejects rather than clamps, and states its own reason.
+    // validation, rejects rather than clamps, and states its own reason. The
+    // model goes with it in the same request: one Save, one PUT, and the server
+    // applies both or neither.
     update.mutate(
-      { baseUrl },
+      { baseUrl, model },
       {
         // Captured from the PER-CALL callbacks into component state, which is
         // the shape that is correct by construction — such a callback runs after
@@ -136,6 +175,43 @@ function OllamaForm({
           The address of your Ollama instance, such as http://ollama:11434. It must be an absolute
           http or https URL, and it must not contain a username or password — Ollama has no
           authentication, and credentials in the address would be written to the request log.
+        </p>
+
+        {/*
+          #112. Two renderings of the same value, chosen by whether a successful
+          test has reported a model list. Both carry the same accessible name, so
+          a test asserting on "Ollama model" reads whichever is on screen rather
+          than having to know which state the page is in.
+        */}
+        {options === null ? (
+          <p className={local.status}>
+            <span className={styles.muted}>Ollama model</span>
+            <span className={local.modelValue} aria-label="Ollama model">
+              {model}
+            </span>
+          </p>
+        ) : (
+          <label className={styles.field}>
+            Ollama model
+            <select
+              className={local.modelSelect}
+              aria-label="Ollama model"
+              value={model}
+              onChange={(event) => setModel(event.target.value)}
+            >
+              {options.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        <p className={local.hint}>
+          {options === null
+            ? 'The model every classification request asks for. Run the connection test to choose from the models your instance actually has.'
+            : 'The models your instance reported when you last tested the connection. Choosing one here takes effect on the next classification once you save.'}
         </p>
 
         <div className={local.actions}>
@@ -265,7 +341,11 @@ export function AiSection() {
             // leaving a stale local edit — the same reason the catalog rows key
             // on their value.
             <OllamaForm
-              key={data.baseUrl}
+              // #112: the model is part of the key too, so saving a model change
+              // reseeds the field from the server exactly as saving an address
+              // does. Keyed on the address alone, a model-only save would leave
+              // the previous local value sitting in a form that never remounted.
+              key={`${data.baseUrl} ${data.model}`}
               config={data}
               saved={saved}
               setSaved={setSaved}

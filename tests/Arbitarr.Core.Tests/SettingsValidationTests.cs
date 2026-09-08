@@ -779,6 +779,117 @@ public class SettingsValidationTests
         Assert.Null(ex);
     }
 
+    // ---------- #112 Ollama model ----------
+
+    [Theory]
+    [InlineData("qwen2.5:7b-instruct-q4_K_M")]
+    [InlineData("llama3.1:8b")]
+    [InlineData("phi4")]
+    // A namespaced model from a registry: slashes and dots are ordinary parts of a tag.
+    [InlineData("hf.co/bartowski/Qwen2.5-7B-GGUF:Q4_K_M")]
+    [InlineData("a")]
+    public void OllamaModel_AcceptsRealModelTags(string proposed)
+    {
+        var ex = Record.Exception(() => SettingsValidator.ValidateOllamaModel(proposed));
+        Assert.Null(ex);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("\t")]
+    public void OllamaModel_RejectsABlankValue(string proposed)
+    {
+        var ex = Assert.Throws<SettingsValidationException>(
+            () => SettingsValidator.ValidateOllamaModel(proposed));
+        Assert.Equal(SettingKey.OllamaModel, ex.Key);
+    }
+
+    /// <summary>
+    /// <b>REJECT, NEVER CLAMP — and specifically never TRIM.</b> Trimming is the obvious fix here
+    /// and it is the wrong one: it would store a value the operator did not submit, and they would
+    /// never learn their paste carried a newline. Each of these is a real paste accident, and each
+    /// must come back as a rejection rather than as a quietly-corrected save.
+    /// </summary>
+    [Theory]
+    [InlineData("qwen2.5:7b ")]
+    [InlineData(" qwen2.5:7b")]
+    [InlineData("qwen2.5:7b\n")]
+    [InlineData("qwen2.5:7b\r\n")]
+    [InlineData("qwen 2.5:7b")]
+    [InlineData("qwen2.5:7b\tinstruct")]
+    [InlineData("qwen2.5:7b\0")]
+    // An ANSI escape sequence, the shape a value copied out of a coloured terminal carries.
+    [InlineData("qwen2.5\u001b[0m:7b")]
+    public void OllamaModel_RejectsWhitespaceAndControlCharactersRatherThanTrimming(string proposed)
+    {
+        var ex = Assert.Throws<SettingsValidationException>(
+            () => SettingsValidator.ValidateOllamaModel(proposed));
+        Assert.Equal(SettingKey.OllamaModel, ex.Key);
+    }
+
+    /// <summary>
+    /// The value IS echoed in the rejection — it is not a secret, and an operator who pasted the
+    /// wrong thing needs to see what was rejected — but control characters are rendered inert
+    /// first, because the message travels into a JSON body and from there into the page that
+    /// displays it.
+    ///
+    /// <para>POSITIVE CONTROL: the search is first shown to FIND the escape sequence in a message
+    /// built the way an echoing implementation would build it, so its absence below is a property
+    /// rather than a search that could never have matched.</para>
+    /// </summary>
+    [Fact]
+    public void OllamaModel_RejectionRendersControlCharactersInert()
+    {
+        // The ESC character built from its code point rather than pasted as a literal, so this
+        // source file stays plain ASCII and no editor or pipeline can silently normalise the byte
+        // this test is about away.
+        var escape = ((char)0x1b).ToString();
+        var proposed = $"qwen2.5{escape}[31m:7b";
+
+        // Detectability control: a message built the way an echoing implementation would build it
+        // DOES carry the escape, so its absence below is a property rather than a blind search.
+        var wouldLeak = $"'{proposed}' is not a valid Ollama model name.";
+        Assert.Contains(escape, wouldLeak, StringComparison.Ordinal);
+
+        var ex = Assert.Throws<SettingsValidationException>(
+            () => SettingsValidator.ValidateOllamaModel(proposed));
+
+        Assert.DoesNotContain(escape, ex.Message, StringComparison.Ordinal);
+        // And the operator still learns WHICH value was rejected — the printable part survives.
+        Assert.Contains("qwen2.5", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void OllamaModel_AcceptsTheLengthCeiling()
+    {
+        var ex = Record.Exception(() => SettingsValidator.ValidateOllamaModel(
+            new string('m', SettingsValidator.OllamaModelMaxLength)));
+        Assert.Null(ex);
+    }
+
+    [Fact]
+    public void OllamaModel_RejectsJustAboveTheLengthCeiling()
+    {
+        var ex = Assert.Throws<SettingsValidationException>(
+            () => SettingsValidator.ValidateOllamaModel(
+                new string('m', SettingsValidator.OllamaModelMaxLength + 1)));
+        Assert.Equal(SettingKey.OllamaModel, ex.Key);
+    }
+
+    /// <summary>
+    /// The validator does NOT ask whether the model exists — it could not without a network call on
+    /// the settings write path, and a name pulled after the last probe must still be storable. The
+    /// instance's real list reaches the operator through the connectivity probe instead.
+    /// </summary>
+    [Fact]
+    public void OllamaModel_AcceptsAModelNobodyHasPulled()
+    {
+        var ex = Record.Exception(
+            () => SettingsValidator.ValidateOllamaModel("a-model-that-does-not-exist:latest"));
+        Assert.Null(ex);
+    }
+
     // ---------- AI confidence threshold ----------
 
     [Fact]

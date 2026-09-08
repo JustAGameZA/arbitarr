@@ -17,8 +17,15 @@ namespace Arbitarr.Core.Tests;
 /// what fails if a future edit collapses two branches — a size assertion, not a per-case one, so
 /// merging TLS into Unreachable cannot pass by leaving each individual case still "correct".</para>
 ///
+/// <para><b>#112 added a second property: the MODEL NAMES come back, and the outcome still does
+/// not.</b> Those tests live in their own block at the bottom. Two of them restate guarantees the
+/// tests above already hold — that an empty array is healthy, and that no text from the wire reaches
+/// the outcome — from the result's side, because extracting names is exactly the change that could
+/// have broken either while every assertion above still passed.</para>
+///
 /// <para>All addresses are RFC 2606/5737 documentation forms; nothing here can reach a real host,
-/// and the stub handler answers without a socket regardless.</para>
+/// and the stub handler answers without a socket regardless. Model names are either the real
+/// public tag names (which are not secrets) or <c>placeholder-*</c>.</para>
 /// </summary>
 public sealed class OllamaConnectivityProberTests
 {
@@ -118,9 +125,9 @@ public sealed class OllamaConnectivityProberTests
         using var client = new HttpClient(handler);
         var prober = new OllamaConnectivityProber(client, TimeSpan.FromMilliseconds(50));
 
-        var outcome = await prober.ProbeAsync(BaseUrl);
+        var result = await prober.ProbeAsync(BaseUrl);
 
-        Assert.Equal(OllamaProbeOutcome.Unreachable, outcome);
+        Assert.Equal(OllamaProbeOutcome.Unreachable, result.Outcome);
     }
 
     [Fact]
@@ -242,10 +249,145 @@ public sealed class OllamaConnectivityProberTests
             outcomes.OrderBy(o => o).ToList());
     }
 
+    // ---------------------------------------------------------------------------------------
+    // #112: the model NAMES the probe now carries back. Every assertion below is about the
+    // Models field, never about the outcome wording — that is still derived from the enum alone,
+    // and the tests above are what pin it.
+    // ---------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// The names are extracted from the <c>name</c> of each <c>/api/tags</c> entry, IN ORDER.
+    /// Order matters because it is what the operator sees in the picker, and Ollama lists most
+    /// recently modified first — resorting it here would silently discard that.
+    /// </summary>
+    [Fact]
+    public async Task The_model_names_are_extracted_from_the_tags_response()
+    {
+        var result = await ProbeForResultAsync(_ => Json(HttpStatusCode.OK, """
+            {"models":[
+              {"name":"qwen2.5:7b-instruct-q4_K_M","size":4700000000},
+              {"name":"llama3.1:8b","size":4900000000},
+              {"name":"phi4:14b","size":9100000000}
+            ]}
+            """));
+
+        Assert.Equal(OllamaProbeOutcome.Ok, result.Outcome);
+        Assert.Equal(
+            new[] { "qwen2.5:7b-instruct-q4_K_M", "llama3.1:8b", "phi4:14b" },
+            result.Models);
+    }
+
+    /// <summary>
+    /// <b>THE EMPTY-ARRAY GUARANTEE, restated for #112.</b> An instance with nothing pulled is
+    /// healthy, so it is still <see cref="OllamaProbeOutcome.Ok"/> — with an empty name list rather
+    /// than a failure. The obvious way to implement name extraction is to treat "no names" as "not
+    /// a model list", and that would report a perfectly reachable Ollama as "not Ollama" and send
+    /// the operator to fix an address that was already right. Asserted on the RESULT here, where
+    /// <see cref="An_empty_model_list_is_still_a_healthy_ollama"/> above asserts the outcome, so
+    /// the two halves of the guarantee each have their own failure.
+    /// </summary>
+    [Fact]
+    public async Task An_empty_model_list_is_ok_with_no_names_rather_than_a_failure()
+    {
+        var result = await ProbeForResultAsync(_ => Json(HttpStatusCode.OK, """{"models":[]}"""));
+
+        Assert.Equal(OllamaProbeOutcome.Ok, result.Outcome);
+        Assert.Empty(result.Models);
+    }
+
+    /// <summary>
+    /// An entry with no usable <c>name</c> is SKIPPED, not fatal. A body that is recognisably
+    /// Ollama's model list stays recognisable when one element is odd, and a name the picker could
+    /// not render is simply not offered. Per-entry: the two good names on either side of the bad
+    /// ones must both survive, which a "stop at the first bad entry" implementation would fail.
+    /// </summary>
+    [Fact]
+    public async Task An_entry_without_a_usable_name_is_skipped_rather_than_failing_the_probe()
+    {
+        var result = await ProbeForResultAsync(_ => Json(HttpStatusCode.OK, """
+            {"models":[
+              {"name":"llama3.1:8b"},
+              {"size":123},
+              {"name":null},
+              {"name":42},
+              {"name":"  "},
+              {"name":""},
+              "not-an-object",
+              {"name":"phi4:14b"}
+            ]}
+            """));
+
+        Assert.Equal(OllamaProbeOutcome.Ok, result.Outcome);
+        Assert.Equal(new[] { "llama3.1:8b", "phi4:14b" }, result.Models);
+    }
+
+    /// <summary>
+    /// Every non-Ok outcome carries an EMPTY list. There was no model list to read, so anything
+    /// there would have to have been invented — and a picker populated from a failed probe is
+    /// exactly the "green tick, wrong model" failure #112 exists to end.
+    /// </summary>
+    [Fact]
+    public async Task Every_failing_outcome_carries_no_model_names()
+    {
+        var failures = new List<OllamaProbeResult>
+        {
+            await ProbeForResultAsync(_ => throw new HttpRequestException(
+                "refused", new SocketException((int)SocketError.ConnectionRefused))),
+            await ProbeForResultAsync(_ => throw new HttpRequestException(
+                "handshake", new AuthenticationException("bad certificate"))),
+            await ProbeForResultAsync(_ => Json(HttpStatusCode.OK, "<html>login</html>")),
+            await ProbeForResultAsync(_ => Json(HttpStatusCode.Unauthorized, "nope")),
+            await ProbeForResultAsync(
+                _ => throw new InvalidOperationException("unreachable"), baseUrl: "not-a-url"),
+        };
+
+        // Per-result, not "none of them collectively": a single Assert.All over a flattened list
+        // would still pass if one result carried names and another carried the empty list.
+        Assert.All(failures, f =>
+        {
+            Assert.NotEqual(OllamaProbeOutcome.Ok, f.Outcome);
+            Assert.Empty(f.Models);
+        });
+        // And the set really did cover more than one failing outcome, so the assertion above is not
+        // one case repeated five times.
+        Assert.True(failures.Select(f => f.Outcome).Distinct().Count() >= 3);
+    }
+
+    /// <summary>
+    /// <b>THE CLOSED-ENUM GUARANTEE, restated for #112.</b> Carrying model names must not have
+    /// leaked one into the outcome, which is the only thing the endpoint's operator-facing wording
+    /// is derived from. The outcome remains a bare enum value with no room for text — asserted by
+    /// its being a member of the enum whose name matches none of the models reported.
+    /// </summary>
+    [Fact]
+    public async Task The_outcome_carries_no_model_name()
+    {
+        const string distinctive = "placeholder-model-name-that-must-not-escape";
+        var result = await ProbeForResultAsync(_ => Json(
+            HttpStatusCode.OK, $$"""{"models":[{"name":"{{distinctive}}"}]}"""));
+
+        // Existence: the name really was in the response and really was read.
+        Assert.Contains(distinctive, result.Models);
+
+        // Detectability: the search below genuinely finds this string when it is present, so its
+        // absence from the outcome is a property rather than a search that cannot see.
+        Assert.Contains(distinctive, $"Ok: {distinctive}", StringComparison.Ordinal);
+        Assert.DoesNotContain(distinctive, result.Outcome.ToString(), StringComparison.Ordinal);
+        Assert.Contains(result.Outcome, Enum.GetValues<OllamaProbeOutcome>());
+    }
+
     private static HttpResponseMessage Json(HttpStatusCode status, string body) =>
         new(status) { Content = new StringContent(body) };
 
+    /// <summary>Drives the prober and returns the OUTCOME alone, for the classification tests.</summary>
     private static async Task<OllamaProbeOutcome> ProbeAsync(
+        Func<HttpRequestMessage, HttpResponseMessage> respond,
+        string baseUrl = BaseUrl,
+        TimeSpan? timeout = null) =>
+        (await ProbeForResultAsync(respond, baseUrl, timeout)).Outcome;
+
+    /// <summary>Drives the prober and returns the whole result, for the #112 model-name tests.</summary>
+    private static async Task<OllamaProbeResult> ProbeForResultAsync(
         Func<HttpRequestMessage, HttpResponseMessage> respond,
         string baseUrl = BaseUrl,
         TimeSpan? timeout = null)

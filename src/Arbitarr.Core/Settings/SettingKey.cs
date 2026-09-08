@@ -148,4 +148,27 @@ public enum SettingKey
     /// every other setting takes.</para>
     /// </summary>
     OllamaBaseUrl,
+
+    /// <summary>
+    /// #112: the Ollama model the AI layer sends in every classification request.
+    ///
+    /// <para><b>Seeded once from <c>Arbitarr:Ai:Ollama:Model</c>, then the database is
+    /// authoritative</b> — exactly as <see cref="OllamaBaseUrl"/> is (see
+    /// <c>Arbitarr.Host.Ai.OllamaModelSeeder</c>, the sibling of <c>OllamaBaseUrlSeeder</c>). After
+    /// the first start the environment value is inert, and a change on the Settings page takes
+    /// effect on the next classification through <c>OllamaModelCache</c> +
+    /// <c>OllamaModelResolver</c>.</para>
+    ///
+    /// <para><b>Deliberately NOT in <see cref="SettingsCatalog.Entries"/></b>, for the same reason
+    /// as <see cref="OllamaBaseUrl"/> and not <see cref="AdminApiKey"/>'s: this value is not a
+    /// secret and is served back on <c>GET /api/admin/ai/ollama</c>. It is off the catalog because
+    /// it belongs to the AI section, whose affordance a generic catalog row cannot provide — here a
+    /// PICKER populated from the instance's own <c>/api/tags</c> list, which is the entire point of
+    /// #112. A catalog entry would render it a second time as an unexplained free-text field beside
+    /// the picker that already owns it, and typing a model name blind is the failure this issue
+    /// exists to remove. Its write path is <c>PUT /api/admin/ai/ollama</c>
+    /// (<c>AdminAiEndpoints</c>), reaching <see cref="SettingsValidator.ValidateOllamaModel"/>
+    /// through the same repository switch every other setting takes.</para>
+    /// </summary>
+    OllamaModel,
 }

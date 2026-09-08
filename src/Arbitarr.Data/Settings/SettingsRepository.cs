@@ -204,6 +204,16 @@ public sealed class SettingsRepository
                 // section with a connectivity probe, not because it must be hidden.
                 SettingsValidator.ValidateOllamaBaseUrl(proposed);
                 break;
+            case SettingKey.OllamaModel:
+                // #112. Same shape as OllamaBaseUrl directly above, and off the catalog for the
+                // same reason plus one of its own: the AI section renders this as a PICKER
+                // populated from the instance's own model list, which a generic catalog text row
+                // cannot do. So PUT /api/admin/settings/OllamaModel stays a 404 and the value is
+                // written only through AdminAiEndpoints — but the validation it takes is this one,
+                // on the reject-never-clamp path. Notably NOT trimmed here: ValidateOllamaModel
+                // rejects a value carrying whitespace rather than quietly storing a different one.
+                SettingsValidator.ValidateOllamaModel(proposed);
+                break;
             case SettingKey.AdminApiKey:
                 // #43: this arm USED TO `throw new SettingsValidationException(key,
                 // "admin_api_key is not editable through the settings write path.")`. Do not

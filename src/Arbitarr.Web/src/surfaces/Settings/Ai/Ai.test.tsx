@@ -11,7 +11,20 @@ const ROUTE = '/api/admin/ai/ollama';
 const TEST_ROUTE = '/api/admin/ai/ollama/test';
 
 /** RFC 5737 TEST-NET-1: non-routable, and no real address enters committed content. */
-const CONFIGURED = { baseUrl: 'http://192.0.2.10:11434' };
+const CONFIGURED = { baseUrl: 'http://192.0.2.10:11434', model: 'qwen2.5:7b-instruct-q4_K_M' };
+
+/**
+ * A probe result. `models` defaults to empty, matching the server: an instance
+ * with nothing pulled answers Ok with no names, and every failing outcome carries
+ * an empty list because there was no model list to read.
+ */
+function probe(
+  outcome: string,
+  message: string,
+  models: string[] = [],
+): { success: boolean; outcome: string; message: string; models: string[] } {
+  return { success: outcome === 'Ok', outcome, message, models };
+}
 
 /** The body of the last PUT the page sent, parsed. */
 function lastPutBody(api: ReturnType<typeof mockApi>): Record<string, unknown> {
@@ -63,7 +76,15 @@ describe('AI backend section', () => {
     await userEvent.type(field, 'http://192.0.2.20:11434');
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
 
-    await waitFor(() => expect(lastPutBody(api)).toEqual({ baseUrl: 'http://192.0.2.20:11434' }));
+    // The model rides along unchanged: one Save, one PUT, and the server applies
+    // both or neither. Sending only the address would work against the server
+    // (the field is optional) but would make a model edit need a second click.
+    await waitFor(() =>
+      expect(lastPutBody(api)).toEqual({
+        baseUrl: 'http://192.0.2.20:11434',
+        model: 'qwen2.5:7b-instruct-q4_K_M',
+      }),
+    );
     expect(await screen.findByText('Saved.')).toBeInTheDocument();
   });
 
@@ -109,13 +130,18 @@ describe('AI backend section', () => {
     await userEvent.type(field, 'not-a-url');
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
 
-    await waitFor(() => expect(lastPutBody(api)).toEqual({ baseUrl: 'not-a-url' }));
+    await waitFor(() =>
+      expect(lastPutBody(api)).toEqual({
+        baseUrl: 'not-a-url',
+        model: 'qwen2.5:7b-instruct-q4_K_M',
+      }),
+    );
   });
 
   it('posts no body when testing the connection', async () => {
     const api = mockApi({
       [ROUTE]: { body: CONFIGURED },
-      [TEST_ROUTE]: { body: { success: true, outcome: 'Ok', message: 'Connected successfully.' } },
+      [TEST_ROUTE]: { body: probe('Ok', 'Connected successfully.') },
     });
     renderSurface(<AiSection />);
 
@@ -132,11 +158,7 @@ describe('AI backend section', () => {
     mockApi({
       [ROUTE]: { body: CONFIGURED },
       [TEST_ROUTE]: {
-        body: {
-          success: true,
-          outcome: 'Ok',
-          message: 'Connected successfully and Ollama answered with its model list.',
-        },
+        body: probe('Ok', 'Connected successfully and Ollama answered with its model list.'),
       },
     });
     renderSurface(<AiSection />);
@@ -166,7 +188,7 @@ describe('AI backend section', () => {
     for (const outcome of outcomes) {
       const api = mockApi({
         [ROUTE]: { body: CONFIGURED },
-        [TEST_ROUTE]: { body: { success: outcome === 'Ok', outcome, message: `wording for ${outcome}` } },
+        [TEST_ROUTE]: { body: probe(outcome, `wording for ${outcome}`) },
       });
       const view = renderSurface(<AiSection />);
 
@@ -224,6 +246,181 @@ describe('AI backend section', () => {
 
     await screen.findByLabelText('Ollama base URL');
     expect(screen.getByText(/save an edit before testing it/i)).toBeInTheDocument();
+  });
+
+  // -----------------------------------------------------------------------------
+  // #112: the model picker.
+  // -----------------------------------------------------------------------------
+
+  /**
+   * Before any test has run there is nothing to choose FROM, so the stored value
+   * is shown as text. A one-option select would look like a choice and offer
+   * none, which reads as the page being broken.
+   */
+  it('shows the stored model as text before any test has run', async () => {
+    mockApi({ [ROUTE]: { body: CONFIGURED } });
+    renderSurface(<AiSection />);
+
+    const model = await screen.findByLabelText('Ollama model');
+    expect(model).toHaveTextContent('qwen2.5:7b-instruct-q4_K_M');
+    // Specifically NOT a select: there is nothing to pick from yet.
+    expect(model.tagName).not.toBe('SELECT');
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    expect(screen.getByText(/Run the connection test to choose/i)).toBeInTheDocument();
+  });
+
+  /**
+   * <b>THE PICKER.</b> After a successful test the names the server reported
+   * become the options — the whole point of #112: an operator can no longer name
+   * a model their instance has never pulled, because the list is the instance's
+   * own.
+   */
+  it('offers the reported models in a select after a successful test', async () => {
+    mockApi({
+      [ROUTE]: { body: CONFIGURED },
+      [TEST_ROUTE]: {
+        body: probe('Ok', 'Connected successfully.', [
+          'qwen2.5:7b-instruct-q4_K_M',
+          'llama3.1:8b',
+          'phi4:14b',
+        ]),
+      },
+    });
+    renderSurface(<AiSection />);
+
+    await screen.findByLabelText('Ollama base URL');
+    await userEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+
+    const select = await screen.findByRole('combobox', { name: 'Ollama model' });
+    expect(select).toHaveValue('qwen2.5:7b-instruct-q4_K_M');
+    expect(
+      Array.from(select.querySelectorAll('option')).map((option) => option.textContent),
+    ).toEqual(['qwen2.5:7b-instruct-q4_K_M', 'llama3.1:8b', 'phi4:14b']);
+  });
+
+  /** Choosing a model and saving stores it, in the same PUT as the address. */
+  it('sends the chosen model when saving', async () => {
+    const api = mockApi({
+      [ROUTE]: { body: CONFIGURED },
+      [TEST_ROUTE]: {
+        body: probe('Ok', 'Connected successfully.', ['qwen2.5:7b-instruct-q4_K_M', 'phi4:14b']),
+      },
+    });
+    renderSurface(<AiSection />);
+
+    await screen.findByLabelText('Ollama base URL');
+    await userEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+
+    const select = await screen.findByRole('combobox', { name: 'Ollama model' });
+    await userEvent.selectOptions(select, 'phi4:14b');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() =>
+      expect(lastPutBody(api)).toEqual({
+        baseUrl: 'http://192.0.2.10:11434',
+        model: 'phi4:14b',
+      }),
+    );
+  });
+
+  /**
+   * The stored model stays selectable even when the probe did not list it — a
+   * model pulled and then removed, or a name seeded from configuration. Dropping
+   * it would silently change what is saved the moment the operator touches Save,
+   * which is a change they never asked for.
+   */
+  it('keeps the stored model selectable when the instance no longer reports it', async () => {
+    mockApi({
+      [ROUTE]: { body: CONFIGURED },
+      [TEST_ROUTE]: { body: probe('Ok', 'Connected successfully.', ['llama3.1:8b', 'phi4:14b']) },
+    });
+    renderSurface(<AiSection />);
+
+    await screen.findByLabelText('Ollama base URL');
+    await userEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+
+    const select = await screen.findByRole('combobox', { name: 'Ollama model' });
+    // Still the stored value, and it is still an option rather than having been
+    // silently replaced by whatever happened to be first in the reported list.
+    expect(select).toHaveValue('qwen2.5:7b-instruct-q4_K_M');
+    expect(
+      Array.from(select.querySelectorAll('option')).map((option) => option.textContent),
+    ).toEqual(['qwen2.5:7b-instruct-q4_K_M', 'llama3.1:8b', 'phi4:14b']);
+  });
+
+  /**
+   * An instance that has pulled nothing answers Ok with an EMPTY list. That is a
+   * healthy instance, not a failure — the probe still reports Connected — but it
+   * is not a list to pick from either, so the text rendering stays.
+   */
+  it('does not offer a picker when a successful test reports no models', async () => {
+    mockApi({
+      [ROUTE]: { body: CONFIGURED },
+      [TEST_ROUTE]: { body: probe('Ok', 'Connected successfully.', []) },
+    });
+    renderSurface(<AiSection />);
+
+    await screen.findByLabelText('Ollama base URL');
+    await userEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+
+    // The probe DID succeed — so this test is about the empty list, not about a
+    // failure being mistaken for one.
+    expect(await screen.findByText('Connected')).toBeInTheDocument();
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Ollama model')).toHaveTextContent('qwen2.5:7b-instruct-q4_K_M');
+  });
+
+  /**
+   * A FAILING probe reports no models, and must not produce a picker either. A
+   * list built from a failed probe is exactly the "green tick, wrong model"
+   * state #112 exists to end.
+   */
+  it('does not offer a picker when the probe failed', async () => {
+    mockApi({
+      [ROUTE]: { body: CONFIGURED },
+      [TEST_ROUTE]: { body: probe('Unreachable', 'Could not reach Ollama.') },
+    });
+    renderSurface(<AiSection />);
+
+    await screen.findByLabelText('Ollama base URL');
+    await userEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+
+    expect(await screen.findByText('Unreachable')).toBeInTheDocument();
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+  });
+
+  /**
+   * The model names are DATA, never prose. They appear as options and nowhere
+   * else — in particular they are not spliced into the server's fixed wording,
+   * which is what keeps the outcome union at four members and the message derived
+   * from the closed enum alone.
+   *
+   * POSITIVE CONTROL: the same search is first shown to FIND the name where it
+   * genuinely is (the select), so its absence from the message paragraph is a
+   * property rather than a search that could never have matched.
+   */
+  it('renders the reported names only as options, never inside the server wording', async () => {
+    const distinctive = 'placeholder-model-that-must-not-appear-in-prose';
+    mockApi({
+      [ROUTE]: { body: CONFIGURED },
+      [TEST_ROUTE]: {
+        body: probe('Ok', 'Connected successfully and Ollama answered with its model list.', [
+          distinctive,
+        ]),
+      },
+    });
+    renderSurface(<AiSection />);
+
+    await screen.findByLabelText('Ollama base URL');
+    await userEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+
+    // Existence + detectability: the name really is on the page, in the select.
+    const select = await screen.findByRole('combobox', { name: 'Ollama model' });
+    expect(select.textContent).toContain(distinctive);
+
+    // And it is absent from the server's wording, which is rendered as-is.
+    const message = screen.getByText(/answered with its model list/);
+    expect(message.textContent).not.toContain(distinctive);
   });
 
   it('attaches the admin key to its reads', async () => {

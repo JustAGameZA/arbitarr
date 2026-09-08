@@ -274,29 +274,49 @@ builder.Services.AddHostedService(sp => new RefreshWorker(
 // other adapter uses). Base URL defaults to the in-cluster service name, never a LAN IP; tests use
 // http://ollama.example.invalid.
 //
-// #89: OllamaOptions.BaseUrl is now only the STARTUP FALLBACK, not the live address. The value in
-// force is the OllamaBaseUrl settings row, resolved per call through OllamaBaseUrlResolver so a
-// change on the Settings page takes effect without a restart. This singleton still carries it
-// because Model/KeepAlive have no settings surface yet and the record needs a base URL, and because
-// an OllamaClient constructed without a resolver (every existing test) must still work.
+// #89/#112: OllamaOptions carries only STARTUP FALLBACKS, not the live values. BaseUrl and Model
+// are both settings rows now (OllamaBaseUrl, OllamaModel), resolved per call through their
+// resolvers so a change on the Settings page takes effect without a restart. This singleton still
+// carries both because KeepAlive has no settings surface (deliberately out of #112's scope, and
+// nothing about it is per-operator), and — the load-bearing reason — because an OllamaClient
+// constructed WITHOUT resolvers must still work: that is the shape every existing test constructs,
+// and the honest behaviour for a caller with no settings store behind it.
 builder.Services.AddSingleton(_ =>
 {
     var section = builder.Configuration.GetSection("Arbitarr:Ai:Ollama");
     var baseUrlRaw = section["BaseUrl"] ?? Arbitarr.Data.Settings.OllamaBaseUrlResolver.DefaultBaseUrl;
-    var model = section["Model"] ?? "qwen2.5:7b-instruct-q4_K_M";
+    var model = section["Model"] ?? Arbitarr.Data.Settings.OllamaModelResolver.DefaultModel;
     var keepAlive = section["KeepAlive"] ?? "-1";
     return new OllamaOptions(new Uri(baseUrlRaw), model, keepAlive);
 });
 
-// #89: the process-wide cache of the base URL in force. Singleton because it must outlive a
-// request — the whole point is that a write in one request is seen by the next. The settings write
-// path invalidates it; OllamaBaseUrlResolver (scoped, it needs the DbContext) repopulates it.
+// #89/#112: the process-wide caches of the base URL and model in force. Singletons because they
+// must outlive a request — the whole point is that a write in one request is seen by the next. The
+// settings write path invalidates them; the resolvers (scoped, they need the DbContext) repopulate.
 builder.Services.AddSingleton<Arbitarr.Core.Ai.OllamaBaseUrlCache>();
 builder.Services.AddScoped<Arbitarr.Data.Settings.OllamaBaseUrlResolver>();
-builder.Services.AddSingleton(sp =>
+builder.Services.AddSingleton<Arbitarr.Core.Ai.OllamaModelCache>();
+builder.Services.AddScoped<Arbitarr.Data.Settings.OllamaModelResolver>();
+
+// #112: SCOPED, where it was a singleton before. AiModelIdentity keys the verdict cache (R17: a
+// model change must invalidate previously cached verdicts), so it has to FOLLOW the resolved model
+// rather than the start-up one — a singleton would have kept serving the boot-time name after an
+// operator picked a different model, and every cached verdict would have stayed keyed to a model
+// that was no longer being asked. Scoped is the narrowest lifetime that lets it re-read: it is
+// consumed by FilterStage (already scoped) and by ClassifierPollingWorker, which resolves it from
+// the per-cycle scope it already creates.
+//
+// The read is synchronous because a DI factory has no await; OllamaModelResolver.Get() documents
+// why that is a real sync query rather than a blocking wait on the async one. It is served from the
+// singleton cache on all but the first call after a write.
+builder.Services.AddScoped(sp =>
 {
     var section = builder.Configuration.GetSection("Arbitarr:Ai");
-    var modelName = section["ModelName"] ?? sp.GetRequiredService<OllamaOptions>().Model;
+    // Arbitarr:Ai:ModelName remains an explicit override for a deployment that needs the cache key
+    // pinned independently of the model actually being called. Unset everywhere, and left in place
+    // rather than removed because removing it is not #112's question.
+    var modelName = section["ModelName"]
+        ?? sp.GetRequiredService<Arbitarr.Data.Settings.OllamaModelResolver>().Get();
     var modelDigest = section["ModelDigest"] ?? "unknown";
     var promptVersion = section["PromptVersion"] ?? "v1";
     return new AiModelIdentity(modelName, modelDigest, promptVersion);
@@ -317,11 +337,15 @@ builder.Services.AddScoped<IOllamaClient>(sp =>
     // which is correct because IOllamaClient is itself scoped; the cache behind it is the singleton
     // that carries a write across scopes.
     var resolver = sp.GetRequiredService<Arbitarr.Data.Settings.OllamaBaseUrlResolver>();
+    // #112: and the model likewise, so an operator picking a different model from the instance's
+    // own list has the NEXT classification use it.
+    var modelResolver = sp.GetRequiredService<Arbitarr.Data.Settings.OllamaModelResolver>();
     return new OllamaClient(
         options,
         httpClient,
         circuitBreaker,
-        async ct => new Uri(await resolver.GetAsync(ct)));
+        async ct => new Uri(await resolver.GetAsync(ct)),
+        async ct => await modelResolver.GetAsync(ct));
 });
 builder.Services.AddScoped<ReleaseClassifier>();
 builder.Services.AddScoped<IVerdictCacheReader, VerdictCacheReader>();
@@ -357,10 +381,12 @@ builder.Services.AddSingleton<InMemoryReleaseLookup>();
 // worker-side title-rewrite caching. AC24: the poll interval is
 // re-read from settings at the top of every cycle via the scope factory, so a live settings change
 // takes effect without a restart.
+// #112: AiModelIdentity is no longer passed here — it is scoped now and the worker resolves it
+// from the per-cycle scope, so a model change on the Settings page reaches the verdict cache key
+// on the next cycle instead of at the next restart. See that constructor's doc.
 builder.Services.AddHostedService(sp => new ClassifierPollingWorker(
     sp.GetRequiredService<IServiceScopeFactory>(),
     sp.GetRequiredService<InMemoryReleaseLookup>(),
-    sp.GetRequiredService<AiModelIdentity>(),
     sp.GetRequiredService<TimeProvider>(),
     logger: sp.GetRequiredService<ILogger<ClassifierPollingWorker>>()));
 builder.Services.AddSingleton<IReleaseLookup>(sp => sp.GetRequiredService<InMemoryReleaseLookup>());
@@ -600,6 +626,16 @@ using (var scope = app.Services.CreateScope())
     await Arbitarr.Host.Ai.OllamaBaseUrlSeeder.SeedAsync(
         dbContext,
         builder.Configuration.GetSection("Arbitarr:Ai:Ollama")["BaseUrl"],
+        app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Arbitarr.Host.Ai"));
+
+    // #112: the same ruling again, for the model. Separate call rather than folded into the seeder
+    // above because the two rows are independent — an existing deployment already has a base URL row
+    // from #89 and must still get a model row seeded on this upgrade, which a combined
+    // "seed if neither exists" check would have skipped, leaving the model invisible forever on
+    // exactly the installations #112 is for.
+    await Arbitarr.Host.Ai.OllamaModelSeeder.SeedAsync(
+        dbContext,
+        builder.Configuration.GetSection("Arbitarr:Ai:Ollama")["Model"],
         app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Arbitarr.Host.Ai"));
 }
 

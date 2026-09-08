@@ -19,12 +19,28 @@ namespace Arbitarr.Api.Admin;
 /// (<see cref="SettingsValidator.ValidateOllamaBaseUrl"/>) precisely so that stays true. Making the
 /// operator retype an address they cannot see, to defend a secret that does not exist, would be
 /// cargo-culting the write-only idiom rather than applying it.</para>
+///
+/// <para><b>THE MODEL IS PRESENT FOR THE SAME REASON (#112).</b> A model name is not a credential
+/// either — it is the name of a file the operator pulled — and the whole point of #112 is that the
+/// value stops being invisible. Before it, the model lived only in <c>OllamaOptions</c> and an
+/// operator could get a green "Connected successfully" from an instance that had never pulled it.</para>
 /// </summary>
 /// <param name="BaseUrl">The Ollama base URL in force, read from the database.</param>
-public sealed record OllamaConfigResponse(string BaseUrl);
+/// <param name="Model">The Ollama model in force, read from the database (#112).</param>
+public sealed record OllamaConfigResponse(string BaseUrl, string Model);
 
-/// <summary>Request body for <c>PUT /api/admin/ai/ollama</c>.</summary>
-public sealed record UpdateOllamaConfigRequest(string? BaseUrl);
+/// <summary>
+/// Request body for <c>PUT /api/admin/ai/ollama</c>.
+///
+/// <para><b><paramref name="Model"/> IS OPTIONAL, and that is a compatibility guarantee rather than
+/// laxness.</b> #89 shipped this route taking <c>baseUrl</c> alone, so a client that still sends
+/// only that must keep working and must NOT have its stored model cleared as a side effect of
+/// saving an address. A null model therefore means "leave the model alone", which is why the
+/// handler branches on null rather than passing an empty string through to the validator the way
+/// the base URL does. An EMPTY STRING is a different thing — an explicit attempt to set a blank
+/// model — and is rejected by <see cref="SettingsValidator.ValidateOllamaModel"/>.</para>
+/// </summary>
+public sealed record UpdateOllamaConfigRequest(string? BaseUrl, string? Model = null);
 
 /// <summary>The outcome of <c>POST /api/admin/ai/ollama/test</c>.</summary>
 /// <param name="Outcome">
@@ -35,7 +51,13 @@ public sealed record UpdateOllamaConfigRequest(string? BaseUrl);
 /// Fixed, human-readable wording chosen from <paramref name="Outcome"/> alone. Never derived from
 /// the backend's response, an exception message, or the configured URL.
 /// </param>
-public sealed record OllamaTestResponse(bool Success, string Outcome, string Message);
+/// <param name="Models">
+/// #112: the model names the instance reported, on <see cref="OllamaProbeOutcome.Ok"/> only (and
+/// possibly empty even then — an instance with nothing pulled is healthy). A SEPARATE FIELD from
+/// <paramref name="Message"/> on purpose: the wording stays derived from the closed enum alone,
+/// while these names are data the UI renders as choices. Never interpolated into the message.
+/// </param>
+public sealed record OllamaTestResponse(bool Success, string Outcome, string Message, IReadOnlyList<string> Models);
 
 /// <summary>
 /// #89: the admin-gated AI backend surface — read, write and probe the Ollama base URL.
@@ -94,15 +116,20 @@ public static class AdminAiEndpoints
 
     private static async Task<IResult> GetOllamaConfigAsync(
         OllamaBaseUrlResolver resolver,
+        OllamaModelResolver modelResolver,
         CancellationToken cancellationToken) =>
-        Results.Ok(new OllamaConfigResponse(await resolver.GetAsync(cancellationToken)));
+        Results.Ok(new OllamaConfigResponse(
+            await resolver.GetAsync(cancellationToken),
+            await modelResolver.GetAsync(cancellationToken)));
 
     // Body bound optionally — see the type doc's REQUIRED-BODY TRAP note. Do not make it required.
     private static async Task<IResult> UpdateOllamaConfigAsync(
         [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] UpdateOllamaConfigRequest? request,
         SettingsRepository repository,
         OllamaBaseUrlCache cache,
+        OllamaModelCache modelCache,
         OllamaBaseUrlResolver resolver,
+        OllamaModelResolver modelResolver,
         CancellationToken cancellationToken)
     {
         if (request is null)
@@ -110,6 +137,10 @@ public static class AdminAiEndpoints
             return Results.BadRequest(new { error = "A request body with a 'baseUrl' property is required." });
         }
 
+        // #112: both values are validated BEFORE either is written, so a rejected model cannot leave
+        // a saved address behind it. The alternative — write, then validate the next — would make
+        // one PUT half-succeed, and the operator would have no way to tell which half from a single
+        // error message. Reject-never-clamp is also reject-never-partially-apply.
         try
         {
             // Validation lives in SettingsValidator.ValidateOllamaBaseUrl, reached through the
@@ -117,20 +148,45 @@ public static class AdminAiEndpoints
             // takes. Not duplicated here: one floor, in one place, already tested. A null baseUrl is
             // passed through as an empty string so the validator produces the message, rather than
             // this layer inventing a second wording for the same rejection.
-            await repository.SetAsync(SettingKey.OllamaBaseUrl, request.BaseUrl ?? string.Empty, cancellationToken);
+            SettingsValidator.ValidateOllamaBaseUrl(request.BaseUrl ?? string.Empty);
+
+            // A NULL model means "not submitted" and leaves the stored value alone — #89's clients
+            // send only baseUrl and must not have their model cleared by saving an address. An empty
+            // string is a submitted blank and is rejected below, not treated as absent.
+            if (request.Model is not null)
+            {
+                SettingsValidator.ValidateOllamaModel(request.Model);
+            }
         }
         catch (SettingsValidationException ex)
         {
             return Results.BadRequest(new { error = ex.Message });
         }
 
+        // The repository re-runs the same validation on its own switch; that is not redundancy to be
+        // tidied away, it is the single floor every write path goes through. The checks above only
+        // decide WHETHER to start writing.
+        await repository.SetAsync(SettingKey.OllamaBaseUrl, request.BaseUrl ?? string.Empty, cancellationToken);
+        if (request.Model is not null)
+        {
+            await repository.SetAsync(SettingKey.OllamaModel, request.Model, cancellationToken);
+        }
+
         // THE "NO RESTART" STEP. Only after a SUCCESSFUL write: invalidating on a rejected write
         // would force a pointless re-read, and invalidating before it would open a window where a
         // concurrent read repopulated the cache from the old row and cleared the stale flag, pinning
-        // the previous address until the next write.
+        // the previous address until the next write. Both caches, for the same reason — leaving the
+        // model cache stale would pin the previous model until the next restart while the row itself
+        // was already correct.
         cache.Invalidate();
+        if (request.Model is not null)
+        {
+            modelCache.Invalidate();
+        }
 
-        return Results.Ok(new OllamaConfigResponse(await resolver.GetAsync(cancellationToken)));
+        return Results.Ok(new OllamaConfigResponse(
+            await resolver.GetAsync(cancellationToken),
+            await modelResolver.GetAsync(cancellationToken)));
     }
 
     /// <summary>
@@ -147,6 +203,12 @@ public static class AdminAiEndpoints
     /// <para><see cref="OllamaProbeOutcome"/> is a closed enum and <see cref="DescribeOutcome"/>
     /// maps it to fixed wording, so no branch can interpolate the configured URL, the upstream body,
     /// or an exception message into what the operator sees.</para>
+    ///
+    /// <para><b>#112: the model names ride alongside, never inside.</b> The probe now returns the
+    /// names it read from <c>/api/tags</c>, and they are copied straight into their own response
+    /// field. <see cref="DescribeOutcome"/> is still passed nothing but the enum, so the sentence
+    /// the operator reads cannot mention a model, a count, or anything else the backend said. That
+    /// separation is the reason no fifth outcome and no message field were needed.</para>
     /// </summary>
     private static async Task<IResult> TestOllamaAsync(
         OllamaBaseUrlResolver resolver,
@@ -154,12 +216,13 @@ public static class AdminAiEndpoints
         CancellationToken cancellationToken)
     {
         var baseUrl = await resolver.GetAsync(cancellationToken);
-        var outcome = await prober.ProbeAsync(baseUrl, cancellationToken);
+        var result = await prober.ProbeAsync(baseUrl, cancellationToken);
 
         return Results.Ok(new OllamaTestResponse(
-            Success: outcome == OllamaProbeOutcome.Ok,
-            Outcome: outcome.ToString(),
-            Message: DescribeOutcome(outcome)));
+            Success: result.Outcome == OllamaProbeOutcome.Ok,
+            Outcome: result.Outcome.ToString(),
+            Message: DescribeOutcome(result.Outcome),
+            Models: result.Models));
     }
 
     /// <summary>

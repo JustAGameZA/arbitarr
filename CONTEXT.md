@@ -133,8 +133,19 @@ enum's means "not the Torznab caps document".
 ## AI backend
 
 An **AI backend** is the LLM instance the classifier speaks to — today Ollama, at
-the address held in `SettingKey.OllamaBaseUrl` and edited in the Settings
-surface's own AI section (`Settings/Ai/Ai.tsx`, #89).
+the address held in `SettingKey.OllamaBaseUrl`, running the model held in
+`SettingKey.OllamaModel`. Both are edited in the Settings surface's own AI
+section (`Settings/Ai/Ai.tsx`, #89 for the address, #112 for the model) and
+resolved per call, so changing either takes effect without a restart.
+
+The **model** is chosen from what the instance itself reports, not typed: the
+connectivity probe returns the names from `/api/tags` alongside its outcome, and
+the section renders them as a picker. Typing one blind is the state #112 removed —
+an operator could name a model their instance had never pulled, get a green
+"Connected" from a probe that only asks whether the address is Ollama, and have
+every classification fail open with nothing on screen saying why. The names travel
+in their own field and never inside the probe's wording, which is what keeps
+`OllamaProbeOutcome` closed at four members.
 
 **It is not a source, and the distinction is load-bearing rather than
 terminological.** A source is *searched* — it is an indexer, it appears in the
@@ -151,7 +162,8 @@ environment, then the database is authoritative — the environment is inert
 afterwards, and a divergent value produces a startup warning rather than silently
 losing. The reasoning, and the incident that forced it, is in
 `SourceSeeder`'s type doc (`src/Arbitarr.Host/Sources/SourceSeeder.cs`);
-`OllamaBaseUrlSeeder` applies the identical rule to the AI backend.
+`OllamaBaseUrlSeeder` and `OllamaModelSeeder` each apply the identical rule to
+their own row.
 
 ---
 

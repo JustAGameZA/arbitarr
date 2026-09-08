@@ -30,10 +30,18 @@ namespace Arbitarr.Core.Ai;
 /// the same host or LAN answers <c>/api/tags</c> in milliseconds, so a wrong address fails while
 /// the operator is still looking at the button.</para>
 ///
-/// <para><b>Nothing from the wire comes back out.</b> This type returns a bare enum: there is no
-/// field on the result that could carry the upstream body, an exception message, or the probed URL.
-/// Cancellation the CALLER requested is rethrown rather than classified, so an aborted request is
-/// never misreported as a backend failure.</para>
+/// <para><b>Nothing from the wire reaches the OPERATOR-FACING WORDING.</b> The outcome is a closed
+/// enum with no string member, so no branch can put the upstream body, an exception message, or the
+/// probed URL into the sentence the endpoint composes. Cancellation the CALLER requested is rethrown
+/// rather than classified, so an aborted request is never misreported as a backend failure.</para>
+///
+/// <para><b>#112: the model NAMES do come back, in their own field.</b> <c>/api/tags</c> is the
+/// model list and the probe was already reading it to classify — discarding its contents is what
+/// left an operator able to see "Connected successfully" against an instance that had never pulled
+/// the configured model. <see cref="OllamaProbeResult.Models"/> carries the names beside the enum,
+/// never inside it: they are rendered as list items to choose from, and the wording is still derived
+/// from the enum alone. A malformed entry is SKIPPED rather than making the probe fail — the
+/// question the button answers is "is this Ollama", and one odd entry is not a no.</para>
 /// </summary>
 public sealed class OllamaConnectivityProber
 {
@@ -57,9 +65,10 @@ public sealed class OllamaConnectivityProber
     /// <summary>
     /// Probes <paramref name="baseUrl"/> and classifies the result. Never throws for a backend-side
     /// failure — every reachable-world outcome is an <see cref="OllamaProbeOutcome"/> — and never
-    /// surfaces the response body or the address.
+    /// surfaces the response body or the address. On <see cref="OllamaProbeOutcome.Ok"/> the
+    /// result also carries the model names the instance reported (#112).
     /// </summary>
-    public async Task<OllamaProbeOutcome> ProbeAsync(string baseUrl, CancellationToken cancellationToken = default)
+    public async Task<OllamaProbeResult> ProbeAsync(string baseUrl, CancellationToken cancellationToken = default)
     {
         if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var parsed)
             || (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps))
@@ -68,7 +77,7 @@ public sealed class OllamaConnectivityProber
             // unreachable rather than thrown: from the operator's chair "this address goes nowhere"
             // is the same next step, and the settings write path already rejects such a value, so
             // reaching here at all means the row predates that validation.
-            return OllamaProbeOutcome.Unreachable;
+            return OllamaProbeResult.From(OllamaProbeOutcome.Unreachable);
         }
 
         var probeUri = BuildTagsUri(parsed);
@@ -88,13 +97,13 @@ public sealed class OllamaConnectivityProber
                 // credentials at this address is not Ollama — an authentication outcome would
                 // send the operator hunting for a key that does not exist. See
                 // OllamaProbeOutcome's note on why there are four outcomes and not five.
-                return OllamaProbeOutcome.UnexpectedResponse;
+                return OllamaProbeResult.From(OllamaProbeOutcome.UnexpectedResponse);
             }
 
             var body = await response.Content.ReadAsStringAsync(timeoutSource.Token).ConfigureAwait(false);
-            return LooksLikeTagsResponse(body)
-                ? OllamaProbeOutcome.Ok
-                : OllamaProbeOutcome.UnexpectedResponse;
+            return TryReadTagsResponse(body, out var models)
+                ? new OllamaProbeResult(OllamaProbeOutcome.Ok, models)
+                : OllamaProbeResult.From(OllamaProbeOutcome.UnexpectedResponse);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -105,11 +114,11 @@ public sealed class OllamaConnectivityProber
         catch (OperationCanceledException)
         {
             // Our own timeout fired: the backend never answered in time.
-            return OllamaProbeOutcome.Unreachable;
+            return OllamaProbeResult.From(OllamaProbeOutcome.Unreachable);
         }
         catch (HttpRequestException ex)
         {
-            return Classify(ex);
+            return OllamaProbeResult.From(Classify(ex));
         }
     }
 
@@ -147,14 +156,25 @@ public sealed class OllamaConnectivityProber
 
     /// <summary>
     /// Whether the body is the model list Ollama actually returns, rather than some other service's
-    /// 200. <c>/api/tags</c> answers <c>{"models":[...]}</c>, and an EMPTY array is a perfectly
-    /// healthy instance with nothing pulled yet — so the check is for the <c>models</c> property
-    /// being present and an array, never for it being non-empty. Requiring a model here would
-    /// report a reachable Ollama as "not Ollama" and send the operator to fix an address that was
-    /// already correct.
+    /// 200 — and, when it is, the <c>name</c> of each entry (#112).
+    ///
+    /// <para><b>AN EMPTY ARRAY IS STILL A YES.</b> <c>/api/tags</c> answers <c>{"models":[...]}</c>,
+    /// and an EMPTY array is a perfectly healthy instance with nothing pulled yet — so the check is
+    /// for the <c>models</c> property being present and an array, never for it being non-empty, and
+    /// never for the extracted name list being non-empty either. Requiring a model here would report
+    /// a reachable Ollama as "not Ollama" and send the operator to fix an address that was already
+    /// correct. #112 added the extraction below and must not have quietly added that requirement
+    /// with it: the return value is decided before a single name is read.</para>
+    ///
+    /// <para>An entry without a usable string <c>name</c> is SKIPPED rather than rejecting the whole
+    /// response, for the same reason: a body that is recognisably Ollama's model list stays
+    /// recognisable when one element is odd, and a name the picker cannot render is simply not
+    /// offered.</para>
     /// </summary>
-    private static bool LooksLikeTagsResponse(string body)
+    private static bool TryReadTagsResponse(string body, out IReadOnlyList<string> models)
     {
+        models = [];
+
         if (string.IsNullOrWhiteSpace(body) || !body.TrimStart().StartsWith("{", StringComparison.Ordinal))
         {
             return false;
@@ -163,9 +183,28 @@ public sealed class OllamaConnectivityProber
         try
         {
             using var document = JsonDocument.Parse(body);
-            return document.RootElement.ValueKind == JsonValueKind.Object
-                && document.RootElement.TryGetProperty("models", out var models)
-                && models.ValueKind == JsonValueKind.Array;
+            if (document.RootElement.ValueKind != JsonValueKind.Object
+                || !document.RootElement.TryGetProperty("models", out var entries)
+                || entries.ValueKind != JsonValueKind.Array)
+            {
+                return false;
+            }
+
+            var names = new List<string>();
+            foreach (var entry in entries.EnumerateArray())
+            {
+                if (entry.ValueKind == JsonValueKind.Object
+                    && entry.TryGetProperty("name", out var name)
+                    && name.ValueKind == JsonValueKind.String
+                    && name.GetString() is { Length: > 0 } value
+                    && !string.IsNullOrWhiteSpace(value))
+                {
+                    names.Add(value);
+                }
+            }
+
+            models = names;
+            return true;
         }
         catch (JsonException)
         {
