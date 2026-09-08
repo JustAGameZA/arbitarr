@@ -89,12 +89,10 @@ public sealed class RuleEvaluatorTests
     /// <summary>
     /// The realistic version of the same bug: a genuinely SLOW first rule (simulated by having its
     /// <c>Evaluate</c> callback advance the fake clock past budget as a side effect, standing in for
-    /// wall-clock time actually elapsing while that rule ran) must not prevent a SECOND rule from at
-    /// least being reached if it is the one that matters — wait, no: once budget is exhausted mid-loop
-    /// the contract is explicitly to stop at the NEXT iteration boundary. This test pins that the
-    /// between-iterations guard (unchanged by the fix) still fires correctly when the elapsed time
-    /// genuinely grows during evaluation, distinguishing "stalled before the loop starts" (arb-nk2,
-    /// fixed: first rule always runs) from "slow during the loop" (unchanged: still bounded).
+    /// wall-clock time actually elapsing while that rule ran) still lets the between-iterations guard
+    /// stop a SECOND rule from running, exactly as the aggregate-budget contract promises. This
+    /// distinguishes "stalled before the loop starts" (arb-nk2, fixed: first rule always runs) from
+    /// "slow during the loop" (unchanged: still bounded at the next iteration boundary).
     /// </summary>
     [Fact]
     public void A_slow_first_rule_that_exhausts_budget_during_evaluation_still_stops_the_second_rule()
