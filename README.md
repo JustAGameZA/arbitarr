@@ -134,6 +134,12 @@ The admin key above is **not** replaced by the login. It is what Sonarr, Radarr 
 caller present, because none of them can complete an interactive sign-in. Humans log in; machines
 use the key.
 
+When you are signed in, open **Settings** and use the **Account** section to change your password.
+You must enter your current password and a new passphrase of at least 12 characters. A successful
+change keeps the browser you used signed in and signs every other browser out, so changing it is the
+right response when you think another session may be compromised. The admin key is not involved and
+continues to work for machines.
+
 > **There is no password reset. This is deliberate, not an omission.** A homelab appliance has no
 > mail transport to send one, and a reset path reachable from the LAN would be a second way in,
 > weaker than the first. Nothing will e-mail you a link.
