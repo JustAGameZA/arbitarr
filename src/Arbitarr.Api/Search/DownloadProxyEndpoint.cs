@@ -1,3 +1,4 @@
+using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Security;
 using Arbitarr.Core.Sources;
 using Microsoft.AspNetCore.Http;
@@ -37,8 +38,13 @@ public static class DownloadProxyEndpoint
         IClientApiKeyResolver apiKeyResolver,
         IReleaseLookup releaseLookup,
         IReadOnlyList<IUpstreamSource> sources,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IEventSink? eventSink = null)
     {
+        // Optional and last so the many existing call sites (tests included) keep compiling; the
+        // Host passes the real sink. Null means "do not record", never "fail".
+        eventSink ??= NullEventSink.Instance;
+
         if (await apiKeyResolver.ResolveAsync(apikey, cancellationToken).ConfigureAwait(false) is null)
         {
             return Results.StatusCode(StatusCodes.Status401Unauthorized);
@@ -67,6 +73,29 @@ public static class DownloadProxyEndpoint
         catch (RequestLimitReachedException)
         {
             return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+        }
+        catch (SourceUnavailableException)
+        {
+            // The source's circuit breaker is open: it is resting after earlier failures, not
+            // broken for this request. 503 is the retryable answer Sonarr/Radarr already back off
+            // on; the bare InvalidOperationException this used to be escaped as an unhandled 500
+            // on every retry for as long as the breaker stayed open.
+            return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+        }
+        catch (UpstreamRedirectRefusedException ex)
+        {
+            // A redirect is a configuration answer from a healthy upstream (NZBHydra2's "NZB
+            // access type: Redirect to indexer"), and it will repeat on every download until the
+            // operator changes that setting. It is recorded as an event so the fix is visible on
+            // the dashboard rather than only in a swallowed exception; the source deliberately
+            // does not count it against the breaker (see the exception's remarks).
+            await eventSink.RecordAsync(
+                RecordedEventKind.SourceFailed,
+                summary: $"Download refused: {release.SourceName} redirected instead of serving the file",
+                reason: ex.Message,
+                sourceDisplayName: release.SourceName,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            return Results.StatusCode(StatusCodes.Status502BadGateway);
         }
         catch (DownloadTooLargeException)
         {

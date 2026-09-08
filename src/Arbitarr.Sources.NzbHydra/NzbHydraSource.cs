@@ -163,7 +163,7 @@ public sealed class NzbHydraSource : IUpstreamSource
 
         if (!await _circuitBreaker.CanCallAsync(Name, cancellationToken).ConfigureAwait(false))
         {
-            throw new InvalidOperationException($"Circuit breaker for source '{Name}' is open; refusing to call upstream.");
+            throw new SourceUnavailableException(Name);
         }
 
         try
@@ -172,15 +172,32 @@ public sealed class NzbHydraSource : IUpstreamSource
 
             var response = await _httpClient.GetAsync(validatedLink, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
             ThrowIfRateLimited(response);
+            ThrowIfRedirected(response);
             response.EnsureSuccessStatusCode();
             var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
             await _circuitBreaker.RecordSuccessAsync(Name, cancellationToken).ConfigureAwait(false);
             return stream;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException and not UpstreamRedirectRefusedException)
         {
             await _circuitBreaker.RecordFailureAsync(Name, ex, cancellationToken).ConfigureAwait(false);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Refuses a redirect on the download path as a typed, non-breaker answer. The client is built
+    /// with <c>AllowAutoRedirect = false</c> (SEC-M1), so a 3xx reaches here as-is; before this
+    /// check <c>EnsureSuccessStatusCode</c> turned it into a generic <see cref="HttpRequestException"/>
+    /// that the catch below counted against the breaker. See
+    /// <see cref="UpstreamRedirectRefusedException"/> for why that took search down with it.
+    /// </summary>
+    private void ThrowIfRedirected(HttpResponseMessage response)
+    {
+        var status = (int)response.StatusCode;
+        if (status is >= 300 and < 400)
+        {
+            throw new UpstreamRedirectRefusedException(Name, status);
         }
     }
 

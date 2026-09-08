@@ -227,21 +227,70 @@ public class DownloadProxyTests
     }
 
     [Fact]
-    public async Task Upstream_302_redirect_returns_502()
+    public async Task Upstream_302_redirect_returns_502_and_records_the_setting_to_change()
     {
-        // Mirrors NzbHydraSource.FetchDownloadAsync with AllowAutoRedirect=false: a 302 is not a
-        // success status, so EnsureSuccessStatusCode throws HttpRequestException, which the proxy
-        // maps to 502 rather than following the redirect.
+        // Mirrors NzbHydraSource.FetchDownloadAsync with AllowAutoRedirect=false: a 302 is refused
+        // as UpstreamRedirectRefusedException, which the proxy maps to 502 rather than following
+        // the redirect. It is also recorded as a SourceFailed event carrying the exception's
+        // message, so the operator can see which NZBHydra2 setting to change instead of only a
+        // bare 502 in Sonarr's log.
         var release = TestReleases.Torrent(sourceName: "eztv", guid: "123");
         var lookup = new InMemoryReleaseLookup();
         lookup.Record(release);
 
-        var source = new FakeUpstreamSource("eztv", downloadException: new HttpRequestException("Response status code does not indicate success: 302 (Found)."));
+        var source = new FakeUpstreamSource("eztv", downloadException: new UpstreamRedirectRefusedException("eztv", 302));
         var sources = new IUpstreamSource[] { source };
+        var sink = new RecordingEventSink();
 
-        var result = await DownloadProxyEndpoint.HandleAsync(release.ProxyGuid, ValidApiKey, Resolver(), lookup, sources, CancellationToken.None);
+        var result = await DownloadProxyEndpoint.HandleAsync(release.ProxyGuid, ValidApiKey, Resolver(), lookup, sources, CancellationToken.None, sink);
 
         var statusCodeResult = Assert.IsAssignableFrom<Microsoft.AspNetCore.Http.IStatusCodeHttpResult>(result);
         Assert.Equal(Microsoft.AspNetCore.Http.StatusCodes.Status502BadGateway, statusCodeResult.StatusCode);
+
+        var recorded = Assert.Single(sink.Events);
+        Assert.Equal(Arbitarr.Core.Diagnostics.RecordedEventKind.SourceFailed, recorded.Kind);
+        Assert.Equal("eztv", recorded.SourceDisplayName);
+        Assert.Contains("NZB access type", recorded.Reason);
+    }
+
+    [Fact]
+    public async Task Open_circuit_breaker_returns_503_not_an_unhandled_500()
+    {
+        // The source refuses to call upstream while its breaker rests. That is a retryable
+        // condition Sonarr/Radarr already back off on; before it was typed it escaped the proxy as
+        // an unhandled InvalidOperationException, i.e. a 500 on every retry.
+        var release = TestReleases.Torrent(sourceName: "eztv", guid: "123");
+        var lookup = new InMemoryReleaseLookup();
+        lookup.Record(release);
+
+        var source = new FakeUpstreamSource("eztv", downloadException: new SourceUnavailableException("eztv"));
+        var sources = new IUpstreamSource[] { source };
+        var sink = new RecordingEventSink();
+
+        var result = await DownloadProxyEndpoint.HandleAsync(release.ProxyGuid, ValidApiKey, Resolver(), lookup, sources, CancellationToken.None, sink);
+
+        var statusCodeResult = Assert.IsAssignableFrom<Microsoft.AspNetCore.Http.IStatusCodeHttpResult>(result);
+        Assert.Equal(Microsoft.AspNetCore.Http.StatusCodes.Status503ServiceUnavailable, statusCodeResult.StatusCode);
+        // A resting breaker is routine, not an operator-actionable failure: nothing is recorded.
+        Assert.Empty(sink.Events);
+    }
+
+    /// <summary>Captures every event the endpoint records, so a test can assert on kind, source and reason.</summary>
+    private sealed class RecordingEventSink : Arbitarr.Core.Diagnostics.IEventSink
+    {
+        public List<Arbitarr.Core.Diagnostics.RecordedEvent> Events { get; } = new();
+
+        public ValueTask RecordAsync(
+            Arbitarr.Core.Diagnostics.RecordedEventKind kind,
+            string summary,
+            string? reason = null,
+            string? sourceDisplayName = null,
+            string? detail = null,
+            CancellationToken cancellationToken = default,
+            bool? shadowMode = null)
+        {
+            Events.Add(new Arbitarr.Core.Diagnostics.RecordedEvent(kind, summary, reason, sourceDisplayName, detail, shadowMode));
+            return ValueTask.CompletedTask;
+        }
     }
 }
