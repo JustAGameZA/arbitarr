@@ -66,21 +66,29 @@ public sealed class LoginRateLimiter
     /// Whether this attempt is allowed through to credential verification. Called BEFORE the
     /// password is checked, so a throttled attempt costs no KDF work — otherwise the rate limit
     /// would bound guessing but not the CPU exhaustion that unbounded KDF invocations allow.
+    ///
+    /// <para><b><paramref name="addressScope"/> SEPARATES THE ADDRESS BUDGET, AND OMITTING IT IS
+    /// LOGIN'S BEHAVIOUR.</b> A distinct flow that shares this limiter must pass its own scope, or
+    /// its failures spend the LOGIN budget of the same address — see <see cref="AddressKey"/>.</para>
     /// </summary>
-    public bool IsAllowed(string? username, string? remoteAddress)
+    public bool IsAllowed(string? username, string? remoteAddress, string? addressScope = null)
     {
         var now = _timeProvider.GetUtcNow();
 
         return Count(UsernameKey(username), now) < MaxFailuresPerUsername
-            && Count(AddressKey(remoteAddress), now) < MaxFailuresPerAddress;
+            && Count(AddressKey(remoteAddress, addressScope), now) < MaxFailuresPerAddress;
     }
 
-    /// <summary>Records a failed attempt against both the username and the address budgets.</summary>
-    public void RecordFailure(string? username, string? remoteAddress)
+    /// <summary>
+    /// Records a failed attempt against both the username and the address budgets.
+    /// <paramref name="addressScope"/> must match the one passed to <see cref="IsAllowed"/>, or the
+    /// counter this increments is not the one that is read.
+    /// </summary>
+    public void RecordFailure(string? username, string? remoteAddress, string? addressScope = null)
     {
         var now = _timeProvider.GetUtcNow();
         Increment(UsernameKey(username), now);
-        Increment(AddressKey(remoteAddress), now);
+        Increment(AddressKey(remoteAddress, addressScope), now);
         PruneExpired(now);
     }
 
@@ -151,7 +159,21 @@ public sealed class LoginRateLimiter
     private static string UsernameKey(string? username) =>
         $"u:{(username ?? string.Empty).Trim().ToLowerInvariant()}";
 
-    private static string AddressKey(string? remoteAddress) => $"a:{remoteAddress ?? "unknown"}";
+    /// <summary>
+    /// The address budget's key. <paramref name="addressScope"/> is null for login, which keeps
+    /// login's key exactly <c>a:{address}</c> — the shape it has always had.
+    ///
+    /// <para><b>A FLOW THAT DOES NOT PASS A SCOPE SHARES LOGIN'S ADDRESS BUDGET.</b> The username
+    /// side namespaces itself by whatever the caller passes (#96 uses <c>pw:{userId}</c>), but the
+    /// address side cannot: the address is the same string either way. So without a scope, five
+    /// failed password changes would spend five of the twenty per-address LOGIN failures, and an
+    /// operator behind a shared NAT egress could be pushed into a 429 on the sign-in page by their
+    /// own rotation attempts. Two attacks want two budgets on BOTH axes, not just one.</para>
+    /// </summary>
+    private static string AddressKey(string? remoteAddress, string? addressScope) =>
+        addressScope is null
+            ? $"a:{remoteAddress ?? "unknown"}"
+            : $"a:{addressScope}:{remoteAddress ?? "unknown"}";
 
     private sealed record Counter(int Failures, DateTimeOffset WindowEndsAt);
 }

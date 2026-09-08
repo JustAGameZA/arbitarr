@@ -1000,6 +1000,84 @@ public sealed class AuthEndpointsTests
     }
 
     [Fact]
+    public async Task Password_change_failures_do_not_exhaust_the_login_address_budget()
+    {
+        // THE PER-ADDRESS AXIS, WHICH THE TEST ABOVE CANNOT SEE. It spends only
+        // MaxFailuresPerUsername + 3 attempts — comfortably under the twenty a single ADDRESS is
+        // allowed — so a shared address counter stays under its limit there and the test passes
+        // either way. Here the count deliberately EXCEEDS MaxFailuresPerAddress, which is the only
+        // way the shared-counter bug becomes visible: without the "pw" address scope every one of
+        // these failures also increments "a:{address}", and the login below answers 429.
+        //
+        // That is not a theoretical loss. Behind a shared NAT egress the address is not the
+        // operator's alone, so one person's fumbled rotation would throttle everybody's sign-in.
+        await using var factory = LocalFactory();
+        var (owner, _) = await CreateAccountAndSignInAsync(factory);
+        using var __ = owner;
+
+        for (var attempt = 0; attempt < LoginRateLimiter.MaxFailuresPerAddress + 5; attempt++)
+        {
+            using var spent = await ChangePasswordAsync(owner, "example-wrong-passphrase", NewPassword);
+            Assert.True(
+                spent.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.TooManyRequests,
+                $"Expected a refusal, got {(int)spent.StatusCode} {spent.StatusCode}.");
+        }
+
+        // POSITIVE CONTROL: the password route's OWN budget really is spent, so the requests above
+        // genuinely reached the limiter rather than failing somewhere harmless before it. Without
+        // this, "login still works" would pass just as happily if nothing had been recorded at all.
+        using var throttled = await ChangePasswordAsync(owner, "example-wrong-passphrase", NewPassword);
+        Assert.Equal(HttpStatusCode.TooManyRequests, throttled.StatusCode);
+
+        // The assertion: login from that same address is unaffected.
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(AdminApiKeyFilter.SessionRequestHeaderName, "1");
+        using var login = await client.PostAsJsonAsync(
+            AuthEndpoints.LoginRoute,
+            new { username = Username, password = Password });
+        Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+    }
+
+    [Fact]
+    public async Task Failed_logins_do_not_exhaust_the_password_change_address_budget()
+    {
+        // THE CONVERSE, because a scope that separated the budgets in only one direction would be
+        // half a fix and this is what notices. Spends more than MaxFailuresPerAddress on LOGIN
+        // failures, then asserts a signed-in operator can still change their password from the same
+        // address — the realistic case being an attacker spraying the sign-in page while the
+        // operator, already signed in, tries to rotate the credential in response.
+        await using var factory = LocalFactory();
+        var (owner, _) = await CreateAccountAndSignInAsync(factory);
+        using var __ = owner;
+
+        using var attacker = factory.CreateClient();
+        attacker.DefaultRequestHeaders.Add(AdminApiKeyFilter.SessionRequestHeaderName, "1");
+
+        for (var attempt = 0; attempt < LoginRateLimiter.MaxFailuresPerAddress + 5; attempt++)
+        {
+            // A DIFFERENT username each time, so the per-username budget is never the thing that
+            // trips: this is a spray, and the address counter is the only one it fills.
+            using var sprayed = await attacker.PostAsJsonAsync(
+                AuthEndpoints.LoginRoute,
+                new { username = $"example-absent-operator-{attempt}", password = "example-wrong-passphrase" });
+            Assert.True(
+                sprayed.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.TooManyRequests,
+                $"Expected a refusal, got {(int)sprayed.StatusCode} {sprayed.StatusCode}.");
+        }
+
+        // POSITIVE CONTROL: the LOGIN address budget really is exhausted — a correct credential from
+        // that address is now throttled, which is what proves the spray above landed.
+        using var throttledLogin = await attacker.PostAsJsonAsync(
+            AuthEndpoints.LoginRoute,
+            new { username = Username, password = Password });
+        Assert.Equal(HttpStatusCode.TooManyRequests, throttledLogin.StatusCode);
+
+        // The assertion: the signed-in operator can still rotate their password.
+        using var changed = await ChangePasswordAsync(owner, Password, NewPassword);
+        Assert.Equal(HttpStatusCode.NoContent, changed.StatusCode);
+    }
+
+    [Fact]
     public async Task The_password_route_accepts_a_missing_body_without_short_circuiting_past_its_guard()
     {
         // Bound optionally like every other route here (EmptyBodyBehavior.Allow). Unauthenticated

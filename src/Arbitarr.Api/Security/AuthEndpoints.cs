@@ -411,9 +411,16 @@ public static class AuthEndpoints
         // LoginRateLimiter applies mean a "pw:" sub-prefix cannot collide with a real username's
         // budget — so a login-guessing spree cannot consume the rotation budget of a signed-in
         // operator, or vice versa. Two different attacks, two budgets.
+        //
+        // BOTH AXES MUST BE NAMESPACED, NOT JUST THE USERNAME ONE. The address is the same string in
+        // either flow, so without AddressScope these failures would spend the per-address LOGIN
+        // budget: an operator fumbling their current password a few times could then be thrown a 429
+        // on the sign-in page, and behind a shared NAT egress that is somebody else's sign-in page
+        // too. Asserted in BOTH directions by
+        // Password_change_failures_do_not_exhaust_the_login_address_budget and its converse.
         var limiterKey = RateLimiterKey(session.UserId);
 
-        if (!rateLimiter.IsAllowed(limiterKey, remoteAddress))
+        if (!rateLimiter.IsAllowed(limiterKey, remoteAddress, AddressScope))
         {
             // Delays, never disables — ADR 0009 unchanged. The wording is the login route's.
             return Results.Problem(
@@ -437,7 +444,9 @@ public static class AuthEndpoints
 
             if (result is ChangePasswordResult.CurrentPasswordIncorrect)
             {
-                rateLimiter.RecordFailure(limiterKey, remoteAddress);
+                // The SAME AddressScope the IsAllowed check above used — a mismatch would increment
+                // one counter and read another, silently making the address budget unenforceable.
+                rateLimiter.RecordFailure(limiterKey, remoteAddress, AddressScope);
 
                 // ONE GENERIC MESSAGE, matching VerifyCredentialsAsync's posture. There is no
                 // username oracle to protect here — the caller is already authenticated as a known
@@ -483,4 +492,11 @@ public static class AuthEndpoints
     /// budget separate from the login budget the same limiter holds under "u:" — see the call site.
     /// </summary>
     private static string RateLimiterKey(long userId) => $"pw:{userId}";
+
+    /// <summary>
+    /// The <see cref="LoginRateLimiter"/> ADDRESS-budget scope for a password change, which keeps
+    /// these failures out of the login route's per-address budget. Login passes no scope, so its key
+    /// is unchanged; see <c>LoginRateLimiter.AddressKey</c> for why one axis is not enough.
+    /// </summary>
+    private const string AddressScope = "pw";
 }
