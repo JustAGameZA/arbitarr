@@ -87,6 +87,11 @@ public static class AdHocSearchEndpoint
         CancellationToken cancellationToken)
     {
         var categories = ParseCategories(cat);
+        var tvdbId = ParseId(tvdbid);
+        var tmdbId = ParseId(tmdbid);
+        var seasonNumber = ParseId(season);
+        var episodeNumber = ParseId(ep);
+        var searchType = DeriveSearchType(tvdbId, tmdbId, seasonNumber, episodeNumber);
         var query = new SearchQuery(
             QueryText: string.IsNullOrWhiteSpace(q) ? null : q.Trim(),
             Categories: categories,
@@ -101,12 +106,16 @@ public static class AdHocSearchEndpoint
             // grows a protocol selector, pass the operator's choice here instead of this literal.
             Protocol: SearchProtocol.Newznab,
             Offset: offset ?? 0,
-            TvdbId: ParseId(tvdbid),
-            TmdbId: ParseId(tmdbid),
-            Season: ParseId(season),
-            Episode: ParseId(ep));
+            TvdbId: tvdbId,
+            TmdbId: tmdbId,
+            Season: seasonNumber,
+            Episode: episodeNumber,
+            Type: searchType);
 
-        var result = await snapshotService.GetPageAsync("search", query, cancellationToken).ConfigureAwait(false);
+        // The derived mode is also the snapshot's search-type component, so a dashboard tvsearch and
+        // a dashboard plain search over the same q do not share one snapshot (they now resolve to
+        // two different upstream requests). Before #104 this was the literal "search" for both.
+        var result = await snapshotService.GetPageAsync(SnapshotSearchType(searchType), query, cancellationToken).ConfigureAwait(false);
 
         // AC14b: opt-in only, and only when there's something to arbitrate. size/category/guid are
         // never rewritten below regardless of what the arbiter returns (P1/passthrough contract).
@@ -138,6 +147,36 @@ public static class AdHocSearchEndpoint
 
         return Results.Ok(response);
     }
+
+    /// <summary>
+    /// #104: the dashboard form has no <c>t=</c> of its own, so the mode is derived from the
+    /// parameters the operator actually filled in — a season or an episode number (or a tvdbid) is
+    /// a TV search, a tmdbid is a movie search, and anything else is a plain search. Without this
+    /// a dashboard "season 22 episode 1" search reached NZBHydra2 as a bare <c>t=search</c> with
+    /// the episode selector discarded, which is one of the three rows in the issue's repro table.
+    ///
+    /// Season/episode come BEFORE the tmdbid arm deliberately: a form carrying both is asking for
+    /// an episode, and a movie search would silently drop the numbering.
+    /// </summary>
+    private static SearchType DeriveSearchType(int? tvdbId, int? tmdbId, int? season, int? episode) =>
+        (tvdbId, season, episode, tmdbId) switch
+        {
+            (not null, _, _, _) => SearchType.TvSearch,
+            (_, not null, _, _) => SearchType.TvSearch,
+            (_, _, not null, _) => SearchType.TvSearch,
+            (_, _, _, not null) => SearchType.Movie,
+            _ => SearchType.Search,
+        };
+
+    /// <summary>The snapshot-identity component for a derived mode — the same wire names the
+    /// Torznab/Newznab routes pass through from their inbound <c>t=</c>, so the two surfaces share
+    /// a snapshot for a genuinely identical request rather than splitting on spelling alone.</summary>
+    private static string SnapshotSearchType(SearchType type) => type switch
+    {
+        SearchType.TvSearch => "tvsearch",
+        SearchType.Movie => "movie",
+        _ => "search",
+    };
 
     private static int? ParseId(string? value) =>
         !string.IsNullOrWhiteSpace(value) && int.TryParse(value.Trim(), out var id) ? id : null;

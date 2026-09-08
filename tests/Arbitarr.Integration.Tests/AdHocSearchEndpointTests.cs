@@ -195,6 +195,93 @@ public sealed class AdHocSearchEndpointTests : IClassFixture<WebApplicationFacto
         Assert.Single(body!.Releases);
     }
 
+    /// <summary>
+    /// Builds a client whose single upstream source records the <see cref="SearchQuery"/> the
+    /// endpoint actually built, so the #104 assertions below are made against what reaches the
+    /// source rather than against the response body (which the fake produces regardless of the
+    /// query, and which therefore proves nothing about the mode).
+    /// </summary>
+    private (WebApplicationFactory<Program> Factory, Func<SearchQuery?> Observed) ObservingFactory()
+    {
+        SearchQuery? observed = null;
+        var factory = _factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<IUpstreamSource>();
+            services.RemoveAll<IReadOnlyList<IUpstreamSource>>();
+            services.AddSingleton<IUpstreamSource>(new SecondFakeUpstreamSource(
+                "adhoc-observing-source",
+                onSearch: query => observed = query));
+            services.AddSingleton<IReadOnlyList<IUpstreamSource>>(sp => sp.GetServices<IUpstreamSource>().ToArray());
+        }));
+        return (factory, () => observed);
+    }
+
+    /// <summary>
+    /// #104, the dashboard row of the issue's repro table: <c>GET /api/admin/search?q=…&amp;season=
+    /// 22&amp;ep=1</c> has no <c>t=</c> of its own, so the endpoint must DERIVE a TV search from the
+    /// numbering the operator supplied. Before this it built a plain search and the season/ep were
+    /// dropped at the source, returning the newest episode of the series.
+    ///
+    /// <para>
+    /// Asserted on the <see cref="SearchQuery"/> that reaches the upstream source, including
+    /// <see cref="SearchQuery.Type"/> — the member that actually decides the upstream <c>t=</c> —
+    /// alongside the season/ep, since season/ep alone reached the query before #104 too and only
+    /// the mode determines whether they are forwarded.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task GET_search_with_season_and_episode_but_no_id_derives_a_tv_search()
+    {
+        await SeedAdminKeyAsync();
+
+        var (factory, observed) = ObservingFactory();
+        using (factory)
+        {
+            using var client = factory.CreateClient();
+            client.DefaultRequestHeaders.Add(AdminApiKeyFilter.HeaderName, AdminKey);
+
+            var response = await client.GetAsync($"{Route}?q=Project+Runway&season=22&ep=1");
+            response.EnsureSuccessStatusCode();
+
+            var query = observed();
+            Assert.NotNull(query);
+            Assert.Equal(SearchType.TvSearch, query!.Type);
+            Assert.Equal(22, query.Season);
+            Assert.Equal(1, query.Episode);
+            Assert.Null(query.TvdbId);
+            Assert.Equal("Project Runway", query.QueryText);
+        }
+    }
+
+    /// <summary>
+    /// A tmdbid-only dashboard search derives a movie search, and a q-only one stays a plain
+    /// search. Together with the case above these are each other's controls: all three go through
+    /// the identical code path and differ only in which parameters were filled in, so a derivation
+    /// that answered one mode for everything would fail two of the three.
+    /// </summary>
+    [Theory]
+    [InlineData("q=dune&tmdbid=438631", SearchType.Movie)]
+    [InlineData("q=dune", SearchType.Search)]
+    [InlineData("q=bleach&tvdbid=74796", SearchType.TvSearch)]
+    public async Task GET_search_derives_the_mode_from_the_parameters_supplied(string queryString, SearchType expected)
+    {
+        await SeedAdminKeyAsync();
+
+        var (factory, observed) = ObservingFactory();
+        using (factory)
+        {
+            using var client = factory.CreateClient();
+            client.DefaultRequestHeaders.Add(AdminApiKeyFilter.HeaderName, AdminKey);
+
+            var response = await client.GetAsync($"{Route}?{queryString}");
+            response.EnsureSuccessStatusCode();
+
+            var query = observed();
+            Assert.NotNull(query);
+            Assert.Equal(expected, query!.Type);
+        }
+    }
+
     [Fact]
     public async Task GET_search_forwards_categories_and_paging_params()
     {

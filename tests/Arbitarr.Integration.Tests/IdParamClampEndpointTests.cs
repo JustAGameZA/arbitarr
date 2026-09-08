@@ -60,6 +60,129 @@ public sealed class IdParamClampEndpointTests : IClassFixture<WebApplicationFact
         Assert.Null(observed!.TvdbId);
     }
 
+    /// <summary>
+    /// #104: an EMPTY <c>tvdbid=</c> must be treated as absent, not rejected. Binding it as
+    /// <c>int?</c> made minimal-API fail the request before the endpoint ran, answering an indexer
+    /// route — contractually XML — with a 400 and a <c>text/plain</c>
+    /// <c>BadHttpRequestException</c> body ("Failed to bind parameter"), and the search never ran
+    /// at all even though <c>q</c>/<c>season</c>/<c>ep</c> alone could serve it.
+    ///
+    /// <para>
+    /// The assertions are on the <see cref="SearchQuery"/> that reached the source, not merely on
+    /// the status code: a 200 alone would also be produced by a route that swallowed the empty id
+    /// AND the rest of the query. Observing that <c>q</c>/<c>season</c>/<c>ep</c> arrived intact is
+    /// what proves the request was actually served rather than merely not-refused.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Empty_tvdbid_is_treated_as_absent_and_the_search_still_runs()
+    {
+        SearchQuery? observed = null;
+
+        using var factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IUpstreamSource>();
+                services.RemoveAll<IReadOnlyList<IUpstreamSource>>();
+                services.AddSingleton<IUpstreamSource>(new SecondFakeUpstreamSource(
+                    "idclamp-fake-source",
+                    onSearch: query => observed = query));
+                services.AddSingleton<IReadOnlyList<IUpstreamSource>>(sp => sp.GetServices<IUpstreamSource>().ToArray());
+            });
+        });
+
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync(
+            $"/newznab/api?t=tvsearch&q=probe&tvdbid=&season=22&ep=1&apikey={Uri.EscapeDataString(ApiKey)}");
+
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("application/rss+xml", response.Content.Headers.ContentType?.MediaType);
+
+        Assert.NotNull(observed);
+        Assert.Null(observed!.TvdbId);
+        Assert.Equal("probe", observed.QueryText);
+        Assert.Equal(22, observed.Season);
+        Assert.Equal(1, observed.Episode);
+        Assert.Equal(SearchType.TvSearch, observed.Type);
+    }
+
+    /// <summary>
+    /// The same for a non-numeric id, which hit the identical binding failure. It is treated as
+    /// absent rather than 400 for the same reason: the query's other identity signals still serve it.
+    /// </summary>
+    [Fact]
+    public async Task Non_numeric_tvdbid_is_treated_as_absent_and_the_search_still_runs()
+    {
+        SearchQuery? observed = null;
+
+        using var factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IUpstreamSource>();
+                services.RemoveAll<IReadOnlyList<IUpstreamSource>>();
+                services.AddSingleton<IUpstreamSource>(new SecondFakeUpstreamSource(
+                    "idclamp-fake-source",
+                    onSearch: query => observed = query));
+                services.AddSingleton<IReadOnlyList<IUpstreamSource>>(sp => sp.GetServices<IUpstreamSource>().ToArray());
+            });
+        });
+
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync(
+            $"/torznab/api?t=search&q=probe&tvdbid=not-a-number&apikey={Uri.EscapeDataString(ApiKey)}");
+
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(observed);
+        Assert.Null(observed!.TvdbId);
+        Assert.Equal("probe", observed.QueryText);
+    }
+
+    /// <summary>
+    /// #104's headline case end to end on the real route: <c>t=tvsearch</c> with <c>q</c> and
+    /// numbering but NO id must reach the source as a TV search that still carries its season and
+    /// episode, so the source forwards <c>t=tvsearch&amp;q=…&amp;season=22&amp;ep=1</c> upstream.
+    /// The <c>t=search</c> half of the theory is the control: the identical request differing only
+    /// in its inbound mode must NOT become a TV search, which is what proves the mode is read from
+    /// the request rather than inferred from the presence of season/ep.
+    /// </summary>
+    [Theory]
+    [InlineData("tvsearch", SearchType.TvSearch)]
+    [InlineData("movie", SearchType.Movie)]
+    [InlineData("search", SearchType.Search)]
+    public async Task Inbound_search_type_reaches_the_upstream_query(string inboundType, SearchType expected)
+    {
+        SearchQuery? observed = null;
+
+        using var factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IUpstreamSource>();
+                services.RemoveAll<IReadOnlyList<IUpstreamSource>>();
+                services.AddSingleton<IUpstreamSource>(new SecondFakeUpstreamSource(
+                    "idclamp-fake-source",
+                    onSearch: query => observed = query));
+                services.AddSingleton<IReadOnlyList<IUpstreamSource>>(sp => sp.GetServices<IUpstreamSource>().ToArray());
+            });
+        });
+
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync(
+            $"/newznab/api?t={inboundType}&q=Project+Runway&season=22&ep=1&apikey={Uri.EscapeDataString(ApiKey)}");
+        response.EnsureSuccessStatusCode();
+
+        Assert.NotNull(observed);
+        Assert.Equal(expected, observed!.Type);
+        Assert.Equal(22, observed.Season);
+        Assert.Equal(1, observed.Episode);
+        Assert.Null(observed.TvdbId);
+    }
+
     [Fact]
     public async Task Valid_tvdbid_is_preserved_unchanged()
     {

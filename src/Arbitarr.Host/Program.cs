@@ -611,10 +611,14 @@ app.MapGet("/torznab/api", async (
     string? cat,
     int? limit,
     int? offset,
-    int? tvdbid,
-    int? tmdbid,
-    int? season,
-    int? ep,
+    // #104: bound as string, not int?, so an EMPTY value (tvdbid=) is treated as absent rather
+    // than rejected by minimal-API binding with a 400 and a text/plain BadHttpRequestException
+    // body — a non-XML answer from a route that must always answer in Torznab/Newznab XML. See
+    // IdParamClamp.ParseOptional.
+    string? tvdbid,
+    string? tmdbid,
+    string? season,
+    string? ep,
     string? apikey,
     IClientApiKeyResolver apiKeyResolver,
     CapsAggregator capsAggregator,
@@ -653,10 +657,10 @@ app.MapGet("/torznab/api", async (
         eventSink,
         request,
         cancellationToken,
-        IdParamClamp.ClampProviderId(tvdbid),
-        IdParamClamp.ClampProviderId(tmdbid),
-        IdParamClamp.ClampSeason(season),
-        IdParamClamp.ClampEpisode(ep),
+        IdParamClamp.ClampProviderId(IdParamClamp.ParseOptional(tvdbid)),
+        IdParamClamp.ClampProviderId(IdParamClamp.ParseOptional(tmdbid)),
+        IdParamClamp.ClampSeason(IdParamClamp.ParseOptional(season)),
+        IdParamClamp.ClampEpisode(IdParamClamp.ParseOptional(ep)),
         clientContext?.Name).ConfigureAwait(false);
 })
     .WithClassification(RouteClassification.PublicRead);
@@ -668,10 +672,14 @@ app.MapGet("/newznab/api", async (
     string? cat,
     int? limit,
     int? offset,
-    int? tvdbid,
-    int? tmdbid,
-    int? season,
-    int? ep,
+    // #104: bound as string, not int?, so an EMPTY value (tvdbid=) is treated as absent rather
+    // than rejected by minimal-API binding with a 400 and a text/plain BadHttpRequestException
+    // body — a non-XML answer from a route that must always answer in Torznab/Newznab XML. See
+    // IdParamClamp.ParseOptional.
+    string? tvdbid,
+    string? tmdbid,
+    string? season,
+    string? ep,
     string? apikey,
     IClientApiKeyResolver apiKeyResolver,
     CapsAggregator capsAggregator,
@@ -710,10 +718,10 @@ app.MapGet("/newznab/api", async (
         eventSink,
         request,
         cancellationToken,
-        IdParamClamp.ClampProviderId(tvdbid),
-        IdParamClamp.ClampProviderId(tmdbid),
-        IdParamClamp.ClampSeason(season),
-        IdParamClamp.ClampEpisode(ep),
+        IdParamClamp.ClampProviderId(IdParamClamp.ParseOptional(tvdbid)),
+        IdParamClamp.ClampProviderId(IdParamClamp.ParseOptional(tmdbid)),
+        IdParamClamp.ClampSeason(IdParamClamp.ParseOptional(season)),
+        IdParamClamp.ClampEpisode(IdParamClamp.ParseOptional(ep)),
         clientContext?.Name).ConfigureAwait(false);
 })
     .WithClassification(RouteClassification.PublicRead);

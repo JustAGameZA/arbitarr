@@ -16,8 +16,15 @@ namespace Arbitarr.Core.Sources;
 /// <param name="Offset">Paging offset, for sources that support it.</param>
 /// <param name="TvdbId">Sonarr/Radarr's own resolved TVDB series id, when the request carries one.</param>
 /// <param name="TmdbId">Sonarr/Radarr's own resolved TMDB id, when the request carries one.</param>
-/// <param name="Season">Season number, when the request carries one (id-based requests only).</param>
-/// <param name="Episode">Episode number, when the request carries one (id-based requests only).</param>
+/// <param name="Season">Season number, when the request carries one (with or without an id, #104).</param>
+/// <param name="Episode">Episode number, when the request carries one (with or without an id, #104).</param>
+/// <param name="Type">
+/// The <c>t=</c> mode the inbound request asked for, which selects the upstream <c>t=</c> (#104).
+/// Optional and defaulted to <see cref="SearchType.Search"/> — unlike <paramref name="Protocol"/>,
+/// whose default would silently route a usenet caller to the torrent-only endpoint, an unset value
+/// here reproduces exactly the pre-#104 behaviour of every construction site, so a caller that has
+/// no inbound mode of its own (a background refresher, a test) is not forced to invent one.
+/// </param>
 public sealed record SearchQuery(
     string? QueryText,
     IReadOnlyList<int> Categories,
@@ -27,4 +34,5 @@ public sealed record SearchQuery(
     int? TvdbId = null,
     int? TmdbId = null,
     int? Season = null,
-    int? Episode = null);
+    int? Episode = null,
+    SearchType Type = SearchType.Search);
