@@ -265,6 +265,164 @@ public class NzbHydraUpstreamProtocolTests
         Assert.Equal("50", query["offset"]);
     }
 
+    // ---- #104: the MODE comes from the request, not from the ids -------------------------------
+
+    /// <summary>
+    /// The regression #104 reports: a TV search carrying <c>q</c> + <c>season</c>/<c>ep</c> but no
+    /// <c>tvdbid</c> must still go upstream as <c>t=tvsearch</c> WITH its season/ep. Before this,
+    /// <c>SearchMode</c> read the ids rather than the request's own mode, so the whole thing was
+    /// downgraded to <c>t=search&amp;q=…</c> and the episode selector was thrown away — NZBHydra2
+    /// then returned the newest episode of the series instead of the requested one.
+    ///
+    /// <para>
+    /// The absence of <c>tvdbid</c> is asserted alongside the three present parameters, so this
+    /// cannot be satisfied by an implementation that invented an id to reach tvsearch.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task SearchAsync_ForATvSearchWithoutAnId_StillSendsTvSearchWithSeasonAndEpisode()
+    {
+        var (handler, source) = MakeSource();
+
+        await source.SearchAsync(new SearchQuery(
+            "Project Runway", Array.Empty<int>(), 10, SearchProtocol.Newznab,
+            Season: 22, Episode: 1, Type: SearchType.TvSearch));
+
+        var query = ParseQuery(Assert.Single(handler.RequestedUris));
+        Assert.Equal("tvsearch", query["t"]);
+        Assert.Equal("Project Runway", query["q"]);
+        Assert.Equal("22", query["season"]);
+        Assert.Equal("1", query["ep"]);
+        Assert.False(query.ContainsKey("tvdbid"));
+        Assert.False(query.ContainsKey("tmdbid"));
+    }
+
+    /// <summary>
+    /// The same for a movie search with no <c>tmdbid</c>: the inbound <c>t=movie</c> is honoured
+    /// rather than silently downgraded to a plain search because no id accompanied it.
+    /// </summary>
+    [Fact]
+    public async Task SearchAsync_ForAMovieSearchWithoutAnId_StillSendsMovieSearch()
+    {
+        var (handler, source) = MakeSource();
+
+        await source.SearchAsync(new SearchQuery(
+            "dune", Array.Empty<int>(), 10, SearchProtocol.Newznab, Type: SearchType.Movie));
+
+        var query = ParseQuery(Assert.Single(handler.RequestedUris));
+        Assert.Equal("movie", query["t"]);
+        Assert.Equal("dune", query["q"]);
+        Assert.False(query.ContainsKey("tmdbid"));
+        Assert.False(query.ContainsKey("tvdbid"));
+    }
+
+    /// <summary>
+    /// An explicit <c>t=tvsearch</c> WITH a tvdbid must still produce the exact shape it produced
+    /// before #104 — the id, the season and the episode, all as their own parameters. This is the
+    /// row of the issue's repro table that already worked, pinned so the fix cannot regress it.
+    /// </summary>
+    [Fact]
+    public async Task SearchAsync_ForATvSearchWithAnId_SendsTheSameShapeAsBefore()
+    {
+        var (handler, source) = MakeSource();
+
+        await source.SearchAsync(new SearchQuery(
+            "Project Runway", Array.Empty<int>(), 10, SearchProtocol.Newznab,
+            TvdbId: 74285, Season: 22, Episode: 1, Type: SearchType.TvSearch));
+
+        var query = ParseQuery(Assert.Single(handler.RequestedUris));
+        Assert.Equal("tvsearch", query["t"]);
+        Assert.Equal("74285", query["tvdbid"]);
+        Assert.Equal("22", query["season"]);
+        Assert.Equal("1", query["ep"]);
+        Assert.Equal("Project Runway", query["q"]);
+    }
+
+    /// <summary>
+    /// The pre-existing rule that a tmdbid is never sent alongside <c>t=tvsearch</c> survives the
+    /// mode change: a query carrying BOTH ids under a TV search sends only the tvdbid.
+    /// </summary>
+    [Fact]
+    public async Task SearchAsync_ForATvSearchCarryingBothIds_SendsOnlyTheTvdbId()
+    {
+        var (handler, source) = MakeSource();
+
+        await source.SearchAsync(new SearchQuery(
+            "bleach", Array.Empty<int>(), 10, SearchProtocol.Newznab,
+            TvdbId: 74796, TmdbId: 438631, Type: SearchType.TvSearch));
+
+        var query = ParseQuery(Assert.Single(handler.RequestedUris));
+        Assert.Equal("tvsearch", query["t"]);
+        Assert.Equal("74796", query["tvdbid"]);
+        Assert.False(query.ContainsKey("tmdbid"));
+    }
+
+    /// <summary>
+    /// And the converse: a movie search carrying both ids sends only the tmdbid, and no season/ep
+    /// (those are not part of the movie parameter set and would be noise in the request identity).
+    /// </summary>
+    [Fact]
+    public async Task SearchAsync_ForAMovieSearchCarryingBothIds_SendsOnlyTheTmdbIdAndNoNumbering()
+    {
+        var (handler, source) = MakeSource();
+
+        await source.SearchAsync(new SearchQuery(
+            "dune", Array.Empty<int>(), 10, SearchProtocol.Newznab,
+            TvdbId: 74796, TmdbId: 438631, Season: 2, Episode: 3, Type: SearchType.Movie));
+
+        var query = ParseQuery(Assert.Single(handler.RequestedUris));
+        Assert.Equal("movie", query["t"]);
+        Assert.Equal("438631", query["tmdbid"]);
+        Assert.False(query.ContainsKey("tvdbid"));
+        Assert.False(query.ContainsKey("season"));
+        Assert.False(query.ContainsKey("ep"));
+    }
+
+    /// <summary>
+    /// A plain <c>t=search</c> that nonetheless carries season/ep must NOT smuggle them upstream:
+    /// they are not part of the plain-search parameter set, and emitting them unconditionally
+    /// (the tempting simplification of the #104 fix) would change what every plain search asks for.
+    /// The tvsearch case above is this test's positive control — it proves the two parameters are
+    /// reachable at all, so their absence here is a real discrimination rather than a dead branch.
+    /// </summary>
+    [Fact]
+    public async Task SearchAsync_ForAPlainSearchCarryingNumbering_DoesNotForwardSeasonOrEpisode()
+    {
+        var (handler, source) = MakeSource();
+
+        await source.SearchAsync(new SearchQuery(
+            "Project Runway", Array.Empty<int>(), 10, SearchProtocol.Newznab,
+            Season: 22, Episode: 1, Type: SearchType.Search));
+
+        var query = ParseQuery(Assert.Single(handler.RequestedUris));
+        Assert.Equal("search", query["t"]);
+        Assert.False(query.ContainsKey("season"));
+        Assert.False(query.ContainsKey("ep"));
+    }
+
+    /// <summary>
+    /// <see cref="SearchQuery.Type"/> is defaulted, so a construction site that never heard of
+    /// #104 must keep its pre-#104 behaviour exactly: the mode still falls back to the ids it
+    /// supplied. This is what lets the member be optional without a silent behaviour change.
+    /// </summary>
+    [Theory]
+    [InlineData(74796, null, "tvsearch")]
+    [InlineData(null, 438631, "movie")]
+    [InlineData(null, null, "search")]
+    public async Task SearchAsync_WithNoExplicitType_FallsBackToTheModeTheSuppliedIdAccepts(
+        int? tvdbId,
+        int? tmdbId,
+        string expectedMode)
+    {
+        var (handler, source) = MakeSource();
+
+        await source.SearchAsync(new SearchQuery(
+            "probe", Array.Empty<int>(), 10, SearchProtocol.Newznab, TvdbId: tvdbId, TmdbId: tmdbId));
+
+        var query = ParseQuery(Assert.Single(handler.RequestedUris));
+        Assert.Equal(expectedMode, query["t"]);
+    }
+
     // ---- AC4: the apikey stays in the query string ---------------------------------------------
 
     /// <summary>

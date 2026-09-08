@@ -107,7 +107,10 @@ public static class SearchEndpoint
         CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
-        var query = new SearchQuery(queryText, categories, limit, protocol, offset, tvdbId, tmdbId, season, episode);
+        // #104: the inbound t= now reaches the source, so an id-less tvsearch keeps its mode and its
+        // season/ep instead of being downgraded to a plain search upstream. Parsed by explicit name
+        // match (CLAUDE.md §3) — never Enum.TryParse, which would also accept "t=1".
+        var query = new SearchQuery(queryText, categories, limit, protocol, offset, tvdbId, tmdbId, season, episode, SearchTypeParser.Parse(searchType));
         var result = await snapshotService.GetPageAsync(searchType ?? "search", query, cancellationToken).ConfigureAwait(false);
 
         // Only surface the rate-limit element when every configured source failed with

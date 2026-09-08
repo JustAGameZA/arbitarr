@@ -215,26 +215,47 @@ public sealed class NzbHydraSource : IUpstreamSource
     };
 
     /// <summary>
-    /// The Newznab/Torznab <c>t=</c> mode for a query, chosen from the ids the caller actually
-    /// supplied. NZBHydra2's API is Newznab-compatible, so <c>tvsearch</c>/<c>movie</c> take
-    /// <c>tvdbid</c>/<c>season</c>/<c>ep</c> and <c>tmdbid</c> respectively; a query with neither id
-    /// is a plain <c>search</c>. The ids are sent as their own parameters and are never folded into
-    /// <c>q</c> — upstream matches an id exactly, where the same digits inside the free-text term
-    /// would just be noise that narrows the result set for no reason.
+    /// The Newznab/Torznab <c>t=</c> mode for a query, chosen from the mode the INBOUND request
+    /// asked for and, only as a fallback, from the ids the caller supplied. NZBHydra2's API is
+    /// Newznab-compatible, so <c>tvsearch</c>/<c>movie</c> take <c>tvdbid</c>/<c>season</c>/
+    /// <c>ep</c> and <c>tmdbid</c> respectively; a query that is neither is a plain <c>search</c>.
+    /// The ids are sent as their own parameters and are never folded into <c>q</c> — upstream
+    /// matches an id exactly, where the same digits inside the free-text term would just be noise
+    /// that narrows the result set for no reason.
     /// </summary>
+    /// <remarks>
+    /// #104: the mode is the request's, NOT the ids'. Deriving it from the ids alone downgraded
+    /// <c>t=tvsearch&amp;q=…&amp;season=22&amp;ep=1</c> (a Sonarr episode search that fell back to a
+    /// text query, and every dashboard episode search) to a plain <c>t=search</c> and dropped the
+    /// episode selector, returning the newest episode of the series instead of the requested one.
+    /// NZBHydra2 accepts an id-less <c>tvsearch</c> — it issues exactly that shape to indexers
+    /// itself as its own fallback query — so nothing upstream required the id.
+    ///
+    /// The id arms remain BELOW the request's own mode rather than being deleted: a caller that
+    /// supplies a tvdbid/tmdbid without an explicit <c>t=</c> (the dashboard's ad-hoc route builds
+    /// its <see cref="SearchType"/> itself, but <see cref="SearchQuery.Type"/> is defaulted, so a
+    /// future construction site may not) still gets the mode that accepts the id it sent.
+    /// </remarks>
     private static string SearchMode(SearchQuery query) => query switch
     {
-        { TvdbId: not null } => "tvsearch",
+        { Type: SearchType.TvSearch } => TvSearchMode,
+        { Type: SearchType.Movie } => "movie",
+        { TvdbId: not null } => TvSearchMode,
         { TmdbId: not null } => "movie",
         _ => "search",
     };
 
+    /// <summary>The upstream <c>t=</c> value for a <c>tvsearch</c>, named once so the mode string
+    /// the URI carries and the mode the id/numbering emission below branches on cannot drift.</summary>
+    private const string TvSearchMode = "tvsearch";
+
     private Uri BuildSearchUri(SearchQuery query, int limit, int offset)
     {
+        var mode = SearchMode(query);
         var builder = new UriBuilder(new Uri(_options.BaseUrl, UpstreamPath(query.Protocol)));
         var queryParams = new List<string>
         {
-            "t=" + Uri.EscapeDataString(SearchMode(query)),
+            "t=" + Uri.EscapeDataString(mode),
             "limit=" + limit.ToString(CultureInfo.InvariantCulture),
             "offset=" + offset.ToString(CultureInfo.InvariantCulture),
         };
@@ -247,10 +268,17 @@ public sealed class NzbHydraSource : IUpstreamSource
         // Id parameters are emitted only for the mode that accepts them, so a query carrying both a
         // tvdbid and a tmdbid does not send a tmdbid along with t=tvsearch (upstream would ignore
         // it, but it would also become part of the request identity for no benefit). Season/ep ride
-        // with tvsearch only, matching the Newznab parameter set NZBHydra2 advertises in its caps.
-        if (query.TvdbId is int tvdbId)
+        // with tvsearch, matching the Newznab parameter set NZBHydra2 advertises in its caps — but
+        // with the MODE, not with the tvdbid (#104): an id-less tvsearch carries them too, which is
+        // the whole point of the issue. They are still gated on the mode rather than emitted
+        // unconditionally, because season/ep are not part of the movie or plain-search parameter
+        // sets and sending them there would add noise to the request identity for nothing.
+        if (string.Equals(mode, TvSearchMode, StringComparison.Ordinal))
         {
-            queryParams.Add("tvdbid=" + tvdbId.ToString(CultureInfo.InvariantCulture));
+            if (query.TvdbId is int tvdbId)
+            {
+                queryParams.Add("tvdbid=" + tvdbId.ToString(CultureInfo.InvariantCulture));
+            }
 
             if (query.Season is int season)
             {

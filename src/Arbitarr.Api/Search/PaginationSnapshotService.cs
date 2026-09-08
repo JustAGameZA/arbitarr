@@ -193,11 +193,20 @@ public sealed class PaginationSnapshotService
     /// into one token. The previous separator-free form could: ("tvsearch", "x") and ("tvsearc",
     /// "hx") both flattened to the same string.
     /// </para>
+    ///
+    /// <para>
+    /// <see cref="SearchQuery.Type"/> is a component alongside the raw <paramref name="searchType"/>
+    /// (#104), because since that issue the two are no longer the same thing: the raw value is the
+    /// inbound spelling, while the parsed <see cref="SearchType"/> is what actually selects the
+    /// upstream <c>t=</c> and whether <c>season</c>/<c>ep</c> are forwarded. A query whose parsed
+    /// mode differs therefore resolves to a genuinely different upstream request and must not share
+    /// a snapshot, even where the raw strings coincide.
+    /// </para>
     /// </summary>
     private static string ComputeSnapshotToken(string searchType, SearchQuery query)
     {
         var normalizedCategories = string.Join(",", query.Categories.OrderBy(c => c));
-        var raw = $"{searchType}\u001f{query.Protocol}\u001f{query.QueryText}\u001f{normalizedCategories}" +
+        var raw = $"{searchType}\u001f{query.Type}\u001f{query.Protocol}\u001f{query.QueryText}\u001f{normalizedCategories}" +
                   $"\u001f{query.TvdbId}\u001f{query.TmdbId}\u001f{query.Season}\u001f{query.Episode}";
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
         return Convert.ToHexString(hash);
