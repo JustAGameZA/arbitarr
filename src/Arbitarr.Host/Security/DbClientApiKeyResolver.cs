@@ -11,7 +11,7 @@ namespace Arbitarr.Host.Security;
 /// the compose-file placeholder worked, and the API keys section said the opposite.
 ///
 /// <para><b>ORDER: MINTED KEYS FIRST, ENVIRONMENT SECOND.</b> Same ordering, and the same reason, as
-/// <see cref="DbAdminKeyResolver"/>: the more specific answer wins, so a minted key always resolves
+/// <see cref="DbCredentialResolver"/>: the more specific answer wins, so a minted key always resolves
 /// to its own label and id rather than being absorbed by a colliding environment value. Values do
 /// not collide in practice (<see cref="ApiKeyHasher.Generate"/> mints 256 random bits), but ordering
 /// by specificity costs nothing and removes the question. The rejected alternative was environment
@@ -21,7 +21,7 @@ namespace Arbitarr.Host.Security;
 /// <para><b>THE ENVIRONMENT KEYS ARE NOT DEPRECATED HERE, AND ARE NOT AUTO-MIGRATED.</b> An upgrade
 /// that silently invalidates the credential every *arr instance on a homelab box is currently using,
 /// while the operator is not watching, is the worst available failure — it is exactly the reasoning
-/// <see cref="DbAdminKeyResolver"/> records for the legacy admin key, and it applies unchanged.
+/// <see cref="DbCredentialResolver"/> records for the legacy admin key, and it applies unchanged.
 /// <c>Arbitarr:ApiKey</c> and <c>Arbitarr:ClientApiKeys</c> keep working after this change; minting
 /// per-client keys is the recommendation, not a requirement.</para>
 ///
@@ -68,7 +68,7 @@ public sealed class DbClientApiKeyResolver : IClientApiKeyResolver
         var repository = scope.ServiceProvider.GetRequiredService<ApiKeyRepository>();
 
         // FindLiveByPresentedKeyAsync is the ONE verification path for a minted key, shared with
-        // DbAdminKeyResolver. Reusing it unchanged is the point: a second hashing path here would
+        // DbCredentialResolver. Reusing it unchanged is the point: a second hashing path here would
         // be a second place for the stored shape to drift from, and its own doc comment already
         // records why the comparison is an indexed equality on the SHA-256 hash rather than
         // ApiKeyHasher.HashesMatch — do not "harden" that here without reading it first.

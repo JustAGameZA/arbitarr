@@ -167,7 +167,7 @@ public static class AuthEndpoints
         }
 
         var resolution = await authenticator.AuthenticateAsync(token, ApiKeyScope.Admin, cancellationToken);
-        if (resolution.Outcome is not AdminKeyResolutionOutcome.Authorized)
+        if (resolution.Outcome is not CredentialResolutionOutcome.Authorized)
         {
             return Results.Ok(new SessionResponse(Authenticated: false, Username: null, setupRequired));
         }
@@ -346,7 +346,7 @@ public static class AuthEndpoints
     /// because it is the one way "session only" could silently become "anyone on the LAN". That
     /// bypass lives entirely inside <c>AdminApiKeyFilter.HandleUnconfiguredAsync</c>; this route
     /// never calls the filter, and <c>DbSessionAuthenticator</c> cannot return
-    /// <see cref="AdminKeyResolutionOutcome.NotConfigured"/> by construction. So on a fresh install
+    /// <see cref="CredentialResolutionOutcome.NotConfigured"/> by construction. So on a fresh install
     /// with no admin key configured, this route still requires a live session — asserted by
     /// <c>Changing_a_password_requires_a_session_even_when_no_admin_key_is_configured</c>, which
     /// deliberately does NOT seed a key.</para>
@@ -390,7 +390,7 @@ public static class AuthEndpoints
         }
 
         var resolution = await authenticator.AuthenticateAsync(token, ApiKeyScope.Admin, cancellationToken);
-        if (resolution.Outcome is not AdminKeyResolutionOutcome.Authorized)
+        if (resolution.Outcome is not CredentialResolutionOutcome.Authorized)
         {
             return NotSignedIn();
         }

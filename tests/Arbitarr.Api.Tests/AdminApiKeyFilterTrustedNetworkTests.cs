@@ -402,10 +402,10 @@ public sealed class AdminApiKeyFilterTrustedNetworkTests
     }
 
     /// <summary>
-    /// #58: stands in for <c>DbAdminKeyResolver</c>, reproducing the branch structure this filter
+    /// #58: stands in for <c>DbCredentialResolver</c>, reproducing the branch structure this filter
     /// actually switches on rather than a simplification of it — no credential configured at all is
-    /// <see cref="AdminKeyResolutionOutcome.NotConfigured"/> (the only case the bootstrap bypass
-    /// answers), a non-matching value is <see cref="AdminKeyResolutionOutcome.Rejected"/>, and a
+    /// <see cref="CredentialResolutionOutcome.NotConfigured"/> (the only case the bootstrap bypass
+    /// answers), a non-matching value is <see cref="CredentialResolutionOutcome.Rejected"/>, and a
     /// matching one is authorised or refused on scope.
     ///
     /// <para>The single configured value is deliberately modelled as the LEGACY shared key when
@@ -414,7 +414,7 @@ public sealed class AdminApiKeyFilterTrustedNetworkTests
     /// behaviour they were written for. Supplying a scope instead models a NAMED key, which is how
     /// the bypass-closing and scope-refusal cases are exercised.</para>
     /// </summary>
-    private sealed class StubAdminKeyResolver : IAdminKeyResolver
+    private sealed class StubAdminKeyResolver : ICredentialResolver
     {
         private readonly string? _configuredKey;
         private readonly ApiKeyScope _scope;
@@ -426,25 +426,25 @@ public sealed class AdminApiKeyFilterTrustedNetworkTests
             _scope = namedKeyScope ?? ApiKeyScope.Admin;
         }
 
-        public Task<AdminKeyResolution> ResolveAsync(
+        public Task<CredentialResolution> ResolveAsync(
             string? presentedKey,
             ApiKeyScope requiredScope,
             CancellationToken cancellationToken)
         {
             if (string.IsNullOrEmpty(_configuredKey))
             {
-                return Task.FromResult(AdminKeyResolution.NotConfigured);
+                return Task.FromResult(CredentialResolution.NotConfigured);
             }
 
             if (!string.Equals(presentedKey, _configuredKey, StringComparison.Ordinal))
             {
-                return Task.FromResult(AdminKeyResolution.Rejected);
+                return Task.FromResult(CredentialResolution.Rejected);
             }
 
-            return Task.FromResult(new AdminKeyResolution(
+            return Task.FromResult(new CredentialResolution(
                 _scope >= requiredScope
-                    ? AdminKeyResolutionOutcome.Authorized
-                    : AdminKeyResolutionOutcome.InsufficientScope,
+                    ? CredentialResolutionOutcome.Authorized
+                    : CredentialResolutionOutcome.InsufficientScope,
                 KeyId: 7,
                 Label: "stub-key",
                 Scope: _scope));
@@ -498,10 +498,10 @@ public sealed class AdminApiKeyFilterTrustedNetworkTests
     /// </summary>
     private sealed class StubSessionAuthenticator : ISessionAuthenticator
     {
-        public Task<AdminKeyResolution> AuthenticateAsync(
+        public Task<CredentialResolution> AuthenticateAsync(
             string? presentedToken,
             ApiKeyScope requiredScope,
             CancellationToken cancellationToken) =>
-            Task.FromResult(AdminKeyResolution.Rejected);
+            Task.FromResult(CredentialResolution.Rejected);
     }
 }

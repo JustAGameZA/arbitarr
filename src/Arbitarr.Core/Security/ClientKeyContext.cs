@@ -18,6 +18,6 @@ namespace Arbitarr.Core.Security;
 /// Non-null is precisely the condition under which a last-used time can be stamped — see
 /// <see cref="IApiKeyLastUsedRecorder"/>. The null is the honest representation of an environment
 /// key's missing attribution rather than a synthetic row pretending Arbitarr minted it, matching
-/// how <c>DbAdminKeyResolver</c> reports the legacy admin key.
+/// how <c>DbCredentialResolver</c> reports the legacy admin key.
 /// </param>
 public sealed record ClientKeyContext(string Name, long? KeyId = null);

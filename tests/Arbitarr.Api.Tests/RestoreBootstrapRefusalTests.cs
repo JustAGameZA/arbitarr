@@ -45,7 +45,7 @@ public sealed class RestoreBootstrapRefusalTests
 
         var result = await AdminBackupEndpoints.RestoreAsync(
             context,
-            new StubResolver(AdminKeyResolutionOutcome.NotConfigured),
+            new StubResolver(CredentialResolutionOutcome.NotConfigured),
             restoreService: null!,
             coordinator: null!,
             state: null!,
@@ -75,7 +75,7 @@ public sealed class RestoreBootstrapRefusalTests
 
         await Assert.ThrowsAnyAsync<Exception>(() => AdminBackupEndpoints.RestoreAsync(
             context,
-            new StubResolver(AdminKeyResolutionOutcome.Authorized),
+            new StubResolver(CredentialResolutionOutcome.Authorized),
             restoreService: null!,
             coordinator: null!,
             state: null!,
@@ -84,12 +84,12 @@ public sealed class RestoreBootstrapRefusalTests
             cancellationToken: CancellationToken.None));
     }
 
-    private sealed class StubResolver(AdminKeyResolutionOutcome outcome) : IAdminKeyResolver
+    private sealed class StubResolver(CredentialResolutionOutcome outcome) : ICredentialResolver
     {
-        public Task<AdminKeyResolution> ResolveAsync(
+        public Task<CredentialResolution> ResolveAsync(
             string? presentedKey,
             ApiKeyScope requiredScope,
             CancellationToken cancellationToken) =>
-            Task.FromResult(new AdminKeyResolution(outcome, null, null, null));
+            Task.FromResult(new CredentialResolution(outcome, null, null, null));
     }
 }
