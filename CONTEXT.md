@@ -120,6 +120,39 @@ value about identity resolution degrading on a live lookup; `Unreachable` here i
 a probe outcome about one operator-triggered connectivity test. Different enums,
 different questions.
 
+**Nor with `OllamaProbeOutcome`** (`src/Arbitarr.Core/Ai/OllamaProbeOutcome.cs`),
+the result of `POST /api/admin/ai/ollama/test`. Same closed-enum discipline and
+three of the same member names, but a **different set**: it has FOUR members, not
+five, because there is deliberately no `AuthenticationFailed` — an AI backend
+carries no key, so that outcome could never be produced. Its `UnexpectedResponse`
+means "something answered but it was not Ollama's `/api/tags`", where the source
+enum's means "not the Torznab caps document".
+
+---
+
+## AI backend
+
+An **AI backend** is the LLM instance the classifier speaks to — today Ollama, at
+the address held in `SettingKey.OllamaBaseUrl` and edited in the Settings
+surface's own AI section (`Settings/Ai/Ai.tsx`, #89).
+
+**It is not a source, and the distinction is load-bearing rather than
+terminological.** A source is *searched* — it is an indexer, it appears in the
+sources health table, it carries a Torznab/Newznab API key, and its probe speaks
+the source API. An AI backend is none of those: it is asked to classify a release
+that a source already returned, it holds no key, and probing it means asking
+Ollama for its model list. Collapsing the two would make `source` mean two things
+in one table and would report a healthy Ollama as `UnexpectedResponse` against
+the source probe. Hence a separate section, a separate probe, and a separate
+outcome enum.
+
+Both are nonetheless configured under the **same ruling**: seed once from the
+environment, then the database is authoritative — the environment is inert
+afterwards, and a divergent value produces a startup warning rather than silently
+losing. The reasoning, and the incident that forced it, is in
+`SourceSeeder`'s type doc (`src/Arbitarr.Host/Sources/SourceSeeder.cs`);
+`OllamaBaseUrlSeeder` applies the identical rule to the AI backend.
+
 ---
 
 ## Keys — three of them, deliberately

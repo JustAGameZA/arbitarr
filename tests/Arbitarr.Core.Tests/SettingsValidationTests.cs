@@ -682,6 +682,103 @@ public class SettingsValidationTests
         Assert.Null(ex);
     }
 
+    // ---------- #89 Ollama base URL ----------
+
+    [Theory]
+    [InlineData("http://ollama.example.com:11434")]
+    [InlineData("https://ollama.example.com")]
+    [InlineData("http://ollama:11434")]
+    // A path prefix is legitimate: an instance behind a reverse proxy at /ollama.
+    [InlineData("http://proxy.example.com/ollama")]
+    public void OllamaBaseUrl_AcceptsAbsoluteHttpUrls(string proposed)
+    {
+        var ex = Record.Exception(() => SettingsValidator.ValidateOllamaBaseUrl(proposed));
+        Assert.Null(ex);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("ollama.example.com:11434")]
+    [InlineData("ftp://ollama.example.com")]
+    [InlineData("file:///etc/passwd")]
+    public void OllamaBaseUrl_RejectsAnythingThatIsNotAnAbsoluteHttpUrl(string proposed)
+    {
+        var ex = Assert.Throws<SettingsValidationException>(
+            () => SettingsValidator.ValidateOllamaBaseUrl(proposed));
+        Assert.Equal(SettingKey.OllamaBaseUrl, ex.Key);
+    }
+
+    /// <summary>
+    /// Credentials in the URL are rejected because Ollama has no authentication, so they are never
+    /// needed — and because this setting is served back and its request URI is logged in full by
+    /// IHttpClientFactory's handler (CLAUDE.md §1). Accepting one would turn a deliberately
+    /// non-secret value into a durable credential leak.
+    /// </summary>
+    [Theory]
+    [InlineData("http://user:password@ollama.example.com:11434")]
+    [InlineData("https://token@ollama.example.com")]
+    public void OllamaBaseUrl_RejectsCredentialsInTheUrl(string proposed)
+    {
+        var ex = Assert.Throws<SettingsValidationException>(
+            () => SettingsValidator.ValidateOllamaBaseUrl(proposed));
+        Assert.Equal(SettingKey.OllamaBaseUrl, ex.Key);
+    }
+
+    /// <summary>
+    /// The rejection must not echo the value back, or the credential it is rejecting would land in
+    /// the response body and on the operator's screen — defeating the point of rejecting it.
+    ///
+    /// <para>POSITIVE CONTROL: the same assertion is first shown to GO RED against a message that
+    /// does interpolate the value, so this cannot pass merely because the search was incapable of
+    /// finding anything.</para>
+    /// </summary>
+    [Fact]
+    public void OllamaBaseUrl_CredentialRejectionDoesNotEchoTheCredential()
+    {
+        const string password = "placeholder-super-secret-password";
+        var proposed = $"http://user:{password}@ollama.example.com:11434";
+
+        // Detectability control: a message built the way a leaking implementation would build it
+        // IS found by this search, so a failure below means the value really is absent.
+        var wouldLeak = $"'{proposed}' is not a valid Ollama base URL.";
+        Assert.Contains(password, wouldLeak, StringComparison.Ordinal);
+
+        var ex = Assert.Throws<SettingsValidationException>(
+            () => SettingsValidator.ValidateOllamaBaseUrl(proposed));
+
+        Assert.DoesNotContain(password, ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// RFC 2606 reserves .invalid as permanently unresolvable — it is what the fixtures use
+    /// (http://ollama.example.invalid) precisely because nothing can answer there. Accepting one
+    /// into a live configuration produces an instance whose every classification silently fails
+    /// open.
+    /// </summary>
+    [Theory]
+    [InlineData("http://ollama.example.invalid")]
+    [InlineData("https://ollama.example.INVALID:11434")]
+    [InlineData("http://invalid")]
+    public void OllamaBaseUrl_RejectsTheReservedInvalidDomain(string proposed)
+    {
+        var ex = Assert.Throws<SettingsValidationException>(
+            () => SettingsValidator.ValidateOllamaBaseUrl(proposed));
+        Assert.Equal(SettingKey.OllamaBaseUrl, ex.Key);
+    }
+
+    /// <summary>
+    /// A host that merely CONTAINS "invalid" is a legitimate address and must not be caught by the
+    /// suffix rule — the check is on the domain, not on the substring.
+    /// </summary>
+    [Fact]
+    public void OllamaBaseUrl_AcceptsAHostThatMerelyContainsTheWordInvalid()
+    {
+        var ex = Record.Exception(
+            () => SettingsValidator.ValidateOllamaBaseUrl("http://invalidator.example.com:11434"));
+        Assert.Null(ex);
+    }
+
     // ---------- AI confidence threshold ----------
 
     [Fact]

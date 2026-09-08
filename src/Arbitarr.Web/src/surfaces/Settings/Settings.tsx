@@ -10,6 +10,7 @@ import { useSettingsQuery, useUpdateSettingMutation } from './queries';
 import { SourcesSection } from './Sources/Sources';
 import { ApiKeysSection } from './ApiKeys/ApiKeys';
 import { AccountSection } from './Account/Account';
+import { AiSection } from './Ai/Ai';
 
 /** Groups the flat catalog into its declared groups, preserving server order. */
 export function groupSettings(entries: SettingCatalogEntry[]): [string, SettingCatalogEntry[]][] {
@@ -190,6 +191,8 @@ export default function SettingsPage() {
       <ApiKeysSection />
 
       <NotificationsSection />
+
+      <AiSection />
 
       <QueryState isPending={settings.isPending} error={settings.error} data={settings.data}>
         {(entries) =>

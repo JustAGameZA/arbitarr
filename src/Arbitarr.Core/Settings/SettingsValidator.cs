@@ -511,6 +511,68 @@ public static class SettingsValidator
     }
 
     /// <summary>
+    /// #89: validates a proposed <see cref="SettingKey.OllamaBaseUrl"/> value — the address of the
+    /// AI backend the classifier speaks to.
+    ///
+    /// <para><b>Three rejections, each closing a different way the value goes wrong.</b>
+    /// <list type="bullet">
+    /// <item><b>Non-absolute or non-http(s)</b> — the same floor
+    /// <c>SourceRepository.ValidateBaseUrl</c> applies to a source address, stated here rather than
+    /// shared because that one throws <c>SourceValidationException</c> from the Data layer and this
+    /// is a settings value validated in Core. A <c>file:</c> or <c>ftp:</c> URL is not something
+    /// <c>OllamaClient</c> could ever call, so accepting one only defers the failure to a probe
+    /// that reports a confusing outcome.</item>
+    /// <item><b>Credentials in the URL</b> (<c>http://user:pass@host</c>) — Ollama has no
+    /// authentication at all, so a userinfo component here is never something the operator needs.
+    /// It IS something that would turn this deliberately-readable setting into a secret-bearing
+    /// one: the value is served back on <c>GET /api/admin/ai/ollama</c> and, because
+    /// <c>IHttpClientFactory</c>'s logging handler writes the full absolute request URI at
+    /// Information into the persistent log store (CLAUDE.md §1), a credential embedded here would
+    /// become a durable leak that <c>LogMessageCleanser</c> — which scrubs query strings, not
+    /// userinfo — would not catch. Rejecting it keeps "this setting is not a secret" TRUE by
+    /// construction rather than by convention.</item>
+    /// <item><b>A <c>.invalid</c> host</b> — RFC 2606 reserves it as permanently unresolvable, so
+    /// it is what the test fixtures use (<c>http://ollama.example.invalid</c>) precisely because
+    /// nothing can ever answer there. Accepting one into a live configuration would produce an
+    /// instance whose every classification silently fails open, with a probe that can only ever
+    /// report <c>Unreachable</c>. Rejecting it means a documentation address pasted from a fixture
+    /// is caught where it is typed rather than diagnosed later.</item>
+    /// </list></para>
+    ///
+    /// <para>No ceiling on length and no host allow-list: an operator's Ollama may legitimately sit
+    /// at any address on their network, and the SSRF posture for this URL is redirect-following
+    /// being disabled on the client (see Program.cs's SEC-M5 comment), not an origin check here.</para>
+    /// </summary>
+    public static void ValidateOllamaBaseUrl(string proposed)
+    {
+        if (string.IsNullOrWhiteSpace(proposed)
+            || !Uri.TryCreate(proposed, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            throw new SettingsValidationException(SettingKey.OllamaBaseUrl,
+                $"'{proposed}' is not a valid absolute http(s) URL.");
+        }
+
+        if (!string.IsNullOrEmpty(uri.UserInfo))
+        {
+            // The rejection names the problem without echoing the value, which would put the
+            // credential itself into the response body and from there into the operator's screen.
+            throw new SettingsValidationException(SettingKey.OllamaBaseUrl,
+                "the Ollama base URL must not contain credentials (user:password@host). Ollama has " +
+                "no authentication, so credentials here are never needed and would be logged with " +
+                "every request URI.");
+        }
+
+        if (uri.Host.EndsWith(".invalid", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(uri.Host, "invalid", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new SettingsValidationException(SettingKey.OllamaBaseUrl,
+                $"'{proposed}' uses the reserved .invalid domain, which can never resolve. It is a " +
+                "documentation/test address; enter the address your Ollama instance actually serves on.");
+        }
+    }
+
+    /// <summary>
     /// Validates a proposed <see cref="SettingKey.AdminApiKey"/> value (AC24-style: rejects
     /// rather than silently accepting a weak value, since a short/blank key defeats the D2
     /// mutation gate entirely). Floor: 16 characters (minimum length to resist casual guessing on

@@ -193,6 +193,17 @@ public sealed class SettingsRepository
                     ParseTimeSpan(key, proposed),
                     current.SessionIdleTimeout);
                 break;
+            case SettingKey.OllamaBaseUrl:
+                // #89. Off SettingsCatalog.Entries (see the SettingKey member's doc) so
+                // PUT /api/admin/settings/OllamaBaseUrl stays a 404 and the value is written only
+                // through AdminAiEndpoints — but the validation it takes is this one, on the same
+                // reject-never-clamp path every other setting uses. One floor, in one place.
+                //
+                // Unlike AdminApiKey above, this is NOT a secret: it is served back on
+                // GET /api/admin/ai/ollama. It is off the catalog because it owns its own settings
+                // section with a connectivity probe, not because it must be hidden.
+                SettingsValidator.ValidateOllamaBaseUrl(proposed);
+                break;
             case SettingKey.AdminApiKey:
                 // #43: this arm USED TO `throw new SettingsValidationException(key,
                 // "admin_api_key is not editable through the settings write path.")`. Do not

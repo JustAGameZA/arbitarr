@@ -253,8 +253,9 @@ function SourceForm({
  *   and the connectivity probe on this page speaks the source API, so a shared
  *   test button would report `UnexpectedResponse` against a perfectly healthy
  *   Ollama. Putting it in the sources list would make "source" mean two
- *   different things in the same table. It needs its own section with its own
- *   probe, tracked as a follow-up; it is not silently skipped.
+ *   different things in the same table. It has its own section with its own
+ *   probe -- `Settings/Ai/Ai.tsx` (#89), which speaks Ollama's `/api/tags` and
+ *   reports its own four outcomes; it is not silently skipped.
  * - `Arbitarr:Ai` and `Arbitarr:ClientApiKeys` — no upstream address between
  *   them (model/feature settings and locally-minted credentials respectively),
  *   so nothing to surface.
