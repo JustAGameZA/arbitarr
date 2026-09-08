@@ -27,7 +27,7 @@ namespace Arbitarr.Integration.Tests;
 /// pass for the wrong reason. The store is resolved through <see cref="LogStore"/> — grep for
 /// <see cref="LogStore.DatabaseFileName"/>, never for the config database's name.</para>
 /// </summary>
-public sealed class PasswordLogInjectionTests : IDisposable
+public sealed class PasswordLogInjectionTests
 {
     private const string Username = "log-probe-operator";
 
@@ -36,17 +36,12 @@ public sealed class PasswordLogInjectionTests : IDisposable
     private const string CurrentPassword = "example-current-passphrase-probe";
     private const string NewPassword = "example-new-passphrase-probe";
 
-    private readonly string _configDirectory;
-
-    public PasswordLogInjectionTests()
-    {
-        // Per-test config directory, exactly as LogSecretInjectionTests does it, so the log
-        // database this reads is this test's own and not a neighbour's leftovers.
-        _configDirectory = Path.Combine(
-            Path.GetTempPath(), "arbitarr-password-log-tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(_configDirectory);
-        Environment.SetEnvironmentVariable("ARBITARR_CONFIG_DIR", _configDirectory);
-    }
+    // The per-test config directory is owned by RemoteAddressWebApplicationFactory, which creates
+    // its own and deletes it on dispose. This class used to declare a second one and point
+    // ARBITARR_CONFIG_DIR at it, which never had any effect: the factory set the same process-wide
+    // variable to ITS directory afterwards, so the host always ran against the factory's, and the
+    // one declared here was created, never used, and then deleted. Isolation is unchanged; the
+    // store read below is still this test's own, because the factory instance is.
 
     [Fact]
     public async Task Neither_password_appears_in_any_log_row_after_a_change_and_a_failed_change()
@@ -167,16 +162,4 @@ public sealed class PasswordLogInjectionTests : IDisposable
     private static async Task FlushLogSinkAsync() =>
         await Task.Delay(SqliteLoggerProvider.FlushInterval + TimeSpan.FromMilliseconds(750));
 
-    public void Dispose()
-    {
-        try
-        {
-            Directory.Delete(_configDirectory, recursive: true);
-        }
-        catch (IOException)
-        {
-            // The log database may still be held open by the host that has only just been disposed.
-            // A leftover temp directory is not worth failing a passing test over.
-        }
-    }
 }

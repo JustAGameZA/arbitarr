@@ -1,4 +1,5 @@
 using Arbitarr.Data;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,10 +18,19 @@ public sealed class ArbitarrWebApplicationFactory : WebApplicationFactory<Progra
     private readonly string _configDirectory =
         Path.Combine(Path.GetTempPath(), "arbitarr-m2-tests", Guid.NewGuid().ToString("N"));
 
+    /// <summary>The per-instance <c>/config</c> directory this host was given.</summary>
+    public string ConfigDirectory => _configDirectory;
+
     protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
     {
         Directory.CreateDirectory(_configDirectory);
-        Environment.SetEnvironmentVariable("ARBITARR_CONFIG_DIR", _configDirectory);
+
+        // UseSetting, NEVER Environment.SetEnvironmentVariable. The env var is process-wide, so
+        // with several hosts alive in one process the last writer wins and a host can end up
+        // opening a neighbour's SQLite file. This setting belongs to this builder alone, which is
+        // what lets the assembly run its classes in parallel. Program.cs reads Arbitarr:ConfigDir
+        // ahead of the env var precisely so this wins.
+        builder.UseSetting("Arbitarr:ConfigDir", _configDirectory);
     }
 
     /// <summary>Runs <paramref name="seed"/> against a fresh scoped <see cref="ArbitarrDbContext"/> and saves changes.</summary>

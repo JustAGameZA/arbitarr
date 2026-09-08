@@ -34,10 +34,11 @@ public sealed class NoNetworkFirstRunTests : IDisposable
     {
         Assert.False(Directory.Exists(_configDirectory));
 
-        Environment.SetEnvironmentVariable("ARBITARR_CONFIG_DIR", _configDirectory);
-
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
+            // Deliberately NOT created first: the precondition above is the whole scenario, and the
+            // Host must provision the directory itself.
+            builder.UseSetting("Arbitarr:ConfigDir", _configDirectory);
             builder.UseSetting("Arbitarr:Sources:NzbHydra:BaseUrl", UnreachableBaseUrl);
             builder.UseSetting("Arbitarr:Sources:NzbHydra:ApiKey", "irrelevant-upstream-key");
             builder.UseSetting("Arbitarr:ApiKey", ClientApiKey);
@@ -64,8 +65,6 @@ public sealed class NoNetworkFirstRunTests : IDisposable
 
     public void Dispose()
     {
-        Environment.SetEnvironmentVariable("ARBITARR_CONFIG_DIR", null);
-
         try
         {
             if (Directory.Exists(_configDirectory))

@@ -1,4 +1,5 @@
 using Arbitarr.Ai;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -23,10 +24,10 @@ public sealed class OllamaOptionsStartupTests
 
     private static WebApplicationFactory<Program> CreateHost(string configDirectory, string? baseUrl)
     {
-        Environment.SetEnvironmentVariable("ARBITARR_CONFIG_DIR", configDirectory);
-
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
+            builder.UseSetting("Arbitarr:ConfigDir", configDirectory);
+
             if (baseUrl is not null)
             {
                 builder.UseSetting("Arbitarr:Ai:Ollama:BaseUrl", baseUrl);
@@ -39,7 +40,6 @@ public sealed class OllamaOptionsStartupTests
 
     private static void Cleanup(string configDirectory)
     {
-        Environment.SetEnvironmentVariable("ARBITARR_CONFIG_DIR", null);
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try
         {
