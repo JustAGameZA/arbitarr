@@ -62,9 +62,10 @@ Templated routes therefore need explicit by-name gating tests in the matching en
 
 ## Secrets mechanisms
 
-Four checkable rules. Each is a mechanism, not a coincidence, and each would survive a tidy-up
+Five checkable rules. Each is a mechanism, not a coincidence, and each would survive a tidy-up
 looking like an improvement. The reasoning behind the admin-key ones is in
-[ADR 0004](../adr/0004-admin-key-write-only-with-bootstrap-bypass.md) — do not restate it here.
+[ADR 0004](../adr/0004-admin-key-write-only-with-bootstrap-bypass.md); the reasoning behind
+clearing is in [ADR 0010](../adr/0010-secrets-clear-route.md) — do not restate either here.
 
 - **Source API keys are write-only rows** under `source:{id}:api_key` — a colon-namespaced name no
   `SettingKey` enum value can produce.
@@ -74,6 +75,12 @@ looking like an improvement. The reasoning behind the admin-key ones is in
   `sessionStorage`, never a query string. CI rejects browser-storage references in the web project.
 - **The admin key stays absent from `SettingsCatalog`**, which feeds both the settings PUT
   allow-list and its GET projection.
+- **A secret is never readable and omission never clears it.** A secret is cleared only by
+  deleting the thing that owns it, through a bodiless `DELETE` (e.g.
+  `DELETE /api/admin/sources/{id}` removes a Sonarr-kind source's row and its stored key together).
+  The admin key is the one secret with no owning row to delete, so it has no clear route at all —
+  clearing it would reopen the LAN bootstrap bypass. Sources getting their own dedicated clear
+  affordance (short of deleting the source) is deferred.
 
 ---
 
