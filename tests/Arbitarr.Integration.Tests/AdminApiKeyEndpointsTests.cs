@@ -135,7 +135,7 @@ public sealed class AdminApiKeyEndpointsTests
         Assert.NotNull(keys);
 
         var legacy = Assert.Single(keys!, k => k.IsLegacy);
-        Assert.Equal(DbAdminKeyResolver.LegacyKeyLabel, legacy.Label);
+        Assert.Equal(DbCredentialResolver.LegacyKeyLabel, legacy.Label);
         Assert.Equal(nameof(ApiKeyScope.Admin), legacy.Scope);
 
         // No id: there is no row, so there is nothing to address and nothing to revoke. The UI

@@ -5,8 +5,8 @@ namespace Arbitarr.Data.Security;
 
 /// <summary>
 /// #44: the single resolution point the admin gate consults for a SESSION cookie, mirroring
-/// <see cref="DbAdminKeyResolver"/>'s role for a key. It answers the same question — "may this
-/// presented value do this?" — and returns the same <see cref="AdminKeyResolution"/> type, so the
+/// <see cref="DbCredentialResolver"/>'s role for a key. It answers the same question — "may this
+/// presented value do this?" — and returns the same <see cref="CredentialResolution"/> type, so the
 /// filter contains no session logic and makes one scope decision over whichever credential answered.
 ///
 /// <para><b>ONE MODEL, NOT TWO.</b> This class exists precisely so that adopting #58's primitive is
@@ -14,12 +14,12 @@ namespace Arbitarr.Data.Security;
 /// scope vocabulary, and no permission table. A session that verifies is authorized through the
 /// same <see cref="ApiKeyScope"/> comparison an API key goes through, written once, below.</para>
 ///
-/// <para><b>WHY A SESSION NEVER RETURNS <see cref="AdminKeyResolutionOutcome.NotConfigured"/>.</b>
+/// <para><b>WHY A SESSION NEVER RETURNS <see cref="CredentialResolutionOutcome.NotConfigured"/>.</b>
 /// That outcome means something specific and load-bearing: no credential of ANY kind exists on this
 /// deployment, which is what #43's local-network bootstrap bypass keys off. If a session could
 /// produce it, presenting any junk cookie would re-enter the bypass and "anyone on the LAN" would
 /// again be admitted — the exact thing constraint 1 of the owner ruling forbids. Every failure here
-/// is therefore <see cref="AdminKeyResolutionOutcome.Rejected"/>, and the filter additionally
+/// is therefore <see cref="CredentialResolutionOutcome.Rejected"/>, and the filter additionally
 /// refuses to let a Rejected session overwrite a key's NotConfigured outcome.</para>
 /// </summary>
 public sealed class DbSessionAuthenticator : ISessionAuthenticator
@@ -47,14 +47,14 @@ public sealed class DbSessionAuthenticator : ISessionAuthenticator
         _activityRecorder = activityRecorder ?? throw new ArgumentNullException(nameof(activityRecorder));
     }
 
-    public async Task<AdminKeyResolution> AuthenticateAsync(
+    public async Task<CredentialResolution> AuthenticateAsync(
         string? presentedToken,
         ApiKeyScope requiredScope,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrEmpty(presentedToken))
         {
-            return AdminKeyResolution.Rejected;
+            return CredentialResolution.Rejected;
         }
 
         var (idleTimeout, _) = await _settings.GetSessionLifetimesAsync(cancellationToken);
@@ -68,14 +68,14 @@ public sealed class DbSessionAuthenticator : ISessionAuthenticator
         {
             // Unknown, revoked (logged out), idle-expired, or past its absolute expiry — one answer
             // for all of them, matching ApiKeyRepository.FindLiveByPresentedKeyAsync's posture.
-            return AdminKeyResolution.Rejected;
+            return CredentialResolution.Rejected;
         }
 
         // Keeps an actively used session from hitting its idle expiry. Off the request path and
         // throttled — see ISessionActivityRecorder.
         _activityRecorder.RecordSeen(session.Id);
 
-        // THE SINGLE SCOPE DECISION, in the same shape DbAdminKeyResolver.Authorize uses: a
+        // THE SINGLE SCOPE DECISION, in the same shape DbCredentialResolver.Authorize uses: a
         // comparison over the enum's declared order, so a scope added between the two would inherit
         // the ordering rather than fall through a missing case.
         //
@@ -86,7 +86,7 @@ public sealed class DbSessionAuthenticator : ISessionAuthenticator
         const ApiKeyScope sessionScope = ApiKeyScope.Admin;
 
         return sessionScope >= requiredScope
-            ? new AdminKeyResolution(AdminKeyResolutionOutcome.Authorized, null, SessionLabel, sessionScope)
-            : new AdminKeyResolution(AdminKeyResolutionOutcome.InsufficientScope, null, SessionLabel, sessionScope);
+            ? new CredentialResolution(CredentialResolutionOutcome.Authorized, null, SessionLabel, sessionScope)
+            : new CredentialResolution(CredentialResolutionOutcome.InsufficientScope, null, SessionLabel, sessionScope);
     }
 }

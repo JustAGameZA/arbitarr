@@ -17,7 +17,7 @@ namespace Arbitarr.Api.Admin;
 /// sentence that stood here — "the admin UI itself has no login of its own" — was true until #44
 /// and is now the thing that changed, so it is corrected rather than removed: a caller may present
 /// an <c>X-Admin-Api-Key</c> header OR a valid session cookie, and this remains the entire auth
-/// surface for mutating admin routes. Both resolve to one <see cref="AdminKeyResolution"/> carrying
+/// surface for mutating admin routes. Both resolve to one <see cref="CredentialResolution"/> carrying
 /// one <see cref="ApiKeyScope"/>, and this filter makes ONE scope check over whichever answered —
 /// the owner ruling's requirement that #44 adopt #58's primitive rather than introduce a second
 /// authorization model. Key authentication is NOT removed and must not be: Sonarr, Radarr and every
@@ -26,7 +26,7 @@ namespace Arbitarr.Api.Admin;
 /// <para><b>#44: THE BYPASS STILL SKIPS THE KEY, NEVER THE LOGIN.</b> The unset-key behaviour below
 /// is unchanged, and its meaning is deliberately unchanged too — being on the local network makes a
 /// fresh install ADMINISTRABLE, it does not make the caller a logged-in operator. A session can
-/// never resolve to <see cref="AdminKeyResolutionOutcome.NotConfigured"/> (see
+/// never resolve to <see cref="CredentialResolutionOutcome.NotConfigured"/> (see
 /// <see cref="ISessionAuthenticator"/>), so no cookie can reach or reopen that branch.</para>
 ///
 /// Expects the key in an <c>X-Admin-Api-Key</c> request header (never a query string, so it does
@@ -34,7 +34,7 @@ namespace Arbitarr.Api.Admin;
 ///
 /// <para><b>#58: WHAT A CREDENTIAL NOW IS.</b> Before #58 this filter compared the presented header
 /// against the one configured admin key. It no longer holds key material or matching logic at all:
-/// it asks <see cref="IAdminKeyResolver"/> and renders the answer as a status code. There are now
+/// it asks <see cref="ICredentialResolver"/> and renders the answer as a status code. There are now
 /// two kinds of valid credential behind that call — a named, scoped key from the ApiKeys table, and
 /// the pre-#58 shared key, which still works and resolves at full scope — and this filter is
 /// deliberately unable to tell them apart, so neither can drift into being special-cased here.</para>
@@ -88,13 +88,13 @@ public sealed class AdminApiKeyFilter : IEndpointFilter
     /// </summary>
     public const string SessionRequestHeaderName = "X-Arbitarr-Session";
 
-    private readonly IAdminKeyResolver _resolver;
+    private readonly ICredentialResolver _resolver;
     private readonly ISessionAuthenticator _sessionAuthenticator;
     private readonly IApiKeyLastUsedRecorder _lastUsedRecorder;
     private readonly ILogger<AdminApiKeyFilter> _logger;
 
     public AdminApiKeyFilter(
-        IAdminKeyResolver resolver,
+        ICredentialResolver resolver,
         ISessionAuthenticator sessionAuthenticator,
         IApiKeyLastUsedRecorder lastUsedRecorder,
         ILogger<AdminApiKeyFilter> logger)
@@ -121,7 +121,7 @@ public sealed class AdminApiKeyFilter : IEndpointFilter
             requiredScope,
             context.HttpContext.RequestAborted);
 
-        // #44: EITHER credential opens this gate, and both resolve to the SAME AdminKeyResolution
+        // #44: EITHER credential opens this gate, and both resolve to the SAME CredentialResolution
         // carrying the SAME ApiKeyScope, so the switch below makes ONE scope decision over whichever
         // one answered. That is the owner ruling's single-model requirement, expressed as control
         // flow rather than as a comment: there is no second branch here that could authorize a
@@ -131,7 +131,7 @@ public sealed class AdminApiKeyFilter : IEndpointFilter
         // ORDER. The key is tried first, so a machine caller presenting one is never charged for a
         // session lookup, and a browser that holds both a stale cookie and a valid key is judged on
         // the key. A session is consulted only when the key did not already authorize.
-        if (resolution.Outcome is not AdminKeyResolutionOutcome.Authorized)
+        if (resolution.Outcome is not CredentialResolutionOutcome.Authorized)
         {
             var sessionResolution = await AuthenticateSessionAsync(context.HttpContext, requiredScope);
 
@@ -139,7 +139,7 @@ public sealed class AdminApiKeyFilter : IEndpointFilter
             // overwrite a NotConfigured key outcome, or presenting any junk cookie on a fresh
             // install would turn #43's bootstrap bypass into a 401 and re-deadlock the install —
             // constraint 1 of the owner ruling, in the one place it could actually be broken.
-            if (sessionResolution is { Outcome: not AdminKeyResolutionOutcome.Rejected })
+            if (sessionResolution is { Outcome: not CredentialResolutionOutcome.Rejected })
             {
                 resolution = sessionResolution;
             }
@@ -147,14 +147,14 @@ public sealed class AdminApiKeyFilter : IEndpointFilter
 
         switch (resolution.Outcome)
         {
-            case AdminKeyResolutionOutcome.NotConfigured:
+            case CredentialResolutionOutcome.NotConfigured:
                 return await HandleUnconfiguredAsync(context, next);
 
-            case AdminKeyResolutionOutcome.Authorized:
+            case CredentialResolutionOutcome.Authorized:
                 // Attribution (#58): recorded by key id, and the label is what appears in a log —
                 // never the value, which this filter deliberately never has in a matched form.
                 // KeyId is null for the legacy shared key, which has no row to stamp; see
-                // DbAdminKeyResolver's note on why no synthetic row is invented for it.
+                // DbCredentialResolver's note on why no synthetic row is invented for it.
                 if (resolution.KeyId is { } keyId)
                 {
                     _lastUsedRecorder.RecordUsed(keyId);
@@ -162,7 +162,7 @@ public sealed class AdminApiKeyFilter : IEndpointFilter
 
                 return await next(context);
 
-            case AdminKeyResolutionOutcome.InsufficientScope:
+            case CredentialResolutionOutcome.InsufficientScope:
                 // Logged, because a scope refusal is an operator configuration mistake rather than
                 // an attack, and it is unactionable from the 403 alone: the caller sees only "not
                 // allowed", while the operator needs to know WHICH key was too narrow. The label is
@@ -191,7 +191,7 @@ public sealed class AdminApiKeyFilter : IEndpointFilter
 
     /// <summary>
     /// #44: resolves the session cookie, if one was presented, to the same
-    /// <see cref="AdminKeyResolution"/> a key resolves to. Returns null when no cookie was sent at
+    /// <see cref="CredentialResolution"/> a key resolves to. Returns null when no cookie was sent at
     /// all, so the caller can leave the key's own outcome standing.
     ///
     /// <para><b>THE CSRF REQUIREMENT IS ENFORCED HERE, NOT IN THE AUTHENTICATOR.</b> It is a
@@ -201,7 +201,7 @@ public sealed class AdminApiKeyFilter : IEndpointFilter
     /// rather than as a bad one: the request is not evidence of an authenticated operator's intent,
     /// and the correct response is the same one an unauthenticated request gets.</para>
     /// </summary>
-    private async ValueTask<AdminKeyResolution?> AuthenticateSessionAsync(
+    private async ValueTask<CredentialResolution?> AuthenticateSessionAsync(
         HttpContext httpContext,
         ApiKeyScope requiredScope)
     {

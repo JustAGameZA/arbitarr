@@ -28,7 +28,7 @@ namespace Arbitarr.Data.Security;
 /// how the legacy key keeps working, and <c>AdminSecurityEndpoints</c> still writes the value it
 /// reads.</para>
 /// </summary>
-public sealed class DbAdminKeyResolver : IAdminKeyResolver
+public sealed class DbCredentialResolver : ICredentialResolver
 {
     /// <summary>
     /// The label under which the pre-#58 shared key is presented in the UI. The issue asks for it to
@@ -41,13 +41,13 @@ public sealed class DbAdminKeyResolver : IAdminKeyResolver
     private readonly ApiKeyRepository _repository;
     private readonly IAdminApiKeyReader _legacyKeyReader;
 
-    public DbAdminKeyResolver(ApiKeyRepository repository, IAdminApiKeyReader legacyKeyReader)
+    public DbCredentialResolver(ApiKeyRepository repository, IAdminApiKeyReader legacyKeyReader)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _legacyKeyReader = legacyKeyReader ?? throw new ArgumentNullException(nameof(legacyKeyReader));
     }
 
-    public async Task<AdminKeyResolution> ResolveAsync(
+    public async Task<CredentialResolution> ResolveAsync(
         string? presentedKey,
         ApiKeyScope requiredScope,
         CancellationToken cancellationToken)
@@ -62,12 +62,12 @@ public sealed class DbAdminKeyResolver : IAdminKeyResolver
         // to admitting an unkeyed local request just because the caller sent nothing.
         if (string.IsNullOrEmpty(legacyKey) && !anyNamedKey)
         {
-            return AdminKeyResolution.NotConfigured;
+            return CredentialResolution.NotConfigured;
         }
 
         if (string.IsNullOrEmpty(presentedKey))
         {
-            return AdminKeyResolution.Rejected;
+            return CredentialResolution.Rejected;
         }
 
         var named = await _repository.FindLiveByPresentedKeyAsync(presentedKey, cancellationToken);
@@ -87,7 +87,7 @@ public sealed class DbAdminKeyResolver : IAdminKeyResolver
             return Authorize(null, LegacyKeyLabel, ApiKeyScope.Admin, requiredScope);
         }
 
-        return AdminKeyResolution.Rejected;
+        return CredentialResolution.Rejected;
     }
 
     /// <summary>
@@ -96,8 +96,8 @@ public sealed class DbAdminKeyResolver : IAdminKeyResolver
     /// comparison over the enum's declared order rather than a switch, so adding a scope between the
     /// two would inherit the ordering rather than silently falling through a missing case.
     /// </summary>
-    private static AdminKeyResolution Authorize(long? keyId, string label, ApiKeyScope scope, ApiKeyScope requiredScope) =>
+    private static CredentialResolution Authorize(long? keyId, string label, ApiKeyScope scope, ApiKeyScope requiredScope) =>
         scope >= requiredScope
-            ? new AdminKeyResolution(AdminKeyResolutionOutcome.Authorized, keyId, label, scope)
-            : new AdminKeyResolution(AdminKeyResolutionOutcome.InsufficientScope, keyId, label, scope);
+            ? new CredentialResolution(CredentialResolutionOutcome.Authorized, keyId, label, scope)
+            : new CredentialResolution(CredentialResolutionOutcome.InsufficientScope, keyId, label, scope);
 }

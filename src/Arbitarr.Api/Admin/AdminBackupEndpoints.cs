@@ -218,7 +218,7 @@ public static class AdminBackupEndpoints
     /// </summary>
     public static async Task<IResult> RestoreAsync(
         HttpContext context,
-        IAdminKeyResolver keyResolver,
+        ICredentialResolver keyResolver,
         RestoreService restoreService,
         RestoreCoordinator coordinator,
         BackupStateStore state,
@@ -244,7 +244,7 @@ public static class AdminBackupEndpoints
             ApiKeyScope.Admin,
             cancellationToken);
 
-        if (resolution.Outcome == AdminKeyResolutionOutcome.NotConfigured)
+        if (resolution.Outcome == CredentialResolutionOutcome.NotConfigured)
         {
             return Results.Problem(
                 title: "Set an admin API key first",

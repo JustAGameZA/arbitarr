@@ -198,12 +198,15 @@ other: a human signs in, and Sonarr, Radarr and every scripted caller present a
 key because they cannot complete an interactive login. Read-only admin pages are
 ungated by design regardless of which is presented.
 
-**One resolution type, not two.** Both credentials resolve to an
-`AdminKeyResolution` carrying an `ApiKeyScope`, and the gate makes one scope
-check over whichever answered. The name says *key* for historical reasons and is
-deliberately **not** renamed: it is the credential resolution, and it carries
-session outcomes too. Renaming it would be a wide rename of a type that is
-already correct, and the cost of the slightly stale name is one sentence here.
+**One resolution type, not two.** Both credentials resolve to a
+`CredentialResolution` carrying an `ApiKeyScope`, and the gate makes one scope
+check over whichever answered. This type was named `AdminKeyResolution` until
+arb-rh7: after #44 it started carrying session outcomes and a session label too,
+not just key outcomes, so the *key*-specific name was no longer honest and was
+renamed along with its paired `AdminKeyResolutionOutcome` enum (now
+`CredentialResolutionOutcome`) and `IAdminKeyResolver` (now
+`ICredentialResolver`), plus the `DbAdminKeyResolver` implementation (now
+`DbCredentialResolver`).
 
 **Bootstrap bypass.** The state a fresh install is in: no admin key set, so
 admin-mutating routes are allowed from the local network and refused elsewhere,

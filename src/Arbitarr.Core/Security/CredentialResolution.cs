@@ -14,7 +14,7 @@ namespace Arbitarr.Core.Security;
 ///   <see cref="InsufficientScope"/> -> 403 — a real, live key that is not allowed HERE
 ///   <see cref="Authorized"/>    -> the request proceeds
 /// </summary>
-public enum AdminKeyResolutionOutcome
+public enum CredentialResolutionOutcome
 {
     /// <summary>
     /// No credential exists on this deployment at all: no named keys and no legacy setting value.
@@ -48,21 +48,21 @@ public enum AdminKeyResolutionOutcome
 /// here, and there is deliberately no field on this type that could hold one.
 /// </param>
 /// <param name="Scope">The matched key's scope, or <c>null</c> when nothing matched.</param>
-public sealed record AdminKeyResolution(
-    AdminKeyResolutionOutcome Outcome,
+public sealed record CredentialResolution(
+    CredentialResolutionOutcome Outcome,
     long? KeyId,
     string? Label,
     ApiKeyScope? Scope)
 {
-    public static AdminKeyResolution NotConfigured { get; } =
-        new(AdminKeyResolutionOutcome.NotConfigured, null, null, null);
+    public static CredentialResolution NotConfigured { get; } =
+        new(CredentialResolutionOutcome.NotConfigured, null, null, null);
 
-    public static AdminKeyResolution Rejected { get; } =
-        new(AdminKeyResolutionOutcome.Rejected, null, null, null);
+    public static CredentialResolution Rejected { get; } =
+        new(CredentialResolutionOutcome.Rejected, null, null, null);
 }
 
 /// <summary>
-/// #58: resolves a presented credential to an <see cref="AdminKeyResolution"/>.
+/// #58: resolves a presented credential to an <see cref="CredentialResolution"/>.
 ///
 /// This supersedes <see cref="IAdminApiKeyReader"/> AS THE GATE'S INPUT, but does not replace it:
 /// that interface still exists and is still implemented, because the legacy single shared key is
@@ -70,18 +70,18 @@ public sealed record AdminKeyResolution(
 /// keep working"), and this resolver consults it through exactly that reader. Deleting it would
 /// break every deployment on upgrade, which is the one failure mode this migration must not have.
 /// </summary>
-public interface IAdminKeyResolver
+public interface ICredentialResolver
 {
     /// <summary>
     /// Resolves <paramref name="presentedKey"/> against the required <paramref name="requiredScope"/>.
     /// </summary>
     /// <param name="presentedKey">
     /// The raw header value, which may be null or empty — an absent credential resolves to
-    /// <see cref="AdminKeyResolutionOutcome.Rejected"/> when any credential exists, and to
-    /// <see cref="AdminKeyResolutionOutcome.NotConfigured"/> when none does.
+    /// <see cref="CredentialResolutionOutcome.Rejected"/> when any credential exists, and to
+    /// <see cref="CredentialResolutionOutcome.NotConfigured"/> when none does.
     /// </param>
     /// <param name="requiredScope">The scope the route being called demands.</param>
-    Task<AdminKeyResolution> ResolveAsync(
+    Task<CredentialResolution> ResolveAsync(
         string? presentedKey,
         ApiKeyScope requiredScope,
         CancellationToken cancellationToken);

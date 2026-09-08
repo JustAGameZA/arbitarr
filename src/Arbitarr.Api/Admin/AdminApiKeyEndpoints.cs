@@ -135,7 +135,7 @@ public static class AdminApiKeyEndpoints
             // honest answer, rather than a fabricated CreatedAt that would read as a real one.
             responses.Add(new ApiKeyResponse(
                 Id: null,
-                Label: DbAdminKeyResolver.LegacyKeyLabel,
+                Label: DbCredentialResolver.LegacyKeyLabel,
                 Scope: ApiKeyScope.Admin.ToString(),
                 CreatedAt: null,
                 LastUsedAt: null,

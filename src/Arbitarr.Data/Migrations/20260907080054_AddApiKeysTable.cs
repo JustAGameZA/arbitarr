@@ -9,7 +9,7 @@ namespace Arbitarr.Data.Migrations
     // #58: purely additive (one new table, zero changes to any existing table or column), so
     // applying this to an existing populated database is lossless by construction. Nothing is
     // migrated INTO it either: the pre-#58 shared admin key stays exactly where it is, in the
-    // Settings table, and keeps working — see DbAdminKeyResolver. An upgrade that moved it here
+    // Settings table, and keeps working — see DbCredentialResolver. An upgrade that moved it here
     // would invalidate the credential every caller on a running deployment is using, at a moment
     // the operator is not watching, which is the one failure this feature must not have.
     //

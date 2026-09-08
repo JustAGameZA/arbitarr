@@ -469,14 +469,14 @@ builder.Services.AddSingleton<IClientApiKeyResolver>(sp => new DbClientApiKeyRes
 builder.Services.AddScoped<IAdminApiKeyReader, DbAdminApiKeyReader>();
 builder.Services.AddScoped<AdminApiKeyFilter>();
 
-// #58: named, scoped API keys. DbAdminKeyResolver — not IAdminApiKeyReader — is now what the gate
+// #58: named, scoped API keys. DbCredentialResolver — not IAdminApiKeyReader — is now what the gate
 // consults; the reader above survives as ONE OF ITS TWO INPUTS, because the pre-#58 shared key must
 // keep working across the upgrade (issue §Migration) and is still written by AdminSecurityEndpoints.
 // Deleting the reader would break every existing deployment on restart.
 builder.Services.AddScoped(sp => new ApiKeyRepository(
     sp.GetRequiredService<ArbitarrDbContext>(),
     sp.GetRequiredService<TimeProvider>()));
-builder.Services.AddScoped<IAdminKeyResolver, DbAdminKeyResolver>();
+builder.Services.AddScoped<ICredentialResolver, DbCredentialResolver>();
 
 // Singleton because the throttle state it holds must outlive a request — that is the whole
 // mechanism (see the type doc). It resolves its own scope per write, like ScopedEventSink, because
@@ -484,7 +484,7 @@ builder.Services.AddScoped<IAdminKeyResolver, DbAdminKeyResolver>();
 builder.Services.AddSingleton<IApiKeyLastUsedRecorder, ThrottledApiKeyLastUsedRecorder>();
 
 // #44: human authentication. Sessions authorize against #58's primitive above rather than a second
-// model — DbSessionAuthenticator returns the same AdminKeyResolution DbAdminKeyResolver does, and
+// model — DbSessionAuthenticator returns the same CredentialResolution DbCredentialResolver does, and
 // AdminApiKeyFilter makes one scope check over whichever credential answered. Key authentication is
 // NOT replaced: machine callers cannot complete an interactive login.
 // #44: the KDF cost is a composition-root decision. ASP.NET's default is 100,000 iterations,
