@@ -44,5 +44,19 @@ export default defineConfig({
     // the tempting cure is to weaken it. With css: true the stylesheet is
     // processed and attached and the reads return the pinned literals.
     css: true,
+    // Consequence of `css: true` above, not a way to paper over a hang. Parsing and
+    // attaching the real stylesheet is a fixed cost paid on EVERY render, so a test
+    // that renders a few times sits much closer to Vitest's 5s default than its own
+    // logic suggests -- and under full-suite load (or a loaded CI box) it crosses it.
+    // Observed: ApiKeys.test.tsx at 5730ms in isolation on a loaded machine, plus
+    // intermittent Rules.test.tsx and routing.test.tsx failures that passed on rerun.
+    //
+    // Set globally rather than per-file: the per-file `const TEST_TIMEOUT_MS = 20_000`
+    // pattern only protects the `it()` calls that remember to pass it, which is why
+    // ApiKeys.test.tsx still flaked with 3 of its 19 tests covered. A global floor
+    // cannot be forgotten by a newly added test. Nothing here waits on a real timer,
+    // so a genuinely slow test still fails -- it just no longer fails for being
+    // scheduled late on a busy machine.
+    testTimeout: 20_000,
   },
 });
