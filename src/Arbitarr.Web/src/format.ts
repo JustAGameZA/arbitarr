@@ -38,3 +38,29 @@ export function formatRate(rate: number | null): string {
 export function agreementRate(agreed: number, reviewed: number): number | null {
   return reviewed <= 0 ? null : agreed / reviewed;
 }
+
+/**
+ * Formats a whole-seconds duration to match .NET's `TimeSpan.ToString()` default
+ * ("c") format: `hh:mm:ss`, with a `d.` day prefix once the value reaches 24
+ * hours (`7.00:00:00`).
+ *
+ * This exists because Dashboard's `EffectiveConfigResponse` carries its durations
+ * as raw `*Seconds: number` fields and had grown its own bare `${value}s` printer
+ * (arb-rzx / audit F-018), while System's staleness envelope and Settings' catalog
+ * values are both `TimeSpan`-typed server-side and already arrive pre-formatted
+ * this way (`SettingsValidator.cs`'s bound strings, `StalenessEnvelopeResponse`).
+ * Those two surfaces render their strings VERBATIM on purpose — see
+ * `System.tsx`'s `StalenessTable` comment — so this formatter has exactly one
+ * caller: Dashboard's own numeric fields, reproducing the same convention on the
+ * client since the server never sent it as a string in the first place.
+ */
+export function formatDurationSeconds(totalSeconds: number): string {
+  const whole = Math.max(0, Math.floor(totalSeconds));
+  const days = Math.floor(whole / 86400);
+  const hours = Math.floor((whole % 86400) / 3600);
+  const minutes = Math.floor((whole % 3600) / 60);
+  const seconds = whole % 60;
+  const pad = (value: number) => value.toString().padStart(2, '0');
+  const clock = `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+  return days > 0 ? `${days}.${clock}` : clock;
+}

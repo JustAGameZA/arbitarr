@@ -4,7 +4,7 @@ import { PageHeader } from '../../components/shell/PageHeader';
 import { QueryState } from '../QueryState';
 import type { EffectiveConfigResponse, StatusResponse } from '../../api/types';
 import styles from '../surface.module.css';
-import { agreementRate, formatRate } from '../../format';
+import { agreementRate, formatDurationSeconds, formatRate } from '../../format';
 import { useAgreementQuery } from '../Suppressions/decisionQueries';
 import { useEffectiveConfigQuery, useRecentSearchesQuery, useStatusQuery } from './queries';
 
@@ -201,25 +201,40 @@ function AgreementSummary() {
     <span className={styles.muted}>
       {rate === null
         ? // Says what would fill it (#52): a verdict has to be recorded first.
-          ` — agreement ${formatRate(null)} (no decisions reviewed in the last ${windowDays} days)`
-        : ` — agreed with ${agreed} of ${reviewed} reviewed in the last ${windowDays} days (${formatRate(rate)})`}
+          // formatRate(null) supplies the required em-dash; folded into one
+          // sentence rather than a fragment plus a parenthetical, which is
+          // what arb-rzx / audit F-018 flagged about the old wording.
+          ` — agreement ${formatRate(null)}: no decisions reviewed in the last ${windowDays} days.`
+        : ` — agreed with ${agreed} of ${reviewed} reviewed in the last ${windowDays} days (${formatRate(rate)}).`}
     </span>
   );
 }
 
+/**
+ * Durations render as `hh:mm:ss` (arb-rzx / audit F-018), matching the format
+ * System's staleness envelope and Settings' catalog values already show — both
+ * of those are `TimeSpan`-typed server-side and arrive pre-formatted; these
+ * fields arrive as raw seconds, so `formatDurationSeconds` reproduces the same
+ * convention on the client. See that function's doc comment for why System and
+ * Settings are not touched: they already render the server's own string.
+ */
 function ConfigFacts({ config }: { config: EffectiveConfigResponse }) {
-  const seconds = (value: number) => `${value}s`;
-
   return (
     <dl className={styles.facts}>
       <FactRow label="NZBHydra configured" value={config.nzbHydraConfigured ? 'Yes' : 'No'} />
-      <FactRow label="Fresh until" value={seconds(config.freshUntilSeconds)} />
-      <FactRow label="Serve until" value={seconds(config.serveUntilSeconds)} />
-      <FactRow label="Active window" value={seconds(config.activeWindowSeconds)} />
-      <FactRow label="Refresh lead" value={seconds(config.refreshLeadSeconds)} />
-      <FactRow label="Worker cycle interval" value={seconds(config.workerCycleIntervalSeconds)} />
+      <FactRow label="Fresh until" value={formatDurationSeconds(config.freshUntilSeconds)} />
+      <FactRow label="Serve until" value={formatDurationSeconds(config.serveUntilSeconds)} />
+      <FactRow label="Active window" value={formatDurationSeconds(config.activeWindowSeconds)} />
+      <FactRow label="Refresh lead" value={formatDurationSeconds(config.refreshLeadSeconds)} />
+      <FactRow
+        label="Worker cycle interval"
+        value={formatDurationSeconds(config.workerCycleIntervalSeconds)}
+      />
       <FactRow label="Worker enabled" value={config.workerEnabled ? 'Yes' : 'No'} />
-      <FactRow label="Query snapshot TTL" value={seconds(config.querySnapshotTtlSeconds)} />
+      <FactRow
+        label="Query snapshot TTL"
+        value={formatDurationSeconds(config.querySnapshotTtlSeconds)}
+      />
       <FactRow
         label="Shadow mode"
         value={
