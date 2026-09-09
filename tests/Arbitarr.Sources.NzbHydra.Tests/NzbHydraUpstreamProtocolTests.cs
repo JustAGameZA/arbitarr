@@ -269,6 +269,76 @@ public class NzbHydraUpstreamProtocolTests
     }
 
     /// <summary>
+    /// arb-u1c, THE REGRESSION THIS BEAD EXISTS FOR. With a resolved series title the bare number is
+    /// no longer alone, so it goes up joined to the title — the exact shape Sonarr itself sends
+    /// alongside for every scene title it knows, and one an indexer with no id support can execute.
+    /// The id still goes up too, so an indexer that does support ids is not downgraded.
+    /// </summary>
+    [Fact]
+    public async Task SearchAsync_TvSearchWithATvdbIdANumericQueryAndAResolvedTitle_SendsTheTitleAndNumberTogether()
+    {
+        var (handler, source) = MakeSource();
+
+        await source.SearchAsync(new SearchQuery(
+            "92", Array.Empty<int>(), 10, SearchProtocol.Newznab, TvdbId: 81797, Type: SearchType.TvSearch,
+            Absolute: 92, ResolvedTitle: "One Piece"));
+
+        var query = ParseQuery(Assert.Single(handler.RequestedUris));
+        Assert.Equal("tvsearch", query["t"]);
+        Assert.Equal("81797", query["tvdbid"]);
+
+        // Exact equality, not Contains: "One Piece 92" must not be joined as "One Piece92", and a
+        // Contains("One Piece") would pass on either.
+        Assert.Equal("One Piece 92", query["q"]);
+    }
+
+    /// <summary>
+    /// The degradation is the interim behaviour, not an error. Every way resolution can come back
+    /// empty — never attempted, Sonarr unreachable, a series it does not track, or (ADR 0002) names
+    /// that could not be separated — reaches this adapter as the same absent title, and all of them
+    /// must withhold the number rather than send it alone. Whitespace is included because a resolver
+    /// returning a blank title must not produce a leading-space query of " 92".
+    /// </summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task SearchAsync_TvSearchWithATvdbIdANumericQueryAndNoUsableTitle_StillWithholdsTheNumber(string? resolvedTitle)
+    {
+        var (handler, source) = MakeSource();
+
+        await source.SearchAsync(new SearchQuery(
+            "92", Array.Empty<int>(), 10, SearchProtocol.Newznab, TvdbId: 81797, Type: SearchType.TvSearch,
+            Absolute: 92, ResolvedTitle: resolvedTitle));
+
+        var query = ParseQuery(Assert.Single(handler.RequestedUris));
+        Assert.Equal("81797", query["tvdbid"]);
+        Assert.False(query.ContainsKey("q"));
+    }
+
+    /// <summary>
+    /// A resolved title changes NOTHING for any other request shape. It is carried on every query
+    /// that resolved an id, but only the id-scoped bare-number shape rewrites its <c>q</c> — a
+    /// text search that already says what it wants must go up as the caller wrote it, or this fix
+    /// would silently rewrite ordinary searches.
+    /// </summary>
+    [Theory]
+    [InlineData("bleach")]
+    [InlineData("one piece 92")]
+    [InlineData("S07E01")]
+    public async Task SearchAsync_AResolvedTitleDoesNotRewriteANonNumericQuery(string queryText)
+    {
+        var (handler, source) = MakeSource();
+
+        await source.SearchAsync(new SearchQuery(
+            queryText, Array.Empty<int>(), 10, SearchProtocol.Newznab, TvdbId: 81797, Type: SearchType.TvSearch,
+            ResolvedTitle: "One Piece"));
+
+        var query = ParseQuery(Assert.Single(handler.RequestedUris));
+        Assert.Equal(queryText, query["q"]);
+    }
+
+    /// <summary>
     /// The withholding is keyed on the text being nothing but digits. Sonarr's zero-padded form
     /// (<c>q=07</c>) and surrounding whitespace are the same shape; a title next to the id is not.
     /// The padded title row also pins that the text sent up is the trimmed text — the same value

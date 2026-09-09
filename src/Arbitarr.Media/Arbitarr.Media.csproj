@@ -7,6 +7,14 @@
     <RootNamespace>Arbitarr.Media</RootNamespace>
   </PropertyGroup>
 
+  <!-- arb-u1c: IHttpClientFactory only. SeriesTitleResolver builds ArrApiProvider per call around
+       configuration read from the database, so it needs to ask for a client by name rather than
+       receive a DI-activated typed one. This is the abstractions package, not the hosting stack:
+       it adds no reference to Arbitarr.Ai and so does not affect ADR 0001's NetArchTest rules. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.11" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Arbitarr.Core\Arbitarr.Core.csproj" />
     <ProjectReference Include="..\Arbitarr.Core.Identity\Arbitarr.Core.Identity.csproj" />

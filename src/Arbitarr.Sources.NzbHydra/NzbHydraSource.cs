@@ -18,10 +18,11 @@ namespace Arbitarr.Sources.NzbHydra;
 /// Newznab caller's search there returns zero usenet results while still looking like a successful,
 /// empty search. The search type follows the same principle: <c>t=tvsearch</c> with
 /// <c>tvdbid</c>/<c>season</c>/<c>ep</c> and <c>t=movie</c> with <c>tmdbid</c> are sent as their own
-/// parameters when the query carries those ids, never folded into <c>q</c>. The one shape where
-/// <c>q</c> is withheld is Sonarr's anime search (<c>tvdbid</c> plus a bare episode number as
-/// <c>q</c>) — see <see cref="IsIdScopedAbsoluteNumberQuery"/> for why NZBHydra2 turns that into a
-/// feed-wide search for the number.
+/// parameters when the query carries those ids, never folded into <c>q</c>. The one shape that
+/// treats <c>q</c> specially is Sonarr's anime search (<c>tvdbid</c> plus a bare episode number as
+/// <c>q</c>): the number is sent joined to a resolved series title when one is available, and
+/// withheld entirely when one is not — see <see cref="IsIdScopedAbsoluteNumberQuery"/> for why
+/// NZBHydra2 turns a bare number into a feed-wide search for it.
 /// </para>
 ///
 /// <para>
@@ -312,6 +313,16 @@ public sealed class NzbHydraSource : IUpstreamSource
     /// is not lost: Sonarr sends <c>t=search&amp;q={title}+{absolute:00}</c> alongside this request
     /// for every scene title it knows, and that one goes upstream verbatim.
     ///
+    /// <b>SINCE arb-u1c THIS PREDICATE SELECTS A BRANCH RATHER THAN A DELETION.</b> It still answers
+    /// "is this the shape where the bare number must not go up alone", and that answer is still no
+    /// weaker — but <see cref="BuildSearchUri"/> now has two ways to satisfy it. When
+    /// <see cref="SearchQuery.ResolvedTitle"/> carries a title an identity resolver derived from the
+    /// tvdbid, the number goes up WITH it (<c>q=One Piece 92</c>) — which is what the paragraph
+    /// above says Sonarr's own sibling request does, and the reason the number was withheld was only
+    /// ever that it was ALONE. With no resolved title the behaviour is unchanged: no <c>q</c> at
+    /// all. Do not "simplify" this predicate into an unconditional withhold again; the branch is the
+    /// fix, and the withhold is its fallback.
+    ///
     /// Scoped deliberately narrowly: only a <c>tvsearch</c> that will actually emit its
     /// <c>tvdbid</c>, and only when the text is entirely digits. A textual <c>q</c> next to an id
     /// (<c>tvdbid=74796&amp;q=bleach</c>) is a title and stays; a numeric <c>q</c> without an id has
@@ -347,7 +358,25 @@ public sealed class NzbHydraSource : IUpstreamSource
         // Trimmed once here and the same value is both classified and emitted, so the predicate
         // cannot say "withhold" about a string different from the one that would have gone up.
         var queryText = query.QueryText?.Trim() ?? string.Empty;
-        if (queryText.Length > 0 && !IsIdScopedAbsoluteNumberQuery(queryText, mode, query.TvdbId))
+        if (IsIdScopedAbsoluteNumberQuery(queryText, mode, query.TvdbId))
+        {
+            // arb-u1c: the anime shape, and the interim fix's own remark said what was missing —
+            // "a number alone identifies nothing". When an identity resolver has since turned the
+            // tvdbid into a series title, the number stops being alone: "One Piece 92" is a term
+            // NZBHydra2 CAN execute against an indexer with no id support, and it is the exact shape
+            // Sonarr itself sends alongside for every scene title it knows. So the number goes up
+            // WITH the title, never on its own.
+            var resolvedTitle = query.ResolvedTitle?.Trim();
+            if (!string.IsNullOrEmpty(resolvedTitle))
+            {
+                queryParams.Add("q=" + Uri.EscapeDataString($"{resolvedTitle} {queryText}"));
+            }
+
+            // No else: with no resolved title this falls through emitting no q at all, which is
+            // exactly the interim behaviour and the correct degradation (ADR 0002 — admitting no
+            // title is a real answer, and a bare number must never reach upstream as free text).
+        }
+        else if (queryText.Length > 0)
         {
             queryParams.Add("q=" + Uri.EscapeDataString(queryText));
         }

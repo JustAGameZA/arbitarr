@@ -215,6 +215,73 @@ public class SearchResultCacheStageTests
     }
 
     [Fact]
+    public async Task Absolute_episode_searches_of_one_series_do_not_share_a_cache_entry()
+    {
+        // arb-u1c / the #114 architecture review. THIS IS THE DEFECT: Sonarr's anime search carries
+        // NEITHER season NOR ep (the episode rides in q as a bare number), and the id-bearing key
+        // ignores q on purpose. With Absolute hardcoded to null, both of these produced the same key
+        // and a search for episode 92 was served episode 91's results — a wrong answer that looks
+        // exactly like a cache working well.
+        var time = new ManualTimeProvider(Start);
+        var (stage, _, _) = Build(time);
+        var calls = 0;
+
+        var episode91 = new SearchQuery("91", new[] { 5000 }, 50, SearchProtocol.Newznab, 0, TvdbId: 81797, Type: SearchType.TvSearch, Absolute: 91);
+        var episode92 = new SearchQuery("92", new[] { 5000 }, 50, SearchProtocol.Newznab, 0, TvdbId: 81797, Type: SearchType.TvSearch, Absolute: 92);
+
+        Assert.NotEqual(SearchResultCacheStage.BuildQueryKey(episode91), SearchResultCacheStage.BuildQueryKey(episode92));
+
+        // The behavioural half: distinct keys are only worth having if they actually cause a second
+        // upstream call and return that call's own results.
+        await stage.GetAsync(episode91, Fetch(new[] { MakeRelease("ep91") }, degraded: false, onCall: () => calls++));
+        var served = await stage.GetAsync(episode92, Fetch(new[] { MakeRelease("ep92") }, degraded: false, onCall: () => calls++));
+
+        Assert.Equal(2, calls);
+        Assert.Equal("ep92", Assert.Single(served.Releases).Candidate.Guid);
+    }
+
+    [Fact]
+    public void The_absolute_number_is_what_separates_them_not_the_query_text()
+    {
+        // The positive control for the test above, and the guard on how it is fixed. Reintroducing q
+        // into the id-bearing key would ALSO make that test pass, while undoing the spelling collapse
+        // the key exists to provide. So: same absolute number, different q spellings must still
+        // collapse; and the same q with different absolute numbers must still separate.
+        var padded = new SearchQuery("092", new[] { 5000 }, 50, SearchProtocol.Newznab, 0, TvdbId: 81797, Type: SearchType.TvSearch, Absolute: 92);
+        var plain = new SearchQuery("92", new[] { 5000 }, 50, SearchProtocol.Newznab, 0, TvdbId: 81797, Type: SearchType.TvSearch, Absolute: 92);
+
+        Assert.Equal(SearchResultCacheStage.BuildQueryKey(padded), SearchResultCacheStage.BuildQueryKey(plain));
+
+        var sameTextDifferentEpisode = new SearchQuery("92", new[] { 5000 }, 50, SearchProtocol.Newznab, 0, TvdbId: 81797, Type: SearchType.TvSearch, Absolute: 93);
+
+        Assert.NotEqual(SearchResultCacheStage.BuildQueryKey(plain), SearchResultCacheStage.BuildQueryKey(sameTextDifferentEpisode));
+    }
+
+    [Fact]
+    public void The_resolved_title_is_not_part_of_the_cache_key()
+    {
+        // ResolvedTitle is a derived rendering of the tvdbid that is ALREADY in the key, so folding it
+        // in would add nothing but a way for the same episode to occupy two rows — one cached before
+        // Sonarr was configured and one after, or across a series rename.
+        var unresolved = new SearchQuery("92", new[] { 5000 }, 50, SearchProtocol.Newznab, 0, TvdbId: 81797, Type: SearchType.TvSearch, Absolute: 92);
+        var resolved = unresolved with { ResolvedTitle = "One Piece" };
+
+        Assert.Equal(SearchResultCacheStage.BuildQueryKey(unresolved), SearchResultCacheStage.BuildQueryKey(resolved));
+    }
+
+    [Fact]
+    public void Seasonal_queries_keep_the_key_they_had_before_the_absolute_component_existed()
+    {
+        // The no-regression guard: every pre-existing construction site leaves Absolute unset, so the
+        // added component must be inert for them rather than merely compatible in principle.
+        var seasonal = new SearchQuery("Bleach S17E36", new[] { 5000 }, 50, SearchProtocol.Torznab, 0, TvdbId: 74796, Season: 17, Episode: 36);
+
+        Assert.Equal(
+            SearchResultCacheStage.BuildQueryKey(seasonal),
+            SearchResultCacheStage.BuildQueryKey(seasonal with { Absolute = null }));
+    }
+
+    [Fact]
     public void Categories_are_part_of_the_cache_key()
     {
         var withCategory = new SearchQuery("bleach", new[] { 5000 }, 50, SearchProtocol.Torznab, 0, TvdbId: 74796, Season: 17, Episode: 36);

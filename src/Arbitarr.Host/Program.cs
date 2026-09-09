@@ -573,6 +573,36 @@ builder.Services.AddScoped<Arbitarr.Data.Media.ArrInstanceRepository>();
 builder.Services.AddHttpClient<Arbitarr.Core.Media.SonarrConnectivityProber>()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 
+// arb-u1c: the identity resolver that turns Sonarr's tvdbid into the series title the search path
+// sends upstream. Registered against the Core.Identity contract, so Arbitarr.Api (which builds the
+// search query) never sees Arbitarr.Media -- this composition root is the only place that knows
+// which implementation is in play (ADR 0001).
+//
+// Registered UNCONDITIONALLY even though it is useless without a configured Sonarr, because the
+// configuration lives in the database and can be written at any time from the admin UI. A
+// registration gated on a startup-time read would leave the resolver permanently absent for anyone
+// who configures Sonarr after boot -- which is everyone, on a first run. SeriesTitleResolver reads
+// the rows per call and returns null throughout when they are missing, so an unconfigured instance
+// costs one settings read and changes no behaviour.
+builder.Services.AddScoped<Arbitarr.Core.Identity.IIdentityResolver, Arbitarr.Media.Providers.SeriesTitleResolver>();
+
+// The client the *arr identity lookup rides on. NAMED rather than typed because ArrApiProvider is
+// constructed per call around configuration read from the database (see SeriesTitleResolver), so DI
+// cannot activate it as a typed client.
+//
+// AllowAutoRedirect is disabled for the same SSRF reason as the probe above: a misconfigured address
+// answering 30x must not make this process reissue a request CARRYING SONARR'S API KEY at a host
+// nobody configured.
+//
+// NO .RemoveAllLoggers() HERE, for the same measured reason as SonarrConnectivityProber above and
+// subject to the same condition: ArrApiProvider.BuildEpisodeUri puts the key in the QUERY STRING,
+// and .NET's own logging handler collapses the whole query string to "?*" before formatting the
+// message. Move the key into a URL PATH segment and neither that collapse nor LogMessageCleanser
+// (which does not scrub paths, CLAUDE.md §1) covers it, and this registration would need
+// .RemoveAllLoggers().
+builder.Services.AddHttpClient(Arbitarr.Media.Providers.SeriesTitleResolver.ArrHttpClientName)
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+
 // #89: the AI backend's connectivity probe. AllowAutoRedirect is disabled for the same SEC-M5 SSRF
 // reason as the OllamaClient registration above -- a misconfigured address answering 30x must not
 // make this process issue a request at a host nobody configured.
@@ -799,6 +829,10 @@ app.MapGet("/torznab/api", async (
     InMemoryReleaseLookup releaseLookup,
     RecentSearchLog recentSearchLog,
     Arbitarr.Core.Diagnostics.IEventSink eventSink,
+    // arb-u1c: nullable so the route still resolves when no Sonarr instance is configured; the
+    // registration below is conditional on nothing, but the resolver itself returns null throughout
+    // when the instance rows are absent.
+    Arbitarr.Core.Identity.IIdentityResolver? identityResolver,
     IReadOnlyList<IUpstreamSource> sources,
     HttpRequest request,
     CancellationToken cancellationToken) =>
@@ -833,7 +867,8 @@ app.MapGet("/torznab/api", async (
         IdParamClamp.ClampProviderId(IdParamClamp.ParseOptional(tmdbid)),
         IdParamClamp.ClampSeason(IdParamClamp.ParseOptional(season)),
         IdParamClamp.ClampEpisode(IdParamClamp.ParseOptional(ep)),
-        clientContext?.Name).ConfigureAwait(false);
+        clientContext?.Name,
+        identityResolver).ConfigureAwait(false);
 })
     .WithClassification(RouteClassification.PublicRead);
 
@@ -860,6 +895,10 @@ app.MapGet("/newznab/api", async (
     InMemoryReleaseLookup releaseLookup,
     RecentSearchLog recentSearchLog,
     Arbitarr.Core.Diagnostics.IEventSink eventSink,
+    // arb-u1c: nullable so the route still resolves when no Sonarr instance is configured; the
+    // registration below is conditional on nothing, but the resolver itself returns null throughout
+    // when the instance rows are absent.
+    Arbitarr.Core.Identity.IIdentityResolver? identityResolver,
     IReadOnlyList<IUpstreamSource> sources,
     HttpRequest request,
     CancellationToken cancellationToken) =>
@@ -894,7 +933,8 @@ app.MapGet("/newznab/api", async (
         IdParamClamp.ClampProviderId(IdParamClamp.ParseOptional(tmdbid)),
         IdParamClamp.ClampSeason(IdParamClamp.ParseOptional(season)),
         IdParamClamp.ClampEpisode(IdParamClamp.ParseOptional(ep)),
-        clientContext?.Name).ConfigureAwait(false);
+        clientContext?.Name,
+        identityResolver).ConfigureAwait(false);
 })
     .WithClassification(RouteClassification.PublicRead);
 

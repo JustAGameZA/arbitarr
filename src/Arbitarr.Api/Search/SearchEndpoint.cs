@@ -1,7 +1,9 @@
 using System.Diagnostics;
+using System.Globalization;
 using Arbitarr.Api.Rendering;
 using Arbitarr.Core.Caching;
 using Arbitarr.Core.Diagnostics;
+using Arbitarr.Core.Identity;
 using Arbitarr.Core.Sources;
 using Microsoft.AspNetCore.Http;
 
@@ -43,9 +45,14 @@ public static class SearchEndpoint
         int? tmdbId = null,
         int? season = null,
         int? episode = null,
-        string? clientName = null)
+        string? clientName = null,
+        // arb-u1c: optional and last so every pre-existing caller (and the eight golden/rendering
+        // tests that construct this call directly) keeps compiling unchanged. Null means "no
+        // resolver", which is also the runtime state whenever no Sonarr instance is configured, so
+        // the default is the honest one rather than a convenience.
+        IIdentityResolver? identityResolver = null)
     {
-        var (result, rateLimited) = await ExecuteAsync(SearchProtocol.Torznab, searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, eventSink, clientName, cancellationToken).ConfigureAwait(false);
+        var (result, rateLimited) = await ExecuteAsync(SearchProtocol.Torznab, searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, eventSink, identityResolver, clientName, cancellationToken).ConfigureAwait(false);
         if (rateLimited)
         {
             var errorXml = TorznabXmlWriter.WriteError(RateLimitErrorCode, "Request limit reached");
@@ -74,9 +81,14 @@ public static class SearchEndpoint
         int? tmdbId = null,
         int? season = null,
         int? episode = null,
-        string? clientName = null)
+        string? clientName = null,
+        // arb-u1c: optional and last so every pre-existing caller (and the eight golden/rendering
+        // tests that construct this call directly) keeps compiling unchanged. Null means "no
+        // resolver", which is also the runtime state whenever no Sonarr instance is configured, so
+        // the default is the honest one rather than a convenience.
+        IIdentityResolver? identityResolver = null)
     {
-        var (result, rateLimited) = await ExecuteAsync(SearchProtocol.Newznab, searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, eventSink, clientName, cancellationToken).ConfigureAwait(false);
+        var (result, rateLimited) = await ExecuteAsync(SearchProtocol.Newznab, searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, eventSink, identityResolver, clientName, cancellationToken).ConfigureAwait(false);
         if (rateLimited)
         {
             var errorXml = NewznabXmlWriter.WriteError(RateLimitErrorCode, "Request limit reached");
@@ -103,6 +115,7 @@ public static class SearchEndpoint
         InMemoryReleaseLookup releaseLookup,
         RecentSearchLog recentSearchLog,
         IEventSink eventSink,
+        IIdentityResolver? identityResolver,
         string? clientName,
         CancellationToken cancellationToken)
     {
@@ -110,7 +123,15 @@ public static class SearchEndpoint
         // #104: the inbound t= now reaches the source, so an id-less tvsearch keeps its mode and its
         // season/ep instead of being downgraded to a plain search upstream. Parsed by explicit name
         // match (CLAUDE.md §3) — never Enum.TryParse, which would also accept "t=1".
-        var query = new SearchQuery(queryText, categories, limit, protocol, offset, tvdbId, tmdbId, season, episode, SearchTypeParser.Parse(searchType));
+        var parsedType = SearchTypeParser.Parse(searchType);
+        var query = new SearchQuery(queryText, categories, limit, protocol, offset, tvdbId, tmdbId, season, episode, parsedType);
+
+        // arb-u1c: resolve the id to a series title BEFORE the query goes to the cache stage, because
+        // both things downstream need it are downstream of here -- the cache key (which needs the
+        // absolute number to stop two episodes of one series sharing a row) and the upstream URI
+        // (which needs the title to stop a bare number becoming a feed-wide search).
+        query = await ResolveAnimeIdentityAsync(query, parsedType, identityResolver, cancellationToken).ConfigureAwait(false);
+
         var result = await snapshotService.GetPageAsync(searchType ?? "search", query, cancellationToken).ConfigureAwait(false);
 
         // Only surface the rate-limit element when every configured source failed with
@@ -193,6 +214,84 @@ public static class SearchEndpoint
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
         return (result with { Releases = filtered }, false);
+    }
+
+    /// <summary>
+    /// arb-u1c: for Sonarr's anime episode shape only, records the absolute episode number on the
+    /// query and asks the identity resolver for the series title that number belongs to.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>THE SHAPE THIS TARGETS.</b> Sonarr searches an anime episode as
+    /// <c>t=tvsearch&amp;tvdbid=X&amp;q=NN</c>, where <c>NN</c> is a bare ABSOLUTE episode number and
+    /// there is no <c>season</c> or <c>ep</c> parameter at all. Every other request shape is left
+    /// exactly as it arrived, so this cannot change the query, the cache key, or the upstream URI for
+    /// anything that was working before.</para>
+    ///
+    /// <para><b>THE PREDICATE IS DUPLICATED, DELIBERATELY, AND MUST STAY IN STEP.</b>
+    /// <c>NzbHydraSource.IsIdScopedAbsoluteNumberQuery</c> asks the same question of the same request
+    /// for a different reason: it decides how to spell the upstream <c>q</c>, while this decides what
+    /// to put in the cache key and whether to spend a resolver call. Sharing one predicate would mean
+    /// either <c>Arbitarr.Api</c> referencing a source adapter or a source concept moving into
+    /// <c>Core</c> for one boolean, and both are worse than two functions that agree. If either side
+    /// changes, change the other: they are tested against the same request shape.</para>
+    ///
+    /// <para><b>THE ABSOLUTE NUMBER IS RECORDED EVEN WHEN NOTHING RESOLVES.</b> That is the half of
+    /// this that fixes a wrong answer rather than an imprecise one — see
+    /// <c>SearchResultCacheStage.BuildNumbering</c>. Resolution failing costs precision upstream;
+    /// omitting the number from the key serves episode 91's results for episode 92.</para>
+    ///
+    /// <para>A null <paramref name="identityResolver"/> means no resolver is registered, which is the
+    /// normal state when no Sonarr instance has been configured. Resolution never fails the search:
+    /// any exception from the resolver leaves the query with its absolute number and no title, which
+    /// degrades to exactly the id-only upstream request that shipped before this existed.</para>
+    /// </remarks>
+    private static async Task<SearchQuery> ResolveAnimeIdentityAsync(
+        SearchQuery query,
+        SearchType parsedType,
+        IIdentityResolver? identityResolver,
+        CancellationToken cancellationToken)
+    {
+        if (parsedType != SearchType.TvSearch || query.TvdbId is not { } tvdbId)
+        {
+            return query;
+        }
+
+        var queryText = query.QueryText?.Trim() ?? string.Empty;
+        if (queryText.Length == 0 || !queryText.All(char.IsAsciiDigit))
+        {
+            return query;
+        }
+
+        if (!int.TryParse(queryText, NumberStyles.None, CultureInfo.InvariantCulture, out var absolute))
+        {
+            // A run of digits too long to be an int is not an episode number. Leave it alone rather
+            // than recording a nonsense value in the cache key.
+            return query;
+        }
+
+        query = query with { Absolute = absolute };
+
+        if (identityResolver is null)
+        {
+            return query;
+        }
+
+        try
+        {
+            var identity = await identityResolver
+                .ResolveAsync(queryText, new IdentityResolutionHints(tvdbId, TmdbId: null, Year: null), cancellationToken)
+                .ConfigureAwait(false);
+
+            return string.IsNullOrWhiteSpace(identity?.PrimaryTitle)
+                ? query
+                : query with { ResolvedTitle = identity.PrimaryTitle };
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // A search must still answer in Torznab/Newznab XML. An identity lookup is an optimisation
+            // of the upstream query, never a precondition for issuing it.
+            return query;
+        }
     }
 
     // The proxy guid alone only prevents enumeration of releases; it is not an authorization
