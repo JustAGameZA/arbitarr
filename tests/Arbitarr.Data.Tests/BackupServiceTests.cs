@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
 using Arbitarr.Data.Backup;
+using Arbitarr.TestSupport;
 using Microsoft.Data.Sqlite;
 using Xunit;
 
@@ -35,7 +36,10 @@ public sealed class BackupServiceTests : IDisposable
     public void Dispose()
     {
         // Pooled SQLite handles keep the file locked on Windows until the pool is cleared.
-        SqliteConnection.ClearAllPools();
+        // Scoped to the databases under THIS class's own temp directory rather than
+        // ClearAllPools(), which would also close pooled connections belonging to test classes
+        // running in parallel (arb-rga.3).
+        SqlitePools.ClearPoolsForDirectory(_configDirectory);
         try
         {
             Directory.Delete(_configDirectory, recursive: true);

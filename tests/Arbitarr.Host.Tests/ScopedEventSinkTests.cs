@@ -3,7 +3,7 @@ using Arbitarr.Data;
 using Arbitarr.Data.Entities;
 using Arbitarr.Data.Events;
 using Arbitarr.Host.Diagnostics;
-using Microsoft.Data.Sqlite;
+using Arbitarr.TestSupport;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -23,18 +23,16 @@ namespace Arbitarr.Host.Tests;
 /// </summary>
 public sealed class ScopedEventSinkTests : IDisposable
 {
-    private readonly string _dbPath;
+    private readonly SqliteTestDatabase _database = new("arr-searcher-sink-test");
     private readonly ServiceProvider _provider;
 
     public ScopedEventSinkTests()
     {
-        _dbPath = Path.Combine(Path.GetTempPath(), $"arr-searcher-sink-test-{Guid.NewGuid():N}.db");
-
         var services = new ServiceCollection();
         services.AddScoped(_ =>
         {
             var options = new DbContextOptionsBuilder<ArbitarrDbContext>()
-                .UseSqlite($"Data Source={_dbPath}")
+                .UseSqlite(_database.ConnectionString)
                 .Options;
             var context = new ArbitarrDbContext(options);
             context.Database.Migrate();
@@ -46,12 +44,11 @@ public sealed class ScopedEventSinkTests : IDisposable
 
     public void Dispose()
     {
+        // Order matters: the provider owns the scoped DbContexts, so it must go first — the
+        // fixture's pool clear and file delete are only correct once nothing still holds a
+        // connection to the file.
         _provider.Dispose();
-        SqliteConnection.ClearAllPools();
-        if (File.Exists(_dbPath))
-        {
-            File.Delete(_dbPath);
-        }
+        _database.Dispose();
     }
 
     private ScopedEventSink CreateSink() => new(

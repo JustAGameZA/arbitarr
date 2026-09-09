@@ -2,7 +2,7 @@ using Arbitarr.Core.Settings;
 using Arbitarr.Data;
 using Arbitarr.Data.Settings;
 using Arbitarr.Host.Ai;
-using Microsoft.Data.Sqlite;
+using Arbitarr.TestSupport;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Xunit;
@@ -31,24 +31,16 @@ public sealed class OllamaModelSeederTests : IDisposable
     private const string EnvironmentModel = "llama3.1:8b";
     private const string OperatorModel = "phi4:14b";
 
-    private readonly string _dbPath =
-        Path.Combine(Path.GetTempPath(), $"arbitarr-112-model-seeder-{Guid.NewGuid():N}.db");
+    private readonly SqliteTestDatabase _database = new("arbitarr-112-model-seeder");
 
-    public void Dispose()
-    {
-        SqliteConnection.ClearAllPools();
-        if (File.Exists(_dbPath))
-        {
-            File.Delete(_dbPath);
-        }
-    }
+    public void Dispose() => _database.Dispose();
 
-    private ArbitarrDbContext CreateContext() => CreateContext(_dbPath);
+    private ArbitarrDbContext CreateContext() => CreateContext(_database.ConnectionString);
 
-    private static ArbitarrDbContext CreateContext(string dbPath)
+    private static ArbitarrDbContext CreateContext(string connectionString)
     {
         var optionsBuilder = new DbContextOptionsBuilder<ArbitarrDbContext>();
-        optionsBuilder.UseSqlite($"Data Source={dbPath}");
+        optionsBuilder.UseSqlite(connectionString);
         var context = new ArbitarrDbContext(optionsBuilder.Options);
         context.Database.Migrate();
         return context;
@@ -259,22 +251,13 @@ public sealed class OllamaModelSeederTests : IDisposable
 
         // POSITIVE CONTROL, on its own database so its row does not turn the run under test into
         // the divergence branch.
-        var controlPath = Path.Combine(Path.GetTempPath(), $"arbitarr-112-control-{Guid.NewGuid():N}.db");
-        try
+        using (var controlDatabase = new SqliteTestDatabase("arbitarr-112-control"))
         {
-            using var control = CreateContext(controlPath);
+            using var control = CreateContext(controlDatabase.ConnectionString);
             var controlLogger = new RecordingLogger();
             await OllamaModelSeeder.SeedAsync(control, Needle, controlLogger);
 
             Assert.Contains(controlLogger.Entries, e => e.Message.Contains(Needle, StringComparison.Ordinal));
-        }
-        finally
-        {
-            SqliteConnection.ClearAllPools();
-            if (File.Exists(controlPath))
-            {
-                File.Delete(controlPath);
-            }
         }
 
         using var context = CreateContext();

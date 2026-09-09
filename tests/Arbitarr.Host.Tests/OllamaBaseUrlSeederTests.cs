@@ -3,7 +3,7 @@ using Arbitarr.Data;
 using Arbitarr.Data.Entities;
 using Arbitarr.Data.Settings;
 using Arbitarr.Host.Ai;
-using Microsoft.Data.Sqlite;
+using Arbitarr.TestSupport;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Xunit;
@@ -33,19 +33,11 @@ public sealed class OllamaBaseUrlSeederTests : IDisposable
     private const string EnvironmentBaseUrl = "http://192.0.2.30:11434";
     private const string OperatorBaseUrl = "http://192.0.2.40:11434";
 
-    private readonly string _dbPath =
-        Path.Combine(Path.GetTempPath(), $"arbitarr-89-seeder-{Guid.NewGuid():N}.db");
+    private readonly SqliteTestDatabase _database = new("arbitarr-89-seeder");
 
-    public void Dispose()
-    {
-        SqliteConnection.ClearAllPools();
-        if (File.Exists(_dbPath))
-        {
-            File.Delete(_dbPath);
-        }
-    }
+    public void Dispose() => _database.Dispose();
 
-    private ArbitarrDbContext CreateContext() => CreateContext(_dbPath);
+    private ArbitarrDbContext CreateContext() => CreateContext(_database.ConnectionString);
 
     /// <summary>
     /// A context on a NAMED database file, so a test needing two independent databases can have
@@ -54,10 +46,10 @@ public sealed class OllamaBaseUrlSeederTests : IDisposable
     /// instead of the seed branch, and the "secret must not appear" assertion would be testing a
     /// different code path than the one it names.
     /// </summary>
-    private static ArbitarrDbContext CreateContext(string dbPath)
+    private static ArbitarrDbContext CreateContext(string connectionString)
     {
         var optionsBuilder = new DbContextOptionsBuilder<ArbitarrDbContext>();
-        optionsBuilder.UseSqlite($"Data Source={dbPath}");
+        optionsBuilder.UseSqlite(connectionString);
         var context = new ArbitarrDbContext(optionsBuilder.Options);
         context.Database.Migrate();
         return context;
@@ -73,26 +65,18 @@ public sealed class OllamaBaseUrlSeederTests : IDisposable
         string needle,
         Func<ArbitarrDbContext, RecordingLogger, Task> plant)
     {
-        var controlPath = Path.Combine(Path.GetTempPath(), $"arbitarr-89-control-{Guid.NewGuid():N}.db");
-        try
-        {
-            using (var control = CreateContext(controlPath))
-            {
-                var controlLogger = new RecordingLogger();
-                await plant(control, controlLogger);
+        // Its own database, disposed here rather than by the class fixture: the control must not
+        // share a file with the run under test (see the CreateContext remarks above).
+        using var controlDatabase = new SqliteTestDatabase("arbitarr-89-control");
 
-                Assert.Contains(
-                    controlLogger.Entries,
-                    e => e.Message.Contains(needle, StringComparison.Ordinal));
-            }
-        }
-        finally
+        using (var control = CreateContext(controlDatabase.ConnectionString))
         {
-            SqliteConnection.ClearAllPools();
-            if (File.Exists(controlPath))
-            {
-                File.Delete(controlPath);
-            }
+            var controlLogger = new RecordingLogger();
+            await plant(control, controlLogger);
+
+            Assert.Contains(
+                controlLogger.Entries,
+                e => e.Message.Contains(needle, StringComparison.Ordinal));
         }
     }
 

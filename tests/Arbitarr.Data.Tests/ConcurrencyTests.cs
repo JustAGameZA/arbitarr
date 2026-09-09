@@ -4,6 +4,7 @@ using Arbitarr.Core.Caching;
 using Arbitarr.Core.Sources.CircuitBreaker;
 using Arbitarr.Data;
 using Arbitarr.Data.Caching;
+using Arbitarr.TestSupport;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Time.Testing;
@@ -52,34 +53,35 @@ public sealed class ConcurrencyTests : IDisposable
 {
     internal const string SerialTimingCollection = "data-serial-timing";
 
-    private readonly string _dbPath;
+    private readonly SqliteTestDatabase _database = new("arr-searcher-concurrency-test");
 
     public ConcurrencyTests()
     {
-        _dbPath = Path.Combine(Path.GetTempPath(), $"arr-searcher-concurrency-test-{Guid.NewGuid():N}.db");
+        // This class reaches its one file through three DIFFERENT connection strings: the
+        // fixture's own (used by EF in CreateContext), the one SqliteConnectionOptions builds
+        // (which adds Cache), and the bare "Data Source=" the misconfigured-journal-mode proof
+        // opens by hand. Pools are keyed by the FULL string, so each is a separate pool: clearing
+        // only the fixture's would leave two sets of handles open, and the file delete that
+        // follows would go back to failing on Windows. Registering the other two here is what
+        // makes the fixture's cleanup actually cover this class.
+        _database.AlsoClearPoolFor(ConnectionOptions.ToConnectionString());
+        _database.AlsoClearPoolFor(MisconfiguredConnectionString);
     }
 
-    public void Dispose()
+    private SqliteConnectionOptions ConnectionOptions => new()
     {
-        SqliteConnection.ClearAllPools();
-        foreach (var suffix in new[] { "", "-wal", "-shm", "-journal" })
-        {
-            var path = _dbPath + suffix;
-            if (File.Exists(path))
-            {
-                File.Delete(path);
-            }
-        }
-    }
+        DatabasePath = _database.Path,
+        BusyTimeoutMilliseconds = SqliteConnectionOptions.DefaultBusyTimeoutMilliseconds,
+    };
+
+    private string MisconfiguredConnectionString => $"Data Source={_database.Path}";
+
+    public void Dispose() => _database.Dispose();
 
     [Fact]
     public void ConcurrentWriteWhileRead_WithWalAndBusyTimeout_ReaderNeverStalls()
     {
-        var factory = new SqliteConnectionFactory(new SqliteConnectionOptions
-        {
-            DatabasePath = _dbPath,
-            BusyTimeoutMilliseconds = SqliteConnectionOptions.DefaultBusyTimeoutMilliseconds,
-        });
+        var factory = new SqliteConnectionFactory(ConnectionOptions);
 
         RunConcurrentContention(
             openWriterConnection: () => factory.OpenConnection(),
@@ -101,7 +103,7 @@ public sealed class ConcurrencyTests : IDisposable
     {
         SqliteConnection OpenMisconfiguredConnection()
         {
-            var connection = new SqliteConnection($"Data Source={_dbPath}");
+            var connection = new SqliteConnection(MisconfiguredConnectionString);
             connection.Open();
             using var journalModeCommand = connection.CreateCommand();
             // Deliberately the opposite of AC15a's requirement: default rollback journal mode
@@ -435,11 +437,7 @@ public sealed class ConcurrencyTests : IDisposable
         {
             // Touch the file once via the production connection factory so WAL mode is set and
             // verified before EF Core opens the same file.
-            var factory = new SqliteConnectionFactory(new SqliteConnectionOptions
-            {
-                DatabasePath = _dbPath,
-                BusyTimeoutMilliseconds = SqliteConnectionOptions.DefaultBusyTimeoutMilliseconds,
-            });
+            var factory = new SqliteConnectionFactory(ConnectionOptions);
             using var walConnection = factory.OpenConnection();
         }
 
@@ -453,7 +451,7 @@ public sealed class ConcurrencyTests : IDisposable
             // Deliberately the opposite of AC15a's requirement. journal_mode is persistent in the
             // database file, so this must run after Migrate() (which opens its own connection) to
             // actually take effect for the probes below.
-            using var misconfigured = new SqliteConnection($"Data Source={_dbPath}");
+            using var misconfigured = new SqliteConnection(MisconfiguredConnectionString);
             misconfigured.Open();
             using var pragma = misconfigured.CreateCommand();
             pragma.CommandText = "PRAGMA journal_mode = DELETE; PRAGMA busy_timeout = 1;";
@@ -607,7 +605,7 @@ public sealed class ConcurrencyTests : IDisposable
     private ArbitarrDbContext CreateContext()
     {
         var optionsBuilder = new DbContextOptionsBuilder<ArbitarrDbContext>();
-        optionsBuilder.UseSqlite($"Data Source={_dbPath}");
+        optionsBuilder.UseSqlite(_database.ConnectionString);
         return new ArbitarrDbContext(optionsBuilder.Options);
     }
 

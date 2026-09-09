@@ -5,8 +5,11 @@ using Xunit;
 // through the process-wide ARBITARR_CONFIG_DIR environment variable, so two concurrently-starting
 // hosts can no longer overwrite each other's directory.
 //
-// The attribute stays for now only because a SECOND piece of process-global state is still in play:
-// SqliteConnection.ClearAllPools() is called from many test files and clears the pool for every
-// database in the process, not just the caller's. Removing this line before that is scoped per-file
-// would trade one race for another. arb-rga.3 replaces those calls; arb-rga.4 then removes this.
+// The second piece of process-global state — SqliteConnection.ClearAllPools(), which cleared the
+// pool for every database in the process rather than the caller's — is GONE as of arb-rga.3: every
+// call site now clears a named pool (SqliteTestDatabase / SqlitePools), and an architecture test
+// bans the process-global form from returning.
+//
+// This attribute is therefore the last thing serialising this assembly, and it is kept only because
+// enabling parallelism here is its own change with its own verification: arb-rga.4 removes it.
 [assembly: CollectionBehavior(DisableTestParallelization = true)]
