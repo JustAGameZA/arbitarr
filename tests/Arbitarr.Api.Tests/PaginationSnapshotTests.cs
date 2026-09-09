@@ -259,4 +259,97 @@ public class PaginationSnapshotTests
 
         Assert.Equal(1, store.SaveCallCount);
     }
+
+    // ---- arb-b5z: the source set is part of what a snapshot IS ---------------------------------
+    //
+    // These three tests are written ACROSS A RESTART rather than around an in-process mutation, and
+    // that shape is the whole point. The resolved source configuration is settled once at startup
+    // (SourceSeeder writes ResolvedSourceConfiguration before the first request), so a source edit
+    // requires a restart and the fingerprint cannot move within one process. What makes the bug real
+    // is that the snapshot store is SQLite-backed and OUTLIVES that restart. A test that mutated a
+    // source and re-queried the same service would therefore pass for the wrong reason — or not at
+    // all — while proving nothing about the failure operators actually hit.
+    //
+    // Each test builds TWO services over ONE store, which is exactly "the same database, a new
+    // process".
+
+    /// <summary>
+    /// A restart that CHANGES the source set must not serve the pre-restart snapshot: the operator
+    /// added or enabled a source precisely so its releases would appear, and the stale row would
+    /// hide them for the remainder of its TTL with nothing to indicate why.
+    /// </summary>
+    [Fact]
+    public async Task A_restart_with_a_changed_source_set_materializes_a_new_snapshot()
+    {
+        var store = new FakeQuerySnapshotStore();
+        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
+        var query = new SearchQuery("x", Array.Empty<int>(), 5, SearchProtocol.Torznab, 0);
+
+        await BuildService(store, time, "eztv").GetPageAsync("search", query);
+        await BuildService(store, time, "eztv,nyaa").GetPageAsync("search", query);
+
+        Assert.Equal(2, store.SaveCallCount);
+    }
+
+    /// <summary>
+    /// The positive control, and the half that keeps the test above honest: a restart that leaves
+    /// the source set ALONE must still hit the surviving snapshot. Without this, "two saves" would
+    /// pass just as happily for a token that had stopped collapsing anything at all — which would
+    /// silently turn every restart into a full re-materialization.
+    /// </summary>
+    [Fact]
+    public async Task A_restart_with_an_unchanged_source_set_still_serves_the_surviving_snapshot()
+    {
+        var store = new FakeQuerySnapshotStore();
+        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
+        var query = new SearchQuery("x", Array.Empty<int>(), 5, SearchProtocol.Torznab, 0);
+
+        await BuildService(store, time, "eztv").GetPageAsync("search", query);
+        await BuildService(store, time, "eztv").GetPageAsync("search", query);
+
+        Assert.Equal(1, store.SaveCallCount);
+    }
+
+    /// <summary>
+    /// The no-regression case: a caller that says nothing about a source set — which is every
+    /// pre-arb-b5z construction site — must produce the token it always did. Asserted as behaviour
+    /// (two differently-built services sharing one snapshot) rather than by re-deriving the hash,
+    /// which would only restate the implementation.
+    /// </summary>
+    [Fact]
+    public async Task A_service_with_no_fingerprint_source_keeps_the_token_it_had()
+    {
+        var store = new FakeQuerySnapshotStore();
+        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
+        var query = new SearchQuery("x", Array.Empty<int>(), 5, SearchProtocol.Torznab, 0);
+
+        // The pre-existing five-argument constructor, then the same thing said explicitly.
+        var implicitDefault = new PaginationSnapshotService(
+            new UpstreamMergeStage(new[] { MakeSourceWithReleases("eztv", 10) }),
+            TestCacheStage.Create(time),
+            store,
+            time);
+        var explicitEmpty = BuildService(store, time, string.Empty);
+
+        await implicitDefault.GetPageAsync("search", query);
+        await explicitEmpty.GetPageAsync("search", query);
+
+        Assert.Equal(1, store.SaveCallCount);
+    }
+
+    /// <summary>
+    /// One "process": a service over the shared <paramref name="store"/> whose source set is
+    /// described by <paramref name="fingerprint"/>.
+    /// </summary>
+    private static PaginationSnapshotService BuildService(
+        FakeQuerySnapshotStore store,
+        ManualTimeProvider time,
+        string fingerprint) =>
+        new(
+            new UpstreamMergeStage(new[] { MakeSourceWithReleases("eztv", 10) }),
+            TestCacheStage.Create(time),
+            store,
+            time,
+            ttl: null,
+            sourceSetFingerprintSource: new StaticSourceSetFingerprintSource(fingerprint));
 }
