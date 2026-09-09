@@ -12,6 +12,11 @@ namespace Arbitarr.Core.Tests;
 /// </summary>
 public class ReDoSTimeoutTests
 {
+    // Category=Timing (arb-rga.5) on this fact ALONE, not on the class. Only this one asserts
+    // elapsed wall time (the Stopwatch bound below); Evaluate_BenignPattern_StillMatchesNormally is
+    // a pure equality check and is the control proving the rule still matches at all, so excluding
+    // it from the PR lane would cost coverage and buy no time back.
+    [Trait("Category", "Timing")]
     [Fact]
     public void Evaluate_CatastrophicPattern_TimesOutAndReturnsUnknown_WithoutStalling()
     {

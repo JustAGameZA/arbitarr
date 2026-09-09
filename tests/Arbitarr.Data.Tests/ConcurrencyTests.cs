@@ -48,6 +48,16 @@ public sealed class SerialTimingCollectionDefinition;
 /// <see cref="SqliteCommand.CommandTimeout"/> so a genuine SQLITE_BUSY surfaces as a fast exception
 /// instead of blocking the test for the full busy_timeout/command-timeout ceiling.
 /// </summary>
+/// <remarks>
+/// Category=Timing (arb-rga.5): every fact here asserts a wall-clock latency ceiling or a
+/// read-throughput floor, including the two misconfigured-journal non-vacuity twins, which must
+/// travel with the tests they prove. The <see cref="SerialTimingCollection"/> below is a separate
+/// mechanism and stays: it serialises this class against its siblings so a neighbour cannot steal
+/// CPU during the measurement window. The trait decides which LANE runs the class; the collection
+/// decides how it runs once a lane does. Excluded from PR/master by the shared category filter,
+/// run unfiltered nightly.
+/// </remarks>
+[Trait("Category", "Timing")]
 [Collection(ConcurrencyTests.SerialTimingCollection)]
 public sealed class ConcurrencyTests : IDisposable
 {

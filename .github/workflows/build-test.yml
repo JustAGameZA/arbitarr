@@ -7,6 +7,17 @@ on:
   pull_request:
   push:
     branches: [master]
+  workflow_dispatch:
+    inputs:
+      measure-filter:
+        description: >-
+          Measure the filtered suite and PRINT the counts without writing the
+          test-counts artifact. This is how a new value for the bootstrap
+          constants is obtained: run it on master, read the printed number, and
+          set the constant from that number in a follow-up PR. Never compute a
+          bootstrap constant by arithmetic on the old one.
+        type: boolean
+        default: false
 
 jobs:
   build-test:
@@ -29,6 +40,14 @@ jobs:
       # printed -- a pull_request run measures the PR, not master.
       BOOTSTRAP_BACKEND_FLOOR: "1189"
       BOOTSTRAP_FRONTEND_FLOOR: "296"
+      # The category filter, written ONCE and reused by the test step, the floor
+      # comparison and the recorded artifact. Keeping it in one variable is what
+      # makes "the PR lane and the master lane run an identical filter" true by
+      # construction rather than by two strings being kept in step -- and it is
+      # what stops the artifact ever recording a filter the run did not use.
+      # Timing/Load/Quarantine are excluded here and run unfiltered nightly
+      # (arb-rga.8); see docs/adr/0011 and docs/standards/process.md.
+      TEST_FILTER: "Category!=Timing&Category!=Load&Category!=Quarantine"
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -80,15 +99,30 @@ jobs:
                && [ -f /tmp/floor/test-counts.json ]; then
               b=$(jq -r '.backend // empty' /tmp/floor/test-counts.json)
               f=$(jq -r '.frontend // empty' /tmp/floor/test-counts.json)
+              # The filter the artifact was MEASURED under. An artifact written
+              # before the filter field existed has none, which is treated
+              # exactly like a mismatch -- an unlabelled count cannot be shown to
+              # cover the same set of tests as this run, and assuming it does is
+              # the silent apples-to-oranges comparison this field exists to
+              # prevent.
+              artifact_filter=$(jq -r '.filter // empty' /tmp/floor/test-counts.json)
+
               # Both counts must be present and numeric, or neither is used: a
               # half-read artifact would silently drop one suite's floor to the
               # bootstrap constant while looking like it had ratcheted.
-              if printf '%s' "$b" | grep -qE '^[0-9]+$' && printf '%s' "$f" | grep -qE '^[0-9]+$'; then
+              if ! printf '%s' "$b" | grep -qE '^[0-9]+$' || ! printf '%s' "$f" | grep -qE '^[0-9]+$'; then
+                echo "test-counts artifact from run ${run_id} is unreadable; falling back to bootstrap constants." >&2
+              elif [ "$artifact_filter" != "$TEST_FILTER" ]; then
+                # Loud on purpose: ::notice:: surfaces in the run summary rather
+                # than only in the log body. A floor carried across a filter
+                # change would compare this run's count against a count of a
+                # different set of tests, which either blocks a correct PR or
+                # hides a real shrink.
+                echo "::notice title=Test-count floor fell back to bootstrap constants::The test-counts artifact from master run ${run_id} was measured under filter '${artifact_filter:-(none recorded)}', but this run uses filter '${TEST_FILTER}'. The two counts are not comparable, so the bootstrap constants (backend ${BOOTSTRAP_BACKEND_FLOOR}, frontend ${BOOTSTRAP_FRONTEND_FLOOR}) are used instead. Once master has run under the new filter, update the bootstrap constants from a number a master run actually printed (run this workflow via workflow_dispatch with measure-filter=true)."
+              else
                 backend_floor="$b"
                 frontend_floor="$f"
                 floor_source="master run ${run_id}"
-              else
-                echo "test-counts artifact from run ${run_id} is unreadable; falling back to bootstrap constants." >&2
               fi
             fi
           fi
@@ -110,7 +144,10 @@ jobs:
         run: dotnet build Arbitarr.sln -c Release -m:1 --no-restore
 
       - name: Test
-        run: dotnet test Arbitarr.sln -c Release --no-build --logger trx --results-directory ./TestResults
+        run: >-
+          dotnet test Arbitarr.sln -c Release --no-build
+          --filter "$TEST_FILTER"
+          --logger trx --results-directory ./TestResults
 
       - name: Enforce test-count floor
         shell: bash
@@ -412,19 +449,57 @@ jobs:
 
           echo "Tree-wide secret/topology guard passed."
 
+      # A measure-filter run exists to PRINT a number for the bootstrap
+      # constants, so it must not also write the artifact: publishing a count
+      # from a hand-triggered run would let the ratchet's floor be set by
+      # whoever pressed the button, on whatever ref they chose, which is exactly
+      # the hand-written floor the ratchet replaced.
+      - name: Report measured counts (measure-filter run)
+        if: inputs.measure-filter
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Measured under filter: $TEST_FILTER"
+          echo "Backend executed test count:      $BACKEND_COUNT"
+          echo "Frontend passed test count:       $FRONTEND_COUNT"
+          echo "No test-counts artifact was written by this run."
+          {
+            echo "### Measured test counts"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Filter | \`$TEST_FILTER\` |"
+            echo "| Backend (executed) | $BACKEND_COUNT |"
+            echo "| Frontend (passed) | $FRONTEND_COUNT |"
+            echo ""
+            echo "Set \`BOOTSTRAP_BACKEND_FLOOR\` / \`BOOTSTRAP_FRONTEND_FLOOR\` from these numbers"
+            echo "only when this run was on \`master\`. Never by arithmetic on the previous value."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       # The next run's floor. Written only when every gate above passed, because
       # this artifact is only ever read from a run whose conclusion was success --
       # publishing a count from a run that failed would let a broken run set the
       # bar. Uploaded on every branch: a PR's artifact is simply never selected,
       # since the lookup filters on branch=master.
+      #
+      # The recorded `filter` is what a later run compares against its own before
+      # trusting these counts; it is written from the same TEST_FILTER variable
+      # the test step used, so it cannot describe a run that measured something
+      # else.
       - name: Record test counts
+        if: ${{ !inputs.measure-filter }}
         shell: bash
         run: |
           set -euo pipefail
-          printf '{"backend": %s, "frontend": %s}\n' "$BACKEND_COUNT" "$FRONTEND_COUNT" > test-counts.json
+          jq -n \
+            --argjson backend "$BACKEND_COUNT" \
+            --argjson frontend "$FRONTEND_COUNT" \
+            --arg filter "$TEST_FILTER" \
+            '{backend: $backend, frontend: $frontend, filter: $filter}' > test-counts.json
           cat test-counts.json
 
       - name: Upload test counts
+        if: ${{ !inputs.measure-filter }}
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
         with:
           name: test-counts

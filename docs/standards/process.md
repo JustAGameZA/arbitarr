@@ -64,6 +64,28 @@ up without running. Both are ratcheted from the same master run, so the pair mov
 
 ---
 
+## Test categories
+
+Three xunit traits carve tests out of the merge path, and nothing else does. `Category=Timing`
+marks a test that asserts elapsed wall time; `Category=Load` marks one that asserts behaviour under
+deliberate contention; `Category=Quarantine` marks a known-flaky test that is not allowed to block
+merges. **A `Quarantine` trait must always be accompanied by a `Bead` trait matching
+`^arb-[a-z0-9]{3,}$`**, and `Arbitarr.Architecture.Tests` fails the build if one ever appears
+without it — quarantine is a tracked, visible exception with an owner, never a silent skip. Apply a
+trait to the narrowest thing that earns it: a class only when every fact in it is timing- or
+load-bound, otherwise the individual `[Fact]`s, so a mixed class keeps its deterministic tests in
+the merge path. The PR and master lanes run one identical filter,
+`Category!=Timing&Category!=Load&Category!=Quarantine` — identical because the floor a run is
+measured against must come from a run that measured the same set, which is also why the
+`test-counts` artifact records the `filter` it was produced under and a run whose filter differs
+falls back to the bootstrap constants with a loud notice rather than comparing two different
+suites. The nightly workflow (arb-rga.8) runs the suite **unfiltered**, so nothing tagged here
+stops being run; it stops being run *on the merge path*. There are no automatic retries in any
+lane — quarantine-with-a-bead is the only sanctioned way for a flaky test to stop blocking merges.
+See [ADR 0011](../adr/0011-test-strategy-lanes-isolation-quarantine.md).
+
+---
+
 ## Non-vacuous assertions
 
 **Every "secret must not appear in X" assertion needs a positive control.**
