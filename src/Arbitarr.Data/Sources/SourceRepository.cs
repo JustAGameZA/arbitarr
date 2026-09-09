@@ -38,6 +38,28 @@ public sealed class SourceRepository
     public static string ApiKeySettingName(long sourceId) => $"source:{sourceId}:api_key";
 
     /// <summary>
+    /// The <see cref="Entities.Source.Kind"/> value for an NZBHydra2 source row.
+    ///
+    /// <para>arb-pn5: lives here, in <c>Arbitarr.Data</c>, rather than in
+    /// <c>Arbitarr.Host.Sources.SourceSeeder</c> (its previous home) because <see cref="ValidateKind"/>
+    /// needs it too and <c>Arbitarr.Api</c> must not reference <c>Arbitarr.Host</c> — ADR 0001's
+    /// composition-root rule runs the other way (<c>Host</c> depends on <c>Api</c>, never the
+    /// reverse). <c>Arbitarr.Data</c> is the one project both <c>Api</c> and <c>Host</c> already
+    /// reference, so this is the shared home that adds no new dependency edge. <c>SourceSeeder</c>
+    /// now reads this constant rather than defining its own.</para>
+    /// </summary>
+    public const string NzbHydraKind = "NzbHydra";
+
+    /// <summary>
+    /// Every <see cref="Entities.Source.Kind"/> value the running system can actually resolve into a
+    /// search source. <see cref="ValidateKind"/> rejects anything outside this set so a casing
+    /// mismatch (<c>"nzbhydra"</c>, <c>"NZBHYDRA"</c>) is caught at write time with a 400 instead of
+    /// being stored, listed, and silently never matched by <c>SourceSeeder</c>'s ordinal comparison
+    /// (arb-pn5) or any future resolver that follows the same pattern.
+    /// </summary>
+    public static readonly IReadOnlyCollection<string> KnownKinds = new[] { NzbHydraKind };
+
+    /// <summary>
     /// Validates and inserts a new source. Rejects a non-absolute/non-http(s) <paramref name="baseUrl"/>
     /// and a <paramref name="displayName"/> that collides (ordinal, case-insensitive) with an existing
     /// source — both are AC24 rejections, not clamps. If <paramref name="apiKey"/> is supplied it is
@@ -234,11 +256,28 @@ public sealed class SourceRepository
         }
     }
 
+    /// <summary>
+    /// arb-pn5: rejects any <paramref name="kind"/> that is not exactly one of <see cref="KnownKinds"/>.
+    ///
+    /// <para>Matched by exact, ordinal name against the known set — the same CLAUDE.md §3 posture as
+    /// enum parsing from the wire: no case-insensitive accept-and-normalise, because that would still
+    /// let a caller believe <c>"nzbhydra"</c> and <c>"NzbHydra"</c> are the same input rather than
+    /// telling them the one spelling that is actually resolved. Before this method existed, a source
+    /// created with <c>kind: "nzbhydra"</c> was stored and listed successfully, but
+    /// <c>SourceSeeder</c>'s <c>s.Kind == NzbHydraKind</c> ordinal comparison never matched it, so it
+    /// was silently never resolved into the search pipeline — no error anywhere.</para>
+    /// </summary>
     private static void ValidateKind(string kind)
     {
         if (string.IsNullOrWhiteSpace(kind))
         {
             throw new SourceValidationException("Source kind must not be empty.");
+        }
+
+        if (!KnownKinds.Contains(kind, StringComparer.Ordinal))
+        {
+            throw new SourceValidationException(
+                $"'{kind}' is not a known source kind. Accepted value(s): {string.Join(", ", KnownKinds)}.");
         }
     }
 
