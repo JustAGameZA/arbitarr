@@ -1,4 +1,4 @@
-﻿using Arbitarr.Core.Sources;
+using Arbitarr.Core.Sources;
 using Arbitarr.Data.Entities;
 using Arbitarr.Data.Sources;
 using Microsoft.AspNetCore.Builder;

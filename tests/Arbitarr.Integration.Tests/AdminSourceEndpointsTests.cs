@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using System.Net.Http.Json;
 using Arbitarr.Api.Admin;
 using Arbitarr.Core.Settings;
