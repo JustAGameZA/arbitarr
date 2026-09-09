@@ -62,19 +62,25 @@ const STUB_BASE_URL = 'http://stub-upstream:5100';
 const STUB_MISMATCHED_BASE_URL = 'http://stub-upstream-alias:5100';
 
 /**
- * A query text used ONLY by the origin-mismatch test, and by both halves of it.
+ * Query-text PREFIX for the origin-mismatch test. Each half appends a fresh id: the two halves
+ * must NOT share a query text, and an earlier revision of this file got that exactly backwards.
  *
  * PaginationSnapshotService caches a materialised result set for 300s keyed on
  * searchType/type/protocol/q/categories/ids -- with no source identity in the key
- * (ComputeSnapshotToken). So repointing the source and re-running the SAME q as an earlier
- * test would return that earlier snapshot rather than querying the repointed source at all.
- * A query text unique to this test guarantees a fresh materialisation on its first call, and
- * using it for both halves keeps the pair honest.
+ * (ComputeSnapshotToken, PaginationSnapshotService.cs:206) -- and QuerySnapshotStore persists it
+ * in the database, so it survives the container restart the repoint requires. Reusing one q
+ * across the repoint therefore replays the pre-repoint snapshot: the guard never runs, the
+ * upstream is never called, and the test reports the cache's two rows. That is not hypothetical
+ * -- it is what CI returned (expected 0, received 2) when both halves shared a single q.
  *
- * The stub answers every search with the same fixtures regardless of q, so this changes what
- * is cached, not what comes back.
+ * A unique suffix per call is what forces a real materialisation each time. The prefix is kept
+ * only so both calls stay greppable as this test's, and it is unique to this test so no OTHER
+ * test's snapshot can be replayed into it either.
+ *
+ * The stub answers every search with the same fixtures regardless of q, so this changes what is
+ * cached, not what comes back.
  */
-const MISMATCH_QUERY = 'origin-guard-probe';
+const MISMATCH_QUERY_PREFIX = 'origin-guard-probe';
 
 test('the container answers /health', async ({ request }) => {
   const response = await request.get('/health');
@@ -287,17 +293,12 @@ test('items whose link origin differs from the source base URL are dropped', asy
   );
   expect(source, 'the golden-path source must exist before it can be repointed').toBeTruthy();
 
-  // POSITIVE CONTROL, run here under THIS test's own query text rather than inherited from the
-  // earlier two-row test. Both halves must use the SAME q, and it must not be the q that test
-  // used: PaginationSnapshotService keys its 300s snapshot on
-  // searchType/type/protocol/q/categories/ids and NOT on the source set
-  // (ComputeSnapshotToken, PaginationSnapshotService.cs:206). Reusing q='example' would serve
-  // the pre-repoint snapshot straight back, so the guard would never run and this test would
-  // pass while proving nothing. The missing source identity in that key is a product issue,
-  // filed separately; this test must simply not depend on it.
+  // POSITIVE CONTROL, under a query text no search has used before -- see
+  // MISMATCH_QUERY_PREFIX for why the two halves must never share one.
+  const matchedQuery = `${MISMATCH_QUERY_PREFIX}-matched-${randomUUID()}`;
   const beforeRepoint = await request.get('/api/admin/search', {
     headers: { [ADMIN_KEY_HEADER]: ADMIN_KEY },
-    params: { q: MISMATCH_QUERY },
+    params: { q: matchedQuery },
   });
   expect(beforeRepoint.status(), await beforeRepoint.text()).toBe(200);
   const before: { title: string }[] = (await beforeRepoint.json()).releases;
@@ -320,15 +321,17 @@ test('items whose link origin differs from the source base URL are dropped', asy
   // after a restart -- exactly as the original add did.
   await restartAppContainer();
 
+  const mismatchedQuery = `${MISMATCH_QUERY_PREFIX}-mismatched-${randomUUID()}`;
   const response = await request.get('/api/admin/search', {
     headers: { [ADMIN_KEY_HEADER]: ADMIN_KEY },
-    params: { q: MISMATCH_QUERY },
+    params: { q: mismatchedQuery },
   });
   expect(response.status(), await response.text()).toBe(200);
 
-  // Reachable, identical fixtures, foreign origin: every item is dropped by the guard. The
-  // ONLY thing that changed since the two-row control above is the source's base URL -- same
-  // query text, same stub, same container.
+  // Reachable, identical fixtures, foreign origin: every item is dropped by the guard. The only
+  // thing that changed since the two-row control above is the source's base URL -- same stub,
+  // same container, same fixtures. The stub ignores q entirely, which is exactly what lets the
+  // two halves use different query texts without changing what is being compared.
   const releases: { title: string }[] = (await response.json()).releases;
   expect(releases).toHaveLength(0);
 });
