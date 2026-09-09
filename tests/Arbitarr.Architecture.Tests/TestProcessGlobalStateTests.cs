@@ -26,6 +26,14 @@ namespace Arbitarr.Architecture.Tests;
 /// This is a ban with NO allow-list: a test that genuinely needs one of these has a design problem
 /// an exemption would hide.
 ///
+/// <para><b>Scope: TEST IL only.</b> This scan covers the assemblies named below and nothing else,
+/// so it is not a guarantee that no process-global clear runs during a test run. Production
+/// <c>Arbitarr.Data.Backup.RestoreService</c> still calls
+/// <see cref="Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools"/> deliberately — it has to, to
+/// drop every handle before swapping the database file — and a test that drives the restore path
+/// therefore reaches it at runtime. Making that safe under parallel execution is arb-rga.4's
+/// problem, not something this ban can express.</para>
+///
 /// <para><b>Why the assemblies are found by PATH.</b> Adding the test projects as ProjectReferences
 /// here fails with NU1605, so the scan opens each test assembly's build output directly with
 /// <see cref="ModuleDefinition.ReadModule(string)"/>. That makes the scan depend on those

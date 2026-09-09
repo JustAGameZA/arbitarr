@@ -57,13 +57,22 @@ public sealed class ConcurrencyTests : IDisposable
 
     public ConcurrencyTests()
     {
-        // This class reaches its one file through three DIFFERENT connection strings: the
-        // fixture's own (used by EF in CreateContext), the one SqliteConnectionOptions builds
-        // (which adds Cache), and the bare "Data Source=" the misconfigured-journal-mode proof
-        // opens by hand. Pools are keyed by the FULL string, so each is a separate pool: clearing
-        // only the fixture's would leave two sets of handles open, and the file delete that
-        // follows would go back to failing on Windows. Registering the other two here is what
-        // makes the fixture's cleanup actually cover this class.
+        // This class reaches its one file through three connection-string EXPRESSIONS that resolve
+        // to TWO distinct pools. Pools are keyed by the full string, so what matters is the string
+        // each one renders, not how it is spelled:
+        //
+        //   * SqliteConnectionOptions.ToConnectionString() sets Cache = Default, and the builder
+        //     EMITS that ("...;Cache=Default") rather than eliding it as a default. That is a
+        //     genuinely separate pool, and it is the one this registration exists for.
+        //   * MisconfiguredConnectionString ($"Data Source={path}") renders byte-identically to the
+        //     fixture's own SqliteConnectionStringBuilder{DataSource=path}.ToString(), so it names
+        //     the pool the fixture already clears. Measured, not assumed, in a throwaway project
+        //     outside the repository (CLAUDE.md §4).
+        //
+        // The second registration is therefore a no-op TODAY and is kept deliberately: it is
+        // cheap, and it keeps this class covered if either form later grows a setting that makes
+        // them diverge — a path containing a SPACE already does, since the builder quotes it and
+        // the interpolated form does not.
         _database.AlsoClearPoolFor(ConnectionOptions.ToConnectionString());
         _database.AlsoClearPoolFor(MisconfiguredConnectionString);
     }
