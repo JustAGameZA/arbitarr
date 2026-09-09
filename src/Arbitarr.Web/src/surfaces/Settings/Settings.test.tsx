@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -77,7 +77,13 @@ describe('Settings', () => {
     expect(screen.getByText('The ring buffer is sized once at startup.')).toBeInTheDocument();
     expect(screen.getByText('RecentSearches')).toBeInTheDocument();
     expect(screen.getByText(/143 rows today/)).toBeInTheDocument();
-    expect(screen.getByText('Restart required')).toBeInTheDocument();
+    // Scoped to this setting's own row (arb-yeg): the Sources section below
+    // renders its own "Restart required" badge with the same wording once
+    // that convention is shared, so a bare screen.getByText would ambiguously
+    // match either and fail on the duplicate.
+    const recentLogSetting = screen.getByText('Recent search log size').closest('div');
+    expect(recentLogSetting).not.toBeNull();
+    expect(within(recentLogSetting as HTMLElement).getByText('Restart required')).toBeInTheDocument();
   });
 
   it('sends an out-of-bounds value to the server and shows its rejection unchanged', async () => {

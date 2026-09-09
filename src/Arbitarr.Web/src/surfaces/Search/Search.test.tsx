@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -71,13 +71,53 @@ describe('Search', () => {
   });
 
   it('renders its title and searches nothing until asked', () => {
-    const api = mockApi({ '/api/admin/search': { body: response } });
+    const api = mockApi({
+      '/api/admin/search': { body: response },
+      // Mounting also fires the no-sources hint's own config read (F-020b);
+      // mocked here so this test's assertion stays about the search call.
+      '/api/config/effective': { body: { nzbHydraConfigured: true } },
+    });
     renderSurface(<SearchPage />);
 
     expect(screen.getByRole('heading', { level: 1, name: 'Search' })).toBeInTheDocument();
     expect(screen.getByText('Enter a query above to search.')).toBeInTheDocument();
     // Mounting the surface must not fire an upstream search on its own.
-    expect(api.calls).toHaveLength(0);
+    expect(api.callsTo('/api/admin/search')).toHaveLength(0);
+  });
+
+  describe('the no-sources hint (F-020b)', () => {
+    it('shows a hint linking to Settings > Sources when no source is configured', async () => {
+      mockApi({
+        '/api/admin/search': { body: response },
+        '/api/config/effective': { body: { nzbHydraConfigured: false } },
+      });
+      renderSurface(<SearchPage />);
+
+      expect(
+        await screen.findByText(/No sources configured\. Add an NZBHydra2 URL and API key/),
+      ).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Settings > Sources' })).toHaveAttribute(
+        'href',
+        '/settings',
+      );
+    });
+
+    // Positive control: the same assertion that must find nothing once a
+    // source IS configured, proving the hint is genuinely conditional and not
+    // just always-absent copy that happened to satisfy the test above.
+    it('does not show the hint when a source is configured', async () => {
+      const api = mockApi({
+        '/api/admin/search': { body: response },
+        '/api/config/effective': { body: { nzbHydraConfigured: true } },
+      });
+      renderSurface(<SearchPage />);
+
+      // Wait for the effective-config fetch itself to be made -- proof the
+      // query actually settled, not just that the initial render passed --
+      // before asserting the hint stays absent.
+      await waitFor(() => expect(api.callsTo('/api/config/effective')).toHaveLength(1));
+      expect(screen.queryByText(/No sources configured/)).toBeNull();
+    });
   });
 
   it('renders results and provenance from the fetched data', async () => {

@@ -298,7 +298,7 @@ export default function RulesPage() {
               });
             }}
           >
-            <label className={styles.field}>
+            <label className={`${styles.field} ${local.testTitleField}`}>
               Release title
               <input
                 className={styles.input}

@@ -345,7 +345,17 @@ export function SourcesSection() {
 
   return (
     <section className={styles.panel}>
-      <h2 className={styles.panelHeading}>Sources</h2>
+      <div className={`${styles.panelHeading} ${local.headingRow}`}>
+        <h2 className={local.headingText}>Sources</h2>
+        {/* Same convention as the Maintenance interval setting's badge
+            (Settings.tsx's SettingRow, entry.requiresRestart): sources are
+            edited here but only take effect on the next restart, so the
+            badge matches the copy directly below it rather than introducing
+            a second wording for the same fact. A sibling of the <h2>, not a
+            child -- nesting it inside would fold "Restart required" into the
+            heading's accessible name alongside "Sources". */}
+        <span className={`${styles.badge} ${styles.badgeWarn}`}>Restart required</span>
+      </div>
       <div className={styles.panelBody}>
         <p className={styles.muted}>
           Indexer sources Arbitarr searches. These are stored in the database and take effect on
