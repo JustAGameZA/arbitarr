@@ -19,175 +19,275 @@ on:
         type: boolean
         default: false
 
+# The category filter, written ONCE at workflow level and reused by every matrix
+# job, by the measure-filter report and by the recorded artifact. Keeping it in
+# one variable is what makes "the PR lane and the master lane run an identical
+# filter" true by construction rather than by strings being kept in step -- and
+# it is what stops the artifact ever recording a filter the run did not use.
+# Splitting the single test step into a matrix made this MORE load-bearing, not
+# less: three jobs now read it, and a per-job copy would let one group drift.
+# Timing/Load/Quarantine are excluded here and run unfiltered nightly
+# (arb-rga.8); see docs/adr/0011 and docs/standards/process.md.
+env:
+  TEST_FILTER: "Category!=Timing&Category!=Load&Category!=Quarantine"
+
 jobs:
-  build-test:
-    name: Build & test
+  # --------------------------------------------------------------------------
+  # prep: restore + build the whole solution ONCE, and publish the test output
+  # for the matrix to consume.
+  #
+  # Building the solution here rather than per matrix group is not an
+  # optimisation, it is a correctness requirement. The Mono.Cecil IL scan in
+  # Arbitarr.Architecture.Tests (TestProcessGlobalStateTests) reads SIBLING
+  # build output: it walks from its own output directory to
+  # tests/*/bin/<config>/<tfm>/*.dll and needs all TEN test assemblies present
+  # in the SAME configuration and TFM (Ai, Api, Architecture, Core.Identity,
+  # Core, Data, Host, Integration, Media, Sources.NzbHydra). A group that built
+  # only its own projects would leave the others missing and the scan fails
+  # LOUDLY naming them -- deliberately, so a missing assembly can never pass
+  # vacuously over an empty set (CLAUDE.md section 4). See arb-rga.3 / PR #147.
+  # --------------------------------------------------------------------------
+  prep:
+    name: Build (prep)
     runs-on: ubuntu-latest
-    # contents: read is inherited from the workflow-level block above and repeated
-    # here because naming a job-level `permissions` replaces it rather than adding
-    # to it. actions: read is what lets the floor step query the Actions API for
-    # master's last successful run and download its test-counts artifact.
-    permissions:
-      contents: read
-      actions: read
-    env:
-      DOTNET_GCHeapHardLimit: "0x80000000"
-      # Bootstrap floors, used ONLY when no test-counts artifact can be found on
-      # master (first run after this lands, or the artifact has expired). These are
-      # the numbers the master push run for the #108 merge (run 34197814222)
-      # printed. They are the one place in the ratchet where a count is written by
-      # hand: never edit them to anything but a number a master push run actually
-      # printed -- a pull_request run measures the PR, not master.
-      BOOTSTRAP_BACKEND_FLOOR: "1189"
-      BOOTSTRAP_FRONTEND_FLOOR: "296"
-      # The category filter, written ONCE and reused by the test step, the floor
-      # comparison and the recorded artifact. Keeping it in one variable is what
-      # makes "the PR lane and the master lane run an identical filter" true by
-      # construction rather than by two strings being kept in step -- and it is
-      # what stops the artifact ever recording a filter the run did not use.
-      # Timing/Load/Quarantine are excluded here and run unfiltered nightly
-      # (arb-rga.8); see docs/adr/0011 and docs/standards/process.md.
-      TEST_FILTER: "Category!=Timing&Category!=Load&Category!=Quarantine"
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      # ----------------------------------------------------------------------
-      # The test-count floor is a ratchet, not a committed file. The floor is
-      # whatever master last measured: every run uploads a test-counts artifact,
-      # and every run resolves its floor from the latest successful `Build & test`
-      # run on master OTHER THAN ITSELF. Selecting "other than itself" is what
-      # makes a push to master enforce the ratchet too -- a shrink merged by force
-      # is still caught, because master is compared against its own predecessor
-      # rather than against nothing.
-      #
-      # A committed floor file made every two test-adding PRs conflict by
-      # construction, and the "measurements, never arithmetic" rule then forced a
-      # full re-run of both suites after each rebase. The ratchet keeps the
-      # guarantee (a suite cannot silently shrink) with no file to conflict on.
-      # ----------------------------------------------------------------------
-      - name: Resolve test-count floors from master
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-
-          backend_floor="$BOOTSTRAP_BACKEND_FLOOR"
-          frontend_floor="$BOOTSTRAP_FRONTEND_FLOOR"
-          floor_source="bootstrap constant"
-
-          # `status=success` is the conclusion, so a run that failed for any reason
-          # (including on its own floor step) cannot become the floor. Ask for a
-          # handful and skip this run's own id: on a push to master, THIS run is a
-          # master run and would otherwise be compared against itself.
-          api_path="/repos/${GITHUB_REPOSITORY}/actions/workflows/build-test.yml/runs"
-          runs_json=$(gh api "${api_path}?branch=master&status=success&per_page=10" 2>/dev/null || echo '')
-
-          run_id=''
-          if [ -n "$runs_json" ]; then
-            jq_filter='[.workflow_runs[]? | select((.id | tostring) != $self)] | first | .id // empty'
-            run_id=$(printf '%s' "$runs_json" | jq -r --arg self "$GITHUB_RUN_ID" "$jq_filter")
-          fi
-
-          if [ -n "$run_id" ]; then
-            # download-artifact exits non-zero when the run has no such artifact
-            # (an older master run from before this ratchet landed, or an expired
-            # one). That is the bootstrap case, not a failure.
-            if gh run download "$run_id" --repo "$GITHUB_REPOSITORY" \
-                 --name test-counts --dir /tmp/floor >/dev/null 2>&1 \
-               && [ -f /tmp/floor/test-counts.json ]; then
-              b=$(jq -r '.backend // empty' /tmp/floor/test-counts.json)
-              f=$(jq -r '.frontend // empty' /tmp/floor/test-counts.json)
-              # The filter the artifact was MEASURED under. An artifact written
-              # before the filter field existed has none, which is treated
-              # exactly like a mismatch -- an unlabelled count cannot be shown to
-              # cover the same set of tests as this run, and assuming it does is
-              # the silent apples-to-oranges comparison this field exists to
-              # prevent.
-              artifact_filter=$(jq -r '.filter // empty' /tmp/floor/test-counts.json)
-
-              # Both counts must be present and numeric, or neither is used: a
-              # half-read artifact would silently drop one suite's floor to the
-              # bootstrap constant while looking like it had ratcheted.
-              if ! printf '%s' "$b" | grep -qE '^[0-9]+$' || ! printf '%s' "$f" | grep -qE '^[0-9]+$'; then
-                echo "test-counts artifact from run ${run_id} is unreadable; falling back to bootstrap constants." >&2
-              elif [ "$artifact_filter" != "$TEST_FILTER" ]; then
-                # Loud on purpose: ::notice:: surfaces in the run summary rather
-                # than only in the log body. A floor carried across a filter
-                # change would compare this run's count against a count of a
-                # different set of tests, which either blocks a correct PR or
-                # hides a real shrink.
-                echo "::notice title=Test-count floor fell back to bootstrap constants::The test-counts artifact from master run ${run_id} was measured under filter '${artifact_filter:-(none recorded)}', but this run uses filter '${TEST_FILTER}'. The two counts are not comparable, so the bootstrap constants (backend ${BOOTSTRAP_BACKEND_FLOOR}, frontend ${BOOTSTRAP_FRONTEND_FLOOR}) are used instead. Once master has run under the new filter, update the bootstrap constants from a number a master run actually printed (run this workflow via workflow_dispatch with measure-filter=true)."
-              else
-                backend_floor="$b"
-                frontend_floor="$f"
-                floor_source="master run ${run_id}"
-              fi
-            fi
-          fi
-
-          echo "BACKEND_FLOOR=$backend_floor" >> "$GITHUB_ENV"
-          echo "FRONTEND_FLOOR=$frontend_floor" >> "$GITHUB_ENV"
-          echo "FLOOR_SOURCE=$floor_source" >> "$GITHUB_ENV"
-          echo "Test-count floor source: $floor_source (backend: $backend_floor, frontend: $frontend_floor)"
 
       - name: Setup .NET
         uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
           dotnet-version: "10.0.x"
 
+      # There is no Directory.Packages.props in this repository (package
+      # versions are declared per-csproj, not centrally managed), so the key
+      # hashes the csproj files and any *.props that exist rather than naming a
+      # central manifest that is not there. If central package management is
+      # adopted later, Directory.Packages.props is matched by **/*.props already.
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/*.props') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
       - name: Restore
         run: dotnet restore Arbitarr.sln
 
+      # -m:1 stays. It is a memory bound, not a speed choice: parallel project
+      # builds on a 2-core runner drove the compiler into swap. See
+      # CONTRIBUTING.md's Build & test description.
       - name: Build (sequential)
         run: dotnet build Arbitarr.sln -c Release -m:1 --no-restore
 
-      - name: Test
-        run: >-
-          dotnet test Arbitarr.sln -c Release --no-build
-          --filter "$TEST_FILTER"
-          --logger trx --results-directory ./TestResults
+      - name: Upload test build output
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
+        with:
+          name: test-build
+          path: tests/*/bin/Release/net10.0/**
+          if-no-files-found: error
+          retention-days: 1
 
-      - name: Enforce test-count floor
+  # --------------------------------------------------------------------------
+  # backend: three runners, one per assembly group, all consuming prep's build
+  # output. Assemblies WITHIN a group run sequentially (a loop), so the group is
+  # the unit of parallelism and nothing new races inside a job.
+  #
+  # Group A is Integration alone: it is by far the longest assembly and it is
+  # the only one holding several live ASP.NET hosts at once (arb-rga.4 sets
+  # maxParallelThreads 4 there).
+  # Group C carries Architecture, which is why every group restores the FULL
+  # test output rather than only its own -- see the prep job's comment.
+  # --------------------------------------------------------------------------
+  backend:
+    name: Backend (${{ matrix.group }})
+    runs-on: ubuntu-latest
+    needs: prep
+    strategy:
+      # A red group must not cancel the others: the gate sums executed= across
+      # every group's trx, and a cancelled sibling would report a shrunken count
+      # on top of the real failure, making the floor look breached when it was
+      # never measured at all.
+      fail-fast: false
+      matrix:
+        include:
+          - group: A
+            assemblies: "Arbitarr.Integration.Tests"
+            # MEASURED, not assumed. arb-rga.6's third comment asks this job to
+            # decide the Integration heap cap rather than inherit the 2 GB one.
+            # The time -v output below reports this group's actual peak RSS in
+            # the run log and the step summary, and the PR body records it.
+            # Integration is the only group that can hold four live ASP.NET
+            # hosts concurrently (arb-rga.4 sets maxParallelThreads 4 there);
+            # the 2 GB cap was set for a single-process whole-solution run that
+            # never did. A cap merely close to the working set shows up as
+            # GC-thrash or an OOM, i.e. a slow or flaky Integration job -- a
+            # budget problem wearing a test problem's face, and the expensive
+            # kind to diagnose. Leaving it unset makes the runner's own memory
+            # the bound, which is the honest limit. B and C keep 2 GB: nothing
+            # in them holds a live host.
+            heap-limit: ""
+          - group: B
+            assemblies: "Arbitarr.Data.Tests Arbitarr.Api.Tests Arbitarr.Core.Tests"
+            heap-limit: "0x80000000"
+          - group: C
+            assemblies: "Arbitarr.Host.Tests Arbitarr.Media.Tests Arbitarr.Ai.Tests Arbitarr.Core.Identity.Tests Arbitarr.Sources.NzbHydra.Tests Arbitarr.Architecture.Tests"
+            heap-limit: "0x80000000"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: "10.0.x"
+
+      # upload-artifact v4 roots the archive at the least common ancestor of the
+      # uploaded paths, which for `tests/*/bin/...` is `tests/`. So the archive
+      # holds `Arbitarr.Api.Tests/bin/...`, NOT `tests/Arbitarr.Api.Tests/...`,
+      # and it must be unpacked INTO tests/ to land where the Cecil scan and the
+      # dll paths below expect it.
+      #
+      # download-artifact v7+ runs on node24 and needs runner >= 2.327.1. Every job
+      # here is `runs-on: ubuntu-latest` (GitHub-hosted), which satisfies that; it
+      # is called out because moving any of these jobs to a self-hosted runner
+      # would break the download rather than the thing that was changed.
+      - name: Download test build output
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: test-build
+          path: tests
+
+      # The Cecil scan fails loudly on a missing sibling, but it only runs in
+      # group C. A truncated artifact would otherwise let A and B run a smaller
+      # set of tests and report a smaller executed= sum, which the gate reads as
+      # a floor breach in the wrong place -- or, if the floor happened to be low
+      # enough, as a pass. Assert the precondition in every group, where the
+      # failure names the actual cause instead of a count.
+      - name: Assert all ten test assemblies were restored
         shell: bash
         run: |
           set -euo pipefail
 
-          floor="$BACKEND_FLOOR"
-
-          total=0
-          for trx in ./TestResults/*.trx; do
-            [ -f "$trx" ] || continue
-            # Each .trx's <ResultSummary><Counters .../> element carries both "total" (includes
-            # skipped tests) and "executed" (tests that actually ran). Use "executed" so a
-            # skipped test can't be counted toward the floor without actually running.
-            count=$(grep -o 'executed="[0-9]*"' "$trx" | head -1 | grep -o '[0-9]*')
-            count=${count:-0}
-            total=$((total + count))
+          missing=0
+          for a in Arbitarr.Ai.Tests Arbitarr.Api.Tests Arbitarr.Architecture.Tests \
+                   Arbitarr.Core.Identity.Tests Arbitarr.Core.Tests Arbitarr.Data.Tests \
+                   Arbitarr.Host.Tests Arbitarr.Integration.Tests Arbitarr.Media.Tests \
+                   Arbitarr.Sources.NzbHydra.Tests; do
+            dll="tests/${a}/bin/Release/net10.0/${a}.dll"
+            if [ ! -f "$dll" ]; then
+              echo "BLOCKED: missing test assembly ${dll} from the test-build artifact." >&2
+              missing=1
+            fi
           done
 
-          echo "Executed test count: $total (floor: $floor)"
-          echo "Backend floor source: $FLOOR_SOURCE"
-          # Recorded here rather than at the end of the job so the count is written
-          # even if a later step fails: the ratchet's input is what this run
-          # measured, not whether every other gate happened to pass.
-          echo "BACKEND_COUNT=$total" >> "$GITHUB_ENV"
-          if [ "$total" -lt "$floor" ]; then
-            echo "BLOCKED: executed test count ($total) is below master's last measured count ($floor, from $FLOOR_SOURCE)." >&2
+          if [ "$missing" -ne 0 ]; then
+            echo "" >&2
+            echo "All ten test assemblies must be present in the same configuration and TFM:" >&2
+            echo "Arbitarr.Architecture.Tests' Mono.Cecil IL scan reads sibling build output and" >&2
+            echo "fails on a missing assembly rather than passing vacuously over a smaller set." >&2
             exit 1
           fi
 
-      # ----------------------------------------------------------------------
-      # Frontend (src/Arbitarr.Web). These steps sit AFTER the .NET test-count
-      # floor and BEFORE the tree-wide secret/topology guard deliberately: the
-      # backend floor above parses executed="N" out of .trx, the frontend floor
-      # below parses numPassedTests out of the Vitest JSON report. Two counts,
-      # two parsers, so neither suite's count can mask a collapse in the other.
-      # Both are ratcheted against the SAME master run, so the pair moves
-      # together and one suite cannot be ratcheted from a run that never
-      # measured the other.
-      # ----------------------------------------------------------------------
+          echo "All ten test assemblies present under tests/*/bin/Release/net10.0/."
+
+      # The built dll is run DIRECTLY, not via the csproj. `dotnet test <csproj>
+      # --no-build` still evaluates the project and needs obj/project.assets.json,
+      # which the artifact does not carry (only bin/ is uploaded). Verified
+      # locally that dll mode reports counts identical to csproj mode under this
+      # filter: Data 218, Api 181, Core 384 -- the same numbers #154 measured.
+      - name: Test (group ${{ matrix.group }})
+        shell: bash
+        env:
+          GROUP_ASSEMBLIES: ${{ matrix.assemblies }}
+          GROUP_HEAP_LIMIT: ${{ matrix.heap-limit }}
+        run: |
+          set -euo pipefail
+
+          # An empty DOTNET_GCHeapHardLimit is not the same as an unset one: the
+          # runtime parses the value, and an empty string is not a valid hex
+          # limit. Export it only when the group actually sets one, so group A
+          # really runs uncapped rather than with a malformed cap.
+          if [ -n "$GROUP_HEAP_LIMIT" ]; then
+            export DOTNET_GCHeapHardLimit="$GROUP_HEAP_LIMIT"
+            echo "DOTNET_GCHeapHardLimit: $GROUP_HEAP_LIMIT"
+          else
+            echo "DOTNET_GCHeapHardLimit: (unset -- runner memory is the bound)"
+          fi
+
+          mkdir -p ./TestResults
+
+          for a in $GROUP_ASSEMBLIES; do
+            dll="tests/${a}/bin/Release/net10.0/${a}.dll"
+            echo "::group::${a}"
+            # /usr/bin/time -v reports the max RSS of the process it waited for,
+            # which for `dotnet test` is the largest single testhost. That is the
+            # number arb-rga.6's third comment asks to capture rather than reason
+            # about; it is printed per assembly and read off the run log.
+            /usr/bin/time -v -o "./TestResults/${a}.time" \
+              dotnet test "$dll" \
+                --filter "$TEST_FILTER" \
+                --logger trx --results-directory ./TestResults
+            grep -E 'Maximum resident set size|Elapsed \(wall clock\)' "./TestResults/${a}.time" || true
+            echo "::endgroup::"
+          done
+
+      - name: Report peak memory (group ${{ matrix.group }})
+        if: always()
+        shell: bash
+        env:
+          GROUP_HEAP_LIMIT: ${{ matrix.heap-limit }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### Backend group ${{ matrix.group }} peak memory"
+            echo ""
+            echo "| Assembly | Max RSS (KB) | Wall clock |"
+            echo "|---|---|---|"
+            for f in ./TestResults/*.time; do
+              [ -f "$f" ] || continue
+              a=$(basename "$f" .time)
+              rss=$(grep -oE 'Maximum resident set size \(kbytes\): [0-9]+' "$f" | grep -oE '[0-9]+$' || echo '?')
+              wall=$(grep -oE 'Elapsed .wall clock. time .*: .*' "$f" | sed 's/.*: //' || echo '?')
+              echo "| $a | $rss | $wall |"
+            done
+            echo ""
+            echo "Heap cap for this group: ${GROUP_HEAP_LIMIT:-(unset)}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Each group's trx go up under their own name; the gate downloads trx-*
+      # and sums executed= across all of them exactly as the single job did.
+      - name: Upload test results (group ${{ matrix.group }})
+        if: always()
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
+        with:
+          name: trx-${{ matrix.group }}
+          path: ./TestResults/*.trx
+          if-no-files-found: error
+          retention-days: 1
+
+  # --------------------------------------------------------------------------
+  # frontend: runs in parallel with prep and the backend matrix. It has no .NET
+  # dependency at all, so making it wait on the build was pure serialisation --
+  # it was only ever downstream because everything lived in one job.
+  #
+  # The floor is ENFORCED in the gate, not here. The floor value is resolved
+  # from master's test-counts artifact, which needs `actions: read`; keeping
+  # both enforcements in the one job that holds that permission avoids widening
+  # this job's token, and keeps "both floors ratchet from the SAME master run"
+  # true by construction rather than by two jobs independently resolving what
+  # they hope is the same run id. The count reaches the gate as a job output.
+  # --------------------------------------------------------------------------
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    outputs:
+      count: ${{ steps.count.outputs.count }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
       - name: Setup Node
         uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
@@ -327,13 +427,12 @@ jobs:
         working-directory: src/Arbitarr.Web
         run: npm test
 
-      - name: Enforce frontend test-count floor
+      - name: Read frontend test count
+        id: count
         shell: bash
         working-directory: src/Arbitarr.Web
         run: |
           set -euo pipefail
-
-          floor="$FRONTEND_FLOOR"
 
           report="vitest-report.json"
           if [ ! -f "$report" ]; then
@@ -351,13 +450,23 @@ jobs:
             exit 1
           fi
 
-          echo "Frontend passed test count: $total (floor: $floor)"
-          echo "Frontend floor source: $FLOOR_SOURCE"
-          echo "FRONTEND_COUNT=$total" >> "$GITHUB_ENV"
-          if [ "$total" -lt "$floor" ]; then
-            echo "BLOCKED: frontend passed test count ($total) is below master's last measured count ($floor, from $FLOOR_SOURCE)." >&2
-            exit 1
-          fi
+          echo "Frontend passed test count: $total"
+          echo "count=$total" >> "$GITHUB_OUTPUT"
+
+
+  # --------------------------------------------------------------------------
+  # guards: the tree-wide secret/topology sweep, on its own runner. It needs
+  # nothing but a checkout (it is git grep over the tracked tree), so hanging it
+  # off the build meant a ~10 s check waited minutes for a compiler it never
+  # used. Its position relative to the test steps carried no meaning -- it scans
+  # the tree, not the results.
+  # --------------------------------------------------------------------------
+  guards:
+    name: Guards
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Tree-wide secret/topology guard
         shell: bash
@@ -448,6 +557,236 @@ jobs:
           fi
 
           echo "Tree-wide secret/topology guard passed."
+
+  # --------------------------------------------------------------------------
+  # gate: the required check. Named EXACTLY `Build & test` so the existing
+  # branch-protection rule keeps matching and NO branch-protection edit is
+  # needed -- the job that carried this name before was the whole build, and the
+  # name is now carried by the job that aggregates it.
+  #
+  # `if: always()` is what lets this job run when a needed job failed, so it can
+  # report the failure as its own. That makes the explicit result check below
+  # THE load-bearing line of this workflow: with `always()`, this job runs
+  # regardless, and without that check it would happily succeed on top of a red
+  # matrix job. And a SKIPPED job -- which is what a needed job's failure would
+  # otherwise make this -- is treated by branch protection as a satisfied
+  # required check, not a failed one. So a gate that merely inherited its
+  # needs' status would let a red backend group merge. Every needed job's
+  # `result` must be `success` explicitly, and anything else fails this job.
+  # --------------------------------------------------------------------------
+  gate:
+    name: Build & test
+    runs-on: ubuntu-latest
+    needs: [prep, backend, frontend, guards]
+    if: always()
+    # contents: read is inherited from the workflow-level block above and repeated
+    # here because naming a job-level `permissions` replaces it rather than adding
+    # to it. actions: read is what lets the floor step query the Actions API for
+    # master's last successful run and download its test-counts artifact.
+    permissions:
+      contents: read
+      actions: read
+    env:
+      # Bootstrap floors, used ONLY when no test-counts artifact can be found on
+      # master (first run after this lands, or the artifact has expired). These are
+      # the numbers the master push run for the #108 merge (run 34197814222)
+      # printed. They are the one place in the ratchet where a count is written by
+      # hand: never edit them to anything but a number a master push run actually
+      # printed -- a pull_request run measures the PR, not master.
+      BOOTSTRAP_BACKEND_FLOOR: "1189"
+      BOOTSTRAP_FRONTEND_FLOOR: "296"
+      FRONTEND_COUNT: ${{ needs.frontend.outputs.count }}
+    steps:
+      # ----------------------------------------------------------------------
+      # THE load-bearing step. See the job comment above: `if: always()` means
+      # this job runs even when a needed job failed, and branch protection
+      # counts a skipped required check as satisfied. Neither of those is a bug
+      # to work around -- together they are the only way a single required-check
+      # name can speak for four jobs -- but they mean the aggregate verdict has
+      # to be computed here, explicitly, rather than inherited.
+      # ----------------------------------------------------------------------
+      - name: Require every needed job to have succeeded
+        shell: bash
+        env:
+          PREP_RESULT: ${{ needs.prep.result }}
+          BACKEND_RESULT: ${{ needs.backend.result }}
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+          GUARDS_RESULT: ${{ needs.guards.result }}
+        run: |
+          set -euo pipefail
+
+          fail=0
+          # `backend` is a matrix job: its aggregated `result` is `success` only
+          # when EVERY group succeeded, so one entry covers all three groups.
+          for pair in "prep:$PREP_RESULT" "backend:$BACKEND_RESULT" \
+                      "frontend:$FRONTEND_RESULT" "guards:$GUARDS_RESULT"; do
+            job="${pair%%:*}"
+            result="${pair##*:}"
+            echo "${job}: ${result}"
+            if [ "$result" != "success" ]; then
+              echo "BLOCKED: job '${job}' did not succeed (result: ${result})." >&2
+              fail=1
+            fi
+          done
+
+          if [ "$fail" -ne 0 ]; then
+            echo "" >&2
+            echo "This gate carries the required-check name 'Build & test' for the whole" >&2
+            echo "workflow. It must fail explicitly when any job it aggregates failed, was" >&2
+            echo "cancelled or was skipped -- branch protection treats a skipped check as" >&2
+            echo "satisfied, so an unchecked gate would let a red matrix job merge." >&2
+            exit 1
+          fi
+
+          echo "All aggregated jobs succeeded."
+
+      # ----------------------------------------------------------------------
+      # The test-count floor is a ratchet, not a committed file. The floor is
+      # whatever master last measured: every run uploads a test-counts artifact,
+      # and every run resolves its floor from the latest successful `Build & test`
+      # run on master OTHER THAN ITSELF. Selecting "other than itself" is what
+      # makes a push to master enforce the ratchet too -- a shrink merged by force
+      # is still caught, because master is compared against its own predecessor
+      # rather than against nothing.
+      #
+      # A committed floor file made every two test-adding PRs conflict by
+      # construction, and the "measurements, never arithmetic" rule then forced a
+      # full re-run of both suites after each rebase. The ratchet keeps the
+      # guarantee (a suite cannot silently shrink) with no file to conflict on.
+      # ----------------------------------------------------------------------
+      - name: Resolve test-count floors from master
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          backend_floor="$BOOTSTRAP_BACKEND_FLOOR"
+          frontend_floor="$BOOTSTRAP_FRONTEND_FLOOR"
+          floor_source="bootstrap constant"
+
+          # `status=success` is the conclusion, so a run that failed for any reason
+          # (including on its own floor step) cannot become the floor. Ask for a
+          # handful and skip this run's own id: on a push to master, THIS run is a
+          # master run and would otherwise be compared against itself.
+          api_path="/repos/${GITHUB_REPOSITORY}/actions/workflows/build-test.yml/runs"
+          runs_json=$(gh api "${api_path}?branch=master&status=success&per_page=10" 2>/dev/null || echo '')
+
+          run_id=''
+          if [ -n "$runs_json" ]; then
+            jq_filter='[.workflow_runs[]? | select((.id | tostring) != $self)] | first | .id // empty'
+            run_id=$(printf '%s' "$runs_json" | jq -r --arg self "$GITHUB_RUN_ID" "$jq_filter")
+          fi
+
+          if [ -n "$run_id" ]; then
+            # download-artifact exits non-zero when the run has no such artifact
+            # (an older master run from before this ratchet landed, or an expired
+            # one). That is the bootstrap case, not a failure.
+            if gh run download "$run_id" --repo "$GITHUB_REPOSITORY" \
+                 --name test-counts --dir /tmp/floor >/dev/null 2>&1 \
+               && [ -f /tmp/floor/test-counts.json ]; then
+              b=$(jq -r '.backend // empty' /tmp/floor/test-counts.json)
+              f=$(jq -r '.frontend // empty' /tmp/floor/test-counts.json)
+              # The filter the artifact was MEASURED under. An artifact written
+              # before the filter field existed has none, which is treated
+              # exactly like a mismatch -- an unlabelled count cannot be shown to
+              # cover the same set of tests as this run, and assuming it does is
+              # the silent apples-to-oranges comparison this field exists to
+              # prevent.
+              artifact_filter=$(jq -r '.filter // empty' /tmp/floor/test-counts.json)
+
+              # Both counts must be present and numeric, or neither is used: a
+              # half-read artifact would silently drop one suite's floor to the
+              # bootstrap constant while looking like it had ratcheted.
+              if ! printf '%s' "$b" | grep -qE '^[0-9]+$' || ! printf '%s' "$f" | grep -qE '^[0-9]+$'; then
+                echo "test-counts artifact from run ${run_id} is unreadable; falling back to bootstrap constants." >&2
+              elif [ "$artifact_filter" != "$TEST_FILTER" ]; then
+                # Loud on purpose: ::notice:: surfaces in the run summary rather
+                # than only in the log body. A floor carried across a filter
+                # change would compare this run's count against a count of a
+                # different set of tests, which either blocks a correct PR or
+                # hides a real shrink.
+                echo "::notice title=Test-count floor fell back to bootstrap constants::The test-counts artifact from master run ${run_id} was measured under filter '${artifact_filter:-(none recorded)}', but this run uses filter '${TEST_FILTER}'. The two counts are not comparable, so the bootstrap constants (backend ${BOOTSTRAP_BACKEND_FLOOR}, frontend ${BOOTSTRAP_FRONTEND_FLOOR}) are used instead. Once master has run under the new filter, update the bootstrap constants from a number a master run actually printed (run this workflow via workflow_dispatch with measure-filter=true)."
+              else
+                backend_floor="$b"
+                frontend_floor="$f"
+                floor_source="master run ${run_id}"
+              fi
+            fi
+          fi
+
+          echo "BACKEND_FLOOR=$backend_floor" >> "$GITHUB_ENV"
+          echo "FRONTEND_FLOOR=$frontend_floor" >> "$GITHUB_ENV"
+          echo "FLOOR_SOURCE=$floor_source" >> "$GITHUB_ENV"
+          echo "Test-count floor source: $floor_source (backend: $backend_floor, frontend: $frontend_floor)"
+
+      - name: Download test results
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: trx-*
+          merge-multiple: true
+          path: ./TestResults
+
+      - name: Enforce test-count floor
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          floor="$BACKEND_FLOOR"
+
+          total=0
+          for trx in ./TestResults/*.trx; do
+            [ -f "$trx" ] || continue
+            # Each .trx's <ResultSummary><Counters .../> element carries both "total" (includes
+            # skipped tests) and "executed" (tests that actually ran). Use "executed" so a
+            # skipped test can't be counted toward the floor without actually running.
+            count=$(grep -o 'executed="[0-9]*"' "$trx" | head -1 | grep -o '[0-9]*')
+            count=${count:-0}
+            total=$((total + count))
+          done
+
+          echo "Executed test count: $total (floor: $floor)"
+          echo "Backend floor source: $FLOOR_SOURCE"
+          # Recorded here rather than at the end of the job so the count is written
+          # even if a later step fails: the ratchet's input is what this run
+          # measured, not whether every other gate happened to pass.
+          echo "BACKEND_COUNT=$total" >> "$GITHUB_ENV"
+          if [ "$total" -lt "$floor" ]; then
+            echo "BLOCKED: executed test count ($total) is below master's last measured count ($floor, from $FLOOR_SOURCE)." >&2
+            exit 1
+          fi
+
+      # Two counts and two parsers, deliberately, so neither suite's count can
+      # mask a collapse in the other: the backend floor above parses executed="N"
+      # out of the .trx, this one reads the frontend job's output, which that job
+      # parsed from numPassedTests in the Vitest JSON report. Both are ratcheted
+      # against the SAME master run resolved above, so the pair moves together
+      # and one suite cannot be ratcheted from a run that never measured the other.
+      - name: Enforce frontend test-count floor
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          floor="$FRONTEND_FLOOR"
+          total="$FRONTEND_COUNT"
+
+          # The frontend job succeeded (the aggregate check above proved it), so
+          # an empty or non-numeric count here means the output did not survive
+          # the job boundary rather than that the suite was empty. Failing loudly
+          # beats comparing an empty string against the floor, which `-lt` would
+          # read as 0 and block on -- or, worse, a future refactor could read as
+          # a pass.
+          if ! printf '%s' "$total" | grep -qE '^[0-9]+$'; then
+            echo "BLOCKED: frontend job output 'count' was not a number ('${total}')." >&2
+            exit 1
+          fi
+
+          echo "Frontend passed test count: $total (floor: $floor)"
+          echo "Frontend floor source: $FLOOR_SOURCE"
+          if [ "$total" -lt "$floor" ]; then
+            echo "BLOCKED: frontend passed test count ($total) is below master's last measured count ($floor, from $FLOOR_SOURCE)." >&2
+            exit 1
+          fi
 
       # A measure-filter run exists to PRINT a number for the bootstrap
       # constants, so it must not also write the artifact: publishing a count

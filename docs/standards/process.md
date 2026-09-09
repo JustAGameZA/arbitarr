@@ -40,12 +40,16 @@ worktree scans `node_modules` and times out.
 The floor is **master's last measured count**, and it lives in CI rather than in the tree. There
 is no floor file to edit, and none to conflict on.
 
-Every `Build & test` run records what it measured — backend from `executed="N"` in the `.trx`,
-frontend from `numPassedTests` in `vitest-report.json` — into a `test-counts` artifact. Every run
-then resolves its floor by downloading that artifact from the latest *successful* `Build & test`
-run on `master` other than itself, and fails if either count came in below it. Selecting "other
-than itself" is what makes a push to master enforce the ratchet too: master is compared against its
-own predecessor, so a shrink merged by force is still caught.
+Every `Build & test` run records what it measured — backend by summing `executed="N"` across the
+`.trx` files every matrix group uploaded, frontend from `numPassedTests` in `vitest-report.json` —
+into a `test-counts` artifact. Every run then resolves its floor by downloading that artifact from
+the latest *successful* `Build & test` run on `master` other than itself, and fails if either count
+came in below it. Selecting "other than itself" is what makes a push to master enforce the ratchet
+too: master is compared against its own predecessor, so a shrink merged by force is still caught.
+
+Both floors are enforced in the `gate` job, which is the one job holding the `actions: read`
+permission the lookup needs — so the pair is always ratcheted against the *same* master run rather
+than against two runs two jobs happened to resolve separately.
 
 **You never write a floor by hand.** Adding tests raises the floor automatically once the PR
 merges and master measures the new total. A rebase needs no re-measurement, which is the whole
@@ -163,6 +167,20 @@ is not obvious from the diff.
 ## PR flow
 
 Two required checks: `Build & test` and `Deploy review environment`.
+
+`Build & test` is the name of the **`gate` job**, not of the whole workflow's work. The workflow runs
+five jobs — `prep` (one solution build, published as a `test-build` artifact), a three-way `backend`
+matrix (A = Integration, B = Data + Api + Core, C = Host + Media + Ai + Core.Identity +
+Sources.NzbHydra + Architecture), `frontend`, and `guards` — and `gate` aggregates them. Only `gate`
+carries a required-check name, so branch protection needs no edit when the job layout changes again.
+
+Two properties of that arrangement are load-bearing and easy to undo by accident. `gate` runs with
+`if: always()`, so it must check every needed job's `result` **explicitly** — branch protection reads
+a *skipped* required check as satisfied, so a gate that merely inherited its dependencies' status
+would let a red matrix group merge. And every backend group restores the *full* `test-build`
+artifact rather than only its own assemblies, because `Arbitarr.Architecture.Tests`' Mono.Cecil IL
+scan reads sibling build output and needs all ten test assemblies present in the same configuration
+and TFM.
 
 **A green `Deploy review environment` means the image builds and `/health` answers — nothing more.**
 Nothing is deployed; no review environment exists. The name describes an intent.
