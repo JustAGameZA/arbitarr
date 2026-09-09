@@ -104,6 +104,86 @@ jobs:
         if: failure()
         run: docker logs arbitarr-review || true
 
-      - name: Stop container
+      # arb-rga.7: the E2E golden path runs AFTER the assertions above, against the same
+      # image they just vetted. The standalone container is stopped first because compose
+      # republishes 127.0.0.1:8080 and the two would collide on that port.
+      #
+      # Loopback is not incidental: ADR 0004's bootstrap bypass admits admin-mutating
+      # routes only from loopback/RFC 1918 while no admin key is set, decided from the
+      # socket's peer address, and the E2E bootstraps its key through exactly that window.
+      - name: Stop the standalone container before the E2E stack
+        # `if: always()` so a failing step above still removes the container. The step this
+        # one replaced carried it for that reason: on a self-hosted runner a surviving
+        # arbitarr-review makes the NEXT run's `docker run --name arbitarr-review` collide,
+        # turning one failure into every later run failing. Keep it.
         if: always()
         run: docker rm -f arbitarr-review || true
+
+      - name: Start the E2E stack (app under test plus stub upstream)
+        working-directory: tests/e2e
+        # --wait gates on the stub's healthcheck only. The app container declares none: its
+        # runtime image (mcr.microsoft.com/dotnet/aspnet) ships neither wget nor curl, and
+        # adding one purely to satisfy a probe would alter the very image under test.
+        run: docker compose -f compose.yml up -d --wait
+
+      - name: Wait for the app to answer /health
+        shell: bash
+        working-directory: tests/e2e
+        # Readiness is probed from the runner, which has curl, precisely because the image
+        # under test cannot probe itself. Same shape as the standalone smoke-check above.
+        run: |
+          set -euo pipefail
+
+          for i in $(seq 1 60); do
+            if curl -sf "http://127.0.0.1:8080/health" -o /dev/null; then
+              echo "E2E stack answered /health after ${i} attempt(s)."
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "BLOCKED: the E2E stack did not answer /health within the timeout." >&2
+          docker compose -f compose.yml logs --no-color >&2 || true
+          exit 1
+
+      - name: Set up Node for Playwright
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tests/e2e/package-lock.json
+
+      - name: Install E2E dependencies
+        working-directory: tests/e2e
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        working-directory: tests/e2e
+        # Chromium only, matching playwright.config.ts's single project: pulling every
+        # browser would cost minutes for engines this lane does not exercise.
+        run: npx playwright install --with-deps chromium
+
+      - name: Run the E2E golden path
+        working-directory: tests/e2e
+        run: npm test
+
+      - name: E2E stack logs
+        if: failure()
+        working-directory: tests/e2e
+        run: docker compose -f compose.yml logs --no-color || true
+
+      - name: Upload the Playwright trace
+        if: failure()
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
+        with:
+          name: playwright-trace
+          path: |
+            tests/e2e/test-results/
+            tests/e2e/playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Stop the E2E stack
+        if: always()
+        working-directory: tests/e2e
+        run: docker compose -f compose.yml down -v || true

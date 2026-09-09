@@ -1,0 +1,15 @@
+{
+  "name": "arbitarr-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "description": "E2E golden path against the built image plus a stub Torznab upstream (arb-rga.7).",
+  "scripts": {
+    "test": "playwright test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "24.13.3",
+    "typescript": "5.9.3"
+  }
+}
