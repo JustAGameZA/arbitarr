@@ -247,12 +247,22 @@ builder.Services.AddScoped<DatabaseSizeReporter>();
 // selection between PaginationSnapshotService's fixed-TTL and live-TTL overloads) so the
 // live-TTL ctor is always the one the Host wires up.
 builder.Services.AddScoped<ISnapshotTtlSource, SettingsSnapshotTtlSource>();
+
+// arb-b5z: which sources produced a snapshot is part of what that snapshot IS, so the resolved
+// source set is a component of the snapshot token. Registered SCOPED rather than as a singleton
+// instance because ResolvedSourceConfiguration is still empty at this point in startup -- it is
+// written by SourceSeeder after app.Build() -- so the fingerprint has to be derived when a request
+// first resolves it, not here. Its value is then constant for the process, which is the intent: it
+// is not trying to notice a source change while running (it cannot), it is making sure the NEXT
+// process cannot be served the SQLite-persisted snapshots this one left behind.
+builder.Services.AddScoped<ISourceSetFingerprintSource, Arbitarr.Host.Sources.ResolvedSourceSetFingerprintSource>();
 builder.Services.AddScoped(sp => new PaginationSnapshotService(
     sp.GetRequiredService<UpstreamMergeStage>(),
     sp.GetRequiredService<SearchResultCacheStage>(),
     sp.GetRequiredService<IQuerySnapshotStore>(),
     sp.GetRequiredService<TimeProvider>(),
-    sp.GetRequiredService<ISnapshotTtlSource>()));
+    sp.GetRequiredService<ISnapshotTtlSource>(),
+    sp.GetRequiredService<ISourceSetFingerprintSource>()));
 
 // M7-7/R20: worker-health snapshot, singleton so both the hosted RefreshWorker (writer) and
 // StatusEndpoint (reader) share the same instance across the app's lifetime.
