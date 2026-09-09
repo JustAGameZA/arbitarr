@@ -89,10 +89,17 @@ public class QuarantineTraitTests
         }
 
         // The bait below is this assembly's own deliberate sample of the violation; it is what
-        // proves the scan can see one at all, so it is not itself a violation. Matched on the exact
-        // "<assembly>: <bait type>" prefix rather than by substring, so this cannot become a
-        // back-door exemption for some other type that merely contains the bait's name.
-        var baitPrefix = $"Arbitarr.Architecture.Tests: {BaitTypeName}";
+        // proves the scan can see one at all, so it is not itself a violation.
+        //
+        // THE TRAILING '/' IS LOAD-BEARING. Every bait finding names a type NESTED inside Bait, and
+        // Cecil separates nested types with '/', so "<Bait>/" matches all three of them and nothing
+        // else. Without it the prefix is a bare type name, and a future sibling — a Bait2, or a
+        // BaitHelpers — would start with that same string and be silently exempted from the ban,
+        // which is precisely the back-door TestProcessGlobalStateTests' equivalent comment warns
+        // about. Note that file uses '.' rather than '/' because ITS findings are METHODS on the
+        // bait type, not types nested inside it; the separator follows the member kind, so copying
+        // one into the other would re-open the hole it is there to close.
+        var baitPrefix = $"Arbitarr.Architecture.Tests: {BaitTypeName}/";
         violations.RemoveAll(v => v.StartsWith(baitPrefix, StringComparison.Ordinal));
 
         Assert.True(
