@@ -202,6 +202,29 @@ public sealed class PaginationSnapshotService
     /// mode differs therefore resolves to a genuinely different upstream request and must not share
     /// a snapshot, even where the raw strings coincide.
     /// </para>
+    ///
+    /// <para>
+    /// <b>arb-u1c: <see cref="SearchQuery.Absolute"/> AND <see cref="SearchQuery.ResolvedTitle"/>
+    /// are components, and the title is the one that needs justifying.</b> It is derived from
+    /// <see cref="SearchQuery.TvdbId"/>, which is already hashed here, so including it does fragment
+    /// snapshots that the id alone would have collapsed. It is included anyway because this token is
+    /// consumed ABOVE the two-age cache — a hit returns before <see cref="SearchResultCacheStage"/>
+    /// is ever reached — so a separation existing only in the two-age key is unreachable for any
+    /// query a live snapshot covers. Without the title here, the first anime search issued before
+    /// Sonarr is configured materialises an id-only result set that is then served back to every
+    /// correctly resolved search for that episode for this snapshot's whole TTL: configuring Sonarr
+    /// would appear to do nothing.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>The fragmentation that buys is bounded, and deliberately so.</b> The title is a pure
+    /// function of the tvdbid, so per series it takes one value per memo epoch — at most one extra
+    /// split, unresolved versus resolved, not a new snapshot per request. The bound is
+    /// <c>SeriesTitleResolver</c>'s memo, and specifically its SHORTER negative TTL: an unresolved
+    /// answer is what selects the extra variant, so pinning it as long as a resolved one would stack
+    /// the memo window on top of this TTL. If that negative TTL is ever lengthened toward the
+    /// positive one, this trade-off is what it is spending.
+    /// </para>
     /// </summary>
     private static string ComputeSnapshotToken(string searchType, SearchQuery query)
     {

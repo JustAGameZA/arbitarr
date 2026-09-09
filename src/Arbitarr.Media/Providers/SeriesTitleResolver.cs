@@ -77,19 +77,43 @@ public sealed class SeriesTitleResolver : IIdentityResolver
     public static readonly TimeSpan LookupBudget = TimeSpan.FromSeconds(2);
 
     /// <summary>
-    /// How long a resolved (or unresolvable) tvdbid-to-title answer is reused without asking Sonarr
-    /// again.
+    /// How long a RESOLVED tvdbid-to-title answer is reused without asking Sonarr again.
     /// </summary>
     /// <remarks>
     /// Sonarr's answer to "what is series X called" changes on the order of never; the reason this
     /// is not simply permanent is that a series can be renamed or removed and the process can be
     /// long-lived. Five minutes collapses the burst that matters — one *arr search issues several
     /// requests for one series in quick succession, and pagination reissues them — without holding
-    /// a stale title long enough for anyone to notice. NEGATIVE answers are memoised too, and for
-    /// the same reason with more force: an unconfigured or unreachable Sonarr would otherwise be
-    /// asked, and time out, once per request forever.
+    /// a stale title long enough for anyone to notice.
     /// </remarks>
     public static readonly TimeSpan MemoTtl = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// How long a NEGATIVE answer — no title, from an unconfigured Sonarr, a timeout, or an error —
+    /// is reused before asking again. Deliberately far shorter than <see cref="MemoTtl"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>WHY THE TWO TTLs ARE NOT ONE.</b> A negative answer is cached for a different reason
+    /// than a positive one, so it earns a different lifetime. Caching it at all is necessary: an
+    /// unconfigured or unreachable Sonarr would otherwise be asked — and time out against
+    /// <see cref="LookupBudget"/> — once per request forever. But a negative answer is far likelier
+    /// to be WRONG BY THE TIME IT IS REUSED: "this series is called One Piece" stays true for years,
+    /// while "Sonarr did not answer" describes a moment, and the operator who has just finished
+    /// configuring Sonarr is actively trying to change it.
+    /// </para>
+    ///
+    /// <para><b>THE COST A LONG NEGATIVE TTL WOULD IMPOSE, which is what sets this value.</b> The
+    /// resolved title is part of the snapshot token (see
+    /// <c>PaginationSnapshotService.ComputeSnapshotToken</c>), so an unresolved lookup materialises
+    /// a SEPARATE id-only snapshot that then lives for the snapshot TTL. Pinning the negative answer
+    /// for five minutes would hold searches on that unresolved variant for the whole memo window ON
+    /// TOP OF the snapshot's own TTL, so a single transient Sonarr blip could degrade anime searches
+    /// for the better part of ten minutes. Forty-five seconds bounds the retry cost — a
+    /// misconfigured Sonarr is asked at most a handful of times a minute, each capped by the lookup
+    /// budget — while keeping the unresolved window short enough that the next snapshot
+    /// materialisation picks the resolved title up.</para>
+    /// </remarks>
+    public static readonly TimeSpan NegativeMemoTtl = TimeSpan.FromSeconds(45);
 
     private readonly SonarrCredentialProvider _credentials;
     private readonly IHttpClientFactory _httpClientFactory;
@@ -133,7 +157,7 @@ public sealed class SeriesTitleResolver : IIdentityResolver
 
         // The memo is checked BEFORE anything else, including the settings read: a repeated search
         // for the same series must cost neither a database round trip nor a network call. A cached
-        // null is a real answer (see MemoTtl), which is why TryGetValue's own result decides
+        // null is a real answer (see NegativeMemoTtl), which is why TryGetValue's own result decides
         // whether to ask, rather than the nullness of the value it produced.
         if (_memo.TryGetValue(MemoKey(tvdbId), out string? memoised))
         {
@@ -146,7 +170,11 @@ public sealed class SeriesTitleResolver : IIdentityResolver
         // caching it would hand an aborted request's silence to the next one.
         if (!cancellationToken.IsCancellationRequested)
         {
-            _memo.Set(MemoKey(tvdbId), resolved, MemoTtl);
+            // A resolved title and a failure to resolve get DIFFERENT lifetimes, and the difference
+            // is load-bearing rather than a tuning preference: an unresolved answer also selects a
+            // separate snapshot variant, so holding it as long as a positive one would stack the
+            // memo window on top of the snapshot TTL. See NegativeMemoTtl.
+            _memo.Set(MemoKey(tvdbId), resolved, resolved is null ? NegativeMemoTtl : MemoTtl);
         }
 
         return BuildIdentity(tvdbId, resolved);

@@ -9,6 +9,7 @@ using Arbitarr.Media.Providers;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Primitives;
 using Xunit;
 
 namespace Arbitarr.Media.Tests;
@@ -392,6 +393,144 @@ public sealed class SeriesTitleResolverTests : IDisposable
 
         Assert.Equal("One Piece", identity?.PrimaryTitle);
         Assert.Equal(1, handler.RequestCount);
+    }
+
+    /// <summary>
+    /// A FAILED lookup is memoised for much less time than a successful one, and the gap is
+    /// load-bearing rather than a tuning preference.
+    /// </summary>
+    /// <remarks>
+    /// <para>The resolved title is part of the snapshot token, so an unresolved answer does not
+    /// merely cost precision — it selects a SEPARATE, id-only snapshot that then lives for the
+    /// snapshot TTL. Memoising "Sonarr said nothing" for the positive five minutes would hold
+    /// searches on that unresolved variant for the whole memo window on top of the snapshot's own,
+    /// so one transient blip degrades anime searches for far longer than the blip lasted. A short
+    /// negative TTL is what bounds that.</para>
+    ///
+    /// <para><b>WHY THE REQUESTED EXPIRY RATHER THAN AN OBSERVED ONE.</b> Asserting by advancing a
+    /// clock would need <c>MemoryCacheOptions.Clock</c>, whose <c>ISystemClock</c> lives in
+    /// <c>Microsoft.Extensions.Internal</c> — a test pinned to an internal abstraction breaks on a
+    /// package bump for reasons having nothing to do with this behaviour. Sleeping past a real 45 s
+    /// is not an option either. What the rule actually constrains is the lifetime the resolver ASKS
+    /// FOR, so that is what is recorded and asserted.</para>
+    /// </remarks>
+    [Fact]
+    public async Task Memoises_a_failed_lookup_for_much_less_time_than_a_resolved_one()
+    {
+        await using var context = CreateContext();
+        await new ArrInstanceRepository(context).SetAsync(BaseUrl, ApiKey, CancellationToken.None);
+
+        var failing = new RecordingMemo();
+        await BuildWithHandler(
+                context,
+                new FakeHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)),
+                failing)
+            .ResolveAsync("92", Hints(), CancellationToken.None);
+
+        var resolving = new RecordingMemo();
+        var identity = await Build(context, EpisodeFeed("One Piece"), memo: resolving)
+            .ResolveAsync("92", Hints(), CancellationToken.None);
+
+        // The positive control. Both halves must actually have written to the memo, or the
+        // comparison below would be between two absent values and would pass vacuously.
+        Assert.Equal("One Piece", identity?.PrimaryTitle);
+        var negative = Assert.Single(failing.Expirations);
+        var positive = Assert.Single(resolving.Expirations);
+
+        Assert.Equal(SeriesTitleResolver.NegativeMemoTtl, negative);
+        Assert.Equal(SeriesTitleResolver.MemoTtl, positive);
+
+        // The relationship, asserted separately from the two constants: this is the property that
+        // must survive any future retuning of either value.
+        Assert.True(
+            negative < positive,
+            $"a failed lookup was memoised for {negative}, which is not shorter than the {positive} "
+            + "a resolved one gets — a transient Sonarr failure would pin the unresolved snapshot "
+            + "variant for the whole positive window.");
+    }
+
+    /// <summary>
+    /// Records the relative expiry each <c>Set</c> asked for, delegating everything else to a real
+    /// cache so the resolver's own memo behaviour is unchanged.
+    /// </summary>
+    private sealed class RecordingMemo : IMemoryCache
+    {
+        private readonly IMemoryCache _inner = new MemoryCache(new MemoryCacheOptions());
+
+        public List<TimeSpan?> Expirations { get; } = [];
+
+        public ICacheEntry CreateEntry(object key) => new RecordingEntry(_inner.CreateEntry(key), this);
+
+        public void Remove(object key) => _inner.Remove(key);
+
+        public bool TryGetValue(object key, out object? value) => _inner.TryGetValue(key, out value);
+
+        public void Dispose() => _inner.Dispose();
+
+        /// <summary>
+        /// Captures on DISPOSE rather than on assignment: <c>Set</c> is an extension method that
+        /// creates the entry, assigns the expiry and the value, then disposes it to commit — so
+        /// dispose is the one point at which the entry is complete.
+        /// </summary>
+        private sealed class RecordingEntry : ICacheEntry
+        {
+            private readonly ICacheEntry _inner;
+            private readonly RecordingMemo _owner;
+
+            public RecordingEntry(ICacheEntry inner, RecordingMemo owner)
+            {
+                _inner = inner;
+                _owner = owner;
+            }
+
+            public object Key => _inner.Key;
+
+            public object? Value
+            {
+                get => _inner.Value;
+                set => _inner.Value = value;
+            }
+
+            public DateTimeOffset? AbsoluteExpiration
+            {
+                get => _inner.AbsoluteExpiration;
+                set => _inner.AbsoluteExpiration = value;
+            }
+
+            public TimeSpan? AbsoluteExpirationRelativeToNow
+            {
+                get => _inner.AbsoluteExpirationRelativeToNow;
+                set => _inner.AbsoluteExpirationRelativeToNow = value;
+            }
+
+            public TimeSpan? SlidingExpiration
+            {
+                get => _inner.SlidingExpiration;
+                set => _inner.SlidingExpiration = value;
+            }
+
+            public IList<IChangeToken> ExpirationTokens => _inner.ExpirationTokens;
+
+            public IList<PostEvictionCallbackRegistration> PostEvictionCallbacks => _inner.PostEvictionCallbacks;
+
+            public CacheItemPriority Priority
+            {
+                get => _inner.Priority;
+                set => _inner.Priority = value;
+            }
+
+            public long? Size
+            {
+                get => _inner.Size;
+                set => _inner.Size = value;
+            }
+
+            public void Dispose()
+            {
+                _owner.Expirations.Add(_inner.AbsoluteExpirationRelativeToNow);
+                _inner.Dispose();
+            }
+        }
     }
 
     /// <summary>Hands out one preconfigured client, which is all the resolver asks of the factory.</summary>
