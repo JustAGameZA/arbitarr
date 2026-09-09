@@ -353,13 +353,19 @@ function createSource(request: APIRequestContext, displayName: string, baseUrl: 
   return request.post('/api/admin/sources', {
     headers: { [ADMIN_KEY_HEADER]: ADMIN_KEY },
     data: {
-      // MUST be exactly "NzbHydra" -- SourceSeeder.NzbHydraKind, compared ORDINALLY at
-      // SourceSeeder.cs:175 (`Where(s => s.Kind == NzbHydraKind && s.Enabled)`). Do NOT
-      // lowercase this. POST /api/admin/sources stores any casing and still returns 201, but
-      // the seeder then never selects the row: the adapter stays pinned to the unconfigured
-      // placeholder and every search returns zero rows with no error anywhere. That cost this
-      // suite a full CI cycle. The endpoint accepting a kind the seeder can never match is
-      // tracked as arb-pn5; until that lands, this casing is load-bearing.
+      // MUST be exactly "NzbHydra" -- SourceRepository.NzbHydraKind, the value
+      // SourceSeeder resolves against ORDINALLY (`Where(s => s.Kind == NzbHydraKind &&
+      // s.Enabled)`). Do NOT lowercase this: since arb-pn5 (#142) the endpoint rejects any
+      // other casing with a 400, so a wrong spelling now fails this suite at createSource
+      // with a named error rather than silently.
+      //
+      // The exact spelling is still load-bearing, for a better reason than before. arb-pn5
+      // closed the silent half: the endpoint used to store ANY casing and return 201 while
+      // the seeder never selected the row, leaving the adapter pinned to the unconfigured
+      // placeholder and every search returning zero rows with no error anywhere -- which
+      // cost this suite a full CI cycle. What it did not do is make the casings
+      // interchangeable: it rejects rather than normalises, deliberately (CLAUDE.md §3),
+      // because only one spelling is ever resolved.
       kind: 'NzbHydra',
       displayName,
       baseUrl,
