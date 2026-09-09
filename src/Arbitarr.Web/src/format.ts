@@ -53,8 +53,27 @@ export function agreementRate(agreed: number, reviewed: number): number | null {
  * `System.tsx`'s `StalenessTable` comment — so this formatter has exactly one
  * caller: Dashboard's own numeric fields, reproducing the same convention on the
  * client since the server never sent it as a string in the first place.
+ *
+ * arb-fao: a non-finite input renders the EM-dash (U+2014), the same "no value"
+ * sentinel `formatRate` above uses, NOT `00:00:00`. The type says `number`, but
+ * an `EffectiveConfigResponse` field the server omits arrives as `undefined`
+ * through a cast at the fetch boundary, and `Math.max(0, Math.floor(NaN))` is
+ * `NaN`, so the surface rendered `NaN:NaN:NaN`.
+ *
+ * `00:00:00` is rejected as the sentinel because it is ALREADY the correct
+ * render of a real zero (the test above pins `formatDurationSeconds(0)`), so
+ * using it here would make "the server sent nothing" indistinguishable from "the
+ * server sent zero" — a missing refresh lead would read as a configured
+ * zero-second one. That is the same error `formatRate` documents at the top of
+ * this file: printing a measured-looking value asserts a fact the data does not
+ * support. The dash admits the gap instead, and the file then has ONE absence
+ * convention rather than two that must be remembered separately.
  */
 export function formatDurationSeconds(totalSeconds: number): string {
+  if (!Number.isFinite(totalSeconds)) {
+    return '—';
+  }
+
   const whole = Math.max(0, Math.floor(totalSeconds));
   const days = Math.floor(whole / 86400);
   const hours = Math.floor((whole % 86400) / 3600);
