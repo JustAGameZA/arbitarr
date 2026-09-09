@@ -1,4 +1,4 @@
-import '@testing-library/jest-dom';
+import '@testing-library/jest-dom/vitest';
 
 // Attach the pinned palette to the jsdom document for EVERY test file, not only
 // the ones that happen to import it. This and `css: true` in vite.config.ts are
