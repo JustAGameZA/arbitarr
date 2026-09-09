@@ -22,3 +22,12 @@
   font-size: 13px;
   color: var(--fg-primary);
 }
+
+/* The "Test a rule" form is the only one on this page with a single field, so
+   nothing else in its flex row constrains the field's basis the way the
+   multi-field Add/Edit rule forms do. Without an explicit width its input
+   renders narrower than the Name/Pattern fields above despite sharing the
+   same surface.input class -- pin it to match. */
+.testTitleField {
+  width: 180px;
+}

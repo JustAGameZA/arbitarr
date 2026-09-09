@@ -20,8 +20,7 @@ describe('document title per route', () => {
   it.each(ROUTES)('%s sets document.title', (path, label) => {
     renderApp(path);
 
-    const expected = path === '/' ? 'Arbitarr' : `${label} — Arbitarr`;
-    expect(document.title).toBe(expected);
+    expect(document.title).toBe(`${label} — Arbitarr`);
   });
 
   it('sets "Page not found — Arbitarr" for an unknown path', () => {
@@ -34,7 +33,7 @@ describe('document title per route', () => {
     const user = userEvent.setup();
     renderApp('/');
 
-    expect(document.title).toBe('Arbitarr');
+    expect(document.title).toBe('Dashboard — Arbitarr');
 
     await user.click(screen.getByRole('link', { name: /search/i }));
 
