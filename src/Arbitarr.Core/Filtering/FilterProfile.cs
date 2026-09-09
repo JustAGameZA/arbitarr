@@ -15,7 +15,9 @@ public sealed class FilterProfile
     /// <see cref="FilterRule.MatchTimeout"/> (250ms), but a profile with many rules has no
     /// whole-request budget without this — 2s is generous headroom above a handful of individual
     /// timeouts while still bounding the worst case (many hazardous patterns in one profile).
-    /// When exceeded, evaluation stops and fails open (P1) exactly like a single rule's timeout.
+    /// When exceeded, evaluation stops and fails open (P1) exactly like a single rule's timeout --
+    /// except for the FIRST rule, which always runs regardless of how much of this budget already
+    /// remains (arb-nk2): see <see cref="RuleEvaluator.Evaluate(FilterProfile, Arbitarr.Core.Releases.ReleaseCandidate, TimeProvider)"/>.
     /// </summary>
     public static readonly TimeSpan DefaultTotalEvaluationBudget = TimeSpan.FromSeconds(2);
 
