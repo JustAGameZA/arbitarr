@@ -4,7 +4,7 @@ using Arbitarr.Data.Entities;
 using Arbitarr.Data.Events;
 using Arbitarr.Data.Notifications;
 using Arbitarr.Host.Notifications;
-using Microsoft.Data.Sqlite;
+using Arbitarr.TestSupport;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
@@ -29,27 +29,19 @@ public sealed class NotificationDispatcherTests : IDisposable
 {
     private const string SecretWebhookUrl = "https://example.com/hooks/placeholder-dispatcher-token";
 
-    private readonly string _dbPath;
+    private readonly SqliteTestDatabase _database = new("arr-searcher-dispatcher-test");
     private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.Zero));
 
     public NotificationDispatcherTests()
     {
-        _dbPath = Path.Combine(Path.GetTempPath(), $"arr-searcher-dispatcher-test-{Guid.NewGuid():N}.db");
     }
 
-    public void Dispose()
-    {
-        SqliteConnection.ClearAllPools();
-        if (File.Exists(_dbPath))
-        {
-            File.Delete(_dbPath);
-        }
-    }
+    public void Dispose() => _database.Dispose();
 
     private ArbitarrDbContext CreateContext()
     {
         var optionsBuilder = new DbContextOptionsBuilder<ArbitarrDbContext>();
-        optionsBuilder.UseSqlite($"Data Source={_dbPath}");
+        optionsBuilder.UseSqlite(_database.ConnectionString);
         var context = new ArbitarrDbContext(optionsBuilder.Options);
         context.Database.Migrate();
         return context;

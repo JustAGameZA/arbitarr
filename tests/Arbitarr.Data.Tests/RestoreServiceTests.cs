@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 using Arbitarr.Data.Backup;
+using Arbitarr.TestSupport;
 using Microsoft.Data.Sqlite;
 using Xunit;
 
@@ -38,7 +39,10 @@ public sealed class RestoreServiceTests : IDisposable
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
+        // Scoped to the databases under THIS class's own temp directory rather than
+        // ClearAllPools(), which would also close pooled connections belonging to test classes
+        // running in parallel (arb-rga.3).
+        SqlitePools.ClearPoolsForDirectory(_configDirectory);
         try
         {
             Directory.Delete(_configDirectory, recursive: true);
@@ -474,7 +478,7 @@ public sealed class RestoreServiceTests : IDisposable
             }
         }
 
-        SqliteConnection.ClearAllPools();
+        SqlitePools.ClearPoolForFile(databaseSource);
         return path;
     }
 
@@ -489,7 +493,7 @@ public sealed class RestoreServiceTests : IDisposable
     private static void CreateSqliteFile(string path, string? migrationId)
     {
         CreateSqliteFileCore(path, migrationId);
-        SqliteConnection.ClearAllPools();
+        SqlitePools.ClearPoolForFile(path);
     }
 
     private static void CreateSqliteFileCore(string path, string? migrationId)

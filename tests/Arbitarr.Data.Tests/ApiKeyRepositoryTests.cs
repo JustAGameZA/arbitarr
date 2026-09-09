@@ -1,7 +1,7 @@
 using Arbitarr.Core.Security;
 using Arbitarr.Data.Entities;
 using Arbitarr.Data.Security;
-using Microsoft.Data.Sqlite;
+using Arbitarr.TestSupport;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Time.Testing;
@@ -21,27 +21,15 @@ namespace Arbitarr.Data.Tests;
 /// </summary>
 public sealed class ApiKeyRepositoryTests : IDisposable
 {
-    private readonly string _dbPath;
+    private readonly SqliteTestDatabase _database = new("arr-searcher-apikeys-test");
     private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.Zero));
 
-    public ApiKeyRepositoryTests()
-    {
-        _dbPath = Path.Combine(Path.GetTempPath(), $"arr-searcher-apikeys-test-{Guid.NewGuid():N}.db");
-    }
-
-    public void Dispose()
-    {
-        SqliteConnection.ClearAllPools();
-        if (File.Exists(_dbPath))
-        {
-            File.Delete(_dbPath);
-        }
-    }
+    public void Dispose() => _database.Dispose();
 
     private ArbitarrDbContext CreateContext()
     {
         var optionsBuilder = new DbContextOptionsBuilder<ArbitarrDbContext>();
-        optionsBuilder.UseSqlite($"Data Source={_dbPath}");
+        optionsBuilder.UseSqlite(_database.ConnectionString);
         var context = new ArbitarrDbContext(optionsBuilder.Options);
         context.Database.Migrate();
         return context;
@@ -57,7 +45,7 @@ public sealed class ApiKeyRepositoryTests : IDisposable
         // of the way and confirm it survives byte-for-byte. This is the upgrade path AC4 is about —
         // the migration must not disturb the credential every caller is currently using.
         var optionsBuilder = new DbContextOptionsBuilder<ArbitarrDbContext>();
-        optionsBuilder.UseSqlite($"Data Source={_dbPath}");
+        optionsBuilder.UseSqlite(_database.ConnectionString);
 
         await using (var before = new ArbitarrDbContext(optionsBuilder.Options))
         {

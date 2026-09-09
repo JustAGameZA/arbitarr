@@ -2,7 +2,7 @@ using Arbitarr.Data;
 using Arbitarr.Data.Entities;
 using Arbitarr.Data.Sources;
 using Arbitarr.Host.Sources;
-using Microsoft.Data.Sqlite;
+using Arbitarr.TestSupport;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Xunit;
@@ -25,22 +25,14 @@ public sealed class SourceSeederTests : IDisposable
     private const string EnvironmentBaseUrl = "http://192.0.2.10:5076";
     private const string DatabaseBaseUrl = "http://192.0.2.20:5076";
 
-    private readonly string _dbPath =
-        Path.Combine(Path.GetTempPath(), $"arbitarr-53b-seeder-{Guid.NewGuid():N}.db");
+    private readonly SqliteTestDatabase _database = new("arbitarr-53b-seeder");
 
-    public void Dispose()
-    {
-        SqliteConnection.ClearAllPools();
-        if (File.Exists(_dbPath))
-        {
-            File.Delete(_dbPath);
-        }
-    }
+    public void Dispose() => _database.Dispose();
 
     private ArbitarrDbContext CreateContext()
     {
         var optionsBuilder = new DbContextOptionsBuilder<ArbitarrDbContext>();
-        optionsBuilder.UseSqlite($"Data Source={_dbPath}");
+        optionsBuilder.UseSqlite(_database.ConnectionString);
         var context = new ArbitarrDbContext(optionsBuilder.Options);
         context.Database.Migrate();
         return context;

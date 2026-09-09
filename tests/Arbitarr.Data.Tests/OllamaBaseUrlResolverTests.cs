@@ -2,7 +2,7 @@ using Arbitarr.Core.Ai;
 using Arbitarr.Core.Settings;
 using Arbitarr.Data.Entities;
 using Arbitarr.Data.Settings;
-using Microsoft.Data.Sqlite;
+using Arbitarr.TestSupport;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
@@ -20,22 +20,14 @@ namespace Arbitarr.Data.Tests;
 /// </summary>
 public sealed class OllamaBaseUrlResolverTests : IDisposable
 {
-    private readonly string _dbPath =
-        Path.Combine(Path.GetTempPath(), $"arbitarr-89-resolver-{Guid.NewGuid():N}.db");
+    private readonly SqliteTestDatabase _database = new("arbitarr-89-resolver");
 
-    public void Dispose()
-    {
-        SqliteConnection.ClearAllPools();
-        if (File.Exists(_dbPath))
-        {
-            File.Delete(_dbPath);
-        }
-    }
+    public void Dispose() => _database.Dispose();
 
     private ArbitarrDbContext CreateContext()
     {
         var optionsBuilder = new DbContextOptionsBuilder<ArbitarrDbContext>();
-        optionsBuilder.UseSqlite($"Data Source={_dbPath}");
+        optionsBuilder.UseSqlite(_database.ConnectionString);
         var context = new ArbitarrDbContext(optionsBuilder.Options);
         context.Database.Migrate();
         return context;

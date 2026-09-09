@@ -2,7 +2,7 @@ using Arbitarr.Data;
 using Arbitarr.Data.Entities;
 using Arbitarr.Data.Settings;
 using Arbitarr.Host.Maintenance;
-using Microsoft.Data.Sqlite;
+using Arbitarr.TestSupport;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
@@ -20,29 +20,21 @@ namespace Arbitarr.Host.Tests;
 public sealed class MaintenanceHostedServiceTests : IDisposable
 {
     private static readonly DateTimeOffset Now = new(2026, 8, 30, 12, 0, 0, TimeSpan.Zero);
-    private readonly string _dbPath;
+    private readonly SqliteTestDatabase _database = new("arbitarr-maintenance-hosted-test");
 
     public MaintenanceHostedServiceTests()
     {
-        _dbPath = Path.Combine(Path.GetTempPath(), $"arbitarr-maintenance-hosted-test-{Guid.NewGuid():N}.db");
 
         using var context = CreateContext();
         context.Database.Migrate();
     }
 
-    public void Dispose()
-    {
-        SqliteConnection.ClearAllPools();
-        if (File.Exists(_dbPath))
-        {
-            File.Delete(_dbPath);
-        }
-    }
+    public void Dispose() => _database.Dispose();
 
     private ArbitarrDbContext CreateContext()
     {
         var optionsBuilder = new DbContextOptionsBuilder<ArbitarrDbContext>();
-        optionsBuilder.UseSqlite($"Data Source={_dbPath}");
+        optionsBuilder.UseSqlite(_database.ConnectionString);
         return new ArbitarrDbContext(optionsBuilder.Options);
     }
 

@@ -6,7 +6,7 @@ using Arbitarr.Core.Sources.CircuitBreaker;
 using Arbitarr.Data;
 using Arbitarr.Data.Media;
 using Arbitarr.Media.Providers;
-using Microsoft.Data.Sqlite;
+using Arbitarr.TestSupport;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Primitives;
@@ -37,23 +37,14 @@ public sealed class SeriesTitleResolverTests : IDisposable
     private const string BaseUrl = "http://192.0.2.21:8989/";
     private const string ApiKey = "placeholder-sonarr-key-0123456789";
 
-    private readonly string _dbPath = Path.Combine(
-        Path.GetTempPath(),
-        $"arbitarr-resolver-{Guid.NewGuid():N}.db");
+    private readonly SqliteTestDatabase _database = new("arbitarr-resolver");
 
-    public void Dispose()
-    {
-        SqliteConnection.ClearAllPools();
-        if (File.Exists(_dbPath))
-        {
-            File.Delete(_dbPath);
-        }
-    }
+    public void Dispose() => _database.Dispose();
 
     private ArbitarrDbContext CreateContext()
     {
         var optionsBuilder = new DbContextOptionsBuilder<ArbitarrDbContext>();
-        optionsBuilder.UseSqlite($"Data Source={_dbPath}");
+        optionsBuilder.UseSqlite(_database.ConnectionString);
         var context = new ArbitarrDbContext(optionsBuilder.Options);
         context.Database.Migrate();
         return context;

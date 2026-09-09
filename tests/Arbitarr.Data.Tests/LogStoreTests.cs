@@ -1,4 +1,5 @@
 using Arbitarr.Data.Logging;
+using Arbitarr.TestSupport;
 using Xunit;
 
 namespace Arbitarr.Data.Tests;
@@ -26,7 +27,16 @@ public sealed class LogStoreTests : IDisposable
     {
         // Pooled SQLite handles keep the file locked on Windows until the pool is cleared, so a
         // straight Directory.Delete here fails intermittently rather than cleanly.
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        //
+        // Scoped to THIS store's file rather than ClearAllPools(), which would also close pooled
+        // connections belonging to test classes running in parallel (arb-rga.3).
+        //
+        // ClearLogStorePool rebuilds LogStore's OWN connection string — DataSource plus
+        // Mode/Cache/Pooling. Pools are keyed by the full connection string, so a plainer
+        // "Data Source=..." would name a DIFFERENT pool and clear nothing, and the
+        // Directory.Delete below would go back to failing intermittently while looking correct.
+        SqlitePools.ClearLogStorePool(_store.DatabasePath);
+
         try
         {
             Directory.Delete(_directory, recursive: true);

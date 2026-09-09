@@ -5,8 +5,8 @@ using Arbitarr.Core.Sources;
 using Arbitarr.Data;
 using Arbitarr.Data.Filtering;
 using Arbitarr.Data.Settings;
+using Arbitarr.TestSupport;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -19,21 +19,14 @@ namespace Arbitarr.Api.Tests;
 /// </summary>
 public sealed class SearchXmlGoldenTests : IDisposable
 {
-    private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"arbitarr-searchxmlgolden-test-{Guid.NewGuid():N}.db");
+    private readonly SqliteTestDatabase _database = new("arbitarr-searchxmlgolden-test");
 
-    public void Dispose()
-    {
-        SqliteConnection.ClearAllPools();
-        if (File.Exists(_dbPath))
-        {
-            File.Delete(_dbPath);
-        }
-    }
+    public void Dispose() => _database.Dispose();
 
     private ArbitarrDbContext CreateContext()
     {
         var optionsBuilder = new DbContextOptionsBuilder<ArbitarrDbContext>();
-        optionsBuilder.UseSqlite($"Data Source={_dbPath}");
+        optionsBuilder.UseSqlite(_database.ConnectionString);
         var context = new ArbitarrDbContext(optionsBuilder.Options);
         context.Database.Migrate();
         return context;
