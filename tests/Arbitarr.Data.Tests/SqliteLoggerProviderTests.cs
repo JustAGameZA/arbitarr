@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Arbitarr.Data.Logging;
+using Arbitarr.TestSupport;
 using Microsoft.Extensions.Logging;
 using Xunit;
 
@@ -22,7 +23,11 @@ public sealed class SqliteLoggerProviderTests : IDisposable
 
     public void Dispose()
     {
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        // Scoped to the log databases under THIS class's own temp directory rather than
+        // ClearAllPools(), which would also close pooled connections belonging to test classes
+        // running in parallel (arb-rga.3). LogStore's own connection string (Mode/Cache/Pooling)
+        // is what keys its pool, and ClearPoolsForDirectory covers that shape.
+        SqlitePools.ClearPoolsForDirectory(_directory);
         try
         {
             Directory.Delete(_directory, recursive: true);

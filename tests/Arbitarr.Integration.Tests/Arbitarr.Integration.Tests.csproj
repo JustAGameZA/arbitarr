@@ -25,6 +25,7 @@
     <ProjectReference Include="..\..\src\Arbitarr.Core.Identity\Arbitarr.Core.Identity.csproj" />
     <ProjectReference Include="..\..\src\Arbitarr.Media\Arbitarr.Media.csproj" />
     <ProjectReference Include="..\..\src\Arbitarr.Ai\Arbitarr.Ai.csproj" />
+    <ProjectReference Include="..\Arbitarr.TestSupport\Arbitarr.TestSupport.csproj" />
   </ItemGroup>
 
   <ItemGroup>

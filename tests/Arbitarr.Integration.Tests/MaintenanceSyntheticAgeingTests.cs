@@ -2,7 +2,7 @@ using Arbitarr.Core.Settings;
 using Arbitarr.Data;
 using Arbitarr.Data.Entities;
 using Arbitarr.Data.Maintenance;
-using Microsoft.Data.Sqlite;
+using Arbitarr.TestSupport;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
@@ -45,7 +45,9 @@ public sealed class MaintenanceSyntheticAgeingTests : IDisposable
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
+        // Scoped to this class's own file rather than ClearAllPools(), which would also close
+        // pooled connections belonging to test classes running in parallel (arb-rga.3).
+        SqlitePools.ClearPoolForFile(_databasePath);
         try
         {
             if (File.Exists(_databasePath))
@@ -74,7 +76,11 @@ public sealed class MaintenanceSyntheticAgeingTests : IDisposable
     private long MeasureCheckpointedFileSize()
     {
         QueryScalarLong("PRAGMA wal_checkpoint(TRUNCATE);");
-        SqliteConnection.ClearAllPools();
+
+        // Mid-test, and deliberately scoped: the file size is sampled straight after this, and a
+        // pooled handle can still hold unflushed pages. A process-global clear here would close a
+        // parallel class's live connections in the middle of ITS test.
+        SqlitePools.ClearPoolForFile(_databasePath);
         return new FileInfo(_databasePath).Length;
     }
 

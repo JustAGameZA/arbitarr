@@ -1,6 +1,6 @@
 using Arbitarr.Core.Sources.CircuitBreaker;
 using Arbitarr.Data.CircuitBreaker;
-using Microsoft.Data.Sqlite;
+using Arbitarr.TestSupport;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Time.Testing;
 
@@ -14,27 +14,15 @@ namespace Arbitarr.Data.Tests;
 /// </summary>
 public sealed class SourceHealthRepositoryTests : IDisposable
 {
-    private readonly string _dbPath;
+    private readonly SqliteTestDatabase _database = new("arr-searcher-circuitbreaker-test");
     private static readonly DateTimeOffset Now = new(2026, 8, 27, 12, 0, 0, TimeSpan.Zero);
 
-    public SourceHealthRepositoryTests()
-    {
-        _dbPath = Path.Combine(Path.GetTempPath(), $"arr-searcher-circuitbreaker-test-{Guid.NewGuid():N}.db");
-    }
-
-    public void Dispose()
-    {
-        SqliteConnection.ClearAllPools();
-        if (File.Exists(_dbPath))
-        {
-            File.Delete(_dbPath);
-        }
-    }
+    public void Dispose() => _database.Dispose();
 
     private ArbitarrDbContext CreateContext()
     {
         var optionsBuilder = new DbContextOptionsBuilder<ArbitarrDbContext>();
-        optionsBuilder.UseSqlite($"Data Source={_dbPath}");
+        optionsBuilder.UseSqlite(_database.ConnectionString);
         var context = new ArbitarrDbContext(optionsBuilder.Options);
         context.Database.Migrate();
         return context;

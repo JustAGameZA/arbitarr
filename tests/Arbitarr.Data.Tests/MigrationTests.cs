@@ -1,48 +1,37 @@
+using System.Linq;
 using Arbitarr.Data;
+using Arbitarr.TestSupport;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
-using System.Linq;
 
 namespace Arbitarr.Data.Tests;
 
 public sealed class MigrationTests : IDisposable
 {
-    private readonly string _dbPath;
+    private readonly SqliteTestDatabase _database = new("arr-searcher-migration-test");
 
-    public MigrationTests()
-    {
-        _dbPath = Path.Combine(Path.GetTempPath(), $"arr-searcher-migration-test-{Guid.NewGuid():N}.db");
-    }
-
-    public void Dispose()
-    {
-        SqliteConnection.ClearAllPools();
-        if (File.Exists(_dbPath))
-        {
-            File.Delete(_dbPath);
-        }
-    }
+    public void Dispose() => _database.Dispose();
 
     private ArbitarrDbContext CreateContext()
     {
         var optionsBuilder = new DbContextOptionsBuilder<ArbitarrDbContext>();
-        optionsBuilder.UseSqlite($"Data Source={_dbPath}");
+        optionsBuilder.UseSqlite(_database.ConnectionString);
         return new ArbitarrDbContext(optionsBuilder.Options);
     }
 
     [Fact]
     public void Migrate_OnFreshTempFile_CreatesFullSchema()
     {
-        Assert.False(File.Exists(_dbPath));
+        Assert.False(File.Exists(_database.Path));
 
         using (var context = CreateContext())
         {
             context.Database.Migrate();
         }
 
-        Assert.True(File.Exists(_dbPath));
+        Assert.True(File.Exists(_database.Path));
 
-        using var connection = new SqliteConnection($"Data Source={_dbPath}");
+        using var connection = new SqliteConnection(_database.ConnectionString);
         connection.Open();
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT name FROM sqlite_master WHERE type = 'table';";
@@ -85,7 +74,7 @@ public sealed class MigrationTests : IDisposable
             context.Database.Migrate();
         }
 
-        Assert.True(File.Exists(_dbPath));
+        Assert.True(File.Exists(_database.Path));
     }
 
     [Fact]

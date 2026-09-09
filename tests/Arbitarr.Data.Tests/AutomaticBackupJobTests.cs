@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using Arbitarr.Data.Backup;
+using Arbitarr.TestSupport;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
@@ -32,7 +33,10 @@ public sealed class AutomaticBackupJobTests : IDisposable
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
+        // Scoped to the databases under THIS class's own temp directory rather than
+        // ClearAllPools(), which would also close pooled connections belonging to test classes
+        // running in parallel (arb-rga.3).
+        SqlitePools.ClearPoolsForDirectory(_configDirectory);
         try
         {
             Directory.Delete(_configDirectory, recursive: true);
@@ -371,7 +375,10 @@ public sealed class AutomaticBackupJobTests : IDisposable
             command.ExecuteNonQuery();
         }
 
-        SqliteConnection.ClearAllPools();
+        // The seeded file is read back by the code under test immediately after this, and a
+        // pooled handle keeps it locked on Windows. Scoped to this one file: a process-global
+        // clear here would close a parallel class's connections mid-test.
+        SqlitePools.ClearPoolForFile(_paths.DatabasePath);
 
         // Throwaway key material, generated per test run — never a committed secret (plan §9).
         File.WriteAllBytes(_paths.SecretKeyPath, RandomNumberGenerator.GetBytes(32));

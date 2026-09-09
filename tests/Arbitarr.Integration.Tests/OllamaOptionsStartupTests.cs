@@ -1,4 +1,5 @@
 using Arbitarr.Ai;
+using Arbitarr.TestSupport;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -40,7 +41,12 @@ public sealed class OllamaOptionsStartupTests
 
     private static void Cleanup(string configDirectory)
     {
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        // Scoped to the databases the host created under THIS test's own config directory rather
+        // than ClearAllPools(), which would also close pooled connections belonging to test classes
+        // running in parallel (arb-rga.3). The host owns these files (it was given the directory
+        // via Arbitarr:ConfigDir and has been disposed by now), so they are NOT wrapped in a
+        // SqliteTestDatabase — that fixture is only for a database the test itself opens.
+        SqlitePools.ClearPoolsForDirectory(configDirectory);
         try
         {
             if (Directory.Exists(configDirectory))

@@ -6,8 +6,8 @@ using Arbitarr.Core.Sources;
 using Arbitarr.Data;
 using Arbitarr.Data.Filtering;
 using Arbitarr.Data.Settings;
+using Arbitarr.TestSupport;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
@@ -37,23 +37,14 @@ public class AnimeIdentityLookupCostTests : IDisposable
 
     private const int TvdbId = 81797;
 
-    private readonly string _dbPath = Path.Combine(
-        Path.GetTempPath(),
-        $"arbitarr-anime-lookup-cost-{Guid.NewGuid():N}.db");
+    private readonly SqliteTestDatabase _database = new("arbitarr-anime-lookup-cost");
 
-    public void Dispose()
-    {
-        SqliteConnection.ClearAllPools();
-        if (File.Exists(_dbPath))
-        {
-            File.Delete(_dbPath);
-        }
-    }
+    public void Dispose() => _database.Dispose();
 
     private ArbitarrDbContext CreateContext()
     {
         var optionsBuilder = new DbContextOptionsBuilder<ArbitarrDbContext>();
-        optionsBuilder.UseSqlite($"Data Source={_dbPath}");
+        optionsBuilder.UseSqlite(_database.ConnectionString);
         var context = new ArbitarrDbContext(optionsBuilder.Options);
         context.Database.Migrate();
         return context;
