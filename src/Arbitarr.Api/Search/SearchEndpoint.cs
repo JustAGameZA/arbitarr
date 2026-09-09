@@ -129,8 +129,10 @@ public static class SearchEndpoint
         // arb-u1c: resolve the id to a series title BEFORE the query goes to the cache stage, because
         // both things downstream need it are downstream of here -- the cache key (which needs the
         // absolute number to stop two episodes of one series sharing a row) and the upstream URI
-        // (which needs the title to stop a bare number becoming a feed-wide search).
-        query = await ResolveAnimeIdentityAsync(query, parsedType, identityResolver, cancellationToken).ConfigureAwait(false);
+        // (which needs the title to stop a bare number becoming a feed-wide search). Both the
+        // snapshot token and the two-age key are derived from the query AFTER this runs, so the
+        // resolved title cannot leak across rows that differ by it.
+        query = await ResolveAnimeIdentityAsync(query, identityResolver, cancellationToken).ConfigureAwait(false);
 
         var result = await snapshotService.GetPageAsync(searchType ?? "search", query, cancellationToken).ConfigureAwait(false);
 
@@ -222,50 +224,46 @@ public static class SearchEndpoint
     /// </summary>
     /// <remarks>
     /// <para><b>THE SHAPE THIS TARGETS.</b> Sonarr searches an anime episode as
-    /// <c>t=tvsearch&amp;tvdbid=X&amp;q=NN</c>, where <c>NN</c> is a bare ABSOLUTE episode number and
-    /// there is no <c>season</c> or <c>ep</c> parameter at all. Every other request shape is left
-    /// exactly as it arrived, so this cannot change the query, the cache key, or the upstream URI for
-    /// anything that was working before.</para>
-    ///
-    /// <para><b>THE PREDICATE IS DUPLICATED, DELIBERATELY, AND MUST STAY IN STEP.</b>
-    /// <c>NzbHydraSource.IsIdScopedAbsoluteNumberQuery</c> asks the same question of the same request
-    /// for a different reason: it decides how to spell the upstream <c>q</c>, while this decides what
-    /// to put in the cache key and whether to spend a resolver call. Sharing one predicate would mean
-    /// either <c>Arbitarr.Api</c> referencing a source adapter or a source concept moving into
-    /// <c>Core</c> for one boolean, and both are worse than two functions that agree. If either side
-    /// changes, change the other: they are tested against the same request shape.</para>
+    /// <c>t=tvsearch&amp;tvdbid=X&amp;q=NN</c>, where <c>NN</c> is a bare ABSOLUTE episode number
+    /// and there is no <c>season</c> or <c>ep</c> parameter at all. Every other request shape is
+    /// left exactly as it arrived, so this cannot change the query, the cache key, or the upstream
+    /// URI for anything that was working before. The classification itself is
+    /// <see cref="SearchQuery.IsIdScopedAbsoluteNumberQuery"/> — ONE predicate, shared with
+    /// <c>NzbHydraSource</c>, which builds the upstream URL from the same answer. It used to be two
+    /// copies and they drifted; see that method's remarks.</para>
     ///
     /// <para><b>THE ABSOLUTE NUMBER IS RECORDED EVEN WHEN NOTHING RESOLVES.</b> That is the half of
     /// this that fixes a wrong answer rather than an imprecise one — see
     /// <c>SearchResultCacheStage.BuildNumbering</c>. Resolution failing costs precision upstream;
     /// omitting the number from the key serves episode 91's results for episode 92.</para>
     ///
-    /// <para>A null <paramref name="identityResolver"/> means no resolver is registered, which is the
-    /// normal state when no Sonarr instance has been configured. Resolution never fails the search:
-    /// any exception from the resolver leaves the query with its absolute number and no title, which
-    /// degrades to exactly the id-only upstream request that shipped before this existed.</para>
+    /// <para><b><c>q=0</c> RECORDS ABSOLUTE 0, AND THAT IS THE CORRECT ANSWER.</b> Zero is a real
+    /// distinct value here rather than a stand-in for "none": <c>SearchCacheKeyBuilder</c> renders
+    /// an absent absolute as <c>abs=none</c> and a present zero as <c>abs=0</c>, so the two do not
+    /// collide, and a request for <c>q=0</c> keeps its own cache row instead of sharing the row of
+    /// every request that carried no number. No *arr sends absolute episode 0 in practice — anime
+    /// absolute numbering starts at 1 — so this is about what the key does with a value it should
+    /// never see, and the honest handling is to carry it through rather than to special-case it
+    /// into ambiguity. <c>q=00000</c> parses to the same 0 and shares that row, correctly: they are
+    /// the same number, and collapsing spellings of one number is exactly what the id-scoped key is
+    /// for.</para>
+    ///
+    /// <para>A null <paramref name="identityResolver"/> means no resolver is registered, which is
+    /// the normal state when no Sonarr instance has been configured. Resolution never fails the
+    /// search: any exception from the resolver leaves the query with its absolute number and no
+    /// title, which degrades to exactly the id-only upstream request that shipped before this
+    /// existed. The resolver imposes its own wall-clock bound on the lookup
+    /// (<c>SeriesTitleResolver.LookupBudget</c>) and memoises the answer per series, so a cached
+    /// answer costs nothing and an unreachable Sonarr cannot add its full client timeout to every
+    /// anime search.</para>
     /// </remarks>
     private static async Task<SearchQuery> ResolveAnimeIdentityAsync(
         SearchQuery query,
-        SearchType parsedType,
         IIdentityResolver? identityResolver,
         CancellationToken cancellationToken)
     {
-        if (parsedType != SearchType.TvSearch || query.TvdbId is not { } tvdbId)
+        if (!query.IsIdScopedAbsoluteNumberQuery(out var absolute) || query.TvdbId is not { } tvdbId)
         {
-            return query;
-        }
-
-        var queryText = query.QueryText?.Trim() ?? string.Empty;
-        if (queryText.Length == 0 || !queryText.All(char.IsAsciiDigit))
-        {
-            return query;
-        }
-
-        if (!int.TryParse(queryText, NumberStyles.None, CultureInfo.InvariantCulture, out var absolute))
-        {
-            // A run of digits too long to be an int is not an episode number. Leave it alone rather
-            // than recording a nonsense value in the cache key.
             return query;
         }
 
@@ -279,7 +277,10 @@ public static class SearchEndpoint
         try
         {
             var identity = await identityResolver
-                .ResolveAsync(queryText, new IdentityResolutionHints(tvdbId, TmdbId: null, Year: null), cancellationToken)
+                .ResolveAsync(
+                    query.QueryText?.Trim() ?? string.Empty,
+                    new IdentityResolutionHints(tvdbId, TmdbId: null, Year: null),
+                    cancellationToken)
                 .ConfigureAwait(false);
 
             return string.IsNullOrWhiteSpace(identity?.PrimaryTitle)

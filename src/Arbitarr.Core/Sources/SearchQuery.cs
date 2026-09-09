@@ -73,4 +73,62 @@ public sealed record SearchQuery(
     int? Episode = null,
     SearchType Type = SearchType.Search,
     int? Absolute = null,
-    string? ResolvedTitle = null);
+    string? ResolvedTitle = null)
+{
+    /// <summary>
+    /// Whether this request is Sonarr's anime episode shape: an id-scoped TV search whose
+    /// <c>q</c> is a bare absolute episode number. When true, <paramref name="absolute"/> carries
+    /// that number.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>ONE PREDICATE, BECAUSE TWO DRIFTED.</b> This question is asked in two places for two
+    /// reasons — <c>SearchEndpoint</c> asks it to decide what goes in the cache key and whether to
+    /// spend an identity lookup, and <c>NzbHydraSource.BuildSearchUri</c> asks it to decide how to
+    /// spell the upstream <c>q</c> — and arb-u1c shipped them as two functions that were supposed to
+    /// agree. They did not: only one had an overflow guard, so a 20-digit <c>q</c> was classified as
+    /// a bare number by the source (which withheld it) and as ordinary text by the endpoint (which
+    /// recorded no absolute). They also disagreed about a <c>t=search</c> request carrying a tvdbid,
+    /// which the source treats as a tvsearch and the endpoint did not. Two call sites deciding the
+    /// upstream URL and the cache key from different answers is how one episode's results get
+    /// cached under another's, so the predicate lives here, on the query it is about, and both sides
+    /// call it.</para>
+    ///
+    /// <para><b>THE OVERFLOW GUARD IS PART OF THE ANSWER, not a caller's afterthought.</b> A run of
+    /// digits too long to be an <see cref="int"/> is not an episode number; it is text that happens
+    /// to be numeric. Answering false for it means the source sends it as an ordinary <c>q</c> — the
+    /// correct handling for text — rather than withholding a <c>q</c> it could not parse, and means
+    /// no nonsense value is recorded in the cache key.</para>
+    ///
+    /// <para>Scoped deliberately narrowly, and this scoping is load-bearing: only a TV search that
+    /// will actually emit its <c>tvdbid</c>, and only when the text is ENTIRELY ASCII digits. A
+    /// textual <c>q</c> next to an id (<c>tvdbid=74796&amp;q=bleach</c>) is a title and stays; a
+    /// numeric <c>q</c> with no id has nothing else to identify the series and stays, since dropping
+    /// it would turn the request into a category-wide feed. <c>char.IsAsciiDigit</c> rather than
+    /// <c>char.IsDigit</c> because Sonarr formats the number with the invariant culture: only ASCII
+    /// digits are the shape being matched, and a non-ASCII numeral is text like any other.</para>
+    /// </remarks>
+    public bool IsIdScopedAbsoluteNumberQuery(out int absolute)
+    {
+        absolute = 0;
+
+        // The source treats a tvdbid-bearing request as a tvsearch whatever its inbound t= said, so
+        // the id's presence — not the declared mode alone — is what makes this shape. Asking it this
+        // way is what keeps this answer identical to the one the upstream URL is built from.
+        if (TvdbId is null || Type == SearchType.Movie)
+        {
+            return false;
+        }
+
+        var queryText = QueryText?.Trim() ?? string.Empty;
+        if (queryText.Length == 0 || !queryText.All(char.IsAsciiDigit))
+        {
+            return false;
+        }
+
+        return int.TryParse(
+            queryText,
+            System.Globalization.NumberStyles.None,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out absolute);
+    }
+}

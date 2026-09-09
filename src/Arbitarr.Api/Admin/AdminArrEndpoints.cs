@@ -187,12 +187,22 @@ public static class AdminArrEndpoints
     /// saved work", and a probe against a body-supplied URL would answer a different question and
     /// turn this route into an authenticated request-forwarder.</para>
     ///
-    /// <para>This is the one place <c>ReadApiKeyForUpstreamRequestAsync</c> is called from, and the
-    /// value goes straight into the outbound probe. It is never returned: the response carries a
-    /// closed enum and wording derived from that enum alone.</para>
+    /// <para><b>THE KEY IS NOT READ HERE.</b> This route obtains the credential from
+    /// <see cref="SonarrCredentialProvider"/>, which since arb-u1c is the single production caller
+    /// of <c>ArrInstanceRepository.ReadApiKeyForUpstreamRequestAsync</c> — the search path's
+    /// identity resolver needs the same credential, and two sites calling the reader directly is
+    /// exactly the call-site count that guarantee is made of (CLAUDE.md §1). The value still goes
+    /// straight into the outbound probe and is never returned: the response carries a closed enum
+    /// and wording derived from that enum alone.</para>
+    ///
+    /// <para>A null credential covers both "no address" and "address with no key". They are
+    /// reported apart because the operator's next action differs: nothing is configured at all
+    /// versus a half-configured instance whose probe would be answered 401 by a Sonarr that is not
+    /// actually broken.</para>
     /// </summary>
     private static async Task<IResult> TestAsync(
         ArrInstanceRepository repository,
+        SonarrCredentialProvider credentials,
         SonarrConnectivityProber prober,
         CancellationToken cancellationToken)
     {
@@ -202,8 +212,13 @@ public static class AdminArrEndpoints
             return Results.BadRequest(new { error = "No Sonarr base URL is configured." });
         }
 
-        var apiKey = await repository.ReadApiKeyForUpstreamRequestAsync(cancellationToken);
-        var outcome = await prober.ProbeAsync(baseUrl, apiKey, cancellationToken);
+        var credential = await credentials.GetAsync(cancellationToken);
+        if (credential is null)
+        {
+            return Results.BadRequest(new { error = "No Sonarr API key is configured." });
+        }
+
+        var outcome = await prober.ProbeAsync(credential.BaseUrl.ToString(), credential.ApiKey, cancellationToken);
 
         return Results.Ok(new ArrTestResponse(
             Success: outcome == SourceProbeOutcome.Ok,

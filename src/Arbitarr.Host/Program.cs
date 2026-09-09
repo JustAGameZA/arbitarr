@@ -573,6 +573,15 @@ builder.Services.AddScoped<Arbitarr.Data.Media.ArrInstanceRepository>();
 builder.Services.AddHttpClient<Arbitarr.Core.Media.SonarrConnectivityProber>()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 
+// arb-u1c: the SINGLE production reader of the stored Sonarr API key. Both the admin connectivity
+// probe and the search path's identity resolver need an authenticated request against the
+// configured Sonarr; routing both through this one type is what keeps
+// ArrInstanceRepository.ReadApiKeyForUpstreamRequestAsync at exactly one call site, which is the
+// form that guarantee takes (CLAUDE.md section 1, docs/standards/architecture.md). It lives in
+// Arbitarr.Data because both Arbitarr.Api and Arbitarr.Media already reference that project and
+// neither may reference the other.
+builder.Services.AddScoped<Arbitarr.Data.Media.SonarrCredentialProvider>();
+
 // arb-u1c: the identity resolver that turns Sonarr's tvdbid into the series title the search path
 // sends upstream. Registered against the Core.Identity contract, so Arbitarr.Api (which builds the
 // search query) never sees Arbitarr.Media -- this composition root is the only place that knows
@@ -585,6 +594,13 @@ builder.Services.AddHttpClient<Arbitarr.Core.Media.SonarrConnectivityProber>()
 // the rows per call and returns null throughout when they are missing, so an unconfigured instance
 // costs one settings read and changes no behaviour.
 builder.Services.AddScoped<Arbitarr.Core.Identity.IIdentityResolver, Arbitarr.Media.Providers.SeriesTitleResolver>();
+
+// The memo behind SeriesTitleResolver's tvdbid->title lookup. SINGLETON, deliberately: the resolver
+// itself is scoped (it reads per-request database state), so a scoped cache would be a fresh empty
+// cache on every request and would memoise nothing at all. The entries are a series id and a public
+// title with a five-minute TTL -- no per-user or credential-derived state -- so one instance shared
+// across requests is correct rather than merely convenient.
+builder.Services.AddMemoryCache();
 
 // The client the *arr identity lookup rides on. NAMED rather than typed because ArrApiProvider is
 // constructed per call around configuration read from the database (see SeriesTitleResolver), so DI
@@ -600,7 +616,15 @@ builder.Services.AddScoped<Arbitarr.Core.Identity.IIdentityResolver, Arbitarr.Me
 // message. Move the key into a URL PATH segment and neither that collapse nor LogMessageCleanser
 // (which does not scrub paths, CLAUDE.md §1) covers it, and this registration would need
 // .RemoveAllLoggers().
-builder.Services.AddHttpClient(Arbitarr.Media.Providers.SeriesTitleResolver.ArrHttpClientName)
+//
+// THE TIMEOUT IS SET HERE, ONCE, and ArrApiProvider must never assign HttpClient.Timeout itself:
+// the provider is constructed per call around this POOLED client, and HttpClient throws on that
+// assignment once a request has started on the instance, so two concurrent searches were enough to
+// make one throw. A caller wanting a shorter bound uses a linked CancellationTokenSource instead --
+// SeriesTitleResolver.LookupBudget is exactly that, and is why this longer value is safe here.
+builder.Services.AddHttpClient(
+        Arbitarr.Media.Providers.SeriesTitleResolver.ArrHttpClientName,
+        client => client.Timeout = Arbitarr.Media.Providers.ArrApiProviderOptions.DefaultRequestTimeout)
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 
 // #89: the AI backend's connectivity probe. AllowAutoRedirect is disabled for the same SEC-M5 SSRF

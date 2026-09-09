@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Text;
 using Arbitarr.Core.Identity;
@@ -7,6 +8,7 @@ using Arbitarr.Data.Media;
 using Arbitarr.Media.Providers;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Xunit;
 
 namespace Arbitarr.Media.Tests;
@@ -16,10 +18,16 @@ namespace Arbitarr.Media.Tests;
 /// series title the upstream query needs, or admits nothing.
 ///
 /// <para>
-/// The cases that matter here are the ones where it must admit NOTHING, because each of them is a
-/// way a plausible implementation sends a confidently wrong query upstream: echoing back the bare
-/// episode number it was given as if it were a title, or picking the first of several AniDB names
-/// that the data gives no basis to choose between (ADR 0002).
+/// The cases that matter here are the ones where it must admit NOTHING, because each is a way a
+/// plausible implementation sends a confidently wrong query upstream — chiefly echoing back the bare
+/// episode number it was given as if it were a title, in any spelling of that number.
+/// </para>
+///
+/// <para>
+/// The AnimeLists fallback tier is deliberately NOT tested here, because it is deliberately not
+/// wired — see the type's own remarks and bead arb-5uw. Its previous tests passed only by
+/// constructing the provider directly while DI left the parameter null, so they asserted about a
+/// path no request could reach.
 /// </para>
 /// </summary>
 public sealed class SeriesTitleResolverTests : IDisposable
@@ -58,23 +66,32 @@ public sealed class SeriesTitleResolverTests : IDisposable
                 + System.Text.Json.JsonSerializer.Serialize(seriesTitle)
                 + "}}]";
 
+    private static IMemoryCache NewMemo() => new MemoryCache(new MemoryCacheOptions());
+
     private static SeriesTitleResolver Build(
         ArbitarrDbContext context,
         string body,
         HttpStatusCode status = HttpStatusCode.OK,
-        AnimeListsProvider? animeLists = null)
-    {
-        var handler = new FakeHttpMessageHandler(_ => new HttpResponseMessage(status)
-        {
-            Content = new StringContent(body, Encoding.UTF8, "application/json"),
-        });
+        IMemoryCache? memo = null) =>
+        BuildWithHandler(
+            context,
+            new FakeHttpMessageHandler(_ => new HttpResponseMessage(status)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json"),
+            }),
+            memo);
 
-        return new SeriesTitleResolver(
-            new ArrInstanceRepository(context),
+    private static SeriesTitleResolver BuildWithHandler(
+        ArbitarrDbContext context,
+        HttpMessageHandler handler,
+        IMemoryCache? memo = null,
+        TimeSpan? lookupBudget = null) =>
+        new(
+            new SonarrCredentialProvider(new ArrInstanceRepository(context)),
             new StubHttpClientFactory(new HttpClient(handler)),
             new StubCircuitBreaker(),
-            animeLists);
-    }
+            memo ?? NewMemo(),
+            lookupBudget);
 
     private static IdentityResolutionHints Hints(int? tvdbId = TvdbId) => new(tvdbId, TmdbId: null, Year: null);
 
@@ -110,6 +127,56 @@ public sealed class SeriesTitleResolverTests : IDisposable
         Assert.Null(await resolver.ResolveAsync("92", Hints(), CancellationToken.None));
     }
 
+    /// <summary>
+    /// The echo guard's other half, and the one a text comparison alone does not catch: the SAME
+    /// episode number spelled differently. "092" echoed back beside a <c>q</c> of "92" would put
+    /// "92 092" on the wire, which is the duplication the guard exists to prevent — the padding does
+    /// not make it a title.
+    /// </summary>
+    [Theory]
+    [InlineData("92")]
+    [InlineData("092")]
+    [InlineData("00092")]
+    [InlineData(" 92 ")]
+    public async Task Admits_nothing_when_the_resolved_title_is_the_episode_number_we_sent(string seriesTitle)
+    {
+        await using var context = CreateContext();
+        await new ArrInstanceRepository(context).SetAsync(BaseUrl, ApiKey, CancellationToken.None);
+
+        var resolver = Build(context, EpisodeFeed(seriesTitle));
+
+        Assert.Null(await resolver.ResolveAsync("92", Hints(), CancellationToken.None));
+    }
+
+    /// <summary>
+    /// The positive control for the guard above, and the reason it is scoped to the echoed number
+    /// rather than to "any numeric title".
+    /// </summary>
+    /// <remarks>
+    /// Rejecting every all-digit title was written first and is WRONG: <c>86</c> is a real series,
+    /// and so are <c>91 Days</c> and <c>5</c>. Guarding against a number that is not the one we sent
+    /// would make those unsearchable — a quieter bug than the one being prevented — and
+    /// <c>ArrApiProvider</c> cannot produce that shape anyway: it returns either the title it was
+    /// given (which the echo guard catches) or a genuine <c>series.title</c> from *arr.
+    /// </remarks>
+    [Theory]
+    [InlineData("86")]
+    [InlineData("7")]
+    [InlineData("91 Days")]
+    [InlineData("Mobile Suit Gundam 00")]
+    public async Task Keeps_a_real_title_even_when_it_is_numeric(string seriesTitle)
+    {
+        await using var context = CreateContext();
+        await new ArrInstanceRepository(context).SetAsync(BaseUrl, ApiKey, CancellationToken.None);
+
+        var resolver = Build(context, EpisodeFeed(seriesTitle));
+
+        var identity = await resolver.ResolveAsync("92", Hints(), CancellationToken.None);
+
+        Assert.NotNull(identity);
+        Assert.Equal(seriesTitle, identity.PrimaryTitle);
+    }
+
     [Fact]
     public async Task Admits_nothing_when_no_sonarr_instance_is_configured()
     {
@@ -135,10 +202,7 @@ public sealed class SeriesTitleResolverTests : IDisposable
         {
             Content = new StringContent(EpisodeFeed("One Piece"), Encoding.UTF8, "application/json"),
         });
-        var resolver = new SeriesTitleResolver(
-            new ArrInstanceRepository(context),
-            new StubHttpClientFactory(new HttpClient(handler)),
-            new StubCircuitBreaker());
+        var resolver = BuildWithHandler(context, handler);
 
         Assert.Null(await resolver.ResolveAsync("92", Hints(), CancellationToken.None));
         Assert.Equal(0, handler.RequestCount);
@@ -183,10 +247,7 @@ public sealed class SeriesTitleResolverTests : IDisposable
         {
             Content = new StringContent(EpisodeFeed("One Piece"), Encoding.UTF8, "application/json"),
         });
-        var resolver = new SeriesTitleResolver(
-            new ArrInstanceRepository(context),
-            new StubHttpClientFactory(new HttpClient(handler)),
-            new StubCircuitBreaker());
+        var resolver = BuildWithHandler(context, handler);
 
         await resolver.ResolveAsync("92", Hints(), CancellationToken.None);
 
@@ -198,130 +259,139 @@ public sealed class SeriesTitleResolverTests : IDisposable
         Assert.DoesNotContain(ApiKey, uri.AbsolutePath, StringComparison.Ordinal);
     }
 
-    // ---- ADR 0002: the AnimeLists fallback admits nothing when it cannot choose -----------------
+    // ---- The memo: a repeated search must not re-ask Sonarr ------------------------------------
 
     /// <summary>
-    /// ADR 0002, and the reason the fallback is not "take the first name". <c>AnimeListsEntry.Names</c>
-    /// is an unordered set of alternate renderings with no primary designation, so several DISTINCT
-    /// names means the data cannot say which to search for. Picking one anyway would send a
-    /// confidently wrong query upstream; admitting nothing degrades to the id-only request, which is
-    /// imprecise but never wrong.
+    /// The reason the memo exists. Every page of a paginated anime search, and every sibling request
+    /// Sonarr issues for one episode, resolves the same series — so asking once per request would put
+    /// a live Sonarr call on a path that is otherwise served entirely from cache.
     /// </summary>
     [Fact]
-    public async Task Admits_nothing_when_animelists_offers_several_distinct_names()
-    {
-        await using var context = CreateContext();
-        var resolver = BuildWithAnimeLists(context, new AnimeListsEntry(
-            AniDbId: 69,
-            TvdbId: TvdbId,
-            TmdbId: null,
-            DefaultTvdbSeason: 1,
-            Names: new[] { "Ghost in the Shell: Arise", "Ghost in the Shell: SAC_2045" }));
-
-        Assert.Null(await resolver.ResolveAsync("92", Hints(), CancellationToken.None));
-    }
-
-    /// <summary>
-    /// The positive control for the test above: the fallback is reached and CAN resolve, so
-    /// "admits nothing when ambiguous" is a decision about the names rather than a fallback that
-    /// never returns anything at all.
-    /// </summary>
-    [Fact]
-    public async Task Resolves_from_animelists_when_exactly_one_name_is_on_offer()
-    {
-        await using var context = CreateContext();
-        var resolver = BuildWithAnimeLists(context, new AnimeListsEntry(
-            AniDbId: 69,
-            TvdbId: TvdbId,
-            TmdbId: null,
-            DefaultTvdbSeason: 1,
-            Names: new[] { "One Piece" }));
-
-        var identity = await resolver.ResolveAsync("92", Hints(), CancellationToken.None);
-
-        Assert.NotNull(identity);
-        Assert.Equal("One Piece", identity.PrimaryTitle);
-    }
-
-    /// <summary>
-    /// Names that differ only in casing or surrounding whitespace are the SAME name, not competing
-    /// candidates — otherwise a duplicate row in a hand-edited XML file would be read as ambiguity
-    /// and suppress a title the data actually agrees on.
-    /// </summary>
-    [Fact]
-    public async Task Treats_names_differing_only_in_case_or_whitespace_as_one_name()
-    {
-        await using var context = CreateContext();
-        var resolver = BuildWithAnimeLists(context, new AnimeListsEntry(
-            AniDbId: 69,
-            TvdbId: TvdbId,
-            TmdbId: null,
-            DefaultTvdbSeason: 1,
-            Names: new[] { "One Piece", " one piece ", "One Piece" }));
-
-        var identity = await resolver.ResolveAsync("92", Hints(), CancellationToken.None);
-
-        Assert.NotNull(identity);
-        Assert.Equal("One Piece", identity.PrimaryTitle);
-    }
-
-    /// <summary>
-    /// Sonarr wins when both can answer: it is the authority that already reconciled this series,
-    /// and the Q5-D preference order puts it first.
-    /// </summary>
-    [Fact]
-    public async Task Prefers_the_sonarr_title_over_the_animelists_name()
+    public async Task Asks_sonarr_once_for_a_repeated_lookup_of_the_same_series()
     {
         await using var context = CreateContext();
         await new ArrInstanceRepository(context).SetAsync(BaseUrl, ApiKey, CancellationToken.None);
 
-        var animeLists = MakeAnimeLists(new AnimeListsEntry(
-            AniDbId: 69, TvdbId: TvdbId, TmdbId: null, DefaultTvdbSeason: 1,
-            Names: new[] { "Wan Pisu" }));
-
-        var resolver = Build(context, EpisodeFeed("One Piece"), animeLists: animeLists);
-
-        var identity = await resolver.ResolveAsync("92", Hints(), CancellationToken.None);
-
-        Assert.NotNull(identity);
-        Assert.Equal("One Piece", identity.PrimaryTitle);
-    }
-
-    private SeriesTitleResolver BuildWithAnimeLists(ArbitarrDbContext context, AnimeListsEntry entry) =>
-        new(
-            new ArrInstanceRepository(context),
-            new StubHttpClientFactory(new HttpClient(new FakeHttpMessageHandler(
-                _ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)))),
-            new StubCircuitBreaker(),
-            MakeAnimeLists(entry));
-
-    /// <summary>
-    /// An <see cref="AnimeListsProvider"/> backed by a one-entry XML document served from a stub
-    /// handler and persisted to a per-test directory, so the fallback is exercised through the real
-    /// provider rather than a hand-made stand-in.
-    /// </summary>
-    private AnimeListsProvider MakeAnimeLists(AnimeListsEntry entry)
-    {
-        var names = string.Concat(entry.Names.Select(n =>
-            $"<name>{System.Security.SecurityElement.Escape(n)}</name>"));
-        var xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><anime-list>"
-            + $"<anime anidbid=\"{entry.AniDbId}\" tvdbid=\"{entry.TvdbId}\" defaulttvdbseason=\"{entry.DefaultTvdbSeason}\">"
-            + $"{names}</anime></anime-list>";
-
-        var directory = Path.Combine(Path.GetTempPath(), $"arbitarr-animelists-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(directory);
-
         var handler = new FakeHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
-            Content = new StringContent(xml, Encoding.UTF8, "application/xml"),
+            Content = new StringContent(EpisodeFeed("One Piece"), Encoding.UTF8, "application/json"),
         });
+        var resolver = BuildWithHandler(context, handler);
 
-        return new AnimeListsProvider(
-            new AnimeListsProviderOptions(
-                new Uri("http://anime-lists.example.invalid/anime-list-full.xml"),
-                ConfigDirectory: directory,
-                MinimumRequestSpacing: TimeSpan.Zero),
-            new HttpClient(handler));
+        var first = await resolver.ResolveAsync("92", Hints(), CancellationToken.None);
+        var second = await resolver.ResolveAsync("93", Hints(), CancellationToken.None);
+
+        // The positive control: the FIRST call really did go to Sonarr, so "only one request" is a
+        // statement about the second being served from the memo rather than about nothing happening.
+        Assert.Equal(1, handler.RequestCount);
+        Assert.Equal("One Piece", first?.PrimaryTitle);
+        Assert.Equal("One Piece", second?.PrimaryTitle);
+    }
+
+    /// <summary>
+    /// Negative answers are memoised too, and this is the case that matters most: an unreachable
+    /// Sonarr would otherwise be asked — and time out — once per request forever.
+    /// </summary>
+    [Fact]
+    public async Task Asks_sonarr_once_even_when_the_answer_was_nothing()
+    {
+        await using var context = CreateContext();
+        await new ArrInstanceRepository(context).SetAsync(BaseUrl, ApiKey, CancellationToken.None);
+
+        var handler = new FakeHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+        var resolver = BuildWithHandler(context, handler);
+
+        Assert.Null(await resolver.ResolveAsync("92", Hints(), CancellationToken.None));
+        Assert.Null(await resolver.ResolveAsync("93", Hints(), CancellationToken.None));
+
+        Assert.Equal(1, handler.RequestCount);
+    }
+
+    /// <summary>
+    /// The memo is keyed per series, so one series' answer must not be handed to another. Without
+    /// this the memo would be a correctness bug rather than an optimisation.
+    /// </summary>
+    [Fact]
+    public async Task Does_not_serve_one_series_title_for_a_different_tvdb_id()
+    {
+        await using var context = CreateContext();
+        await new ArrInstanceRepository(context).SetAsync(BaseUrl, ApiKey, CancellationToken.None);
+
+        var handler = new SequencedHandler(EpisodeFeed("One Piece"), EpisodeFeed("Bleach"));
+        var resolver = BuildWithHandler(context, handler);
+
+        var first = await resolver.ResolveAsync("92", Hints(), CancellationToken.None);
+        var second = await resolver.ResolveAsync("92", Hints(tvdbId: TvdbId + 1), CancellationToken.None);
+
+        Assert.Equal("One Piece", first?.PrimaryTitle);
+        Assert.Equal("Bleach", second?.PrimaryTitle);
+        Assert.Equal(2, handler.RequestCount);
+    }
+
+    // ---- The budget: a slow Sonarr must not hold up the search ---------------------------------
+
+    /// <summary>
+    /// A title is an OPTIMISATION of the upstream query, never a precondition for issuing it, so a
+    /// Sonarr that has stopped answering must cost the search its short budget and not the pooled
+    /// client's much longer timeout. The handler here never completes until cancelled, which is
+    /// exactly the shape a hung upstream presents.
+    /// </summary>
+    [Fact]
+    public async Task Gives_up_on_a_sonarr_that_does_not_answer_within_the_budget()
+    {
+        await using var context = CreateContext();
+        await new ArrInstanceRepository(context).SetAsync(BaseUrl, ApiKey, CancellationToken.None);
+
+        var budget = TimeSpan.FromMilliseconds(200);
+        var resolver = BuildWithHandler(context, new NeverAnswersHandler(), lookupBudget: budget);
+
+        var stopwatch = Stopwatch.StartNew();
+        var identity = await resolver.ResolveAsync("92", Hints(), CancellationToken.None);
+        stopwatch.Stop();
+
+        Assert.Null(identity);
+
+        // Bounded ABOVE by a generous multiple of the budget rather than asserted near-exactly: the
+        // claim under test is "the budget is what ends this", and a CI machine's scheduling noise
+        // must not turn that into a flake. The default client timeout would blow this bound by an
+        // order of magnitude, which is the regression this is here to catch.
+        Assert.True(
+            stopwatch.Elapsed < TimeSpan.FromSeconds(3),
+            $"the lookup took {stopwatch.Elapsed}, which is not bounded by the {budget} budget");
+    }
+
+    /// <summary>
+    /// The caller's own cancellation is not the resolver's budget firing, and must not be memoised
+    /// as an answer about the series — the next request would inherit an aborted one's silence.
+    /// </summary>
+    [Fact]
+    public async Task Does_not_memoise_an_answer_when_the_caller_cancelled()
+    {
+        await using var context = CreateContext();
+        await new ArrInstanceRepository(context).SetAsync(BaseUrl, ApiKey, CancellationToken.None);
+
+        var memo = NewMemo();
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+
+        var resolver = BuildWithHandler(context, new NeverAnswersHandler(), memo);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => resolver.ResolveAsync("92", Hints(), cancelled.Token));
+
+        // The same memo, now asked by a caller who has not cancelled, reaches Sonarr rather than
+        // replaying the aborted request's silence.
+        var handler = new FakeHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(EpisodeFeed("One Piece"), Encoding.UTF8, "application/json"),
+        });
+        var second = BuildWithHandler(context, handler, memo);
+
+        var identity = await second.ResolveAsync("92", Hints(), CancellationToken.None);
+
+        Assert.Equal("One Piece", identity?.PrimaryTitle);
+        Assert.Equal(1, handler.RequestCount);
     }
 
     /// <summary>Hands out one preconfigured client, which is all the resolver asks of the factory.</summary>
@@ -345,5 +415,38 @@ public sealed class SeriesTitleResolverTests : IDisposable
 
         public Task RecordFailureAsync(string sourceName, Exception exception, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
+    }
+
+    /// <summary>Answers each request with the next body in turn, so two series can be told apart.</summary>
+    private sealed class SequencedHandler : HttpMessageHandler
+    {
+        private readonly Queue<string> _bodies;
+
+        public SequencedHandler(params string[] bodies) => _bodies = new Queue<string>(bodies);
+
+        public int RequestCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            RequestCount++;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(_bodies.Dequeue(), Encoding.UTF8, "application/json"),
+            });
+        }
+    }
+
+    /// <summary>
+    /// Never completes until the request is cancelled — a hung upstream, which is what the budget
+    /// exists to bound. A handler that merely delayed for a fixed time would also pass a test that
+    /// had no bound at all, given a long enough delay; this one cannot.
+    /// </summary>
+    private sealed class NeverAnswersHandler : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
+            throw new UnreachableException();
+        }
     }
 }

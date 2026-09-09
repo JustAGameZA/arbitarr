@@ -295,55 +295,39 @@ public sealed class NzbHydraSource : IUpstreamSource
     private const string TvSearchMode = "tvsearch";
 
     /// <summary>
-    /// True for Sonarr's anime episode search shape — <c>t=tvsearch</c>, a <c>tvdbid</c>, and a
-    /// <c>q</c> that is nothing but the absolute episode number (<c>tvdbid=81797&amp;q=92</c>,
-    /// "One Piece, absolute 92"). Sonarr's <c>NewznabRequestGenerator</c> builds it as
-    /// <c>ids + "&amp;q={AbsoluteEpisodeNumber:00}"</c>: the id is meant to select the series and
-    /// the number to filter within it.
+    /// Sonarr's anime episode search shape — <c>t=tvsearch</c>, a <c>tvdbid</c>, and a <c>q</c>
+    /// that is nothing but the absolute episode number (<c>tvdbid=81797&amp;q=92</c>, "One Piece,
+    /// absolute 92") — is classified by <see cref="SearchQuery.IsIdScopedAbsoluteNumberQuery"/>,
+    /// NOT by a predicate of this type's own.
     /// </summary>
     /// <remarks>
-    /// NZBHydra2 cannot honour that split. When a request carries a <c>q</c> it treats the text as
-    /// the whole query, and for every indexer that does not support the id it drops the id and
-    /// sends the bare number as the free-text term — observed 2026-09-08 as
-    /// <c>t=search&amp;q=92</c> reaching Animetosho and ameNZB, which returned episode 92 of every
-    /// anime on the feed and nothing for the series Sonarr asked about. A number alone identifies
-    /// nothing, so it must never reach upstream as free text. With the id and no <c>q</c>, NZBHydra2
-    /// passes the id to indexers that accept it and converts it to the series title for the rest —
-    /// the closest shape to "this series" that it can actually execute. The exact-episode text form
-    /// is not lost: Sonarr sends <c>t=search&amp;q={title}+{absolute:00}</c> alongside this request
-    /// for every scene title it knows, and that one goes upstream verbatim.
+    /// <para><b>THE PREDICATE MOVED, AND MUST NOT COME BACK.</b> arb-u1c briefly had a copy here
+    /// and a second copy in <c>SearchEndpoint</c>, on the reasoning that they asked the same
+    /// question for different purposes. They drifted immediately — only one grew an overflow guard,
+    /// and they disagreed about a <c>t=search</c> carrying a tvdbid, which this adapter treats as a
+    /// tvsearch. Since this side decides the upstream URL and the other decides the CACHE KEY, a
+    /// disagreement caches one episode's results under another's. One predicate on the query is the
+    /// fix; see its remarks for the scoping rules and why the overflow guard is part of the
+    /// answer.</para>
     ///
-    /// <b>SINCE arb-u1c THIS PREDICATE SELECTS A BRANCH RATHER THAN A DELETION.</b> It still answers
-    /// "is this the shape where the bare number must not go up alone", and that answer is still no
-    /// weaker — but <see cref="BuildSearchUri"/> now has two ways to satisfy it. When
+    /// <para><b>WHY THE BARE NUMBER IS NEVER SENT ALONE.</b> NZBHydra2 cannot honour Sonarr's
+    /// id-plus-number split. When a request carries a <c>q</c> it treats the text as the whole
+    /// query, and for every indexer that does not support the id it drops the id and sends the bare
+    /// number as the free-text term — observed 2026-09-08 as <c>t=search&amp;q=92</c> reaching
+    /// Animetosho and ameNZB, which returned episode 92 of every anime on the feed and nothing for
+    /// the series Sonarr asked about. A number alone identifies nothing, so it must never reach
+    /// upstream as free text. With the id and no <c>q</c>, NZBHydra2 passes the id to indexers that
+    /// accept it and converts it to the series title for the rest — the closest shape to "this
+    /// series" it can actually execute.</para>
+    ///
+    /// <para><b>SINCE arb-u1c THIS SELECTS A BRANCH RATHER THAN A DELETION.</b> When
     /// <see cref="SearchQuery.ResolvedTitle"/> carries a title an identity resolver derived from the
-    /// tvdbid, the number goes up WITH it (<c>q=One Piece 92</c>) — which is what the paragraph
-    /// above says Sonarr's own sibling request does, and the reason the number was withheld was only
-    /// ever that it was ALONE. With no resolved title the behaviour is unchanged: no <c>q</c> at
-    /// all. Do not "simplify" this predicate into an unconditional withhold again; the branch is the
-    /// fix, and the withhold is its fallback.
-    ///
-    /// Scoped deliberately narrowly: only a <c>tvsearch</c> that will actually emit its
-    /// <c>tvdbid</c>, and only when the text is entirely digits. A textual <c>q</c> next to an id
-    /// (<c>tvdbid=74796&amp;q=bleach</c>) is a title and stays; a numeric <c>q</c> without an id has
-    /// nothing else to identify the series and stays, since dropping it would turn the request into
-    /// a category-wide feed. <c>char.IsAsciiDigit</c> rather than <c>char.IsDigit</c> because Sonarr
-    /// formats the number with the invariant culture: only ASCII digits are the shape being matched,
-    /// and a non-ASCII numeral is text like any other.
-    ///
-    /// <paramref name="queryText"/> is the already-trimmed text <see cref="BuildSearchUri"/> emits,
-    /// so the value classified and the value sent are the same string.
+    /// tvdbid, the number goes up WITH it (<c>q=One Piece 92</c>) — which is exactly what Sonarr's
+    /// own sibling request sends for every scene title it knows, and the reason the number was
+    /// withheld was only ever that it was ALONE. With no resolved title the behaviour is unchanged:
+    /// no <c>q</c> at all. Do not "simplify" this into an unconditional withhold again; the branch
+    /// is the fix, and the withhold is its fallback.</para>
     /// </remarks>
-    private static bool IsIdScopedAbsoluteNumberQuery(string queryText, string mode, int? tvdbId)
-    {
-        if (!string.Equals(mode, TvSearchMode, StringComparison.Ordinal) || tvdbId is null)
-        {
-            return false;
-        }
-
-        return queryText.Length > 0 && queryText.All(char.IsAsciiDigit);
-    }
-
     private Uri BuildSearchUri(SearchQuery query, int limit, int offset)
     {
         var mode = SearchMode(query);
@@ -358,7 +342,7 @@ public sealed class NzbHydraSource : IUpstreamSource
         // Trimmed once here and the same value is both classified and emitted, so the predicate
         // cannot say "withhold" about a string different from the one that would have gone up.
         var queryText = query.QueryText?.Trim() ?? string.Empty;
-        if (IsIdScopedAbsoluteNumberQuery(queryText, mode, query.TvdbId))
+        if (query.IsIdScopedAbsoluteNumberQuery(out _))
         {
             // arb-u1c: the anime shape, and the interim fix's own remark said what was missing —
             // "a number alone identifies nothing". When an identity resolver has since turned the

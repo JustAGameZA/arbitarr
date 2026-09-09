@@ -207,7 +207,8 @@ public sealed class PaginationSnapshotService
     {
         var normalizedCategories = string.Join(",", query.Categories.OrderBy(c => c));
         var raw = $"{searchType}\u001f{query.Type}\u001f{query.Protocol}\u001f{query.QueryText}\u001f{normalizedCategories}" +
-                  $"\u001f{query.TvdbId}\u001f{query.TmdbId}\u001f{query.Season}\u001f{query.Episode}";
+                  $"\u001f{query.TvdbId}\u001f{query.TmdbId}\u001f{query.Season}\u001f{query.Episode}" +
+                  $"\u001f{query.Absolute}\u001f{query.ResolvedTitle}";
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
         return Convert.ToHexString(hash);
     }

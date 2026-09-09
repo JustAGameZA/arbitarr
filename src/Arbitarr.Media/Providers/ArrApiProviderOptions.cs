@@ -20,5 +20,16 @@ public sealed record ArrApiProviderOptions(
     string SourceName = "ArrApi",
     TimeSpan? RequestTimeout = null)
 {
-    public TimeSpan EffectiveRequestTimeout => RequestTimeout ?? TimeSpan.FromSeconds(10);
+    /// <summary>
+    /// The per-request timeout used when <see cref="RequestTimeout"/> is not given.
+    /// </summary>
+    /// <remarks>
+    /// Exposed separately because the composition root needs it WITHOUT an options instance: since
+    /// arb-u1c the named client's timeout is set once at registration rather than by
+    /// <c>ArrApiProvider</c>'s constructor (which cannot re-time a pooled client), and at that point
+    /// there is no base URL or key to build an options record around.
+    /// </remarks>
+    public static readonly TimeSpan DefaultRequestTimeout = TimeSpan.FromSeconds(10);
+
+    public TimeSpan EffectiveRequestTimeout => RequestTimeout ?? DefaultRequestTimeout;
 }
