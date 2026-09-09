@@ -122,7 +122,9 @@ describe('Dashboard', () => {
     // Effective config renders named fields, so a secret-bearing field added to
     // the DTO later cannot appear on screen without a deliberate code change.
     expect(screen.getByText('Query snapshot TTL')).toBeInTheDocument();
-    expect(screen.getByText('86400s')).toBeInTheDocument();
+    // 86400s = exactly one day: arb-rzx's formatter matches the server's own
+    // TimeSpan.ToString() convention that Settings and System already render.
+    expect(screen.getByText('1.00:00:00')).toBeInTheDocument();
   });
 
   it('shows the server reason when a panel fails, and keeps the others', async () => {
