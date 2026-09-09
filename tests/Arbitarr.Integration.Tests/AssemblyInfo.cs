@@ -14,11 +14,19 @@
 // parallelism enabled here. Production Arbitarr.Data.Backup.RestoreService still calls
 // ClearAllPools deliberately before swapping the database file -- it has to, since pooled handles
 // hold a share lock on Windows and keep reading the replaced inode on Linux -- and the IL ban
-// covers test assemblies only. Any test that drives the restore path therefore force-closes the
-// pooled connections of whatever class is running beside it. No such test lives in THIS assembly
-// today (RestoreServiceTests is in Arbitarr.Data.Tests, which still runs serially), which is why
-// parallelism here is safe now; adding one would reintroduce arb-cbc/arb-5ba from the production
-// side. Tracked as arb-n21.
+// covers test assemblies only.
+//
+// Restore-driving tests DO live in this assembly: AdminBackupEndpointsTests posts to RestoreRoute
+// in seven tests and BackupSecretExposureTests in two. None of them reaches the clear. Every one
+// stops earlier in the pipeline -- at the admin-key gate (401), the confirmation check, the
+// validator (400), the size limit (413) or the breaker (503) -- and RestoreService returns before
+// ApplyValidatedFiles, which is where the ClearAllPools call sits. So no test here currently
+// reaches the process-global clear, which is why parallelism is safe now.
+//
+// A HAPPY-PATH RESTORE TEST WOULD BE THE FIRST TO REACH IT, and would reintroduce arb-cbc/arb-5ba
+// from the production side: it would force-close the pooled connections of whatever class happened
+// to be running beside it. That is the thing to look at before adding one here. Tracked as
+// arb-n21.
 //
 // WHY THE WIDTH IS CAPPED AT 4, in xunit.runner.json beside this file. That file is JSON and
 // cannot carry a comment, so the reasoning lives here. A class here can hold a LIVE HOST, so the
