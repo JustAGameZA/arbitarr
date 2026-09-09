@@ -17,6 +17,12 @@ const rules = [
 /**
  * Waits for the request a click was supposed to send, and returns it.
  *
+ * Returns the FIRST recorded call of that method, not the most recent one. Where
+ * a surface sends the same method more than once -- the post-delete refetch below
+ * follows the initial load's GET -- this resolves to the earlier call, which was
+ * already satisfied and so is not a wait for the later one. Assert on a method
+ * the click is the only source of, or read api.calls directly.
+ *
  * arb-kmp: `user.click` resolves when React has flushed the click, NOT when the
  * mutation it starts has reached fetch -- react-query dispatches that a tick or
  * more later. Reading `api.calls` synchronously straight after the click
