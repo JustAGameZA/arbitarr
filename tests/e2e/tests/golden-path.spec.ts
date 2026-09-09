@@ -143,8 +143,11 @@ test('a source pointing at the stub upstream can be added and tested', async ({ 
  * The golden path therefore restarts the app between "add a source" and "search", mirroring
  * what an operator actually does. It does not weaken the product to suit the test.
  */
-test('the app is restarted so the newly added source comes into force', async ({ request }) => {
-  await restartAppContainer();
+test('the app is restarted so the newly added source comes into force', async ({
+  request,
+  baseURL,
+}) => {
+  await restartAppContainer(baseURL!);
 
   // Prove the restart really happened and the source survived it, rather than trusting a
   // sleep: the source is still listed once the process is back up.
@@ -284,6 +287,7 @@ test('the admin key never reaches browser storage', async ({ page }) => {
  */
 test('items whose link origin differs from the source base URL are dropped', async ({
   request,
+  baseURL,
 }) => {
   const sources = await request.get('/api/admin/sources', {
     headers: { [ADMIN_KEY_HEADER]: ADMIN_KEY },
@@ -319,7 +323,7 @@ test('items whose link origin differs from the source base URL are dropped', asy
 
   // The source configuration is resolved once per process, so the repoint only takes effect
   // after a restart -- exactly as the original add did.
-  await restartAppContainer();
+  await restartAppContainer(baseURL!);
 
   const mismatchedQuery = `${MISMATCH_QUERY_PREFIX}-mismatched-${randomUUID()}`;
   const response = await request.get('/api/admin/search', {
@@ -328,10 +332,12 @@ test('items whose link origin differs from the source base URL are dropped', asy
   });
   expect(response.status(), await response.text()).toBe(200);
 
-  // Reachable, identical fixtures, foreign origin: every item is dropped by the guard. The only
-  // thing that changed since the two-row control above is the source's base URL -- same stub,
-  // same container, same fixtures. The stub ignores q entirely, which is exactly what lets the
-  // two halves use different query texts without changing what is being compared.
+  // Reachable, identical fixtures, foreign origin: every item is dropped by the guard. Two
+  // things differ from the two-row control above -- the source's base URL, which is the
+  // variable under test, and the query text, which must differ to defeat the snapshot cache
+  // (see MISMATCH_QUERY_PREFIX). The stub answers every q with the same fixtures, so that
+  // second difference changes what is cached, not what comes back. Same stub, same
+  // container, same fixtures.
   const releases: { title: string }[] = (await response.json()).releases;
   expect(releases).toHaveLength(0);
 });
@@ -370,12 +376,22 @@ function createSource(request: APIRequestContext, displayName: string, baseUrl: 
  * exists: the source configuration is resolved once per process by design (see the restart
  * test's comment). The compose project is addressed by file, so this works regardless of the
  * runner's working directory.
+ *
+ * `baseUrl` is the caller's `baseURL` fixture, not a second read of ARBITARR_BASE_URL: the
+ * default lives once, in playwright.config.ts, so a repointed run cannot have this helper
+ * probing 127.0.0.1 while the tests around it drive somewhere else.
+ *
+ * The deadline is 25s, deliberately BELOW playwright.config.ts's 30s per-test `timeout`.
+ * At the 60s it used to be, the test was killed by the harness first, so neither the
+ * deadline nor its error message could ever be reached and a hung restart reported a bare
+ * timeout instead of naming /health. Raising the test's timeout was the alternative and was
+ * not taken: the restart is one step of a serial path, and a 60s budget for it would hide a
+ * genuinely slow boot rather than fail on it.
  */
-async function restartAppContainer(): Promise<void> {
+async function restartAppContainer(baseUrl: string): Promise<void> {
   await execFileAsync('docker', ['compose', '-f', COMPOSE_FILE, 'restart', 'arbitarr']);
 
-  const deadline = Date.now() + 60_000;
-  const baseUrl = process.env.ARBITARR_BASE_URL || 'http://127.0.0.1:8080';
+  const deadline = Date.now() + 25_000;
 
   for (;;) {
     try {
@@ -389,7 +405,7 @@ async function restartAppContainer(): Promise<void> {
     }
 
     if (Date.now() > deadline) {
-      throw new Error('The app container did not answer /health within 60s of a restart.');
+      throw new Error('The app container did not answer /health within 25s of a restart.');
     }
 
     await new Promise((resolve) => setTimeout(resolve, 500));

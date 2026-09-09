@@ -112,6 +112,11 @@ jobs:
       # routes only from loopback/RFC 1918 while no admin key is set, decided from the
       # socket's peer address, and the E2E bootstraps its key through exactly that window.
       - name: Stop the standalone container before the E2E stack
+        # `if: always()` so a failing step above still removes the container. The step this
+        # one replaced carried it for that reason: on a self-hosted runner a surviving
+        # arbitarr-review makes the NEXT run's `docker run --name arbitarr-review` collide,
+        # turning one failure into every later run failing. Keep it.
+        if: always()
         run: docker rm -f arbitarr-review || true
 
       - name: Start the E2E stack (app under test plus stub upstream)
