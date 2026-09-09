@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 
 import { PageHeader } from '../../components/shell/PageHeader';
 import { ApiError } from '../../api/client';
@@ -7,8 +8,32 @@ import { CACHE_BAND_LABELS } from '../../api/types';
 import type { AdHocSearchProvenance, AdHocSearchResponse } from '../../api/types';
 import styles from '../surface.module.css';
 import local from './Search.module.css';
+import { useEffectiveConfigQuery } from '../Dashboard/queries';
 import { EMPTY_CRITERIA, useAdHocSearchMutation, useExplanationQuery } from './queries';
 import type { SearchCriteria } from './queries';
+
+/**
+ * The "no sources configured" hint (audit F-020b), reusing the Dashboard's
+ * empty-state wording and its `nzbHydraConfigured` source (#53 stage 53d):
+ * true only when an ENABLED source carries an API key. See Dashboard.tsx's
+ * `SourcesTable` doc comment for the full configured-vs-reporting reasoning
+ * this shares. `undefined` -- still loading, or the query failed -- renders
+ * nothing rather than asserting a state before it is known.
+ */
+function NoSourcesHint() {
+  const config = useEffectiveConfigQuery();
+
+  if (config.data?.nzbHydraConfigured !== false) {
+    return null;
+  }
+
+  return (
+    <p className={styles.empty}>
+      No sources configured. Add an NZBHydra2 URL and API key to start searching in{' '}
+      <Link to="/settings">Settings &gt; Sources</Link>.
+    </p>
+  );
+}
 
 /** Bytes to a human size. The server sends the byte count untouched (passthrough). */
 function formatSize(bytes: number): string {
@@ -224,6 +249,7 @@ export default function SearchPage() {
       <section className={styles.panel}>
         <h2 className={styles.panelHeading}>Query</h2>
         <div className={styles.panelBody}>
+          <NoSourcesHint />
           <form className={styles.form} onSubmit={submit}>
             <label className={styles.field}>
               Query
