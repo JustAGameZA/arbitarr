@@ -330,6 +330,42 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
         Assert.Contains("NzbHydra", body, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// arb-5da. The theory above drives POST only, but <c>SourceRepository.UpdateAsync</c> calls the
+    /// same <c>ValidateKind</c> as <c>CreateAsync</c> does, and nothing in the endpoint layer would
+    /// notice if one of those two call sites were dropped. Without this case, deleting the
+    /// <c>ValidateKind(kind)</c> line from the update path leaves the whole suite green while a
+    /// correctly-cased row can be rewritten to a kind <c>SourceSeeder</c>'s ordinal comparison never
+    /// matches — the exact silent-never-resolved failure arb-pn5 fixed, reachable again through PUT.
+    ///
+    /// <para>The row is created correctly cased first, so a rejection here can only be the kind on
+    /// the update: the display name and URL are the same shapes the successful create just used.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("nzbhydra")]
+    [InlineData("NZBHYDRA")]
+    public async Task Updating_a_source_to_a_wrongly_cased_kind_is_rejected_with_400(string wrongCasing)
+    {
+        await SeedAdminKeyAsync();
+        using var client = CreateAdminClient();
+
+        var created = await CreateSourceAsync(client, "Recasable " + Guid.NewGuid().ToString("N"), SecretApiKey);
+        Assert.Equal(SourceRepository.NzbHydraKind, created.Kind);
+
+        using var response = await client.PutAsJsonAsync($"{SourcesRoute}/{created.Id}", new
+        {
+            kind = wrongCasing,
+            displayName = created.DisplayName,
+            baseUrl = created.BaseUrl,
+            enabled = true,
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("NzbHydra", body, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task A_missing_body_is_rejected_by_the_handler_rather_than_by_model_binding()
     {
