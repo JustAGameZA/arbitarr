@@ -44,11 +44,18 @@ tidy-up would silently break:
   `sessionStorage`, never a query string. `apiFetch` attaches it by path prefix.
 
 `IHttpClientFactory` attaches its own logging handler to every named client and logs the
-**full absolute URI** at Information. Since #65 that lands in a persistent SQLite store
-served at `/api/admin/logs`. `LogMessageCleanser` scrubs credentials in *query strings*,
-so a secret in a URL **path** (a webhook token, say) is not covered — such registrations
-need `.RemoveAllLoggers()`. Care taken inside a typed client cannot defend against a
-handler the container wraps around it.
+request URI at Information — **every path segment in full**, but with the whole query
+string collapsed to `?*`. That collapse is the framework's, not ours, and it is gated by
+the `System.Net.Http.DisableUriRedaction` switch (env var
+`DOTNET_SYSTEM_NET_HTTP_DISABLEURIREDACTION`), read once at process start and **inverted
+from how it reads**: setting it *disables* the redaction and restores the full query
+string. Nothing here sets it, so the default is what any "the key is in the query string,
+so it is redacted" reasoning rests on — `DisableUriRedactionSwitchTests` pins both states.
+Since #65 these lines land in a persistent SQLite store served at `/api/admin/logs`.
+`LogMessageCleanser` scrubs credentials in *query strings*, so a secret in a URL **path**
+(a webhook token, say) is covered by neither the redaction nor the cleanser — such
+registrations need `.RemoveAllLoggers()`. Care taken inside a typed client cannot defend
+against a handler the container wraps around it.
 
 **There are two SQLite databases, not one.** `arbitarr.db` and `arbitarr-logs.db`
 (`LogStore.DatabaseFileName`), deliberately separate so a config backup does not drag
