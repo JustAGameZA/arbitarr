@@ -143,4 +143,25 @@ public sealed class SourceSetFingerprintWiringTests : IClassFixture<ArbitarrWebA
         // base URL rather than by the key: an unconfigured instance resolves no URL at all.
         Assert.NotEqual(unconfiguredFingerprint, firstFingerprint);
     }
+
+    /// <summary>
+    /// Two (url, name) pairs that would concatenate into the same raw string without a separator
+    /// must still produce different fingerprints. This is the boundary the unit separator exists to
+    /// close: "http://192.0.2.60/a" + "b" and "http://192.0.2.60/" + "ab" concatenate identically
+    /// without a delimiter between the URL and the name.
+    /// </summary>
+    [Fact]
+    public async Task A_boundary_shifted_source_set_produces_a_different_fingerprint()
+    {
+        var first = new ResolvedSourceConfiguration();
+        first.Apply("http://192.0.2.60/a", apiKey: null, sourceName: "b");
+
+        var shifted = new ResolvedSourceConfiguration();
+        shifted.Apply("http://192.0.2.60/", apiKey: null, sourceName: "ab");
+
+        var firstFingerprint = await new ResolvedSourceSetFingerprintSource(first).GetAsync(CancellationToken.None);
+        var shiftedFingerprint = await new ResolvedSourceSetFingerprintSource(shifted).GetAsync(CancellationToken.None);
+
+        Assert.NotEqual(firstFingerprint, shiftedFingerprint);
+    }
 }

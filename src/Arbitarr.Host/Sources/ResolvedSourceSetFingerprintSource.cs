@@ -40,7 +40,7 @@ public sealed class ResolvedSourceSetFingerprintSource : ISourceSetFingerprintSo
 
         // The unit separator matches the snapshot token's own convention, so two different
         // (url, name) pairs cannot concatenate into one fingerprint.
-        var raw = $"{resolved.BaseUrl}{resolved.SourceName}";
+        var raw = $"{resolved.BaseUrl}\u001f{resolved.SourceName}";
         _fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(raw)));
     }
 
