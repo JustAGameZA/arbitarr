@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -6,13 +6,36 @@ import RulesPage from './Rules';
 import { ADMIN_KEY_HEADER } from '../../api/client';
 import { useAdminKeyStore } from '../../state/adminKeyStore';
 import { SERVER_KEY_UNSET_MESSAGE } from '../QueryState';
-import { mockApi } from '../../test/mockApi';
+import { mockApi, type CapturedCall, type MockApi } from '../../test/mockApi';
 import { renderSurface } from '../../test/renderSurface';
 
 const rules = [
   { id: 1, name: 'block-cam', isAllow: false, pattern: 'CAM|TS', precedence: 10, enabled: true },
   { id: 2, name: 'allow-1080p', isAllow: true, pattern: '1080p', precedence: 20, enabled: true },
 ];
+
+/**
+ * Waits for the request a click was supposed to send, and returns it.
+ *
+ * arb-kmp: `user.click` resolves when React has flushed the click, NOT when the
+ * mutation it starts has reached fetch -- react-query dispatches that a tick or
+ * more later. Reading `api.calls` synchronously straight after the click
+ * therefore races the request: it passed on an unloaded machine because the
+ * gap is normally sub-millisecond, and failed under full-suite load, which is
+ * exactly the intermittency this file was reported for.
+ *
+ * `waitFor` polls the recorded calls instead, so the assertion waits for the
+ * state it is about rather than for a duration. It is NOT a raised timeout: a
+ * request that never goes out still fails, just with "expected a POST" rather
+ * than a null-dereference on the line below.
+ */
+function findCall(api: MockApi, method: string): Promise<CapturedCall> {
+  return waitFor(() => {
+    const call = api.calls.find((c) => c.method === method);
+    expect(call, `expected a ${method} to have been sent`).toBeDefined();
+    return call!;
+  });
+}
 
 describe('Rules', () => {
   beforeEach(() => {
@@ -54,9 +77,9 @@ describe('Rules', () => {
     await user.type(within(addPanel).getByLabelText('Pattern'), 'DV');
     await user.click(within(addPanel).getByRole('button', { name: 'Add rule' }));
 
-    const posted = api.calls.find((call) => call.method === 'POST');
-    expect(posted?.path).toBe('/api/admin/rules');
-    expect(JSON.parse(posted!.body!)).toMatchObject({ name: 'block-dv', pattern: 'DV' });
+    const posted = await findCall(api, 'POST');
+    expect(posted.path).toBe('/api/admin/rules');
+    expect(JSON.parse(posted.body!)).toMatchObject({ name: 'block-dv', pattern: 'DV' });
 
     // Edit -- the PUT the legacy admin-rules.js never wired at all, which meant
     // changing a pattern required deleting the rule and re-adding it.
@@ -67,14 +90,14 @@ describe('Rules', () => {
     await user.type(patternField, 'CAM');
     await user.click(within(editPanel).getByRole('button', { name: 'Save changes' }));
 
-    const put = api.calls.find((call) => call.method === 'PUT');
-    expect(put?.path).toBe('/api/admin/rules/1');
-    expect(JSON.parse(put!.body!)).toMatchObject({ name: 'block-cam', pattern: 'CAM' });
+    const put = await findCall(api, 'PUT');
+    expect(put.path).toBe('/api/admin/rules/1');
+    expect(JSON.parse(put.body!)).toMatchObject({ name: 'block-cam', pattern: 'CAM' });
 
     // Delete.
     await user.click(screen.getAllByRole('button', { name: 'Delete' })[0]);
-    const del = api.calls.find((call) => call.method === 'DELETE');
-    expect(del?.path).toBe('/api/admin/rules/1');
+    const del = await findCall(api, 'DELETE');
+    expect(del.path).toBe('/api/admin/rules/1');
   });
 
   it('renders the server rejection verbatim and clamps nothing', async () => {
@@ -98,7 +121,7 @@ describe('Rules', () => {
     expect(await screen.findByText('Precedence must be between 1 and 1000.')).toBeInTheDocument();
     // The request went out unaltered: the server is the only authority on the
     // bound, so 99999 must reach it rather than being silently reduced to 1000.
-    expect(JSON.parse(api.calls.find((c) => c.method === 'PUT')!.body!).precedence).toBe(99999);
+    expect(JSON.parse((await findCall(api, 'PUT')).body!).precedence).toBe(99999);
     // And the editor keeps what was typed, so it can be corrected.
     expect(precedence).toHaveValue(99999);
   });
@@ -111,12 +134,16 @@ describe('Rules', () => {
     await screen.findByText('block-cam');
 
     await user.click(screen.getAllByRole('button', { name: 'Delete' })[0]);
-    await screen.findByText('block-cam');
 
-    const get = api.calls.find((call) => call.method === 'GET');
-    const del = api.calls.find((call) => call.method === 'DELETE');
-    expect(get?.headers[ADMIN_KEY_HEADER]).toBe('operator-key');
-    expect(del?.headers[ADMIN_KEY_HEADER]).toBe('operator-key');
+    // Waits for the DELETE itself, not for 'block-cam'. The old wait here was
+    // `findByText('block-cam')`, which was already on screen from the initial
+    // load and so resolved on its first poll without the delete having been
+    // sent -- it read as a wait but settled nothing, leaving the assertion
+    // below racing the request (arb-kmp).
+    const del = await findCall(api, 'DELETE');
+    const get = await findCall(api, 'GET');
+    expect(get.headers[ADMIN_KEY_HEADER]).toBe('operator-key');
+    expect(del.headers[ADMIN_KEY_HEADER]).toBe('operator-key');
   });
 
   it('keeps the affordance and the stored key on a 503 fresh install', async () => {

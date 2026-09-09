@@ -56,20 +56,42 @@ describe('routing', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'System' })).toBeInTheDocument();
   });
 
-  it('renders the 404 inside the shell so navigation is still available', () => {
+  it('renders the 404 inside the shell so navigation is still available', async () => {
     renderApp('/no-such-page');
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Page not found' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Page not found' }),
+    ).toBeInTheDocument();
     // The point of a 404 inside the shell: the operator is not stranded on a
     // bare error page with no way back.
     expect(screen.getByRole('navigation', { name: 'Main' })).toBeInTheDocument();
   });
 
-  it('routes every sidebar destination to something other than the 404', () => {
+  it('routes every sidebar destination to something other than the 404', async () => {
     // Catches a nav entry whose path has no matching route -- the link would
     // render fine and quietly land on the not-found page.
-    for (const path of ['/', '/search', '/rules', '/suppressions', '/settings', '/system']) {
+    //
+    // arb-kmp: each destination is awaited by its OWN <h1> before the negative
+    // assertion runs. A bare synchronous queryByRole was weak in two ways that
+    // compound under load: it could read the tree before the route committed,
+    // and "no Page-not-found heading" is satisfied by a tree with nothing in it
+    // at all -- so a destination that rendered NOTHING passed just as happily
+    // as one that rendered correctly. Waiting for the expected heading first is
+    // what makes the absence below mean something. Each name is the surface's
+    // real PageHeader title, so a renamed heading fails here rather than
+    // silently weakening the check.
+    const destinations: [path: string, heading: string][] = [
+      ['/', 'Dashboard'],
+      ['/search', 'Search'],
+      ['/rules', 'Rules'],
+      ['/suppressions', 'Suppressions'],
+      ['/settings', 'Settings'],
+      ['/system', 'System'],
+    ];
+
+    for (const [path, heading] of destinations) {
       const { unmount } = renderApp(path);
+      expect(await screen.findByRole('heading', { level: 1, name: heading })).toBeInTheDocument();
       expect(screen.queryByRole('heading', { level: 1, name: 'Page not found' })).toBeNull();
       unmount();
     }
