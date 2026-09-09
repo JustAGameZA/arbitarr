@@ -297,6 +297,39 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
+    /// <summary>
+    /// arb-pn5. Before this fix, a source created with <c>kind: "nzbhydra"</c> was stored and listed
+    /// successfully — <see cref="Creating_a_source_persists_it_and_returns_201"/> proves the correctly
+    /// cased request succeeds, so this is not a URL/display-name rejection wearing a kind label. The
+    /// bug was silent: <c>SourceSeeder</c>'s ordinal <c>s.Kind == NzbHydraKind</c> comparison never
+    /// matched a wrongly-cased row, so it was never resolved into the search pipeline and nothing
+    /// ever reported an error. Both wrong casings are covered, not just lowercase, because a
+    /// case-insensitive fix (rather than exact-match rejection) would make this pass while still
+    /// leaving <c>SourceSeeder</c>'s comparison the one true authority for what actually resolves.
+    /// </summary>
+    [Theory]
+    [InlineData("nzbhydra")]
+    [InlineData("NZBHYDRA")]
+    public async Task A_wrongly_cased_source_kind_is_rejected_with_400(string wrongCasing)
+    {
+        await SeedAdminKeyAsync();
+        using var client = CreateAdminClient();
+
+        using var response = await client.PostAsJsonAsync(SourcesRoute, new
+        {
+            kind = wrongCasing,
+            displayName = "Bad casing " + Guid.NewGuid().ToString("N"),
+            baseUrl = "http://192.0.2.32:5076",
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        // The message names the accepted value, per the brief -- an operator hitting this should not
+        // have to go read source code to learn the one spelling that works.
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("NzbHydra", body, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task A_missing_body_is_rejected_by_the_handler_rather_than_by_model_binding()
     {
