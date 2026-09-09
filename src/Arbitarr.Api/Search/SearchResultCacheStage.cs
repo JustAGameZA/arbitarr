@@ -81,11 +81,30 @@ public sealed class SearchResultCacheStage
 
     /// <summary>
     /// Derives a <see cref="NumberingCandidate"/> directly from Sonarr/Radarr's own <c>season</c>/
-    /// <c>ep</c> params — no free-text parsing. Uses <see cref="NumberingScheme.TvdbSeasonal"/> since
-    /// these are already-resolved TVDB-seasonal numbers as supplied by the calling *arr app.
+    /// <c>ep</c> params and, since arb-u1c, the request's absolute episode number — no free-text
+    /// parsing. Uses <see cref="NumberingScheme.TvdbSeasonal"/> since these are already-resolved
+    /// TVDB-seasonal numbers as supplied by the calling *arr app.
     /// </summary>
-    public static NumberingCandidate BuildNumbering(int? season, int? episode) =>
-        new(NumberingScheme.TvdbSeasonal, season, episode ?? 0, Absolute: null);
+    /// <remarks>
+    /// <para><b><paramref name="absolute"/> IS LOAD-BEARING FOR CORRECTNESS, not a refinement.</b>
+    /// It was hardcoded to null until arb-u1c, and the #114 architecture review found what that
+    /// costs. Sonarr's anime episode search carries NEITHER season NOR ep — the episode number rides
+    /// in <c>q</c> as a bare number — and <see cref="SearchCacheKeyBuilder"/> deliberately ignores
+    /// <c>q</c> whenever a tvdbid is present, because ignoring it is what collapses <c>S17E36</c>,
+    /// <c>17x36</c> and <c>17x36 (402)</c> onto one entry. With the absolute number missing too,
+    /// EVERY absolute-episode search of one series produced the identical key
+    /// (<c>TvdbSeasonal:s=none:e=0:abs=none</c>), so a search for episode 92 was served the cached
+    /// result set for episode 91 — a wrong answer that looks like a cache working well.</para>
+    ///
+    /// <para><b>Why not put <c>q</c> back in the key instead.</b> That is the obvious fix and it is
+    /// the wrong one: the id-bearing key ignores <c>q</c> ON PURPOSE, and reintroducing it would
+    /// split the one episode's several spellings back into several rows and several upstream calls —
+    /// undoing AC23b(4)'s collapse to fix a separation problem. The absolute number is the resolved
+    /// numbering datum the key is supposed to be built from, so it belongs in the numbering token
+    /// where <see cref="SearchCacheKeyBuilder"/> already has a slot for it.</para>
+    /// </remarks>
+    public static NumberingCandidate BuildNumbering(int? season, int? episode, int? absolute = null) =>
+        new(NumberingScheme.TvdbSeasonal, season, episode ?? 0, Absolute: absolute);
 
     /// <summary>Upper bound on the raw <c>q</c> text folded into the title-set fallback identity.</summary>
     /// <remarks>
@@ -107,7 +126,9 @@ public sealed class SearchResultCacheStage
 
         var identity = TryBuildIdentity(query.TvdbId, query.TmdbId, title: query.QueryText)
             ?? new SeriesIdentity(TvdbId: null, TmdbId: null, PrimaryTitle: BoundedFallbackText(query.QueryText), AlternateTitles: Array.Empty<string>());
-        var candidate = BuildNumbering(query.Season, query.Episode);
+        // arb-u1c: the absolute number is part of the numbering candidate now, so two absolute
+        // episodes of one series no longer share a row. See BuildNumbering's remarks.
+        var candidate = BuildNumbering(query.Season, query.Episode, query.Absolute);
 
         // #99: the protocol is part of the key. Since the two families are now issued against
         // different upstream endpoints (and NZBHydra2's torznab endpoint returns no usenet results

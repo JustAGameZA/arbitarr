@@ -31,6 +31,18 @@ public sealed class ArrApiProvider : IIdentityResolver
     private readonly HttpClient _httpClient;
     private readonly IAsyncCircuitBreaker _circuitBreaker;
 
+    /// <remarks>
+    /// <b>THE CLIENT'S TIMEOUT IS NOT SET HERE, and must not be.</b> This type is constructed PER
+    /// CALL around a client that comes from <c>IHttpClientFactory</c> and is POOLED, so assigning
+    /// <see cref="HttpClient.Timeout"/> here writes to an object other requests are already using —
+    /// and <see cref="HttpClient"/> throws <see cref="InvalidOperationException"/> on that
+    /// assignment once any request has started on the instance. Two concurrent searches were
+    /// therefore enough to make one of them throw. The timeout belongs to the REGISTRATION (see the
+    /// named client in <c>Program.cs</c>), which runs once; a caller needing a shorter bound than
+    /// the client's imposes it with a linked <see cref="CancellationTokenSource"/> at its own call
+    /// site, as <c>SeriesTitleResolver</c> does. <see cref="ArrApiProviderOptions.RequestTimeout"/>
+    /// survives as the value that registration is configured FROM, not as something applied here.
+    /// </remarks>
     public ArrApiProvider(
         ArrApiProviderOptions options,
         HttpClient httpClient,
@@ -39,8 +51,6 @@ public sealed class ArrApiProvider : IIdentityResolver
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _circuitBreaker = circuitBreaker ?? throw new ArgumentNullException(nameof(circuitBreaker));
-
-        _httpClient.Timeout = options.EffectiveRequestTimeout;
     }
 
     public string Name => _options.SourceName;
