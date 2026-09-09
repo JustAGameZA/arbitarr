@@ -98,10 +98,15 @@ public sealed class BackupService
     /// </summary>
     private void SnapshotDatabase(string destinationPath)
     {
+        // From DatabaseConnectionStrings, never formatted inline: this names the LIVE database, so
+        // its pool is one of the pools a restore must clear before swapping the file. Building the
+        // string here instead would create a pool SqlitePoolCleaner does not know about (arb-n21).
         using var source = new SqliteConnection(
-            new SqliteConnectionStringBuilder { DataSource = _paths.DatabasePath }.ToString());
+            DatabaseConnectionStrings.Maintenance(_paths.DatabasePath));
         source.Open();
 
+        // The DESTINATION is a fresh snapshot file, not the live database, so it is deliberately
+        // not one of DatabaseConnectionStrings' shapes — a restore never replaces it.
         using var destination = new SqliteConnection(
             new SqliteConnectionStringBuilder { DataSource = destinationPath }.ToString());
         destination.Open();
@@ -120,8 +125,12 @@ public sealed class BackupService
     /// </summary>
     public static string? ReadAppliedMigrationId(string databasePath)
     {
+        // From DatabaseConnectionStrings, never formatted inline. This is called with the LIVE
+        // database path as well as with an extracted archive's, and when it is the live one the
+        // pool it fills must be one SqlitePoolCleaner clears (arb-n21). Taking the string from the
+        // one builder makes that true for both callers without either having to know which it is.
         using var connection = new SqliteConnection(
-            new SqliteConnectionStringBuilder { DataSource = databasePath }.ToString());
+            DatabaseConnectionStrings.Maintenance(databasePath));
         connection.Open();
 
         // Two statements, not one CASE expression. SQLite PREPARES a whole statement before

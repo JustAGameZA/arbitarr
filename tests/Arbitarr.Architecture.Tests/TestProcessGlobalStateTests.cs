@@ -26,13 +26,17 @@ namespace Arbitarr.Architecture.Tests;
 /// This is a ban with NO allow-list: a test that genuinely needs one of these has a design problem
 /// an exemption would hide.
 ///
-/// <para><b>Scope: TEST IL only.</b> This scan covers the assemblies named below and nothing else,
-/// so it is not a guarantee that no process-global clear runs during a test run. Production
-/// <c>Arbitarr.Data.Backup.RestoreService</c> still calls
-/// <see cref="Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools"/> deliberately — it has to, to
-/// drop every handle before swapping the database file — and a test that drives the restore path
-/// therefore reaches it at runtime. Making that safe under parallel execution is arb-rga.4's
-/// problem, not something this ban can express.</para>
+/// <para><b>Scope: TEST IL only.</b> This scan covers the assemblies named below and nothing else.
+/// Production code is scanned separately by <see cref="ProductionProcessGlobalStateTests"/>, which
+/// bans <c>ClearAllPools</c> across <c>src/</c> — so between the two, no assembly in the solution
+/// calls it. That production ban is new (arb-n21): the restore path used to call
+/// <see cref="Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools"/> deliberately, because it had
+/// to drop every handle before swapping the database file, and a test driving the restore therefore
+/// reached a process-global clear at runtime no matter what this ban said. It now clears only the
+/// pools naming the database being replaced, via <c>Arbitarr.Data.Backup.SqlitePoolCleaner</c>.
+/// <c>Environment.SetEnvironmentVariable</c> stays banned here only: production configuration code
+/// has legitimate reasons to set process environment, whereas two hosts starting concurrently in
+/// ONE test process overwrite each other.</para>
 ///
 /// <para><b>Why the assemblies are found by PATH.</b> Adding the test projects as ProjectReferences
 /// here fails with NU1605, so the scan opens each test assembly's build output directly with
@@ -155,7 +159,17 @@ public class TestProcessGlobalStateTests
     /// Walks every method body in the assembly and reports each call to a banned member, as
     /// "&lt;type&gt;.&lt;method&gt; calls &lt;banned&gt;".
     /// </summary>
-    private static IEnumerable<string> FindBannedCalls(string assemblyPath)
+    private static IEnumerable<string> FindBannedCalls(string assemblyPath) =>
+        FindBannedCalls(assemblyPath, BannedMethods);
+
+    /// <summary>
+    /// The same walk, over a caller-chosen ban list. Shared with
+    /// <see cref="ProductionProcessGlobalStateTests"/> rather than duplicated: that scan bans a
+    /// SUBSET of these members (production may legitimately set an environment variable), and a
+    /// second copy of the IL walk would be a second thing to keep correct — with the copy that
+    /// drifted silently finding nothing and reporting a clean tree.
+    /// </summary>
+    internal static IEnumerable<string> FindBannedCalls(string assemblyPath, params string[] bannedMethods)
     {
         using var module = ModuleDefinition.ReadModule(assemblyPath);
 
@@ -176,7 +190,7 @@ public class TestProcessGlobalStateTests
                     }
 
                     var fullName = $"{called.DeclaringType.FullName}::{called.Name}";
-                    if (BannedMethods.Contains(fullName, StringComparer.Ordinal))
+                    if (bannedMethods.Contains(fullName, StringComparer.Ordinal))
                     {
                         yield return $"{type.FullName}.{method.Name} calls {fullName}";
                     }
@@ -219,21 +233,33 @@ public class TestProcessGlobalStateTests
     /// to the sibling project's, preserving the configuration and target-framework segments — so
     /// the scan works unchanged under <c>-c Release</c>, which CI uses.
     /// </summary>
-    private static string? ResolveTestAssemblyPath(string assemblyName)
+    internal static string? ResolveTestAssemblyPath(string assemblyName) =>
+        ResolveAssemblyPath("tests", assemblyName);
+
+    /// <summary>
+    /// Finds a built assembly under <paramref name="rootDirectoryName"/> (<c>tests</c> or
+    /// <c>src</c>), preserving this assembly's own configuration and target-framework segments.
+    ///
+    /// <para>Shared with <see cref="ProductionProcessGlobalStateTests"/> rather than duplicated:
+    /// two copies of this walk would drift, and the one that drifted would start returning null and
+    /// fail loudly — or worse, silently scan nothing if a caller ever treated null as "clean".</para>
+    /// </summary>
+    internal static string? ResolveAssemblyPath(string rootDirectoryName, string assemblyName)
     {
         // .../tests/Arbitarr.Architecture.Tests/bin/<configuration>/<tfm>/
         var here = new DirectoryInfo(AppContext.BaseDirectory);
         var targetFramework = here.Name;
         var configuration = here.Parent?.Name;
-        var testsRoot = here.Parent?.Parent?.Parent?.Parent;
+        var repositoryRoot = here.Parent?.Parent?.Parent?.Parent?.Parent;
 
-        if (configuration is null || testsRoot is null)
+        if (configuration is null || repositoryRoot is null)
         {
             return null;
         }
 
         var candidate = Path.Combine(
-            testsRoot.FullName,
+            repositoryRoot.FullName,
+            rootDirectoryName,
             assemblyName,
             "bin",
             configuration,
