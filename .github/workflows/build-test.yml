@@ -218,18 +218,65 @@ jobs:
 
           mkdir -p ./TestResults
 
+          # Peak memory is sampled, not taken from `/usr/bin/time -v`. time -v
+          # reports the max RSS of the process it waits for (plus children it has
+          # already reaped), and `dotnet test` runs the tests in a SEPARATE
+          # testhost process -- so time -v reports the driver and misses the
+          # thing under measurement entirely. The first run of this workflow
+          # showed exactly that: Integration, which holds up to four live ASP.NET
+          # hosts, reported a LOWER peak (110 MB) than Core/Api (222 MB), which
+          # hold none. A number that ranks the groups backwards cannot be used to
+          # decide a heap cap, which is what arb-rga.6's third comment asks for.
+          #
+          # Instead sample the whole process tree's RSS while the run is in
+          # flight and keep the maximum. 1 s is fine: the question is whether the
+          # group approaches a 2 GB cap, not the exact byte.
+          # The sampler must never be able to fail the job: it is instrumentation,
+          # and a measurement that can red a green suite is worse than no
+          # measurement. Every part that can fail is neutralised -- `|| echo 0`
+          # on the sample, `|| status=$?` on the wait -- so the only thing
+          # deciding this step's exit code is dotnet test itself.
+          sample_peak() {
+            out="$1" ; shift
+            peak=0
+            "$@" &
+            pid=$!
+            while kill -0 "$pid" 2>/dev/null; do
+              # Sum RSS across the whole dotnet/testhost tree: the driver, the
+              # testhost the tests actually run in, and any host they spawn.
+              # awk always prints exactly one number (`s+0`), so `cur` is a single
+              # integer whenever ps worked. If ps is unavailable the pipeline
+              # yields nothing and `cur` is empty -- hence the numeric test below
+              # rather than `${cur:-0}`, which on a two-line value would feed
+              # `[ ... -gt ... ]` something it reports as "integer expected".
+              cur=$(ps -eo rss,comm --no-headers 2>/dev/null \
+                    | awk '$2 ~ /^(dotnet|testhost)/ {s+=$1} END {print s+0}') || cur=''
+              # An explicit if, not `[ ... ] && peak=...`: under set -e a
+              # trailing false test would take the shell down with it.
+              if printf '%s' "$cur" | grep -qE '^[0-9]+$' && [ "$cur" -gt "$peak" ]; then
+                peak="$cur"
+              fi
+              sleep 1
+            done
+            # `wait` returns the child's status, which is the one that matters.
+            # Capturing it as `local status=$?` would read the exit code of
+            # `local` itself (always 0) and silently swallow every test failure.
+            status=0
+            wait "$pid" || status=$?
+            echo "${peak:-0}" > "$out"
+            return "$status"
+          }
+
           for a in $GROUP_ASSEMBLIES; do
             dll="tests/${a}/bin/Release/net10.0/${a}.dll"
             echo "::group::${a}"
-            # /usr/bin/time -v reports the max RSS of the process it waited for,
-            # which for `dotnet test` is the largest single testhost. That is the
-            # number arb-rga.6's third comment asks to capture rather than reason
-            # about; it is printed per assembly and read off the run log.
-            /usr/bin/time -v -o "./TestResults/${a}.time" \
+            start=$(date +%s)
+            sample_peak "./TestResults/${a}.peakkb" \
               dotnet test "$dll" \
                 --filter "$TEST_FILTER" \
                 --logger trx --results-directory ./TestResults
-            grep -E 'Maximum resident set size|Elapsed \(wall clock\)' "./TestResults/${a}.time" || true
+            echo "$(( $(date +%s) - start ))" > "./TestResults/${a}.secs"
+            echo "peak dotnet+testhost RSS: $(cat "./TestResults/${a}.peakkb") KB in $(cat "./TestResults/${a}.secs") s"
             echo "::endgroup::"
           done
 
@@ -243,14 +290,14 @@ jobs:
           {
             echo "### Backend group ${{ matrix.group }} peak memory"
             echo ""
-            echo "| Assembly | Max RSS (KB) | Wall clock |"
+            echo "| Assembly | Peak dotnet+testhost RSS (KB) | Wall clock |"
             echo "|---|---|---|"
-            for f in ./TestResults/*.time; do
+            for f in ./TestResults/*.peakkb; do
               [ -f "$f" ] || continue
-              a=$(basename "$f" .time)
-              rss=$(grep -oE 'Maximum resident set size \(kbytes\): [0-9]+' "$f" | grep -oE '[0-9]+$' || echo '?')
-              wall=$(grep -oE 'Elapsed .wall clock. time .*: .*' "$f" | sed 's/.*: //' || echo '?')
-              echo "| $a | $rss | $wall |"
+              a=$(basename "$f" .peakkb)
+              rss=$(cat "$f" 2>/dev/null || echo '?')
+              secs=$(cat "./TestResults/${a}.secs" 2>/dev/null || echo '?')
+              echo "| $a | $rss | ${secs}s |"
             done
             echo ""
             echo "Heap cap for this group: ${GROUP_HEAP_LIMIT:-(unset)}"
