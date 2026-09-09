@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -35,7 +36,7 @@ const ADMIN_KEY_HEADER = 'X-Admin-Api-Key';
  * destroyed with it. It must still never be hardcoded anywhere a human could mistake it for
  * a real credential, which is why it is generated per run rather than written as a literal.
  */
-const ADMIN_KEY = `e2e-${'k'.repeat(8)}-${Date.now()}`;
+const ADMIN_KEY = `e2e-${randomUUID()}`;
 
 /**
  * The stub's compose service name. NOT a *.invalid address, and that is deliberate on two
@@ -60,6 +61,21 @@ const STUB_BASE_URL = 'http://stub-upstream:5100';
  */
 const STUB_MISMATCHED_BASE_URL = 'http://stub-upstream-alias:5100';
 
+/**
+ * A query text used ONLY by the origin-mismatch test, and by both halves of it.
+ *
+ * PaginationSnapshotService caches a materialised result set for 300s keyed on
+ * searchType/type/protocol/q/categories/ids -- with no source identity in the key
+ * (ComputeSnapshotToken). So repointing the source and re-running the SAME q as an earlier
+ * test would return that earlier snapshot rather than querying the repointed source at all.
+ * A query text unique to this test guarantees a fresh materialisation on its first call, and
+ * using it for both halves keeps the pair honest.
+ *
+ * The stub answers every search with the same fixtures regardless of q, so this changes what
+ * is cached, not what comes back.
+ */
+const MISMATCH_QUERY = 'origin-guard-probe';
+
 test('the container answers /health', async ({ request }) => {
   const response = await request.get('/health');
   expect(response.ok()).toBeTruthy();
@@ -67,9 +83,12 @@ test('the container answers /health', async ({ request }) => {
 
 test('the UI loads and renders its shell', async ({ page }) => {
   await page.goto('/');
-  // A heading, not just a 200: index.html is served for every unmatched path, so a status
-  // check alone passes even when the bundle fails to boot and leaves an empty root div.
-  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  // A NAMED heading, not just a 200 and not merely "some h1": index.html is served for every
+  // unmatched path, so a status check alone passes even when the bundle fails to boot and
+  // leaves an empty root div. On this fresh install "/" is inside <RequireSession> with no
+  // operator account yet, so the guard lands on the setup screen -- naming it is what makes
+  // this prove React mounted and routed, rather than that some element happened to exist.
+  await expect(page.getByRole('heading', { level: 1, name: 'Set up Arbitarr' })).toBeVisible();
 });
 
 test('the admin key can be bootstrapped over the local-network bypass', async ({ request }) => {
@@ -190,12 +209,25 @@ test('the admin key never reaches browser storage', async ({ page }) => {
     window.sessionStorage.removeItem('e2e-positive-control');
   });
 
-  // Drive real surfaces, including an admin-gated one, so anything the app persists on a
-  // normal operator journey has been written by the time storage is read.
-  for (const path of ['/', '/search', '/settings', '/system']) {
-    await page.goto(path);
-    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-  }
+  // Walk only what an UNAUTHENTICATED visitor can actually render, and assert the specific
+  // heading each one is expected to show.
+  //
+  // The earlier version walked /, /search, /settings and /system and asserted merely that
+  // "some h1 is visible". Every one of those sits inside <RequireSession> in routes.tsx, so on
+  // this fresh install -- no operator account yet -- the guard redirects them all to /setup.
+  // The walk was therefore rendering the same setup screen four times and passing on its
+  // heading, which is exactly the vacuity this file is careful about elsewhere.
+  //
+  // /setup is the honest surface here: it is outside the guard, it is where a fresh install
+  // legitimately lands, and it is the screen that would carry a credential if any screen did.
+  await page.goto('/setup');
+  await expect(page.getByRole('heading', { level: 1, name: 'Set up Arbitarr' })).toBeVisible();
+
+  // And confirm the guard's redirect is real rather than assumed, so the note above cannot
+  // quietly go stale if RequireSession changes.
+  await page.goto('/system');
+  await expect(page.getByRole('heading', { level: 1, name: /Set up Arbitarr|Sign in to Arbitarr/ }))
+    .toBeVisible();
 
   const storage = await readBrowserStorage(page);
 
@@ -255,13 +287,28 @@ test('items whose link origin differs from the source base URL are dropped', asy
   );
   expect(source, 'the golden-path source must exist before it can be repointed').toBeTruthy();
 
-  // POSITIVE CONTROL, restated here rather than inherited: with the matching origin this very
-  // search returns two rows. The preceding test has just proved that against this same
-  // container, so the emptiness below is a change in behaviour, not a starting condition.
+  // POSITIVE CONTROL, run here under THIS test's own query text rather than inherited from the
+  // earlier two-row test. Both halves must use the SAME q, and it must not be the q that test
+  // used: PaginationSnapshotService keys its 300s snapshot on
+  // searchType/type/protocol/q/categories/ids and NOT on the source set
+  // (ComputeSnapshotToken, PaginationSnapshotService.cs:206). Reusing q='example' would serve
+  // the pre-repoint snapshot straight back, so the guard would never run and this test would
+  // pass while proving nothing. The missing source identity in that key is a product issue,
+  // filed separately; this test must simply not depend on it.
+  const beforeRepoint = await request.get('/api/admin/search', {
+    headers: { [ADMIN_KEY_HEADER]: ADMIN_KEY },
+    params: { q: MISMATCH_QUERY },
+  });
+  expect(beforeRepoint.status(), await beforeRepoint.text()).toBe(200);
+  const before: { title: string }[] = (await beforeRepoint.json()).releases;
+  expect(before, 'the matching origin must return rows, or the emptiness below proves nothing')
+    .toHaveLength(2);
+
   const repointed = await request.put(`/api/admin/sources/${source.id}`, {
     headers: { [ADMIN_KEY_HEADER]: ADMIN_KEY },
     data: {
-      kind: 'nzbhydra',
+      // Same ordinal match as createSource -- see the comment there (arb-pn5).
+      kind: 'NzbHydra',
       displayName: 'Stub Upstream',
       baseUrl: STUB_MISMATCHED_BASE_URL,
       enabled: true,
@@ -275,12 +322,13 @@ test('items whose link origin differs from the source base URL are dropped', asy
 
   const response = await request.get('/api/admin/search', {
     headers: { [ADMIN_KEY_HEADER]: ADMIN_KEY },
-    params: { q: 'example' },
+    params: { q: MISMATCH_QUERY },
   });
   expect(response.status(), await response.text()).toBe(200);
 
   // Reachable, identical fixtures, foreign origin: every item is dropped by the guard. The
-  // ONLY thing changed since the two-row search above is the base URL.
+  // ONLY thing that changed since the two-row control above is the source's base URL -- same
+  // query text, same stub, same container.
   const releases: { title: string }[] = (await response.json()).releases;
   expect(releases).toHaveLength(0);
 });
@@ -296,10 +344,17 @@ function createSource(request: APIRequestContext, displayName: string, baseUrl: 
   return request.post('/api/admin/sources', {
     headers: { [ADMIN_KEY_HEADER]: ADMIN_KEY },
     data: {
-      kind: 'nzbhydra',
+      // MUST be exactly "NzbHydra" -- SourceSeeder.NzbHydraKind, compared ORDINALLY at
+      // SourceSeeder.cs:175 (`Where(s => s.Kind == NzbHydraKind && s.Enabled)`). Do NOT
+      // lowercase this. POST /api/admin/sources stores any casing and still returns 201, but
+      // the seeder then never selects the row: the adapter stays pinned to the unconfigured
+      // placeholder and every search returns zero rows with no error anywhere. That cost this
+      // suite a full CI cycle. The endpoint accepting a kind the seeder can never match is
+      // tracked as arb-pn5; until that lands, this casing is load-bearing.
+      kind: 'NzbHydra',
       displayName,
       baseUrl,
-      apiKey: `stub-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      apiKey: `stub-${randomUUID()}`,
       enabled: true,
     },
   });
