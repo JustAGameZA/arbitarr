@@ -54,6 +54,21 @@ public sealed class DisableUriRedactionSwitchTests
         nameof(DisableUriRedactionSwitchTests) + "." +
         nameof(RunSonarrLikeClientOnceAsync);
 
+    // Category=Load (arb-rga.5) on the two CHILD-SPAWNING facts only, never on the class. Each one
+    // launches a nested `dotnet test` of this same assembly under a 60s timeout with a process-tree
+    // kill, which is far and away the most expensive shape in this assembly — and under arb-rga.4's
+    // maxParallelThreads=4, with DOTNET_GCHeapHardLimit pinned to 2GB in build-test.yml, those
+    // children compete for the same budget as the Integration hosts. Parallel-SAFE by construction
+    // (that is the entire point of the child-process shape) but not parallel-CHEAP, which is exactly
+    // what Load exists to let CI schedule deliberately.
+    //
+    // The class must NOT carry the trait: RunSonarrLikeClientOnceAsync below is itself a [Fact] that
+    // also runs once directly, unfiltered, in a normal full-suite invocation, and its remarks record
+    // that this direct run must never stop executing — it asserts the default-state redaction and the
+    // ratchet counts it. A class-level trait would delete that run from the PR lane while leaving the
+    // child processes (which pass their own FullyQualifiedName filter and inherit no category filter)
+    // untouched, i.e. it would cost a real assertion and save nothing.
+    [Trait("Category", "Load")]
     [Fact]
     public async Task Default_process_state_redacts_the_query_string_the_Sonarr_client_relies_on()
     {
@@ -66,6 +81,7 @@ public sealed class DisableUriRedactionSwitchTests
         Assert.DoesNotContain(SonarrKey, message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Trait("Category", "Load")]
     [Fact]
     public async Task Setting_the_env_var_defeats_the_redaction_the_Sonarr_registration_depends_on()
     {

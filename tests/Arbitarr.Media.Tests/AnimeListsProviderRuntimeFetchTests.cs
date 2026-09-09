@@ -217,7 +217,14 @@ public class AnimeListsProviderRuntimeFetchTests
     }
 
     // ---- AC19: rate-limit spacing between successive fetches ----
+    //
+    // Category=Timing (arb-rga.5) is applied to the three rate-limit facts in this section ONLY,
+    // never to the class. Per the class remarks above, the 24h no-refetch rules are driven by real
+    // file mtimes on disk and are fully deterministic with no wall-clock waiting — those ten facts
+    // stay in the PR lane. Only these three measure elapsed time against the Task.Delay-based gate
+    // in ApplyRateLimitAsync.
 
+    [Trait("Category", "Timing")]
     [Fact]
     public async Task FetchAndPersist_TwoRefetchesInSuccession_AreSpacedByAtLeastConfiguredMinimum()
     {
@@ -265,6 +272,7 @@ public class AnimeListsProviderRuntimeFetchTests
         Assert.True(stopwatch.Elapsed >= TimeSpan.Zero);
     }
 
+    [Trait("Category", "Timing")]
     [Fact]
     public async Task AnimeListsProvider_RateLimit_IsEnforced_AcrossTwoFetchesOnTheSameInstance()
     {
@@ -334,6 +342,7 @@ public class AnimeListsProviderRuntimeFetchTests
         Assert.Single(handler.RequestedUris); // re-fetched once the cached copy's file went stale
     }
 
+    [Trait("Category", "Timing")]
     [Fact]
     public async Task FetchAndPersist_FirstEverFetch_IsNotDelayedByRateLimit_NoPriorRequestRecorded()
     {

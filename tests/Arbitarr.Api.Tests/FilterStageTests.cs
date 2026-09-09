@@ -232,6 +232,11 @@ public sealed class FilterStageTests : IDisposable
     /// backtracking-engine fallback (NonBacktracking alone would make a backreference-free
     /// "(a+)+$"-style pattern linear-time and it would never time out).
     /// </summary>
+    // Category=Timing (arb-rga.5) on this fact ALONE, not on the class. It is the only one of this
+    // class's nine facts that asserts elapsed wall time (the Stopwatch bound below); the other eight
+    // are shadow-mode, profile-mapping and title-normalisation assertions with no clock in them and
+    // must keep running in the PR lane.
+    [Trait("Category", "Timing")]
     [Fact]
     public async Task ApplyAsync_HazardousPatternTimesOut_PipelineFailsOpen_BenignRuleStillApplies()
     {
