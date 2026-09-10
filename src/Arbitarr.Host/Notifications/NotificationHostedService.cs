@@ -56,8 +56,8 @@ public sealed class NotificationHostedService(
             }
             catch (Exception ex)
             {
-                // A failed notification cycle must never take the host down: BackgroundService
-                // faults propagate to the host by default. Log and retry on the next tick.
+                // Per-item error handling (docs/standards/architecture.md). Log and retry on the
+                // next tick.
                 _logger.LogError(ex, "Notification cycle failed; will retry next cycle.");
             }
 
