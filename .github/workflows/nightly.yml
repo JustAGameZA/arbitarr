@@ -126,6 +126,18 @@ jobs:
           echo "Found ${#projects[@]} test projects:"
           printf '  %s\n' "${projects[@]}"
 
+          # WHAT THE SUMMARY SHOULD EXPECT TO FIND, written by the job that knows.
+          # The summary cannot tell "ten assemblies, all green" from "three
+          # assemblies uploaded and the other seven never ran": both produce a
+          # non-empty totals table and no failures, so both render as an
+          # all-clear. So this job states its own expectation, derived from the
+          # SAME project count it just asserted -- never a second hard-coded
+          # literal, which could drift out of step with that assertion and make
+          # the check vacuous. The summary compares found-vs-expected PER JOB and
+          # refuses to print an all-clear over a shortfall.
+          printf 'expected-trx=%s\n' "${#projects[@]}" > ./TestResults/expected-full-suite.txt
+          cat ./TestResults/expected-full-suite.txt
+
           failed_projects=""
           for csproj in "${projects[@]}"; do
             # Arbitarr.Core.Tests.csproj -> Core (the summary's Assembly column).
@@ -138,6 +150,11 @@ jobs:
             # is a complete picture of the unfiltered suite, and aborting at the
             # first red assembly would skip every one after it -- reporting less
             # than the single-trx bug it replaces.
+            # THE TRX BASENAME BELOW IS A PARSER INPUT, not just a filename: the
+            # summary derives the Assembly column from it, and reads a `-iter<N>`
+            # suffix as "this is a flake-hunt iteration N". Renaming the pattern
+            # (or adding a suffix here) silently changes what the summary reports
+            # rather than breaking anything loudly.
             if dotnet test "$csproj" -c Release --no-build \
                  --logger "trx;LogFileName=${name}.trx" \
                  --results-directory ./TestResults; then
@@ -163,14 +180,30 @@ jobs:
       # reports a number when one of those tests fails. It is a count of tests
       # carrying the trait, NOT a count of tests that ran -- the summary labels
       # it that way, because reading it as "executed" would understate the suite.
-      - name: Count Timing/Load tests (discovery only)
+      - name: Count Timing/Load/Quarantine tests (discovery only)
         if: always()
         continue-on-error: true
         shell: bash
         run: |
           set -uo pipefail
           mkdir -p ./TestResults
-          for category in Timing Load; do
+
+          # Truncated, not appended to. Every write below is `>>` so the loop can
+          # add a row per category; without this the file would accumulate across
+          # re-runs on a warm/cached workspace and the summary would render the
+          # same category several times, with stale numbers among them.
+          : > ./TestResults/category-counts.tsv
+
+          # ALL THREE categories the PR lane filters out
+          # (`Category!=Timing&Category!=Load&Category!=Quarantine`, build-test.yml's
+          # TEST_FILTER). This list must stay equal to that filter's set: the
+          # summary's heading claims to report every trait the PR lane excludes,
+          # so a category missing here makes that heading a false statement --
+          # exactly the shape where a lane runs nowhere and nobody notices.
+          # Quarantine is expected to discover 0 today (no test carries the trait
+          # yet); that legitimate zero is still distinct from the `n/a` sentinel
+          # written when discovery itself breaks.
+          for category in Timing Load Quarantine; do
             # DISCOVERY FAILURE MUST NOT READ AS ZERO. `dotnet test ... | grep -c`
             # in one pipeline conflates two different outcomes: "discovery ran and
             # found no test carrying the trait" and "discovery itself broke". Both
@@ -227,6 +260,7 @@ jobs:
           path: |
             TestResults/*.trx
             TestResults/category-counts.tsv
+            TestResults/expected-full-suite.txt
             src/Arbitarr.Web/vitest-report.json
           if-no-files-found: warn
 
@@ -294,8 +328,18 @@ jobs:
           mkdir -p ./TestResults
           failed_iterations=""
 
-          for project in Integration Data; do
-            for i in 1 2 3 4 5; do
+          # The loop bounds, named once and used both to drive the loops and to
+          # state the expectation, so the two cannot drift. See the equivalent
+          # comment in job 1: the summary cannot tell a complete green run from a
+          # truncated one without being told what complete looks like.
+          projects=(Integration Data)
+          iterations=(1 2 3 4 5)
+          printf 'expected-trx=%s\n' "$(( ${#projects[@]} * ${#iterations[@]} ))" \
+            > ./TestResults/expected-flake-hunt.txt
+          cat ./TestResults/expected-flake-hunt.txt
+
+          for project in "${projects[@]}"; do
+            for i in "${iterations[@]}"; do
               echo "::group::Arbitarr.${project}.Tests iteration ${i}"
               # A failing iteration must NOT stop the loop: an intermittent test
               # is only visible across iterations, so the run that fails is data,
@@ -316,7 +360,7 @@ jobs:
             echo "Failing iterations:${failed_iterations}"
             echo "failed_iterations=${failed_iterations}" >> "$GITHUB_OUTPUT"
           else
-            echo "All 10 iterations passed."
+            echo "All $(( ${#projects[@]} * ${#iterations[@]} )) iterations passed."
           fi
 
       - name: Upload flake-hunt results
@@ -324,7 +368,9 @@ jobs:
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
         with:
           name: nightly-flake-hunt
-          path: TestResults/*.trx
+          path: |
+            TestResults/*.trx
+            TestResults/expected-flake-hunt.txt
           if-no-files-found: warn
 
       # Same reasoning as job 1's gate: the loop above deliberately swallows each
@@ -368,6 +414,13 @@ jobs:
           name: nightly-flake-hunt
           path: ./results/flake-hunt
 
+      # VALIDATE CHANGES TO THIS STEP BY RUNNING IT, NOT BY READING IT. Extract the
+      # step's script out of this committed file with awk and run the extracted copy
+      # against fixture directories under ./results (a few real trx, an expectation
+      # file or two, one deliberately absent) with GITHUB_* set in the environment.
+      # Never revalidate by retyping the script into a scratch file: a retyped copy
+      # is not what CI runs, and every bug this step has shipped so far lived in the
+      # difference between the two.
       - name: Build summary
         shell: bash
         run: |
@@ -468,7 +521,106 @@ jobs:
           # the first trx and silently ignoring every other one.
           done 3< <(find ./results -type f -name '*.trx' | sort)
 
+          # ------------------------------------------------------------------
+          # FOUND vs EXPECTED, per job.
+          #
+          # Everything above reports what the trx files CONTAIN. None of it can
+          # detect what is MISSING: a job that OOMed before its upload step, an
+          # artifact that failed to upload, or a loop that died after three of ten
+          # assemblies all leave a set of perfectly valid, perfectly green trx
+          # files behind. The failures table then says "No test failed, in any
+          # assembly, in any iteration" and Overall prints a green total -- an
+          # all-clear over a suite that mostly never ran.
+          #
+          # So each test job writes an expectation file into its own artifact, and
+          # this compares the two per job. A shortfall, or a missing expectation
+          # file (which means the job did not reach the point of stating one),
+          # promotes an INCOMPLETE banner ABOVE the failures heading, where it is
+          # read before the green text rather than thirty lines below it.
+          # ------------------------------------------------------------------
+          incomplete_tsv=$(mktemp)
+
+          for job in full-suite flake-hunt; do
+            # `needs.<job>.result` is authoritative about whether the job ran at
+            # all; the artifact is authoritative about what it produced. Both are
+            # checked, because they fail independently: a job can go red with a
+            # complete artifact (real test failures -- not incomplete), and a job
+            # can report success while its upload silently matched nothing.
+            job_dir="./results/${job}"
+
+            found=0
+            if [ -d "$job_dir" ]; then
+              found=$(find "$job_dir" -type f -name '*.trx' | wc -l | tr -d ' ')
+            fi
+
+            # Located with `find`, not a fixed path, for the same least-common-
+            # ancestor reason as the trx files above: the two artifacts are rooted
+            # at different depths, so a hard-coded path finds one and misses the
+            # other.
+            expected_file=""
+            if [ -d "$job_dir" ]; then
+              expected_file=$(find "$job_dir" -type f -name "expected-${job}.txt" | head -1)
+            fi
+
+            if [ -z "$expected_file" ]; then
+              printf '%s\t%s\t%s\n' "$job" "unknown (no expectation file in the artifact)" "$found" >> "$incomplete_tsv"
+              continue
+            fi
+
+            expected=$(sed -n 's/^expected-trx=\([0-9]\{1,\}\)$/\1/p' "$expected_file" | head -1)
+            if [ -z "$expected" ]; then
+              printf '%s\t%s\t%s\n' "$job" "unreadable (malformed expectation file)" "$found" >> "$incomplete_tsv"
+              continue
+            fi
+
+            # A SHORTFALL is the failure this exists to catch. An EXCESS is also
+            # reported rather than ignored: it means the expectation and the run
+            # disagree, and a summary that quietly tolerates one direction of
+            # disagreement is not actually checking.
+            if [ "$found" -ne "$expected" ]; then
+              printf '%s\t%s\t%s\n' "$job" "$expected" "$found" >> "$incomplete_tsv"
+            fi
+          done
+
+          full_suite_result="${{ needs.full-suite.result }}"
+          flake_hunt_result="${{ needs.flake-hunt.result }}"
+
           {
+            # HOISTED TO THE TOP, deliberately. This table used to sit at the
+            # bottom of the summary, which made it the only contrary signal to a
+            # green failures section thirty lines above it -- and the one nobody
+            # scrolls to once they have read "No test failed".
+            echo "### Upstream job results"
+            echo ""
+            echo "| Job | Result |"
+            echo "|---|---|"
+            echo "| Full suite (unfiltered) | ${full_suite_result} |"
+            echo "| Flake hunt | ${flake_hunt_result} |"
+            echo ""
+
+            if [ "$full_suite_result" != "success" ] || [ "$flake_hunt_result" != "success" ]; then
+              echo "> **At least one upstream job did not succeed, so this summary is incomplete;"
+              echo "> do not read it as an all-clear.** The tables below describe only the results"
+              echo "> that were actually produced and uploaded."
+              echo ""
+            fi
+
+            if [ -s "$incomplete_tsv" ]; then
+              echo "### ⚠️ INCOMPLETE - results are missing"
+              echo ""
+              echo "Fewer test result files arrived than the job that produced them expected."
+              echo "**The tables below cannot be read as an all-clear**: a test that never ran"
+              echo "cannot fail, so absent results render exactly like passing ones."
+              echo ""
+              echo "| Job | Expected .trx | Found .trx |"
+              echo "|---|---|---|"
+              while IFS=$'\t' read -r job expected found; do
+                [ -n "$job" ] || continue
+                echo "| $job | $expected | $found |"
+              done < "$incomplete_tsv"
+              echo ""
+            fi
+
             echo "### Tests that failed in any iteration"
             echo ""
             if [ ! -s "$failures_tsv" ]; then
@@ -551,16 +703,21 @@ jobs:
               echo "No category counts were recorded (the discovery step did not run or failed)."
             fi
 
-            echo ""
-            echo "### Upstream job results"
-            echo ""
-            echo "| Job | Result |"
-            echo "|---|---|"
-            echo "| Full suite (unfiltered) | ${{ needs.full-suite.result }} |"
-            echo "| Flake hunt | ${{ needs.flake-hunt.result }} |"
           } >> "$out"
 
-          rm -f "$failures_tsv" "$totals_tsv"
+          # The banner is markdown, which only appears to whoever opens the run
+          # summary. `::error::` also surfaces on the run's header and in the
+          # notification, so an incomplete nightly is visible without opening it.
+          # Emitted AFTER the document is written so a failure here cannot cost
+          # the summary itself.
+          if [ -s "$incomplete_tsv" ]; then
+            while IFS=$'\t' read -r job expected found; do
+              [ -n "$job" ] || continue
+              echo "::error title=Nightly summary is incomplete::job ${job} expected ${expected} .trx file(s) but ${found} arrived; the summary's tables cannot be read as an all-clear."
+            done < "$incomplete_tsv"
+          fi
+
+          rm -f "$failures_tsv" "$totals_tsv" "$incomplete_tsv"
 
           cat "$out" >> "$GITHUB_STEP_SUMMARY"
           cat "$out"
