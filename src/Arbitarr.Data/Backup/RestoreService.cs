@@ -203,7 +203,7 @@ public sealed class RestoreService
     /// on Linux, where the overwrite would be permitted, it is worse: the pooled handles keep
     /// reading the replaced inode, so the process would carry on serving the OLD database while the
     /// new one sat on disk looking applied. <see cref="SqlitePoolCleaner.ClearPoolsFor"/> closes
-    /// them for real, which is the only reason the replacement below is safe to attempt at all.
+    /// them for real, which is the only reason the replacement below is safe to attempt at all.</para>
     ///
     /// <para>It clears the pool for EVERY connection string naming this database
     /// (<see cref="DatabaseConnectionStrings.ForDatabase"/>), not just the one the application
