@@ -51,6 +51,11 @@
 # -m:1 is kept on `dotnet test` because CLAUDE.md section 4 still requires it;
 # retiring it is bead arb-8qw and is not this script's call.
 #
+# This script builds Debug on purpose (no `-c` anywhere below), while CI prep
+# builds Release: the two must not diverge (see the --no-build build comment
+# above), so a first run against an existing bin/Release tree still rebuilds
+# Debug from scratch rather than reusing it.
+#
 # Portability: bash 4+, git, awk, sed, grep, sort, find. Runs under git-bash on
 # Windows and under Linux. No python3, no bc, no GNU-only flags.
 
@@ -114,7 +119,8 @@ fi
 changed_file=$(mktemp)
 graph_file=$(mktemp)
 projects_file=$(mktemp)
-trap 'rm -f "$changed_file" "$changed_file.n" "$graph_file" "$projects_file"' EXIT
+arch_trigger_names_file=$(mktemp)
+trap 'rm -f "$changed_file" "$changed_file.n" "$graph_file" "$projects_file" "$arch_trigger_names_file"' EXIT
 
 vitest_since=''
 
@@ -196,6 +202,56 @@ done < "$projects_file"
 all_test_projects=$(sed -n 's#^tests/\([^/]*\.Tests\)/.*#\1#p' "$projects_file" | sort -u)
 all_test_count=$(printf '%s\n' "$all_test_projects" | grep -c . || true)
 
+# ----------------------------------------------------------------------------
+# 2b. Arbitarr.Architecture.Tests: found on disk, and its own trigger list
+#     derived from the two Cecil scans' source, not hard-coded here.
+#
+# The project name/dir come from the csproj that actually exists, so a rename
+# fails loudly instead of this script silently selecting nothing for it.
+# ----------------------------------------------------------------------------
+arch_csproj=$(find tests -mindepth 2 -maxdepth 2 -name 'Arbitarr.Architecture.Tests.csproj' 2>/dev/null | head -n1)
+if [ -z "$arch_csproj" ]; then
+  echo "test-affected: no tests/*/Arbitarr.Architecture.Tests.csproj found on disk;" >&2
+  echo "the Architecture.Tests trigger rule cannot be applied. Fix the project name" >&2
+  echo "or path before relying on this script's selection." >&2
+  exit 2
+fi
+arch_test_project=$(basename "$arch_csproj" .csproj)
+
+# ProductionProcessGlobalStateTests.cs and TestProcessGlobalStateTests.cs each scan a
+# hand-spelled string[] of assembly names (see their class remarks). Their IL scans
+# read those assemblies by FILE PATH, not via <ProjectReference>, so the project
+# graph built above can't see the dependency -- in particular Arbitarr.Host, which
+# ProductionProcessGlobalStateTests scans but Architecture.Tests.csproj does NOT
+# reference (NU1605), making it the one src/ project the graph alone would miss.
+# Rather than hard-code that (or any other) name here, the trigger set is read
+# straight out of both files: each scanned name sits alone on its own line shaped
+# exactly `        "Name",` (8-space indent, quoted, trailing comma) inside the
+# `string[] ... = [ ... ]` literal. Zero matches from either file means the shape
+# changed and this parse can no longer see what it's supposed to protect, so it
+# fails loudly rather than silently selecting nothing.
+arch_scan_files=(
+  "tests/Arbitarr.Architecture.Tests/ProductionProcessGlobalStateTests.cs"
+  "tests/Arbitarr.Architecture.Tests/TestProcessGlobalStateTests.cs"
+)
+: > "$arch_trigger_names_file"
+for f in "${arch_scan_files[@]}"; do
+  if [ ! -f "$f" ]; then
+    echo "test-affected: expected scan file '$f' not found; cannot derive the" >&2
+    echo "Architecture.Tests trigger list. Update this script's arch_scan_files." >&2
+    exit 2
+  fi
+  names=$(sed -n 's/^        "\([A-Za-z0-9.]*\)",$/\1/p' "$f")
+  if [ -z "$names" ]; then
+    echo "test-affected: could not read assembly list from '$f' -- expected lines" >&2
+    echo "shaped exactly '        \"Name\",' inside its string[] literal. The file's" >&2
+    echo "shape changed; update the sed pattern in this script, don't ignore this." >&2
+    exit 2
+  fi
+  printf '%s\n' "$names" >> "$arch_trigger_names_file"
+done
+arch_trigger_names=$(sort -u "$arch_trigger_names_file")
+
 # Transitive dependents of one project: every node from which the project is
 # reachable along reference edges. Plain BFS over the edge list in awk.
 dependents_of() {
@@ -232,12 +288,14 @@ while IFS= read -r path; do
       proj=${path#*/}; proj=${proj%%/*}
       if [ -f "src/$proj/$proj.csproj" ] || [ -f "tests/$proj/$proj.csproj" ]; then
         changed_projects["$proj"]=1
-        # Any tests/ change also selects Architecture.Tests: its Mono.Cecil IL
-        # scans read the OTHER test assemblies' compiled output by file path,
-        # not via a <ProjectReference>, so the reference graph alone can't see
-        # that dependency.
-        case "$path" in
-          tests/*) changed_projects['Arbitarr.Architecture.Tests']=1 ;;
+        # A change under src/<Name>/ or tests/<Name>/ also selects
+        # Architecture.Tests when <Name> is one of the assemblies its Cecil
+        # scans read by FILE PATH (see 2b above) -- that includes src/, not
+        # just tests/, because ProductionProcessGlobalStateTests scans
+        # Arbitarr.Host, which is src/ and which Architecture.Tests.csproj
+        # does NOT reference (NU1605), so the project graph alone misses it.
+        case " $(printf '%s ' $arch_trigger_names)" in
+          *" $proj "*) changed_projects["$arch_test_project"]=1 ;;
         esac
       else
         # A directory under src/ or tests/ with no csproj is not a project this
