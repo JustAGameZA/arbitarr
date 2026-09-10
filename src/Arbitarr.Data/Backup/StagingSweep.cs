@@ -36,10 +36,27 @@ public static class StagingSweep
     /// by name, and swept past — it must not stop the rest of the directory from being reclaimed,
     /// and it must not throw out of a startup path.</para>
     /// </summary>
-    public static int Run(string stagingDirectory, DateTime processStartUtc, ILogger logger)
+    public static int Run(string stagingDirectory, DateTime processStartUtc, ILogger logger) =>
+        Run(stagingDirectory, processStartUtc, logger, File.Delete);
+
+    /// <summary>
+    /// Same as <see cref="Run(string, DateTime, ILogger)"/>, with the delete action replaceable by a
+    /// caller. Production always uses the default overload above, which passes <see cref="File.Delete(string)"/>
+    /// directly. This overload exists for <c>StagingSweepTests</c>: proving the per-file
+    /// warn-and-continue path deterministically needs a delete that is GUARANTEED to throw for one
+    /// specific file on every platform, and neither an open <c>FileStream</c> with
+    /// <see cref="FileShare.None"/> nor the read-only file attribute reliably makes
+    /// <see cref="File.Delete(string)"/> throw on Linux — a second handle from the SAME process is not
+    /// blocked by an earlier <c>FileShare.None</c> there, and Linux <c>unlink()</c> permission comes
+    /// from the DIRECTORY, not the file's own read-only bit, so .NET does not surface it as a delete
+    /// failure the way Windows does. Injecting the action sidesteps the OS-level lock entirely: the
+    /// test is about the catch-and-continue behaviour, not about reproducing a real lock.
+    /// </summary>
+    public static int Run(string stagingDirectory, DateTime processStartUtc, ILogger logger, Action<string> deleteFile)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(stagingDirectory);
         ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(deleteFile);
 
         if (!Directory.Exists(stagingDirectory))
         {
@@ -78,7 +95,7 @@ public static class StagingSweep
 
             try
             {
-                File.Delete(path);
+                deleteFile(path);
                 deleted++;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

@@ -91,27 +91,27 @@ public sealed class StagingSweepTests : IDisposable
 
         var logger = new CapturingLogger();
 
-        // FileShare.None on an open FileStream is NOT what makes File.Delete throw on Linux (CI's
-        // runner): unlike Windows, a second handle opened from the SAME process is not blocked by
-        // an earlier FileShare.None, and unlink() over an already-open file is permitted outright
-        // -- File.Delete succeeds there regardless of any open FileStream. The read-only attribute,
-        // by contrast, is enforced by File.Delete on both platforms (UnauthorizedAccessException),
-        // which is what actually reproduces the per-file "could not delete, warn and move on" path
-        // this test exists to prove.
-        File.SetAttributes(lockedPath, File.GetAttributes(lockedPath) | FileAttributes.ReadOnly);
-
-        try
+        // Neither an open FileStream with FileShare.None nor the read-only file attribute reliably
+        // makes File.Delete throw on Linux (CI's runner): a second handle opened from the SAME
+        // process is not blocked by an earlier FileShare.None there, and unlink() permission comes
+        // from the DIRECTORY, not the file's own read-only bit, so .NET does not surface either as a
+        // delete failure the way Windows does. This test is about StagingSweep's catch-and-continue
+        // behaviour, not about reproducing a real OS-level lock, so it injects a delete action that
+        // is GUARANTEED to throw for exactly the "locked" file on every platform, and asserts the
+        // real File.Delete still runs for its sibling.
+        var deleted = StagingSweep.Run(StagingDir, processStart, logger, path =>
         {
-            var deleted = StagingSweep.Run(StagingDir, processStart, logger);
+            if (string.Equals(path, lockedPath, StringComparison.Ordinal))
+            {
+                throw new UnauthorizedAccessException("Simulated: this file cannot be deleted.");
+            }
 
-            Assert.Equal(1, deleted);
-            Assert.True(File.Exists(lockedPath), "The undeletable file must survive the sweep.");
-            Assert.False(File.Exists(deletablePath), "The deletable sibling must still be deleted.");
-        }
-        finally
-        {
-            File.SetAttributes(lockedPath, File.GetAttributes(lockedPath) & ~FileAttributes.ReadOnly);
-        }
+            File.Delete(path);
+        });
+
+        Assert.Equal(1, deleted);
+        Assert.True(File.Exists(lockedPath), "The undeletable file must survive the sweep.");
+        Assert.False(File.Exists(deletablePath), "The deletable sibling must still be deleted.");
 
         Assert.Contains(
             logger.Warnings,
