@@ -23,6 +23,16 @@ namespace Arbitarr.Architecture.Tests;
 /// catch, so collapsing them would remove a check rather than simplify it. If you rename or move
 /// either array here, the workflow's extraction (a narrow sed range keyed to this class's shape, not
 /// a C# parser) must be repointed at the new location in the same change, or its guard goes vacuous.</para>
+///
+/// <para><b>Why this walk is not on Arbitarr.TestSupport.</b> The walk in
+/// <see cref="ResolveAssemblyPath"/> is anchored on THIS assembly's own
+/// <see cref="AppContext.BaseDirectory"/>, so the parent depth it climbs is only correct for a
+/// project that sits at <c>tests/&lt;Project&gt;/bin/&lt;Configuration&gt;/&lt;tfm&gt;/</c> — moving
+/// it to a shared helper would make the depth depend on where the CALLER's own output directory
+/// happens to sit, not on this one. Arbitarr.TestSupport is also not that caller: its csproj sets
+/// <c>IsTestProject=false</c> and hosts no test run (so it has no bin output rooted the way this walk
+/// assumes), and it references only <c>Microsoft.Data.Sqlite</c> — deliberately no Arbitarr project
+/// names — so a scan helper that names every Arbitarr assembly by convention does not belong there.</para>
 /// </summary>
 internal static class BuiltAssemblies
 {
@@ -101,17 +111,42 @@ internal static class BuiltAssemblies
     /// doing so. A missing assembly therefore FAILS the scan loudly rather than passing vacuously
     /// over an empty set.</para>
     /// </summary>
+    /// <summary>
+    /// Number of parent directories between <see cref="AppContext.BaseDirectory"/> and the
+    /// repository root, for a project shaped <c>&lt;root&gt;/tests/&lt;Project&gt;/bin/
+    /// &lt;Configuration&gt;/&lt;tfm&gt;/</c> — five segments below root: tfm, Configuration, bin,
+    /// Project, tests.
+    /// </summary>
+    private const int ParentsFromAssemblyDirectoryToRepositoryRoot = 5;
+
     internal static string? ResolveAssemblyPath(string rootDirectoryName, string assemblyName)
     {
         // .../tests/Arbitarr.Architecture.Tests/bin/<configuration>/<tfm>/
-        var here = new DirectoryInfo(AppContext.BaseDirectory);
+        var startDirectory = AppContext.BaseDirectory;
+        var here = new DirectoryInfo(startDirectory);
         var targetFramework = here.Name;
         var configuration = here.Parent?.Name;
-        var repositoryRoot = here.Parent?.Parent?.Parent?.Parent?.Parent;
+
+        var repositoryRoot = here;
+        for (var i = 0; i < ParentsFromAssemblyDirectoryToRepositoryRoot && repositoryRoot is not null; i++)
+        {
+            repositoryRoot = repositoryRoot.Parent;
+        }
 
         if (configuration is null || repositoryRoot is null)
         {
             return null;
+        }
+
+        if (!File.Exists(Path.Combine(repositoryRoot.FullName, "Arbitarr.sln")))
+        {
+            throw new InvalidOperationException(
+                $"BuiltAssemblies.ResolveAssemblyPath walked {ParentsFromAssemblyDirectoryToRepositoryRoot} " +
+                $"parent director{(ParentsFromAssemblyDirectoryToRepositoryRoot == 1 ? "y" : "ies")} up from " +
+                $"AppContext.BaseDirectory ('{startDirectory}') and landed on " +
+                $"'{repositoryRoot.FullName}', which does not contain Arbitarr.sln. This means the walk " +
+                "depth no longer matches this assembly's output directory shape, not that the target " +
+                "assembly was not built — fix ParentsFromAssemblyDirectoryToRepositoryRoot.");
         }
 
         var candidate = Path.Combine(
