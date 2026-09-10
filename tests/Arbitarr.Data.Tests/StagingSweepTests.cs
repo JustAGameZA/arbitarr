@@ -81,7 +81,7 @@ public sealed class StagingSweepTests : IDisposable
     }
 
     [Fact]
-    public void A_locked_file_is_warned_about_and_skipped_while_others_are_still_deleted()
+    public void An_undeletable_file_is_warned_about_and_skipped_while_others_are_still_deleted()
     {
         Directory.CreateDirectory(StagingDir);
         var processStart = DateTime.UtcNow;
@@ -91,18 +91,31 @@ public sealed class StagingSweepTests : IDisposable
 
         var logger = new CapturingLogger();
 
-        using (new FileStream(lockedPath, FileMode.Open, FileAccess.Read, FileShare.None))
+        // FileShare.None on an open FileStream is NOT what makes File.Delete throw on Linux (CI's
+        // runner): unlike Windows, a second handle opened from the SAME process is not blocked by
+        // an earlier FileShare.None, and unlink() over an already-open file is permitted outright
+        // -- File.Delete succeeds there regardless of any open FileStream. The read-only attribute,
+        // by contrast, is enforced by File.Delete on both platforms (UnauthorizedAccessException),
+        // which is what actually reproduces the per-file "could not delete, warn and move on" path
+        // this test exists to prove.
+        File.SetAttributes(lockedPath, File.GetAttributes(lockedPath) | FileAttributes.ReadOnly);
+
+        try
         {
             var deleted = StagingSweep.Run(StagingDir, processStart, logger);
 
             Assert.Equal(1, deleted);
-            Assert.True(File.Exists(lockedPath), "The locked file must survive the sweep.");
-            Assert.False(File.Exists(deletablePath), "The unlocked sibling must still be deleted.");
+            Assert.True(File.Exists(lockedPath), "The undeletable file must survive the sweep.");
+            Assert.False(File.Exists(deletablePath), "The deletable sibling must still be deleted.");
+        }
+        finally
+        {
+            File.SetAttributes(lockedPath, File.GetAttributes(lockedPath) & ~FileAttributes.ReadOnly);
         }
 
         Assert.Contains(
             logger.Warnings,
-            w => w.Contains("locked", StringComparison.OrdinalIgnoreCase) || w.Contains(Path.GetFileName(lockedPath), StringComparison.Ordinal));
+            w => w.Contains(Path.GetFileName(lockedPath), StringComparison.Ordinal));
     }
 
     [Fact]
