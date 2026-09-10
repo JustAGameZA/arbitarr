@@ -317,6 +317,125 @@ public sealed class AdminApiKeyFilterTrustedNetworkTests
         }
     }
 
+    // ------------------------------------------------------------------------------------------
+    // ADR 0012 (arb-lan-passthrough): LAN passthrough. Distinct from the #43 bypass above in the
+    // one way that matters — a key IS configured in every case here, so the bypass is closed, and
+    // the only thing admitting the caller is passthrough. Every case passes the option explicitly;
+    // the helper defaults it OFF so the #43/#58 assertions above stay about what they were about.
+    // ------------------------------------------------------------------------------------------
+
+    private static Arbitarr.Api.Security.LanPassthroughOptions PassthroughOn => new() { Enabled = true };
+    private static Arbitarr.Api.Security.LanPassthroughOptions PassthroughOff => new() { Enabled = false };
+
+    [Theory]
+    [MemberData(nameof(TrustedAddresses))]
+    public async Task Passthrough_admits_a_local_caller_with_no_credential_even_though_a_key_is_configured(IPAddress remoteAddress)
+    {
+        var (result, reachedEndpoint) = await InvokeAsync(
+            configuredKey: "a-configured-key",
+            remoteAddress: remoteAddress,
+            lanPassthrough: PassthroughOn);
+
+        Assert.True(reachedEndpoint, $"{remoteAddress} is local and passthrough is on; it should have been admitted with no credential.");
+        Assert.Null(result);
+    }
+
+    [Theory]
+    [MemberData(nameof(TrustedAddresses))]
+    public async Task Passthrough_off_is_the_control_a_local_caller_with_no_credential_is_refused_401(IPAddress remoteAddress)
+    {
+        // POSITIVE CONTROL for the case above: identical input with passthrough off must be refused,
+        // proving the admission came from passthrough and not from the #43 bypass (closed, since a
+        // key is configured) or from a stub that authorizes everything.
+        var (result, reachedEndpoint) = await InvokeAsync(
+            configuredKey: "a-configured-key",
+            remoteAddress: remoteAddress,
+            lanPassthrough: PassthroughOff);
+
+        Assert.False(reachedEndpoint, $"{remoteAddress} with passthrough OFF and no credential must be refused.");
+        await AssertStatusCodeAsync(result, StatusCodes.Status401Unauthorized);
+    }
+
+    [Theory]
+    [MemberData(nameof(UntrustedAddresses))]
+    public async Task Passthrough_never_admits_a_remote_caller(IPAddress remoteAddress)
+    {
+        var (result, reachedEndpoint) = await InvokeAsync(
+            configuredKey: "a-configured-key",
+            remoteAddress: remoteAddress,
+            lanPassthrough: PassthroughOn);
+
+        Assert.False(reachedEndpoint, $"{remoteAddress} is not local; passthrough must not admit it.");
+        await AssertStatusCodeAsync(result, StatusCodes.Status401Unauthorized);
+    }
+
+    [Fact]
+    public async Task Passthrough_never_admits_a_caller_with_no_remote_address()
+    {
+        // Unknown is not local, exactly as for the #43 bypass.
+        var (result, reachedEndpoint) = await InvokeAsync(
+            configuredKey: "a-configured-key",
+            remoteAddress: null,
+            lanPassthrough: PassthroughOn);
+
+        Assert.False(reachedEndpoint);
+        await AssertStatusCodeAsync(result, StatusCodes.Status401Unauthorized);
+    }
+
+    [Fact]
+    public async Task Passthrough_admits_a_local_caller_whose_presented_key_is_wrong()
+    {
+        // Documented consequence, not an accident: the peer would be admitted with no credential at
+        // all, so a wrong one cannot leave it worse off. The key is still judged first (a correct one
+        // is attributed normally); passthrough only runs once the key and session have declined.
+        var (result, reachedEndpoint) = await InvokeAsync(
+            configuredKey: "a-configured-key",
+            remoteAddress: IPAddress.Loopback,
+            providedKey: "not-the-configured-key",
+            lanPassthrough: PassthroughOn);
+
+        Assert.True(reachedEndpoint);
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task Passthrough_does_not_change_the_answer_for_a_remote_caller_with_a_wrong_key()
+    {
+        var (result, reachedEndpoint) = await InvokeAsync(
+            configuredKey: "a-configured-key",
+            remoteAddress: IPAddress.Parse(PublicAddress),
+            providedKey: "not-the-configured-key",
+            lanPassthrough: PassthroughOn);
+
+        Assert.False(reachedEndpoint);
+        await AssertStatusCodeAsync(result, StatusCodes.Status401Unauthorized);
+    }
+
+    [Fact]
+    public async Task Passthrough_logs_a_warning_naming_the_bypass_and_never_the_key()
+    {
+        const string secret = "example-configured-secret-value";
+        var logger = new CapturingLogger();
+
+        var (result, reachedEndpoint) = await InvokeAsync(
+            configuredKey: secret,
+            remoteAddress: IPAddress.Loopback,
+            providedKey: "wrong-" + secret,
+            logger: logger,
+            lanPassthrough: PassthroughOn);
+
+        Assert.True(reachedEndpoint);
+        Assert.Null(result);
+        Assert.Contains(logger.Messages, m => m.Contains("LAN passthrough admitted", StringComparison.Ordinal));
+        // The non-vacuity half: the secret really was in play on this request (the wrong key
+        // presented contains it), so the absence below is an absence of something that was there.
+        Assert.Contains(secret, logger.PresentedKeySeenByFilter, StringComparison.Ordinal);
+        foreach (var line in logger.Messages)
+        {
+            Assert.DoesNotContain(secret, line, StringComparison.Ordinal);
+        }
+    }
+
     private static async Task<(object? Result, bool ReachedEndpoint)> InvokeAsync(
         string? configuredKey,
         IPAddress? remoteAddress,
@@ -325,7 +444,8 @@ public sealed class AdminApiKeyFilterTrustedNetworkTests
         ApiKeyScope? namedKeyScope = null,
         ApiKeyScope requiredScope = ApiKeyScope.Admin,
         IApiKeyLastUsedRecorder? lastUsedRecorder = null,
-        CapturingLogger? logger = null)
+        CapturingLogger? logger = null,
+        Arbitarr.Api.Security.LanPassthroughOptions? lanPassthrough = null)
     {
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Method = "POST";
@@ -369,6 +489,10 @@ public sealed class AdminApiKeyFilterTrustedNetworkTests
             // must behave identically whether or not a session system is installed.
             new StubSessionAuthenticator(),
             lastUsedRecorder ?? new RecordingLastUsedRecorder(),
+            // ADR 0012: passthrough is OFF here by default so every #43/#58 case in this class keeps
+            // asserting the bootstrap bypass's own semantics. The passthrough cases pass it ON
+            // explicitly — see LanPassthroughTests at the bottom of this file.
+            lanPassthrough ?? new Arbitarr.Api.Security.LanPassthroughOptions { Enabled = false },
             (ILogger<AdminApiKeyFilter>?)logger ?? NullLogger<AdminApiKeyFilter>.Instance);
 
         var reachedEndpoint = false;

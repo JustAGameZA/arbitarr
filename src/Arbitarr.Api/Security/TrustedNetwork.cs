@@ -20,12 +20,18 @@ namespace Arbitarr.Api.Security;
 /// loopback all it likes and still be refused. A null address (no socket peer, as in an in-memory
 /// test transport) is likewise untrusted — unknown is not local.</para>
 ///
-/// <para><b>WHAT THIS IS AND IS NOT AUTHORITY FOR.</b> Being on the LAN is not being authenticated.
-/// It gates two bootstrap paths and nothing else: #43's unkeyed-admin bypass while no API key
-/// exists, and #44's first-account creation while no account exists. Both are conditions that stop
-/// applying permanently the moment the thing they bootstrap exists. Do not add a third caller that
-/// treats a local address as a logged-in operator — that is precisely what the owner ruling on #44
-/// forbids ("the LAN bypass skips the API key only, never the login").</para>
+/// <para><b>WHAT THIS IS AND IS NOT AUTHORITY FOR.</b> Being on the LAN is not, in itself,
+/// being authenticated. It gated two bootstrap paths: #43's unkeyed-admin bypass while no API key
+/// exists, and #44's first-account creation while no account exists — both conditions that stop
+/// applying the moment the thing they bootstrap exists.</para>
+///
+/// <para><b>THE THIRD CALLER NOW EXISTS (ADR 0012, arb-lan-passthrough).</b> The rule here used to
+/// be "do not add a third caller that treats a local address as a logged-in operator — that is
+/// precisely what the owner ruling on #44 forbids." At the operator's explicit request, and with
+/// owner review, <c>AdminApiKeyFilter</c>'s LAN-passthrough branch is exactly that third caller: a
+/// trusted socket peer is admitted as a full-scope operator with no session and no key, default on.
+/// This predicate is unchanged and still header-blind; ADR 0012 carries the decision, its default,
+/// and the reverse-proxy caveat.</para>
 /// </summary>
 public static class TrustedNetwork
 {

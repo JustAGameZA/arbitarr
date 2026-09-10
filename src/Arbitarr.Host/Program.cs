@@ -477,6 +477,8 @@ builder.Services.AddSingleton<IClientApiKeyResolver>(sp => new DbClientApiKeyRes
 // D2 admin API key gate (M7-6): reads SettingKey.AdminApiKey from the settings store, distinct
 // from the Torznab/Newznab client apikey resolved above. Scoped: captures the scoped ArbitarrDbContext.
 builder.Services.AddScoped<IAdminApiKeyReader, DbAdminApiKeyReader>();
+// arb-lan-passthrough (ADR 0012): default-on LAN admin passthrough, off via ARBITARR_LAN_PASSTHROUGH=false.
+builder.Services.AddSingleton(Arbitarr.Api.Security.LanPassthroughOptions.FromEnvironment());
 builder.Services.AddScoped<AdminApiKeyFilter>();
 
 // #58: named, scoped API keys. DbCredentialResolver — not IAdminApiKeyReader — is now what the gate
