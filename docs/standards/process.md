@@ -140,8 +140,6 @@ runs them under the PR lane's filter, copied verbatim into the script. **It is n
 any workflow, and must not be.** CI runs the full suite so that a mapping bug in this script cannot
 narrow what CI checks; the script's job is to make the edit loop faster, and the workflow's job is
 to not trust it. A change outside `src/` and `tests/` selects everything, with a printed reason.
-The script builds Debug on purpose (it never passes `-c`), while CI prep builds Release, so a first
-run against an existing `bin/Release` tree rebuilds Debug rather than reusing that output.
 
 ### Quarantine
 

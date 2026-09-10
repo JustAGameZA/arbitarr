@@ -119,8 +119,7 @@ fi
 changed_file=$(mktemp)
 graph_file=$(mktemp)
 projects_file=$(mktemp)
-arch_trigger_names_file=$(mktemp)
-trap 'rm -f "$changed_file" "$changed_file.n" "$graph_file" "$projects_file" "$arch_trigger_names_file"' EXIT
+trap 'rm -f "$changed_file" "$changed_file.n" "$graph_file" "$projects_file"' EXIT
 
 vitest_since=''
 
@@ -203,8 +202,7 @@ all_test_projects=$(sed -n 's#^tests/\([^/]*\.Tests\)/.*#\1#p' "$projects_file" 
 all_test_count=$(printf '%s\n' "$all_test_projects" | grep -c . || true)
 
 # ----------------------------------------------------------------------------
-# 2b. Arbitarr.Architecture.Tests: found on disk, and its own trigger list
-#     derived from the two Cecil scans' source, not hard-coded here.
+# 2b. Arbitarr.Architecture.Tests: found on disk, and its Host trigger rule.
 #
 # The project name/dir come from the csproj that actually exists, so a rename
 # fails loudly instead of this script silently selecting nothing for it.
@@ -229,64 +227,16 @@ fi
 arch_csproj="$arch_csproj_matches"
 arch_test_project=$(basename "$arch_csproj" .csproj)
 
-# ProductionProcessGlobalStateTests.cs and TestProcessGlobalStateTests.cs each scan a
-# hand-spelled string[] of assembly names (see their class remarks). Their IL scans
-# read those assemblies by FILE PATH, not via <ProjectReference>, so the project
-# graph built above can't see the dependency -- in particular Arbitarr.Host, which
-# ProductionProcessGlobalStateTests scans but Architecture.Tests.csproj does NOT
-# reference (NU1605), making it the one src/ project the graph alone would miss.
-# Rather than hard-code that (or any other) name here, the trigger set is read
-# straight out of both files: each scanned name sits alone on its own line shaped
-# exactly `        "Name",` (8-space indent, quoted, trailing comma) inside the
-# `string[] ... = [ ... ]` literal. The extraction is scoped by line ADDRESS to
-# just that literal, not applied file-wide -- both scan files (at the master
-# revision this comment was written against) also declare a BannedMethods
-# array in the same 8-space/quoted/trailing-comma shape (e.g.
-# TestProcessGlobalStateTests.cs's `"Microsoft.Data.Sqlite.SqliteConnection::
-# ClearAllPools",`), which a file-global sed would also match because its `::`
-# sits outside the `[A-Za-z0-9.]` character class only by coincidence of what
-# happens to be banned today. The address ranges below are anchored on the
-# literal's own opening/closing lines:
-#   ProductionProcessGlobalStateTests.cs: `    private static readonly string[] ProductionAssemblyNames =`
-#   then `    [` ... `    ];`
-#   TestProcessGlobalStateTests.cs: `    private static readonly string[] TestAssemblyNames =`
-#   then `    [` ... `    ];`
-# Zero matches from either file means the shape (or the anchor text) changed
-# and this parse can no longer see what it's supposed to protect, so it fails
-# loudly rather than silently selecting nothing.
+# Arbitarr.Architecture.Tests.csproj references every scanned src/ assembly EXCEPT
+# Arbitarr.Host (NU1605 blocks that ProjectReference -- see the csproj's own comment
+# on its Mono.Cecil package reference), so Host is the only scanned src/ project the
+# project-reference graph built above cannot reach on its own. Its IL is still read,
+# by FILE PATH, in ProductionProcessGlobalStateTests.cs's ProductionAssemblyNames
+# array -- a change under src/Arbitarr.Host/ must select Architecture.Tests by name
+# here rather than through the graph. A future graph-invisible src/ assembly (another
+# NU1605 case) needs the same by-name addition; ProductionAssemblyNames in that file
+# is where to check whether one has appeared.
 #
-# Each entry below pairs a scan file with the name of its array literal.
-arch_scan_files=(
-  "tests/Arbitarr.Architecture.Tests/ProductionProcessGlobalStateTests.cs:ProductionAssemblyNames"
-  "tests/Arbitarr.Architecture.Tests/TestProcessGlobalStateTests.cs:TestAssemblyNames"
-)
-: > "$arch_trigger_names_file"
-for entry in "${arch_scan_files[@]}"; do
-  f=${entry%%:*}
-  array_name=${entry#*:}
-  if [ ! -f "$f" ]; then
-    echo "test-affected: expected scan file '$f' not found; cannot derive the" >&2
-    echo "Architecture.Tests trigger list. Update this script's arch_scan_files." >&2
-    exit 2
-  fi
-  # Address range: from the array's own declaration line to its closing `];`,
-  # so a same-shaped array elsewhere in the file (BannedMethods) is never in
-  # range. Both anchors are literal text at the master revision this script
-  # was written against; if either is renamed or reformatted, the range never
-  # opens/closes and the loud "could not read" failure below fires.
-  names=$(sed -n "/private static readonly string\[\] $array_name =/,/^    \];\$/"'s/^        "\([A-Za-z0-9.]*\)",$/\1/p' "$f")
-  if [ -z "$names" ]; then
-    echo "test-affected: could not read assembly list '$array_name' from '$f' --" >&2
-    echo "expected a 'private static readonly string[] $array_name =' declaration" >&2
-    echo "followed by a '    [' ... '    ];' literal whose entries are shaped" >&2
-    echo "exactly '        \"Name\",'. The file's shape changed; update the sed" >&2
-    echo "pattern in this script, don't ignore this." >&2
-    exit 2
-  fi
-  printf '%s\n' "$names" >> "$arch_trigger_names_file"
-done
-arch_trigger_names=$(sort -u "$arch_trigger_names_file")
-
 # Transitive dependents of one project: every node from which the project is
 # reachable along reference edges. Plain BFS over the edge list in awk.
 dependents_of() {
@@ -323,25 +273,22 @@ while IFS= read -r path; do
       proj=${path#*/}; proj=${proj%%/*}
       if [ -f "src/$proj/$proj.csproj" ] || [ -f "tests/$proj/$proj.csproj" ]; then
         changed_projects["$proj"]=1
-        # A change under src/<Name>/ or tests/<Name>/ also selects
-        # Architecture.Tests when <Name> is one of the assemblies its Cecil
-        # scans read by FILE PATH (see 2b above) -- that includes src/, not
-        # just tests/, because ProductionProcessGlobalStateTests scans
-        # Arbitarr.Host, which is src/ and which Architecture.Tests.csproj
-        # does NOT reference (NU1605), so the project graph alone misses it.
-        # deliberate word-split: $arch_trigger_names is one assembly name per
-        # line and is meant to expand into separate printf arguments here, not
-        # stay a single quoted string.
-        case " $(printf '%s ' $arch_trigger_names)" in
-          *" $proj "*) changed_projects["$arch_test_project"]=1 ;;
+        # A change under src/Arbitarr.Host/ also selects Architecture.Tests:
+        # Architecture.Tests.csproj references every scanned src/ assembly
+        # EXCEPT Host (NU1605 blocks that ProjectReference), so Host is the
+        # one scanned src/ project the reference graph alone cannot reach,
+        # even though ProductionProcessGlobalStateTests still scans its IL by
+        # file path (see 2b above). A future graph-invisible src/ assembly
+        # needs the same by-name addition here.
+        case "$proj" in
+          Arbitarr.Host) changed_projects["$arch_test_project"]=1 ;;
         esac
         # Any tests/ change ALSO selects Architecture.Tests outright, union'd
-        # with the trigger-list rule above rather than replacing it:
-        # Arbitarr.TestSupport is compiled into every test assembly the Cecil
-        # scans read by file path, but it is deliberately absent from both
-        # scans' name arrays (IsTestProject=false) and Architecture.Tests has
-        # zero <ProjectReference> entries, so the project graph never reaches
-        # it either. Without this blanket rule a TestSupport-only change would
+        # with the Host rule above rather than replacing it: Arbitarr.TestSupport
+        # is compiled into every test assembly the Cecil scans read by file path,
+        # but Architecture.Tests.csproj has no ProjectReference to TestSupport
+        # (or to any tests/ project), so the project graph never reaches it
+        # either. Without this blanket rule a TestSupport-only change would
         # select nothing for Architecture.Tests even though its output changed.
         case "$path" in
           tests/*) changed_projects["$arch_test_project"]=1 ;;
