@@ -107,7 +107,7 @@ public static class BackupArchiveValidator
         Directory.CreateDirectory(stagingDirectory);
 
         var stem = Path.Combine(
-            stagingDirectory, "arbitarr-restore-validate-" + Guid.NewGuid().ToString("N"));
+            stagingDirectory, StagingFileNames.RestoreValidatePrefix + Guid.NewGuid().ToString("N"));
         var stagedDatabase = stem + ".db";
         var stagedSecretKey = stem + ".key";
         var succeeded = false;

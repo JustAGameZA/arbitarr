@@ -58,7 +58,7 @@ public sealed class BackupService
         // Path.GetTempPath() — see BackupPaths.StagingSubdirectoryName's doc comment.
         var snapshotPath = Path.Combine(
             _paths.EnsureStagingDirectory(),
-            "arbitarr-snapshot-" + Guid.NewGuid().ToString("N") + ".db");
+            StagingFileNames.SnapshotPrefix + Guid.NewGuid().ToString("N") + ".db");
 
         try
         {
