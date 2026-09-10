@@ -62,6 +62,15 @@ services:
       #
       # No admin key either: there is no env var for it and there cannot be one (ADR 0004).
       ARBITARR__LOGGING__LOGLEVEL__DEFAULT: "Information"
+      # arb-fvd (ADR 0012): read from the runner/shell environment so golden-path.spec.ts's
+      # passthrough-off positive control can flip this for one `docker compose up -d` cycle
+      # and flip it back, without editing this file. Unset (the default in CI) means unset in
+      # the container too -- Compose's ${VAR} substitution with no default drops the key
+      # entirely rather than passing an empty string, and LanPassthroughOptions.FromEnvironment
+      # treats "unset" the same as "on" (only a recognised false-y token turns it off). So the
+      # normal run of this stack is unaffected; only a caller that exports
+      # ARBITARR_LAN_PASSTHROUGH=false before `up -d` sees it here.
+      ARBITARR_LAN_PASSTHROUGH: "${ARBITARR_LAN_PASSTHROUGH:-}"
     # NO healthcheck, deliberately. The runtime image is mcr.microsoft.com/dotnet/aspnet,
     # which ships neither wget nor curl, so an in-container HTTP probe cannot work without
     # adding a tool to the production image purely to serve a test -- which would change the
