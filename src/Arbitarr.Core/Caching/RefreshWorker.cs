@@ -180,8 +180,7 @@ public sealed class RefreshWorker : BackgroundService
                 }
                 catch (Exception ex)
                 {
-                    // A failed cycle (e.g. the store is unreachable) must not take the host down:
-                    // BackgroundService faults propagate to the host by default. Log and retry on
+                    // Per-item error handling (docs/standards/architecture.md). Log and retry on
                     // the next tick; the breaker already governs per-source upstream failures.
                     _logger.LogError(ex, "Search-result refresh cycle for source {SourceName} failed; will retry next cycle.", _sourceName);
                     _health.CycleFaulted(_timeProvider.GetUtcNow(), SanitizedErrorDescription.Describe(ex));
