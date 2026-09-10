@@ -25,6 +25,12 @@ npm run lint                 # eslint --max-warnings=0
 **The suite is not reliably parallel-safe across assemblies** (shared SQLite and port state). A
 parallel run under-counts *and* invents failures. Measure with `-m:1`, as CI does.
 
+**The fast local path is `scripts/test-affected.sh`.** It maps the changed paths to the test
+assemblies that can reach them through the project-reference graph and runs only those, under the
+PR lane's filter; `--dry-run` prints the selection without running it. It is a convenience for the
+edit loop, not a substitute for the commands above before a push — see [Lanes](#lanes) for what it
+may and may not be used for.
+
 **`dotnet build | tail` exits 0 on a failing build** — the pipeline's status is `tail`'s. Redirect
 to a file and check `$?` separately. This has masked a real failure more than once, including a
 build that passed only because it was stale.
@@ -87,6 +93,72 @@ suites. The nightly workflow (arb-rga.8) runs the suite **unfiltered**, so nothi
 stops being run; it stops being run *on the merge path*. There are no automatic retries in any
 lane — quarantine-with-a-bead is the only sanctioned way for a flaky test to stop blocking merges.
 See [ADR 0011](../adr/0011-test-strategy-lanes-isolation-quarantine.md).
+
+---
+
+## Lanes
+
+Three lanes run the tests, and they differ in *what* they run and *what they are allowed to
+write*. The decision is [ADR 0011](../adr/0011-test-strategy-lanes-isolation-quarantine.md); this
+is the mechanism.
+
+**PR / master lane — `.github/workflows/build-test.yml`.** Runs on every pull request and every
+push to master, under the one workflow-level `TEST_FILTER`,
+`Category!=Timing&Category!=Load&Category!=Quarantine`. The job layout (`prep` → three-way
+`Backend (A|B|C)` matrix → `Frontend` and `Guards` → the `gate` job named **`Build & test`**) is
+described in full under [PR flow](#pr-flow); the floor `gate` enforces is carried between runs by
+the `test-counts` artifact, described under [Test-count floors](#test-count-floors) — this lane is
+its **only** producer.
+
+**Nightly lane — `.github/workflows/nightly.yml`.** Cron `0 3 * * *` (03:00 UTC) plus
+`workflow_dispatch`; deliberately no `pull_request` or `push` trigger and not a required check.
+Runs the **unfiltered** suite — no `--filter` anywhere — of all ten test assemblies one at a time
+(one trx per project, because a single solution-level trx is overwritten by each assembly in
+turn), plus the frontend, plus a flake hunt that reruns `Arbitarr.Integration.Tests` and
+`Arbitarr.Data.Tests` five times each. A summary job renders per-assembly totals and a failures
+table, and compares the trx files *found* against the count each job *expected*; a shortfall or a
+missing expectation file raises an **INCOMPLETE** banner above the failures heading, because a
+job that died after three of ten assemblies leaves perfectly green trx files behind and would
+otherwise read as an all-clear. This lane **never writes the `test-counts` artifact**: the ratchet
+selects by artifact name, and an unfiltered count is larger than any filtered run can reach, so
+one such artifact would block every subsequent PR. Its artifacts are named `nightly-*`, and that
+rule is restated at the top of the file — keep it there.
+
+The nightly trx parser lives **inline in `nightly.yml`** and stays there until **either** a second
+consumer needs the failure-table rendering **or** a fifth parser bug is found. Until one of those
+triggers fires, extracting it to `scripts/` with fixture tests is premature — a second copy of a
+parser nothing else calls is a second place for the next bug to hide. (Recorded from #155's
+architecture review.)
+
+**Local lane — `scripts/test-affected.sh`.** Selects test assemblies from the changed paths via
+the project-reference graph (rebuilt from the `.csproj` files on every run, never hard-coded) and
+runs them under the PR lane's filter, copied verbatim into the script. **It is never referenced by
+any workflow, and must not be.** CI runs the full suite so that a mapping bug in this script cannot
+narrow what CI checks; the script's job is to make the edit loop faster, and the workflow's job is
+to not trust it. A change outside `src/` and `tests/` selects everything, with a printed reason.
+
+### Quarantine
+
+`Category=Quarantine` takes a test off the merge path. The conditions, each of which is a
+mechanism rather than a request:
+
+- **A `Bead=arb-xxx` trait is mandatory**, matching `^arb-[a-z0-9]{3,}$`.
+  `QuarantineTraitTests` in `tests/Arbitarr.Architecture.Tests` reads every test assembly's
+  attributes and fails the build on a `Quarantine` trait without one — at class level or method
+  level — and proves its own non-vacuity against a bait class carrying both shapes.
+- **Quarantined tests still run**, every night, in the unfiltered lane. Quarantine is "not on the
+  merge path", never "not run".
+- **Filing the bead is a manual step.** Beads run in stealth mode here (the store never reaches
+  the public remote), so nightly cannot file one when it finds a new flake. Whoever quarantines
+  a test creates the bead and names it in the trait.
+- **No retries and no serialisation as a flake fix.** Not `--retry`, not vitest `retry`, not
+  `DisableTestParallelization` or a collection fixture that exists only to stop two tests
+  overlapping. A test that fails once fails the PR; the only sanctioned way for a known-flaky test
+  to stop blocking merges is quarantine with a bead, and the bead's job is to get it fixed and
+  un-quarantined.
+
+See [ADR 0011](../adr/0011-test-strategy-lanes-isolation-quarantine.md) for the decision and the
+alternatives it beat.
 
 ---
 
