@@ -47,9 +47,8 @@ public sealed class StagingSweepService(
         }
         catch (Exception ex)
         {
-            // A failed sweep must not take the host down or block startup of anything else -- an
-            // orphan left in place for one more run is a much smaller problem than the host
-            // refusing to start.
+            // Per-item error handling (docs/standards/architecture.md): an orphan left in place
+            // for one more run is a much smaller problem than the host refusing to start.
             logger.LogError(ex, "Staging sweep failed at startup; will retry on the next restart.");
         }
 
