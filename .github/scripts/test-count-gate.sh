@@ -245,7 +245,16 @@ check_shard_records() {
     for k in $(seq 1 "$shards"); do
       for trx in ./TestResults/*/"${asm}.shard${k}of${shards}.trx"; do
         [ -f "$trx" ] || continue
-        c=$(grep -o 'executed="[0-9]*"' "$trx" | head -1 | grep -o '[0-9]*')
+        # `|| true` so a no-match does not end the step here. Under
+        # `set -euo pipefail` the assignment ITSELF carries the pipeline's
+        # status, so without it a trx with no executed= figure aborts this
+        # function at this line -- before the check below can name it, and
+        # with no message at all. That was true of the previous
+        # `${c:-0}` form too: the default could never be reached, because
+        # the assignment that would have needed it had already killed the
+        # step. Tolerating the failure here is what lets the fault be
+        # REPORTED rather than merely fatal.
+        c=$(grep -o 'executed="[0-9]*"' "$trx" | head -1 | grep -o '[0-9]*') || true
         # BLOCK by name on an unparseable trx (arb-4f1, #182 LOW-2). `${c:-0}`
         # used to fold a trx with no readable executed= figure into the sum as a
         # zero, so a truncated or malformed result file was reported as the

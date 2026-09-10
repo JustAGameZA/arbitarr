@@ -1304,6 +1304,24 @@ jobs:
 
           echo "Every TEST_ASSEMBLIES project is in Arbitarr.sln and declares no AssemblyName override."
 
+      # The gate is the only thing standing between a lost shard, a
+      # double-counted one or a shrunken suite and a green run, so "the gate
+      # went green" is not evidence it CAN go red. This runs the gate's own
+      # functions against synthetic fixtures that plant each fault in turn and
+      # requires a BLOCK naming the cause -- the positive controls CLAUDE.md
+      # section 4 asks for, kept in the tree rather than in a PR body.
+      #
+      # It sources .github/scripts/test-count-gate.sh and shard-filter.sh, the
+      # same files the backend and gate jobs source, so a control that passes is
+      # evidence about the text CI runs and not about a copy of it. It needs no
+      # build output and no artifacts, which is why it belongs here rather than
+      # in the gate job: it can run before anything is compiled.
+      - name: Run the test-count gate's positive controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash ./.github/scripts/test-count-gate-controls.sh
+
   # --------------------------------------------------------------------------
   # gate: the required check. Named EXACTLY `Build & test` so the existing
   # branch-protection rule keeps matching and NO branch-protection edit is
