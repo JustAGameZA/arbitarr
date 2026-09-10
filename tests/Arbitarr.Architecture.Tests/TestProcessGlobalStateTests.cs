@@ -45,6 +45,10 @@ namespace Arbitarr.Architecture.Tests;
 /// solution level does that, and the CI job must keep doing so. A missing assembly therefore FAILS
 /// this test loudly rather than passing vacuously over an empty set, which is the failure mode
 /// CLAUDE.md section 4 exists to prevent.</para>
+///
+/// <para><b>Assembly names and the path walk</b> now live once, on <see cref="BuiltAssemblies"/>
+/// (arb-hxa) — see its remarks for why the lists are spelled out and why they are independent of
+/// build-test.yml's own TEST_ASSEMBLIES oracle.</para>
 /// </summary>
 public class TestProcessGlobalStateTests
 {
@@ -54,31 +58,10 @@ public class TestProcessGlobalStateTests
         "System.Environment::SetEnvironmentVariable",
     ];
 
-    /// <summary>
-    /// Every test assembly in the solution, by project name. Spelled out rather than globbed so
-    /// that a NEW test project is a deliberate addition here: a glob over whatever happens to be on
-    /// disk would silently skip a project that had not been built, which is the vacuous pass this
-    /// test exists to avoid. Arbitarr.TestSupport is absent on purpose — it is not a test project
-    /// (IsTestProject=false) and it is where the sanctioned scoped replacements live.
-    /// </summary>
-    private static readonly string[] TestAssemblyNames =
-    [
-        "Arbitarr.Ai.Tests",
-        "Arbitarr.Api.Tests",
-        "Arbitarr.Architecture.Tests",
-        "Arbitarr.Core.Identity.Tests",
-        "Arbitarr.Core.Tests",
-        "Arbitarr.Data.Tests",
-        "Arbitarr.Host.Tests",
-        "Arbitarr.Integration.Tests",
-        "Arbitarr.Media.Tests",
-        "Arbitarr.Sources.NzbHydra.Tests",
-    ];
-
     [Fact]
     public void No_test_assembly_calls_process_global_state_mutators()
     {
-        var assemblyPaths = TestAssemblyNames
+        var assemblyPaths = BuiltAssemblies.TestAssemblyNames
             .Select(name => (Name: name, Path: ResolveTestAssemblyPath(name)))
             .ToArray();
 
@@ -229,48 +212,20 @@ public class TestProcessGlobalStateTests
     }
 
     /// <summary>
-    /// Finds a test project's built assembly by walking from this assembly's own output directory
-    /// to the sibling project's, preserving the configuration and target-framework segments — so
-    /// the scan works unchanged under <c>-c Release</c>, which CI uses. Also called by
-    /// <see cref="QuarantineTraitTests"/>, which resolves the same ten test assemblies for the same
-    /// reason (arb-2nm): two copies of this walk would let the depth drift between the two scans
-    /// without either ever failing loudly.
+    /// Thin forwarder to <see cref="BuiltAssemblies.ResolveTestAssemblyPath"/> — kept under this
+    /// name to avoid churning every consumer (<see cref="QuarantineTraitTests"/>,
+    /// <see cref="ProductionProcessGlobalStateTests"/>, <see cref="NoInlineDatabaseConnectionStringsTests"/>
+    /// and this class's own tests). The walk itself lives once, on <see cref="BuiltAssemblies"/>
+    /// (arb-hxa) — see its remarks for the five-parent depth and why the assemblies are found by
+    /// PATH rather than by ProjectReference.
     /// </summary>
     internal static string? ResolveTestAssemblyPath(string assemblyName) =>
-        ResolveAssemblyPath("tests", assemblyName);
+        BuiltAssemblies.ResolveTestAssemblyPath(assemblyName);
 
     /// <summary>
-    /// Finds a built assembly under <paramref name="rootDirectoryName"/> (<c>tests</c> or
-    /// <c>src</c>), preserving this assembly's own configuration and target-framework segments.
-    ///
-    /// <para>Shared with <see cref="ProductionProcessGlobalStateTests"/> rather than duplicated:
-    /// two copies of this walk would drift, and the one that drifted would start returning null and
-    /// fail loudly — or worse, silently scan nothing if a caller ever treated null as "clean". The
-    /// five-parent depth and the configuration-from-parent-name logic exist exactly once, here; see
-    /// <see cref="ResolveTestAssemblyPath"/> above for the other consumer.</para>
+    /// Thin forwarder to <see cref="BuiltAssemblies.ResolvePath"/> — kept under this name to avoid
+    /// churning every consumer. See <see cref="BuiltAssemblies"/> for the walk itself.
     /// </summary>
-    internal static string? ResolveAssemblyPath(string rootDirectoryName, string assemblyName)
-    {
-        // .../tests/Arbitarr.Architecture.Tests/bin/<configuration>/<tfm>/
-        var here = new DirectoryInfo(AppContext.BaseDirectory);
-        var targetFramework = here.Name;
-        var configuration = here.Parent?.Name;
-        var repositoryRoot = here.Parent?.Parent?.Parent?.Parent?.Parent;
-
-        if (configuration is null || repositoryRoot is null)
-        {
-            return null;
-        }
-
-        var candidate = Path.Combine(
-            repositoryRoot.FullName,
-            rootDirectoryName,
-            assemblyName,
-            "bin",
-            configuration,
-            targetFramework,
-            assemblyName + ".dll");
-
-        return File.Exists(candidate) ? candidate : null;
-    }
+    internal static string? ResolveAssemblyPath(string rootDirectoryName, string assemblyName) =>
+        BuiltAssemblies.ResolvePath(rootDirectoryName, assemblyName);
 }
