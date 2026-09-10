@@ -129,7 +129,7 @@ below.
   `FindBannedCalls` IL walk that `ProductionProcessGlobalStateTests` reuses rather than duplicates.
 - **`NoInlineDatabaseConnectionStringsTests`** scans `Arbitarr.Data` only and fails any type outside
   its named allow-lists that constructs a `SqliteConnectionStringBuilder` or a `SqliteConnection`. See
-  [What the IL scan does and does not close](data.md#connection-pools-are-keyed-by-the-full-string)
+  [Connection pools are keyed by the full string](data.md#connection-pools-are-keyed-by-the-full-string)
   for the "trusted by convention" gap this scan deliberately leaves open.
 - **`QuarantineTraitTests`** scans every assembly named in `BuiltAssemblies.TestAssemblyNames` for a
   `Category=Quarantine` trait attribute (class- or method-level) that lacks an accompanying
@@ -137,7 +137,8 @@ below.
   using xunit's own test discovery so that a quarantined test in an assembly that fails to load, or
   one hidden behind a custom discoverer, still cannot escape the check by simply not appearing.
 
-Seven other test classes in the same project. Five — `AiMediaIsolationTests`, `CoreIsolationTests`,
+Seven other test classes in the same project fall outside the Cecil IL scans above. Five —
+`AiMediaIsolationTests`, `CoreIsolationTests`,
 `AssemblyNamingTests`, `DependencyDirectionTests` and `HostIsolationTests` — load assemblies with
 `System.Reflection` (`Assembly.LoadFrom`) instead of Cecil; they check reference graphs and naming,
 not IL bodies, so they do not need to see inside a method. The other two, `SourceTreeNamingTests` and
