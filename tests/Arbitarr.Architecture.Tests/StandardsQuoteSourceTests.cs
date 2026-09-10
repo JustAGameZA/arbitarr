@@ -14,10 +14,10 @@ namespace Arbitarr.Architecture.Tests;
 /// the doc at run time (never hard-coded here, or the test would decouple from the doc it is
 /// meant to guard) and asserts it is present, byte-for-byte, in the source comment.
 ///
-/// It also guards the four sibling comments (RefreshWorker, StagingSweepService,
-/// MaintenanceHostedService, NotificationHostedService) that all cite the same doc and section
-/// by name, so a doc rename or section-heading rewrite is caught rather than leaving four dead
-/// citations behind.
+/// It also guards every sibling comment (RefreshWorker, StagingSweepService,
+/// MaintenanceHostedService, NotificationHostedService, SonarrCredentialProvider, Program) that
+/// cites the same doc by name, so a doc rename or section-heading rewrite is caught rather than
+/// leaving dead citations behind.
 /// </summary>
 public class StandardsQuoteSourceTests
 {
@@ -43,18 +43,32 @@ public class StandardsQuoteSourceTests
     }
 
     /// <summary>
+    /// Result of <see cref="ExtractQuotedStagingSweepSentence"/>: either a non-empty
+    /// <see cref="Quote"/> on success, or an empty <see cref="Quote"/> with a
+    /// <see cref="FailureReason"/> naming which of the three extraction steps failed, so a test
+    /// failure says WHICH path tripped instead of a single undifferentiated message.
+    /// </summary>
+    private readonly record struct ExtractionResult(string Quote, string FailureReason)
+    {
+        public bool Succeeded => !string.IsNullOrEmpty(Quote);
+    }
+
+    /// <summary>
     /// Extracts the sentence architecture.md quotes (in parentheses, double-quoted) immediately
     /// after "`StagingSweepService` draws the same line from its own side" in the section named by
-    /// <see cref="SectionHeading"/>. Returns an empty string if the section, the anchor phrase, or
-    /// the quoted text cannot be found - callers must not treat that as success.
+    /// <see cref="SectionHeading"/>. Returns a failed <see cref="ExtractionResult"/> naming which
+    /// step failed if the section, the anchor phrase, or the quoted text cannot be found -
+    /// callers must not treat an empty <see cref="ExtractionResult.Quote"/> as success.
     /// </summary>
-    private static string ExtractQuotedStagingSweepSentence(string architectureDoc)
+    private static ExtractionResult ExtractQuotedStagingSweepSentence(string architectureDoc)
     {
         var sectionIndex = architectureDoc.IndexOf(
             "## " + SectionHeading, StringComparison.Ordinal);
         if (sectionIndex < 0)
         {
-            return string.Empty;
+            return new ExtractionResult(
+                string.Empty,
+                $"section heading '## {SectionHeading}' not found in architecture.md.");
         }
 
         // Bound the slice at the next "## " heading so a later section's own parenthetical
@@ -66,11 +80,14 @@ public class StandardsQuoteSourceTests
             sectionText = sectionText[..nextHeadingIndex];
         }
 
-        var anchorIndex = sectionText.IndexOf(
-            "`StagingSweepService` draws the same line from its own side", StringComparison.Ordinal);
+        const string anchorPhrase =
+            "`StagingSweepService` draws the same line from its own side";
+        var anchorIndex = sectionText.IndexOf(anchorPhrase, StringComparison.Ordinal);
         if (anchorIndex < 0)
         {
-            return string.Empty;
+            return new ExtractionResult(
+                string.Empty,
+                $"anchor phrase '{anchorPhrase}' not found inside section '## {SectionHeading}'.");
         }
 
         var afterAnchor = sectionText[anchorIndex..];
@@ -81,7 +98,16 @@ public class StandardsQuoteSourceTests
             RegexOptions.None,
             RegexTimeout);
 
-        return match.Success ? NormalizeWhitespace(match.Groups["quote"].Value) : string.Empty;
+        if (!match.Success)
+        {
+            return new ExtractionResult(
+                string.Empty,
+                "no parenthetical ASCII-quoted sentence found after the anchor phrase " +
+                "(the regex requires ASCII '\"' delimiters and forbids an inner '\"' - a " +
+                "typographic-quote edit would fail this way).");
+        }
+
+        return new ExtractionResult(NormalizeWhitespace(match.Groups["quote"].Value), string.Empty);
     }
 
     /// <summary>
@@ -100,11 +126,13 @@ public class StandardsQuoteSourceTests
         Assert.True(File.Exists(docPath), $"Expected to find {docPath}.");
 
         var docText = File.ReadAllText(docPath);
-        var quoted = ExtractQuotedStagingSweepSentence(docText);
+        var extraction = ExtractQuotedStagingSweepSentence(docText);
 
         // Non-vacuity guards (CLAUDE.md section 4): an extraction that silently returns empty
-        // must not let the later Contains assertion pass by never having anything to check.
-        Assert.False(string.IsNullOrWhiteSpace(quoted), "Extraction returned no quoted sentence.");
+        // must not let the later Contains assertion pass by never having anything to check. The
+        // failure reason names WHICH of the three extraction steps failed.
+        Assert.True(extraction.Succeeded, extraction.FailureReason);
+        var quoted = extraction.Quote;
         Assert.True(
             quoted.Length > 40,
             $"Extracted sentence is suspiciously short ({quoted.Length} chars): '{quoted}'.");
@@ -138,6 +166,11 @@ public class StandardsQuoteSourceTests
         Assert.Contains(quoted, sourceText, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Every C# source comment that cites <c>docs/standards/architecture.md</c>, hard-coded on
+    /// purpose: discovering this list via grep would make the assertion tautological (deleting a
+    /// citation would make the grep-derived list shrink to match, and the test would still pass).
+    /// </summary>
     public static IEnumerable<object[]> CommentsCitingTheStandard()
     {
         yield return new object[]
@@ -155,6 +188,14 @@ public class StandardsQuoteSourceTests
         yield return new object[]
         {
             Path.Combine("src", "Arbitarr.Host", "Notifications", "NotificationHostedService.cs"),
+        };
+        yield return new object[]
+        {
+            Path.Combine("src", "Arbitarr.Data", "Media", "SonarrCredentialProvider.cs"),
+        };
+        yield return new object[]
+        {
+            Path.Combine("src", "Arbitarr.Host", "Program.cs"),
         };
     }
 
