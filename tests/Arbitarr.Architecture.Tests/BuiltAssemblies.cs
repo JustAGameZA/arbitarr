@@ -51,6 +51,16 @@ internal static class BuiltAssemblies
     /// <see cref="TestAssemblyNames"/>: a glob over whatever happens to be on disk silently skips a
     /// project that was not built, and a silently skipped project is a vacuous pass. Arbitarr.Web is
     /// absent because it is the React frontend, which builds no managed assembly.
+    ///
+    /// <para><b>build-test.yml's guards job parses this declaration by LINE SHAPE</b> (arb-9ae): a
+    /// narrow sed address range from the opening <c>internal static readonly string[]
+    /// ProductionAssemblyNames =</c> line (nothing else on that line) to the closing bare
+    /// <c>];</c> line, reading only <c>"Name",</c> entries in between. Do not reformat this
+    /// declaration (a different indent, a trailing comment, an inline initializer, an
+    /// <c>ImmutableArray</c>, a visibility change, etc.) without also checking that guards step
+    /// still finds all eight names — a shape change makes the extraction find ZERO names, which
+    /// fails the guard loudly rather than silently, but still blocks CI until the extraction is
+    /// updated to match.</para>
     /// </summary>
     internal static readonly string[] ProductionAssemblyNames =
     [
