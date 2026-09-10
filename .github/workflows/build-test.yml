@@ -46,8 +46,21 @@ on:
 # see that class's remarks for why the two are kept apart. The guards job's
 # "Verify BuiltAssemblies.TestAssemblyNames matches TEST_ASSEMBLIES" step (arb-hbt)
 # is what diffs them and catches drift between the two.
+#
+# SHARD_ASSEMBLIES (arb-adm) names the assemblies that are allowed to run split
+# across several matrix entries, and how many shards each takes, as
+# `<Assembly>:<N>` tokens. It is an ALLOW-LIST, not a description: the guards
+# job rejects a `shard:` on any assembly this token does not name, and rejects
+# an assembly named here whose matrix entries do not carry exactly the shards
+# 1of<N>..<N>of<N>. Sharding an assembly therefore takes two deliberate edits
+# (this token and the matrix), and neither alone silently changes what runs.
+#
+# Integration is sharded because it is the long pole: it ran ~2m04s alone while
+# the other two groups took 45s and 32s, so rebalancing WHOLE assemblies could
+# not bring the gate under three minutes -- only splitting the one assembly can.
 env:
   TEST_FILTER: "Category!=Timing&Category!=Load&Category!=Quarantine"
+  SHARD_ASSEMBLIES: ""
   TEST_ASSEMBLIES: "Arbitarr.Ai.Tests Arbitarr.Api.Tests Arbitarr.Architecture.Tests Arbitarr.Core.Identity.Tests Arbitarr.Core.Tests Arbitarr.Data.Tests Arbitarr.Host.Tests Arbitarr.Integration.Tests Arbitarr.Media.Tests Arbitarr.Sources.NzbHydra.Tests"
 
 jobs:
@@ -285,6 +298,7 @@ jobs:
         shell: bash
         env:
           GROUP_ASSEMBLIES: ${{ matrix.assemblies }}
+          GROUP_SHARD: ${{ matrix.shard }}
         run: |
           set -euo pipefail
 
@@ -349,9 +363,109 @@ jobs:
             return "$status"
           }
 
+          # --- sharding (arb-adm) -------------------------------------------
+          # An entry carrying `shard: "<k>of<N>"` runs only its k-th slice of the
+          # assembly. The slice is derived HERE, in the job, from
+          # `dotnet test --list-tests`: take the discovered test names under the
+          # SAME $TEST_FILTER the run will use, reduce them to fully-qualified
+          # CLASS names (everything before the last dot), sort -u, and give class
+          # i to shard (i % N) + 1.
+          #
+          # The assignment is round-robin over the SORTED class list, and it is
+          # deliberately not weighted. Measured locally (49 classes, 363 tests,
+          # 313.8 s of summed test time): the shards come out 202/161 tests and
+          # 1 m 38 s / 25 s wall, which looks worth rebalancing and is not.
+          # xunit runs maxParallelThreads=4 collections in parallel but never
+          # splits a single class, so a shard's wall clock is
+          # max(its summed time / 4, its heaviest class) -- and ONE class,
+          # AuthEndpointsTests, is 80.9 s of the 313.8 s (86 s wall on its own).
+          # Whichever shard holds it cannot finish sooner than that, so all three
+          # candidate strategies -- this index round-robin, greedy longest-first
+          # by test count, and greedy longest-first by MEASURED time (the best
+          # any weighting could do) -- model to the SAME ~81 s job. Reweighting
+          # buys nothing while costing a weights table that goes stale silently.
+          # Going below ~81 s needs AuthEndpointsTests itself made faster or
+          # split into several classes, not a cleverer partition -- that is
+          # arb-n3q. See arb-adm for the measurement behind this comment.
+          #
+          # Deriving both shards from one sorted list is what makes the partition
+          # complete BY CONSTRUCTION: every discovered class lands in exactly one
+          # shard, because the assignment is a total function of its index. The
+          # alternative -- splitting on namespace prefixes -- needs a
+          # hand-maintained prefix list that a new namespace silently falls
+          # outside of, and its completeness check ("every class matched some
+          # prefix") is satisfied vacuously by a catch-all. Rejected for that.
+          #
+          # Construction alone is NOT accepted as the only evidence, because a
+          # --list-tests that under-reports would shard a short list completely
+          # and still lose tests. So the discovered class count is recorded to
+          # ./TestResults/<Assembly>.listed and uploaded beside the trx, and the
+          # gate sums the shards' executed= for the assembly. A test that falls
+          # into neither shard shows up there rather than only as a ratchet drop
+          # nobody can localise.
+          #
+          # --list-tests runs against the SAME dll and the SAME filter as the
+          # real run, so discovery cannot diverge from execution.
+          shard_filter() {
+            local dll="$1" k="$2" n="$3" a="$4"
+            local classes count terms
+            classes=$(dotnet test "$dll" --filter "$TEST_FILTER" --list-tests \
+                      | sed -n 's/^[[:space:]][[:space:]]*\([A-Za-z_][A-Za-z0-9_.]*\).*$/\1/p' \
+                      | sed 's/\.[^.]*$//' \
+                      | sed '/^$/d' \
+                      | sort -u)
+            if [ -z "$classes" ]; then
+              echo "BLOCKED: --list-tests discovered no test classes in ${dll}." >&2
+              echo "A shard derived from an empty list would run nothing and report" >&2
+              echo "executed=0, so this fails here rather than passing vacuously." >&2
+              exit 1
+            fi
+            # The WHOLE sorted class list is recorded, not just its length.
+            # Both shards write this file and the gate requires the copies to be
+            # byte-identical, which is a cheap positive control that the two
+            # shards really did partition ONE list: equal counts over different
+            # membership -- a class renamed between the two jobs, a flaky
+            # discovery dropping one class and inventing another -- compares
+            # equal on a number and unequal on the list. Recording the count
+            # alone would have let exactly that through.
+            #
+            # $TEST_FILTER is passed to --list-tests above deliberately.
+            # Verified on this SDK against the built dll: discovery HONOURS the
+            # filter (363 tests listed with it, 365 without, and executed=363 in
+            # the unsharded baseline trx). Listing unfiltered would name the two
+            # Timing/Load/Quarantine tests that are never executed, and the
+            # gate's completeness comparison could then never be satisfied.
+            count=$(printf '%s\n' "$classes" | wc -l | tr -d ' ')
+            printf '%s\n' "$classes" > "./TestResults/${a}.listed"
+            terms=$(printf '%s\n' "$classes" \
+                    | awk -v k="$k" -v n="$n" 'NR % n == (k % n) { print "FullyQualifiedName~" $0 }' \
+                    | paste -sd'|' -)
+            if [ -z "$terms" ]; then
+              echo "BLOCKED: shard ${k}of${n} of ${a} selected no classes out of ${count}." >&2
+              exit 1
+            fi
+            printf '(%s)&(%s)\n' "$terms" "$TEST_FILTER"
+          }
+
           for a in $GROUP_ASSEMBLIES; do
             dll="tests/${a}/bin/Release/net10.0/${a}.dll"
-            echo "::group::${a}"
+
+            # The trx basename and the filter both depend on whether this entry
+            # is a shard. The gate expects `<Assembly>.shard<k>of<N>` for a
+            # sharded assembly and a bare `<Assembly>` otherwise, each exactly
+            # once -- so this name is as load-bearing as the LogFileName comment
+            # below explains the unsharded one is.
+            run_filter="$TEST_FILTER"
+            trx_name="$a"
+            if [ -n "${GROUP_SHARD:-}" ]; then
+              shard_k=${GROUP_SHARD%%of*}
+              shard_n=${GROUP_SHARD##*of}
+              trx_name="${a}.shard${GROUP_SHARD}"
+              run_filter=$(shard_filter "$dll" "$shard_k" "$shard_n" "$a")
+              echo "shard ${GROUP_SHARD} of ${a}: filter length ${#run_filter}"
+            fi
+
+            echo "::group::${trx_name}"
             start=$(date +%s)
             # LogFileName is NOT cosmetic. The default trx name is
             # <vm-hostname>_<yyyy-MM-dd_HH_mm_ss>.trx, which carries no assembly
@@ -362,12 +476,12 @@ jobs:
             # instead of 1492 because Api (181) and Core.Identity (34) both wrote
             # the same default name. Naming the file after the assembly makes the
             # basename unique by construction, independent of runner or timing.
-            sample_peak "./TestResults/${a}.peakkb" \
+            sample_peak "./TestResults/${trx_name}.peakkb" \
               dotnet test "$dll" \
-                --filter "$TEST_FILTER" \
-                --logger "trx;LogFileName=${a}.trx" --results-directory ./TestResults
-            echo "$(( $(date +%s) - start ))" > "./TestResults/${a}.secs"
-            echo "peak dotnet+testhost RSS: $(cat "./TestResults/${a}.peakkb") KB in $(cat "./TestResults/${a}.secs") s"
+                --filter "$run_filter" \
+                --logger "trx;LogFileName=${trx_name}.trx" --results-directory ./TestResults
+            echo "$(( $(date +%s) - start ))" > "./TestResults/${trx_name}.secs"
+            echo "peak dotnet+testhost RSS: $(cat "./TestResults/${trx_name}.peakkb") KB in $(cat "./TestResults/${trx_name}.secs") s"
             echo "::endgroup::"
           done
 
@@ -399,7 +513,14 @@ jobs:
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
         with:
           name: trx-${{ matrix.group }}
-          path: ./TestResults/*.trx
+          # The .listed file rides with the trx (arb-adm): the gate needs the
+          # --list-tests class count recorded by the shard that produced it, and
+          # a separate artifact could go missing without the trx-set check
+          # noticing. `if-no-files-found: error` still bites because every entry
+          # produces at least one trx.
+          path: |
+            ./TestResults/*.trx
+            ./TestResults/*.listed
           if-no-files-found: error
           retention-days: 1
 
@@ -695,7 +816,7 @@ jobs:
           echo "Tree-wide secret/topology guard passed."
 
       # arb-bj7: nothing else checks that the three backend matrix groups
-      # (A/B/C, ~176-183) together cover EXACTLY the ten assemblies
+      # (A/B/C) together cover EXACTLY the ten assemblies
       # TEST_ASSEMBLIES names. A one-token deletion in a rebase leaves the dll
       # present in the prep artifact (that assertion passes) but simply unrun
       # by any group; the gate's trx-set check (arb-6ke) would then report it
@@ -773,17 +894,110 @@ jobs:
 
           missing_from_matrix=$(comm -23 <(printf '%s\n' "$expected_sorted") <(printf '%s\n' "$union_sorted"))
           extra_in_matrix=$(comm -13 <(printf '%s\n' "$expected_sorted") <(printf '%s\n' "$union_sorted"))
-          dup_in_matrix=$(printf '%s\n' "$union_list" | sort | uniq -d)
 
-          if [ -n "$missing_from_matrix" ] || [ -n "$extra_in_matrix" ] || [ -n "$dup_in_matrix" ]; then
-            echo "BLOCKED: matrix groups A/B/C do not union to exactly TEST_ASSEMBLIES." >&2
+          if [ -n "$missing_from_matrix" ] || [ -n "$extra_in_matrix" ]; then
+            echo "BLOCKED: matrix groups do not union to exactly TEST_ASSEMBLIES." >&2
             [ -n "$missing_from_matrix" ] && { echo "Missing from the matrix (in TEST_ASSEMBLIES, not run by any group):" >&2; echo "$missing_from_matrix" | sed 's/^/  /' >&2; }
             [ -n "$extra_in_matrix" ] && { echo "Extra in the matrix (not in TEST_ASSEMBLIES):" >&2; echo "$extra_in_matrix" | sed 's/^/  /' >&2; }
-            [ -n "$dup_in_matrix" ] && { echo "Duplicated across matrix groups:" >&2; echo "$dup_in_matrix" | sed 's/^/  /' >&2; }
             exit 1
           fi
 
-          echo "Matrix groups A/B/C union to exactly the ten TEST_ASSEMBLIES."
+          # --- shard rules (arb-adm) ------------------------------------------
+          # Before this bead a repeated assembly token was ALWAYS a fault, and
+          # `uniq -d` on union_list said so. Sharding makes a repeat legal in
+          # exactly one shape, so the blanket duplicate check is replaced by a
+          # narrower one rather than deleted: a token may repeat only when it is
+          # named in SHARD_ASSEMBLIES and its entries carry exactly the shards
+          # 1of<N>..<N>of<N>, one each. Every other repeat is still a failure by
+          # name, and so is a `shard:` on an assembly SHARD_ASSEMBLIES does not
+          # name -- which is what stops a shard being introduced by editing the
+          # matrix alone.
+          #
+          # The `shard:` extraction mirrors the `assemblies:` one above: the same
+          # narrow literal-line scan over the same in_matrix window. It does NOT
+          # require one shard line per group (unsharded entries have none), so it
+          # cannot use the group-count cross-check; instead each shard line is
+          # paired with the assembly of the `- group:` entry it falls under, by
+          # walking the window in order. A reformat that hides a shard line makes
+          # its assembly look unsharded, which the completeness check below then
+          # reports as an incomplete shard set rather than passing silently.
+          pairs=$(awk '
+            /^[[:space:]]*matrix:[[:space:]]*$/ { in_matrix=1 }
+            in_matrix && /^[[:space:]]*steps:[[:space:]]*$/ { exit }
+            in_matrix && /^[[:space:]]*-[[:space:]]*group:/ { asm=""; shard="" }
+            in_matrix && /^[[:space:]]*assemblies:[[:space:]]*"/ {
+              line=$0
+              sub(/^[[:space:]]*assemblies:[[:space:]]*"/, "", line)
+              sub(/".*$/, "", line)
+              asm=line
+            }
+            in_matrix && /^[[:space:]]*shard:[[:space:]]*"/ {
+              line=$0
+              sub(/^[[:space:]]*shard:[[:space:]]*"/, "", line)
+              sub(/".*$/, "", line)
+              shard=line
+              print asm "\t" shard
+            }
+          ' "$workflow_file")
+
+          shard_fail=0
+
+          # Every assembly that carries a shard must be allow-listed.
+          while IFS=$'\t' read -r asm shard; do
+            [ -n "$asm" ] || continue
+            allowed=0
+            for tok in $SHARD_ASSEMBLIES; do
+              [ "${tok%%:*}" = "$asm" ] && allowed=1
+            done
+            if [ "$allowed" -ne 1 ]; then
+              echo "BLOCKED: matrix entry for ${asm} carries shard \"${shard}\" but ${asm} is not" >&2
+              echo "named in SHARD_ASSEMBLIES. Add it there deliberately, or drop the shard." >&2
+              shard_fail=1
+            fi
+          done <<< "$pairs"
+
+          # Every allow-listed assembly must carry exactly 1of<N>..<N>of<N>, once each.
+          for tok in $SHARD_ASSEMBLIES; do
+            asm="${tok%%:*}"
+            n="${tok##*:}"
+            got=$(printf '%s\n' "$pairs" | awk -F'\t' -v a="$asm" '$1 == a { print $2 }' | sort)
+            want=$(seq 1 "$n" | sed "s|\$|of${n}|" | sort)
+            if [ "$got" != "$want" ]; then
+              echo "BLOCKED: ${asm} is declared as ${n} shards in SHARD_ASSEMBLIES but its matrix" >&2
+              echo "entries do not carry exactly one of each of ${n} shards." >&2
+              echo "Expected: $(printf '%s ' $want)" >&2
+              echo "Found:    $(printf '%s ' $got)" >&2
+              echo "A missing shard silently stops running those tests; a duplicated one runs" >&2
+              echo "them twice and double-counts them against the ratchet floor." >&2
+              shard_fail=1
+            fi
+          done
+
+          # A token may repeat ONLY as many times as it is sharded.
+          while read -r cnt asm; do
+            [ -n "$asm" ] || continue
+            allowed_n=1
+            for tok in $SHARD_ASSEMBLIES; do
+              [ "${tok%%:*}" = "$asm" ] && allowed_n="${tok##*:}"
+            done
+            if [ "$cnt" -ne "$allowed_n" ]; then
+              echo "BLOCKED: ${asm} appears ${cnt} times across the matrix but may appear" >&2
+              echo "${allowed_n} time(s) (unsharded assemblies once; sharded ones once per" >&2
+              echo "shard declared in SHARD_ASSEMBLIES)." >&2
+              shard_fail=1
+            fi
+          done <<< "$(printf '%s\n' "$union_list" | sort | uniq -c | sed 's/^[[:space:]]*//')"
+
+          if [ "$shard_fail" -ne 0 ]; then
+            exit 1
+          fi
+
+          echo "Matrix groups union to exactly the ten TEST_ASSEMBLIES."
+          if [ -n "${SHARD_ASSEMBLIES:-}" ]; then
+            echo "Shard sets complete for: ${SHARD_ASSEMBLIES}"
+          else
+            echo "No assembly is sharded (SHARD_ASSEMBLIES is empty)."
+          fi
 
       # arb-03v: the check above proves the matrix union equals TEST_ASSEMBLIES,
       # but nothing proves TEST_ASSEMBLIES itself still matches the tests/ tree.
@@ -1355,7 +1569,33 @@ jobs:
             found_list="${found_list}${base}"$'\n'
           done
 
-          expected_sorted=$(printf '%s\n' $TEST_ASSEMBLIES | sort)
+          # The expected BASENAMES are not TEST_ASSEMBLIES verbatim once an
+          # assembly is sharded (arb-adm). A sharded assembly yields N trx named
+          # `<Assembly>.shard<k>of<N>` for k=1..N and NO bare `<Assembly>.trx`;
+          # every other assembly still yields exactly one `<Assembly>.trx`. Both
+          # kinds must still appear exactly once, so the missing / unexpected /
+          # duplicate branches below keep working unchanged and keep naming the
+          # culprit -- a lone shard 1 is reported as a missing
+          # `Arbitarr.Integration.Tests.shard2of2`, not as a silent short count.
+          #
+          # This list is derived from SHARD_ASSEMBLIES, the same allow-list the
+          # guards job checks the matrix against, so the gate and the guard
+          # cannot disagree about which assemblies are sharded.
+          expected_list=""
+          for a in $TEST_ASSEMBLIES; do
+            shards=1
+            for tok in $SHARD_ASSEMBLIES; do
+              [ "${tok%%:*}" = "$a" ] && shards="${tok##*:}"
+            done
+            if [ "$shards" -eq 1 ]; then
+              expected_list="${expected_list}${a}"$'\n'
+            else
+              for k in $(seq 1 "$shards"); do
+                expected_list="${expected_list}${a}.shard${k}of${shards}"$'\n'
+              done
+            fi
+          done
+          expected_sorted=$(printf '%s' "$expected_list" | sed '/^$/d' | sort)
           # found_sorted is a bare `sort`, NOT `sort -u`, and that is load-bearing,
           # not an inconsistency to tidy toward the `sort -u` calls below. Keeping
           # duplicates in found_sorted is what lets `uniq -d` (below) detect a
@@ -1374,7 +1614,8 @@ jobs:
           duplicate_names=$(printf '%s\n' "$found_sorted" | uniq -d)
 
           if [ -n "$missing_names" ] || [ -n "$unexpected_names" ] || [ -n "$duplicate_names" ]; then
-            echo "BLOCKED: trx set does not match the expected ten test assemblies by name." >&2
+            echo "BLOCKED: trx set does not match the expected test result names." >&2
+            echo "(Ten assemblies; a sharded one contributes <Assembly>.shard<k>of<N> per shard.)" >&2
             [ -n "$missing_names" ] && { echo "Missing (expected, no trx found):" >&2; echo "$missing_names" | sed 's/^/  /' >&2; }
             [ -n "$unexpected_names" ] && { echo "Unexpected (trx found, not in TEST_ASSEMBLIES):" >&2; echo "$unexpected_names" | sed 's/^/  /' >&2; }
             [ -n "$duplicate_names" ] && { echo "Duplicated (same basename across group directories):" >&2; echo "$duplicate_names" | sed 's/^/  /' >&2; }
@@ -1383,7 +1624,71 @@ jobs:
             exit 1
           fi
 
-          echo "All ten expected trx basenames present exactly once: $(printf '%s\n' "$expected_sorted" | tr '\n' ' ')"
+          echo "All expected trx basenames present exactly once: $(printf '%s\n' "$expected_sorted" | tr '\n' ' ')"
+
+          # Completeness of a shard split, proven independently of the ratchet
+          # (arb-adm). Each shard job recorded the SORTED CLASS LIST it
+          # partitioned to <Assembly>.listed. Both shards derive their slice from
+          # one `--list-tests` run under the same filter, so every copy of that
+          # file must be byte-identical; comparing the LISTS rather than their
+          # lengths is what makes this a positive control on the derivation
+          # itself, since equal counts over different membership would compare
+          # equal on a number.
+          #
+          # A disagreement means the two jobs discovered different test sets --
+          # the failure that would otherwise surface only as a ratchet drop with
+          # no cause attached.
+          for tok in $SHARD_ASSEMBLIES; do
+            asm="${tok%%:*}"
+            shards="${tok##*:}"
+
+            # Collect the copies WITHOUT deduplicating: the count of files is
+            # itself checked below, so a shard that never uploaded one is named
+            # rather than silently tolerated.
+            listed_files=""
+            for f in ./TestResults/*/"${asm}.listed"; do
+              [ -f "$f" ] || continue
+              listed_files="${listed_files}${f}"$'\n'
+            done
+            # `printf '%s\n'`, not `printf '%s'`: wc -l counts NEWLINES, so a
+            # trailing-newline-less list of N paths counts N-1 and a single path
+            # counts 0. That undercount made this step report "1 of 2 records
+            # arrived" while listing both files it had just found.
+            listed_files=$(printf '%s\n' "$listed_files" | sed '/^$/d')
+            file_count=$(printf '%s\n' "$listed_files" | sed '/^$/d' | wc -l | tr -d ' ')
+
+            if [ "$file_count" -eq 0 ]; then
+              echo "BLOCKED: no ${asm}.listed record arrived from any shard job." >&2
+              echo "That file is the completeness evidence for the shard split; without it the" >&2
+              echo "only thing standing between a lost shard and a green run is the ratchet." >&2
+              exit 1
+            fi
+
+            if [ "$file_count" -ne "$shards" ]; then
+              echo "BLOCKED: ${asm} is declared as ${shards} shards but ${file_count} of its" >&2
+              echo "${asm}.listed records arrived. Each shard job writes exactly one." >&2
+              printf '%s\n' "$listed_files" | sed 's/^/  /' >&2
+              exit 1
+            fi
+
+            # Byte-identical comparison against the first copy.
+            reference=$(printf '%s\n' "$listed_files" | head -1)
+            for f in $listed_files; do
+              if ! cmp -s "$reference" "$f"; then
+                echo "BLOCKED: the shards of ${asm} did NOT partition the same discovered list." >&2
+                echo "${reference} and ${f} differ. Both shards run --list-tests against the same" >&2
+                echo "dll under the same filter, so these must be byte-identical; a difference" >&2
+                echo "means tests may have fallen into neither shard." >&2
+                echo "Classes in ${reference} but not ${f}:" >&2
+                comm -23 "$reference" "$f" | sed 's/^/  /' >&2
+                echo "Classes in ${f} but not ${reference}:" >&2
+                comm -13 "$reference" "$f" | sed 's/^/  /' >&2
+                exit 1
+              fi
+            done
+
+            echo "${asm}: all ${file_count} shards partitioned an identical list of $(wc -l < "$reference" | tr -d ' ') discovered test classes."
+          done
 
           for trx in ./TestResults/*/*.trx; do
             [ -f "$trx" ] || continue
