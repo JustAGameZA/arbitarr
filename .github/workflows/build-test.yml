@@ -417,11 +417,14 @@ jobs:
           #
           # Construction alone is NOT accepted as the only evidence, because a
           # --list-tests that under-reports would shard a short list completely
-          # and still lose tests. So the discovered class count is recorded to
-          # ./TestResults/<Assembly>.listed and uploaded beside the trx, and the
-          # gate sums the shards' executed= for the assembly. A test that falls
-          # into neither shard shows up there rather than only as a ratchet drop
-          # nobody can localise.
+          # and still lose tests. So the discovered class list AND the discovered
+          # TEST count are recorded to
+          # ./TestResults/<Assembly>.shard<k>of<N>.listed and uploaded beside the
+          # trx, and the gate asserts the shards' summed executed= for the
+          # assembly EQUALS that recorded test count -- exactly, in both
+          # directions. A test that falls into neither shard, or one that runs in
+          # two shards, shows up there rather than only as a ratchet drop that a
+          # double-count can over-satisfy instead of trip.
           #
           # --list-tests runs against the SAME dll and the SAME filter as the
           # real run, so discovery cannot diverge from execution.
@@ -438,9 +441,12 @@ jobs:
           #      `FullyQualifiedName~Arbitarr.Integration.Tests` matches every
           #      test in the assembly: one shard runs the whole suite, tests are
           #      double-counted, the summed executed= EXCEEDS the floor so the
-          #      ratchet is over-satisfied rather than tripped, and the .listed
-          #      byte-identity check still passes because both shards derived
-          #      the same bad list. Widening the class alone is not accepted as
+          #      ratchet is over-satisfied rather than tripped, and the
+          #      .shard<k>of<N>.listed byte-identity check still passes because
+          #      both shards derived the same bad list. (The exact-sum check
+          #      below WOULD fire on that, since the recorded test count comes
+          #      from the same listing; this assertion stays because it names the
+          #      cause where the sum names only the symptom.) Widening the class alone is not accepted as
           #      the guard, so every parsed name is also asserted to start with
           #      the assembly's root namespace AND carry at least one segment
           #      beyond it -- a namespace-only token is BLOCKED by name, never
@@ -462,12 +468,29 @@ jobs:
           # day such a class is added, which is exactly when nobody is looking.
           shard_filter() {
             local dll="$1" k="$2" n="$3" a="$4"
-            local classes count terms bad
-            classes=$(dotnet test "$dll" --filter "$TEST_FILTER" --list-tests \
-                      | sed -n 's/^[[:space:]][[:space:]]*\([A-Za-z_][A-Za-z0-9_.+`]*\).*$/\1/p' \
-                      | sed 's/\.[^.]*$//' \
-                      | sed '/^$/d' \
-                      | sort -u)
+            local listing names classes count tests terms bad
+            # ONE --list-tests run feeds BOTH records. The test count and the
+            # class list must describe the SAME discovery, or the gate's
+            # exact-sum assertion compares a count against a partition it does
+            # not belong to -- so both are derived from one captured listing
+            # here, never from two invocations of --list-tests.
+            listing=$(dotnet test "$dll" --filter "$TEST_FILTER" --list-tests)
+            # NOT sort -u, and that is the whole point of this line. A [Theory]
+            # is listed ONCE PER DATA ROW, and the capture below keeps only the
+            # leading identifier -- it stops at the `(` -- so `Foo.Bar(x: 1)`
+            # and `Foo.Bar(x: 2)` both reduce to `Foo.Bar`. Deduplicating here
+            # folds those rows into one and undercounts by exactly the theory
+            # surplus: the first run of this check recorded 304 against 363
+            # genuinely executed tests, and the gate correctly called it an
+            # overlap that did not exist. Each listed row is one executed test
+            # case, so the rows are counted as they come.
+            names=$(printf '%s\n' "$listing" \
+                    | sed -n 's/^[[:space:]][[:space:]]*\([A-Za-z_][A-Za-z0-9_.+`]*\).*$/\1/p' \
+                    | sed '/^$/d')
+            # The CLASS list keeps its `sort -u`: there the unit is a class, a
+            # class is meant to appear once however many tests it holds, and
+            # this parse is unchanged from what shipped.
+            classes=$(printf '%s\n' "$names" | sed 's/\.[^.]*$//' | sed '/^$/d' | sort -u)
             if [ -z "$classes" ]; then
               echo "BLOCKED: --list-tests discovered no test classes in ${dll}." >&2
               echo "A shard derived from an empty list would run nothing and report" >&2
@@ -487,7 +510,8 @@ jobs:
               echo "A bare namespace here is not a class: as a ~ term it matches EVERY test in" >&2
               echo "the assembly, so one shard runs the whole suite and the summed executed=" >&2
               echo "exceeds the floor instead of dropping below it -- the ratchet would not" >&2
-              echo "fire and the .listed comparison would still pass. Blocking by name." >&2
+              echo "fire and the .shard<k>of<N>.listed comparison would still pass. Blocking" >&2
+              echo "by name here, where the cause is visible." >&2
               exit 1
             fi
             # The WHOLE sorted class list is recorded, not just its length.
@@ -506,7 +530,64 @@ jobs:
             # Timing/Load/Quarantine tests that are never executed, and the
             # gate's completeness comparison could then never be satisfied.
             count=$(printf '%s\n' "$classes" | wc -l | tr -d ' ')
-            printf '%s\n' "$classes" > "./TestResults/${a}.listed"
+            # The discovered TEST count (arb-u9i). The parse is: count the
+            # indented test lines of the SAME listing the class list came from,
+            # undeduplicated -- see the note on $names above for why `sort -u`
+            # here is wrong. One listed row is one test case the run will
+            # execute, which is precisely what the gate compares against the
+            # summed executed=.
+            #
+            # That last sentence is CONTINGENT, not structural, and the day it
+            # stops being true this check goes red on an innocent partition.
+            # It holds because every theory in this assembly has its data
+            # available at DISCOVERY time: today 23 [Theory], 70 [InlineData],
+            # and one [MemberData] over two literal arrays, which --list-tests
+            # enumerates as its full 12 rows. A [MemberData] backed by
+            # something computed at RUN time -- a database read, a file glob --
+            # would be listed ONCE and executed N times, so the sum would
+            # exceed the recorded count and the gate would report the UNDER
+            # message ("a test fell into NEITHER shard") against a partition
+            # that is perfectly correct.
+            #
+            # The response to that is to revisit THIS check -- count such
+            # theories from the trx side, or record them separately -- and NOT
+            # to relax the assertion to `>=`. A `>=` restores exactly the
+            # over-count blindness the whole bead exists to close: it is the
+            # lower bound the ratchet already gives, and a test running in two
+            # shards would once again pass by adding to the total.
+            tests=$(printf '%s\n' "$names" | sed '/^$/d' | wc -l | tr -d ' ')
+            # Fail closed on zero, separately from the $classes emptiness check
+            # above. An empty or unparsed listing would otherwise record tests=0,
+            # and `sum == 0` is a condition a run that executed NOTHING satisfies
+            # -- the exact-sum assertion would then pass vacuously, which is the
+            # one way it could be worse than the ratchet alone. A non-empty
+            # $classes does not imply a non-zero count, since a future change to
+            # either parse could keep one while losing the other.
+            if [ "$tests" -eq 0 ]; then
+              echo "BLOCKED: --list-tests of ${a} discovered 0 tests under the filter." >&2
+              echo "The gate asserts sum(executed=) == this number; recording 0 would make that" >&2
+              echo "assertion satisfiable by a run that executed nothing at all." >&2
+              exit 1
+            fi
+            # The record is named by SHARD (arb-u9i), mirroring the trx naming
+            # below, so the gate can require exactly one per DECLARED shard. The
+            # unsuffixed name could not: two copies from the SAME shard -- an
+            # artifact restored twice, a re-run overlaying -- satisfied both the
+            # file count and the byte-identity check, because two identical
+            # copies of one shard's file are, of course, identical.
+            #
+            # The test count is a HEADER LINE in this same file rather than a
+            # sibling file, deliberately: one `cmp` then proves the shards agree
+            # on the count AND on the membership together, so the count cannot
+            # drift from the list it describes. A sibling file would be a second
+            # artifact able to go missing on its own, and a missing count file is
+            # exactly the case where the gate must choose between blocking and
+            # skipping the check. Readers of the class list therefore strip this
+            # first line -- see the gate.
+            {
+              printf 'tests=%s\n' "$tests"
+              printf '%s\n' "$classes"
+            } > "./TestResults/${a}.shard${k}of${n}.listed"
             # The trailing `.` is invariant 2 and is NOT a typo to tidy away.
             terms=$(printf '%s\n' "$classes" \
                     | awk -v k="$k" -v n="$n" 'NR % n == (k % n) { print "FullyQualifiedName~" $0 "." }' \
@@ -584,10 +665,10 @@ jobs:
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
         with:
           name: trx-${{ matrix.group }}
-          # The .listed file rides with the trx (arb-adm): the gate needs the
-          # --list-tests class count recorded by the shard that produced it, and
-          # a separate artifact could go missing without the trx-set check
-          # noticing. `if-no-files-found: error` still bites because every entry
+          # The .shard<k>of<N>.listed file rides with the trx (arb-adm): the
+          # gate needs the --list-tests class list and test count recorded by the
+          # shard that produced it, and a separate artifact could go missing
+          # without the trx-set check noticing. `if-no-files-found: error` still bites because every entry
           # produces at least one trx.
           path: |
             ./TestResults/*.trx
@@ -1699,26 +1780,36 @@ jobs:
           echo "All expected trx basenames present exactly once: $(printf '%s\n' "$expected_sorted" | tr '\n' ' ')"
 
           # Completeness of a shard split, proven independently of the ratchet
-          # (arb-adm). Each shard job recorded the SORTED CLASS LIST it
-          # partitioned to <Assembly>.listed. Both shards derive their slice from
-          # one `--list-tests` run under the same filter, so every copy of that
-          # file must be byte-identical; comparing the LISTS rather than their
-          # lengths is what makes this a positive control on the derivation
-          # itself, since equal counts over different membership would compare
-          # equal on a number.
+          # (arb-adm, tightened by arb-u9i). Each shard job recorded the SORTED
+          # CLASS LIST it partitioned, plus the discovered TEST count as a
+          # `tests=N` header line, to <Assembly>.shard<k>of<N>.listed. Both
+          # shards derive their slice from one `--list-tests` run under the same
+          # filter, so every copy of that file must be byte-identical; comparing
+          # the LISTS rather than their lengths is what makes this a positive
+          # control on the derivation itself, since equal counts over different
+          # membership would compare equal on a number. The header line rides
+          # INSIDE the compared bytes on purpose, so the same `cmp` also proves
+          # the shards agree on the count.
           #
           # A disagreement means the two jobs discovered different test sets --
           # the failure that would otherwise surface only as a ratchet drop with
           # no cause attached.
+          #
+          # The expected FILENAMES are derived from SHARD_ASSEMBLIES exactly as
+          # the trx basenames were above, and each must appear exactly once
+          # (arb-u9i). Counting files alone did not do this: before the shard
+          # suffix existed, two copies of the SAME shard's record -- an artifact
+          # restored twice, a re-run overlaying -- passed both the count check
+          # and the byte-identity check while shard 2 was never heard from.
           for tok in $SHARD_ASSEMBLIES; do
             asm="${tok%%:*}"
             shards="${tok##*:}"
 
-            # Collect the copies WITHOUT deduplicating: the count of files is
-            # itself checked below, so a shard that never uploaded one is named
-            # rather than silently tolerated.
+            # Collect the copies WITHOUT deduplicating: a basename arriving twice
+            # is a real condition (two group directories), and it is named below
+            # rather than collapsed by a `sort -u` before anyone can see it.
             listed_files=""
-            for f in ./TestResults/*/"${asm}.listed"; do
+            for f in ./TestResults/*/"${asm}".shard*of*.listed; do
               [ -f "$f" ] || continue
               listed_files="${listed_files}${f}"$'\n'
             done
@@ -1730,36 +1821,98 @@ jobs:
             file_count=$(printf '%s\n' "$listed_files" | sed '/^$/d' | wc -l | tr -d ' ')
 
             if [ "$file_count" -eq 0 ]; then
-              echo "BLOCKED: no ${asm}.listed record arrived from any shard job." >&2
+              echo "BLOCKED: no ${asm}.shard<k>of<N>.listed record arrived from any shard job." >&2
               echo "That file is the completeness evidence for the shard split; without it the" >&2
               echo "only thing standing between a lost shard and a green run is the ratchet." >&2
               exit 1
             fi
 
-            if [ "$file_count" -ne "$shards" ]; then
-              echo "BLOCKED: ${asm} is declared as ${shards} shards but ${file_count} of its" >&2
-              echo "${asm}.listed records arrived. Each shard job writes exactly one." >&2
+            # One record per DECLARED shard, BY NAME. Derived from
+            # SHARD_ASSEMBLIES the same way the expected trx basenames were, so
+            # the two cannot disagree about which shards are supposed to exist.
+            listed_expected=""
+            for k in $(seq 1 "$shards"); do
+              listed_expected="${listed_expected}${asm}.shard${k}of${shards}.listed"$'\n'
+            done
+            listed_expected=$(printf '%s' "$listed_expected" | sed '/^$/d' | sort)
+            listed_found=$(printf '%s\n' "$listed_files" | sed 's#.*/##' | sort)
+
+            listed_missing=$(comm -23 <(printf '%s\n' "$listed_expected") <(printf '%s\n' "$listed_found" | sort -u))
+            listed_unexpected=$(comm -13 <(printf '%s\n' "$listed_expected") <(printf '%s\n' "$listed_found" | sort -u))
+            listed_dupes=$(printf '%s\n' "$listed_found" | uniq -d)
+
+            if [ -n "$listed_missing" ] || [ -n "$listed_unexpected" ] || [ -n "$listed_dupes" ]; then
+              echo "BLOCKED: ${asm} is declared as ${shards} shards but its class-list records do" >&2
+              echo "not match one per declared shard. Each shard job writes exactly one." >&2
+              [ -n "$listed_missing" ] && { echo "Missing (declared shard, no record):" >&2; echo "$listed_missing" | sed 's/^/  /' >&2; }
+              [ -n "$listed_unexpected" ] && { echo "Unexpected (record found, not a declared shard):" >&2; echo "$listed_unexpected" | sed 's/^/  /' >&2; }
+              [ -n "$listed_dupes" ] && { echo "Duplicated (same shard's record across group directories):" >&2; echo "$listed_dupes" | sed 's/^/  /' >&2; }
               printf '%s\n' "$listed_files" | sed 's/^/  /' >&2
               exit 1
             fi
 
-            # Byte-identical comparison against the first copy.
+            # Byte-identical comparison against the first copy. This covers the
+            # `tests=N` header as well as the class list.
             reference=$(printf '%s\n' "$listed_files" | head -1)
             for f in $listed_files; do
               if ! cmp -s "$reference" "$f"; then
-                echo "BLOCKED: the shards of ${asm} did NOT partition the same discovered list." >&2
+                echo "BLOCKED: the shards of ${asm} did NOT partition the same discovered list," >&2
+                echo "or did not agree on the discovered test count." >&2
                 echo "${reference} and ${f} differ. Both shards run --list-tests against the same" >&2
                 echo "dll under the same filter, so these must be byte-identical; a difference" >&2
                 echo "means tests may have fallen into neither shard." >&2
+                echo "Recorded counts: $(sed -n 's/^tests=//p' "$reference" | head -1) vs $(sed -n 's/^tests=//p' "$f" | head -1)" >&2
                 echo "Classes in ${reference} but not ${f}:" >&2
-                comm -23 "$reference" "$f" | sed 's/^/  /' >&2
+                comm -23 <(sed '1d' "$reference") <(sed '1d' "$f") | sed 's/^/  /' >&2
                 echo "Classes in ${f} but not ${reference}:" >&2
-                comm -13 "$reference" "$f" | sed 's/^/  /' >&2
+                comm -13 <(sed '1d' "$reference") <(sed '1d' "$f") | sed 's/^/  /' >&2
                 exit 1
               fi
             done
 
-            echo "${asm}: all ${file_count} shards partitioned an identical list of $(wc -l < "$reference" | tr -d ' ') discovered test classes."
+            # The header is parsed only AFTER the copies were proven identical,
+            # so this reads a value every shard agreed on.
+            recorded=$(sed -n 's/^tests=\([0-9][0-9]*\)$/\1/p' "$reference" | head -1)
+            if [ -z "$recorded" ]; then
+              echo "BLOCKED: ${reference} carries no parseable 'tests=N' header line." >&2
+              echo "The shard step writes it as the first line; without it there is no discovered" >&2
+              echo "count to assert the executed sum against, and this fails rather than quietly" >&2
+              echo "skipping the check." >&2
+              exit 1
+            fi
+
+            echo "${asm}: all ${file_count} shards partitioned an identical list of $(sed '1d' "$reference" | wc -l | tr -d ' ') discovered test classes, and recorded ${recorded} discovered tests."
+
+            # EXACT sum (arb-u9i). The ratchet below is a LOWER bound on the
+            # whole run and cannot see an over-count: a test running in two
+            # shards ADDS to the total, over-satisfying the floor instead of
+            # tripping it. This asserts the design intent directly and in BOTH
+            # directions, per assembly, against the number that assembly's own
+            # discovery produced. The floor check stays as it is -- it ratchets
+            # the whole run, including the unsharded assemblies this cannot see.
+            shard_sum=0
+            for k in $(seq 1 "$shards"); do
+              for trx in ./TestResults/*/"${asm}.shard${k}of${shards}.trx"; do
+                [ -f "$trx" ] || continue
+                c=$(grep -o 'executed="[0-9]*"' "$trx" | head -1 | grep -o '[0-9]*')
+                shard_sum=$((shard_sum + ${c:-0}))
+              done
+            done
+
+            if [ "$shard_sum" -lt "$recorded" ]; then
+              echo "BLOCKED: the shards of ${asm} executed ${shard_sum} tests but ${recorded} were" >&2
+              echo "discovered. A test fell into NEITHER shard -- the partition is incomplete." >&2
+              exit 1
+            fi
+            if [ "$shard_sum" -gt "$recorded" ]; then
+              echo "BLOCKED: the shards of ${asm} executed ${shard_sum} tests but only ${recorded}" >&2
+              echo "were discovered. A test ran in MORE THAN ONE shard -- the shard filters" >&2
+              echo "overlap, and the surplus inflates the run total PAST the ratchet floor" >&2
+              echo "instead of tripping it." >&2
+              exit 1
+            fi
+
+            echo "${asm}: shard executed sum ${shard_sum} == ${recorded} discovered tests."
           done
 
           for trx in ./TestResults/*/*.trx; do
