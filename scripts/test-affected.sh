@@ -209,13 +209,24 @@ all_test_count=$(printf '%s\n' "$all_test_projects" | grep -c . || true)
 # The project name/dir come from the csproj that actually exists, so a rename
 # fails loudly instead of this script silently selecting nothing for it.
 # ----------------------------------------------------------------------------
-arch_csproj=$(find tests -mindepth 2 -maxdepth 2 -name 'Arbitarr.Architecture.Tests.csproj' 2>/dev/null | head -n1)
-if [ -z "$arch_csproj" ]; then
+arch_csproj_matches=$(find tests -mindepth 2 -maxdepth 2 -name 'Arbitarr.Architecture.Tests.csproj' 2>/dev/null)
+arch_csproj_count=$(printf '%s\n' "$arch_csproj_matches" | grep -c . || true)
+if [ "$arch_csproj_count" -eq 0 ]; then
   echo "test-affected: no tests/*/Arbitarr.Architecture.Tests.csproj found on disk;" >&2
   echo "the Architecture.Tests trigger rule cannot be applied. Fix the project name" >&2
   echo "or path before relying on this script's selection." >&2
   exit 2
+elif [ "$arch_csproj_count" -gt 1 ]; then
+  # Picking the first match (e.g. via `head -n1`) would silently choose one of
+  # two ambiguous projects rather than flag the ambiguity -- fail loudly and
+  # name every match instead.
+  echo "test-affected: more than one Arbitarr.Architecture.Tests.csproj found on disk:" >&2
+  printf '%s\n' "$arch_csproj_matches" | sed 's/^/  /' >&2
+  echo "test-affected: cannot pick one; remove the duplicate before relying on this" >&2
+  echo "script's selection." >&2
+  exit 2
 fi
+arch_csproj="$arch_csproj_matches"
 arch_test_project=$(basename "$arch_csproj" .csproj)
 
 # ProductionProcessGlobalStateTests.cs and TestProcessGlobalStateTests.cs each scan a
@@ -227,25 +238,49 @@ arch_test_project=$(basename "$arch_csproj" .csproj)
 # Rather than hard-code that (or any other) name here, the trigger set is read
 # straight out of both files: each scanned name sits alone on its own line shaped
 # exactly `        "Name",` (8-space indent, quoted, trailing comma) inside the
-# `string[] ... = [ ... ]` literal. Zero matches from either file means the shape
-# changed and this parse can no longer see what it's supposed to protect, so it
-# fails loudly rather than silently selecting nothing.
+# `string[] ... = [ ... ]` literal. The extraction is scoped by line ADDRESS to
+# just that literal, not applied file-wide -- both scan files (at the master
+# revision this comment was written against) also declare a BannedMethods
+# array in the same 8-space/quoted/trailing-comma shape (e.g.
+# TestProcessGlobalStateTests.cs's `"Microsoft.Data.Sqlite.SqliteConnection::
+# ClearAllPools",`), which a file-global sed would also match because its `::`
+# sits outside the `[A-Za-z0-9.]` character class only by coincidence of what
+# happens to be banned today. The address ranges below are anchored on the
+# literal's own opening/closing lines:
+#   ProductionProcessGlobalStateTests.cs: `    private static readonly string[] ProductionAssemblyNames =`
+#   then `    [` ... `    ];`
+#   TestProcessGlobalStateTests.cs: `    private static readonly string[] TestAssemblyNames =`
+#   then `    [` ... `    ];`
+# Zero matches from either file means the shape (or the anchor text) changed
+# and this parse can no longer see what it's supposed to protect, so it fails
+# loudly rather than silently selecting nothing.
+#
+# Each entry below pairs a scan file with the name of its array literal.
 arch_scan_files=(
-  "tests/Arbitarr.Architecture.Tests/ProductionProcessGlobalStateTests.cs"
-  "tests/Arbitarr.Architecture.Tests/TestProcessGlobalStateTests.cs"
+  "tests/Arbitarr.Architecture.Tests/ProductionProcessGlobalStateTests.cs:ProductionAssemblyNames"
+  "tests/Arbitarr.Architecture.Tests/TestProcessGlobalStateTests.cs:TestAssemblyNames"
 )
 : > "$arch_trigger_names_file"
-for f in "${arch_scan_files[@]}"; do
+for entry in "${arch_scan_files[@]}"; do
+  f=${entry%%:*}
+  array_name=${entry#*:}
   if [ ! -f "$f" ]; then
     echo "test-affected: expected scan file '$f' not found; cannot derive the" >&2
     echo "Architecture.Tests trigger list. Update this script's arch_scan_files." >&2
     exit 2
   fi
-  names=$(sed -n 's/^        "\([A-Za-z0-9.]*\)",$/\1/p' "$f")
+  # Address range: from the array's own declaration line to its closing `];`,
+  # so a same-shaped array elsewhere in the file (BannedMethods) is never in
+  # range. Both anchors are literal text at the master revision this script
+  # was written against; if either is renamed or reformatted, the range never
+  # opens/closes and the loud "could not read" failure below fires.
+  names=$(sed -n "/private static readonly string\[\] $array_name =/,/^    \];\$/"'s/^        "\([A-Za-z0-9.]*\)",$/\1/p' "$f")
   if [ -z "$names" ]; then
-    echo "test-affected: could not read assembly list from '$f' -- expected lines" >&2
-    echo "shaped exactly '        \"Name\",' inside its string[] literal. The file's" >&2
-    echo "shape changed; update the sed pattern in this script, don't ignore this." >&2
+    echo "test-affected: could not read assembly list '$array_name' from '$f' --" >&2
+    echo "expected a 'private static readonly string[] $array_name =' declaration" >&2
+    echo "followed by a '    [' ... '    ];' literal whose entries are shaped" >&2
+    echo "exactly '        \"Name\",'. The file's shape changed; update the sed" >&2
+    echo "pattern in this script, don't ignore this." >&2
     exit 2
   fi
   printf '%s\n' "$names" >> "$arch_trigger_names_file"
@@ -294,8 +329,22 @@ while IFS= read -r path; do
         # just tests/, because ProductionProcessGlobalStateTests scans
         # Arbitarr.Host, which is src/ and which Architecture.Tests.csproj
         # does NOT reference (NU1605), so the project graph alone misses it.
+        # deliberate word-split: $arch_trigger_names is one assembly name per
+        # line and is meant to expand into separate printf arguments here, not
+        # stay a single quoted string.
         case " $(printf '%s ' $arch_trigger_names)" in
           *" $proj "*) changed_projects["$arch_test_project"]=1 ;;
+        esac
+        # Any tests/ change ALSO selects Architecture.Tests outright, union'd
+        # with the trigger-list rule above rather than replacing it:
+        # Arbitarr.TestSupport is compiled into every test assembly the Cecil
+        # scans read by file path, but it is deliberately absent from both
+        # scans' name arrays (IsTestProject=false) and Architecture.Tests has
+        # zero <ProjectReference> entries, so the project graph never reaches
+        # it either. Without this blanket rule a TestSupport-only change would
+        # select nothing for Architecture.Tests even though its output changed.
+        case "$path" in
+          tests/*) changed_projects["$arch_test_project"]=1 ;;
         esac
       else
         # A directory under src/ or tests/ with no csproj is not a project this
