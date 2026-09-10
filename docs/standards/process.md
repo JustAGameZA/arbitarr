@@ -100,6 +100,53 @@ See [ADR 0011](../adr/0011-test-strategy-lanes-isolation-quarantine.md).
 
 ---
 
+## Cecil IL scans in Architecture.Tests
+
+`tests/Arbitarr.Architecture.Tests` carries four test classes that read compiled IL with Mono.Cecil
+rather than reflecting over a loaded assembly or grepping source — grep is defeated by an alias, a
+fully-qualified name, or a wrapper, and reflection can see the types a method mentions but not the
+calls or constructions its body makes. Reading the IL sees the actual `call`/`callvirt`/`newobj`
+instruction whatever the source spelled it as. All four open their target assemblies' build output
+directly by file path (`BuiltAssemblies.ResolvePath`, arb-hxa) rather than via `ProjectReference`,
+because at least one target (`Arbitarr.Host`) fails to reference that way (NU1605); that makes every
+scan depend on the solution having been **built first**, so a missing assembly fails the scan loudly
+rather than passing vacuously over an empty set. The scanned assembly-name lists themselves live once,
+on `BuiltAssemblies.TestAssemblyNames` / `BuiltAssemblies.ProductionAssemblyNames`
+(`tests/Arbitarr.Architecture.Tests/BuiltAssemblies.cs`, arb-hxa) — not in the individual test
+classes — and are guarded against drift by the `guards` job described under [PR flow](#pr-flow)
+below.
+
+- **`ProductionProcessGlobalStateTests`** scans every `src/` assembly named in
+  `BuiltAssemblies.ProductionAssemblyNames` and fails on any call to
+  `SqliteConnection.ClearAllPools()`. It closes the production half of the pool-hammer ban; see
+  [Connection pools are keyed by the full string](data.md#connection-pools-are-keyed-by-the-full-string)
+  for what the ban protects and its test-side counterpart.
+- **`TestProcessGlobalStateTests`** scans every assembly named in `BuiltAssemblies.TestAssemblyNames`
+  (all ten test projects) and fails on the same `ClearAllPools()` call plus
+  `Environment.SetEnvironmentVariable` — the second call is banned in test IL only, because two test
+  hosts starting concurrently in one process overwrite each other's environment; production
+  configuration code has legitimate reasons to set it and is not scanned for it. Also owns the shared
+  `FindBannedCalls` IL walk that `ProductionProcessGlobalStateTests` reuses rather than duplicates.
+- **`NoInlineDatabaseConnectionStringsTests`** scans `Arbitarr.Data` only and fails any type outside
+  its named allow-lists that constructs a `SqliteConnectionStringBuilder` or a `SqliteConnection`. See
+  [What the IL scan does and does not close](data.md#connection-pools-are-keyed-by-the-full-string)
+  for the "trusted by convention" gap this scan deliberately leaves open.
+- **`QuarantineTraitTests`** scans every assembly named in `BuiltAssemblies.TestAssemblyNames` for a
+  `Category=Quarantine` trait attribute (class- or method-level) that lacks an accompanying
+  `Bead=arb-xxx` trait, per [Quarantine](#quarantine) above. It reads attribute rows rather than
+  using xunit's own test discovery so that a quarantined test in an assembly that fails to load, or
+  one hidden behind a custom discoverer, still cannot escape the check by simply not appearing.
+
+Seven other test classes in the same project. Five — `AiMediaIsolationTests`, `CoreIsolationTests`,
+`AssemblyNamingTests`, `DependencyDirectionTests` and `HostIsolationTests` — load assemblies with
+`System.Reflection` (`Assembly.LoadFrom`) instead of Cecil; they check reference graphs and naming,
+not IL bodies, so they do not need to see inside a method. The other two, `SourceTreeNamingTests` and
+`SecretReaderSingleCallerTests`, scan the source tree as text (`.csproj`/`.sln` contents and call-site
+line matches respectively), not compiled output at all. None of the seven are Cecil scans and none are
+listed above.
+
+---
+
 ## Lanes
 
 Three lanes run the tests, and they differ in *what* they run and *what they are allowed to
