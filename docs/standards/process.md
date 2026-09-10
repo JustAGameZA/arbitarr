@@ -256,9 +256,18 @@ a *skipped* required check as satisfied, so a gate that merely inherited its dep
 would let a red matrix group merge. Every backend group restores the *full* `test-build`
 artifact rather than only its own assemblies, because `Arbitarr.Architecture.Tests`' Mono.Cecil IL
 scan reads sibling build output and needs all ten test assemblies present in the same configuration
-and TFM. And `guards` runs two checks that keep `TEST_ASSEMBLIES` honest: that the matrix groups
-union to exactly that list, and that the list itself matches the `*.Tests.csproj` projects under
-`tests/` — see [Test-count floors](#test-count-floors) above and the comments in `build-test.yml`.
+and TFM. And `guards` runs four checks that keep the hand-maintained assembly lists honest: that the matrix
+groups union to exactly `TEST_ASSEMBLIES`; that `TEST_ASSEMBLIES` itself matches the `*.Tests.csproj`
+projects under `tests/`; that every `TEST_ASSEMBLIES` project is present in `Arbitarr.sln` and
+declares no `<AssemblyName>` override; and that `BuiltAssemblies.ProductionAssemblyNames` (the src/
+assemblies `Arbitarr.Architecture.Tests` scans by file path) still matches the csproj's
+`ProjectReference` graph plus its one documented exception — see [Test-count
+floors](#test-count-floors) above and the comments in `build-test.yml`.
+
+The scan-list guard lives in `guards` rather than in `Arbitarr.Architecture.Tests` because the
+invariant compares the hand-written scan list against the csproj's reference graph, and a running
+test can only observe assemblies that graph already delivered — so an in-test check is blind to
+exactly the graph-invisible assembly (`Arbitarr.Host`, NU1605) the guard exists to police.
 
 **A green `Deploy review environment` means the image builds and `/health` answers — nothing more.**
 Nothing is deployed; no review environment exists. The name describes an intent.

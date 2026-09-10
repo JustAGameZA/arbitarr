@@ -823,34 +823,38 @@ jobs:
 
           echo "TEST_ASSEMBLIES matches the tests/ tree exactly: $(printf '%s\n' "$tree_list" | tr '\n' ' ')"
 
-      # arb-9ae: ProductionProcessGlobalStateTests.cs scans src/ assemblies by
-      # FILE PATH, not through Architecture.Tests.csproj's ProjectReference
-      # graph (that scan exists precisely because Arbitarr.Host cannot be a
-      # ProjectReference there -- NU1605; see the csproj's own Mono.Cecil
-      # comment). Nothing previously enforced that its hand-written
-      # ProductionAssemblyNames array still matches the reference graph plus
-      # the one documented exception: a name added to the array with no
-      # matching ProjectReference (and not allow-listed) would scan an
-      # assembly no build guarantees exists yet, and a name that WAS
-      # allow-listed but has since gained a real ProjectReference would leave
-      # a stale allow-list entry masking a graph that could now do the job on
-      # its own.
+      # arb-9ae: BuiltAssemblies.cs (arb-hxa; formerly ProductionProcessGlobalStateTests.cs
+      # directly) scans src/ assemblies by FILE PATH, not through
+      # Architecture.Tests.csproj's ProjectReference graph (that scan exists
+      # precisely because Arbitarr.Host cannot be a ProjectReference there --
+      # NU1605; see the csproj's own Mono.Cecil comment). Nothing previously
+      # enforced that its hand-written ProductionAssemblyNames array still
+      # matches the reference graph plus the one documented exception: a name
+      # added to the array with no matching ProjectReference (and not
+      # allow-listed) would scan an assembly no build guarantees exists yet,
+      # and a name that WAS allow-listed but has since gained a real
+      # ProjectReference would leave a stale allow-list entry masking a graph
+      # that could now do the job on its own.
       #
       # The extraction below is a NARROW sed address range, not a C# parser
       # (scripts/test-affected.sh's own comment bans parsing C# from bash for
       # the same reason: this step runs in CI only). It matches from the
-      # opening `private static readonly string[] ProductionAssemblyNames =`
-      # declaration line to the closing `    ];` line and reads only the
-      # `"Name",` entries between them. If that shape changes (renamed field,
-      # reformatted array, different indent), the range must find ZERO lines
-      # and fail loudly below -- never silently produce a partial or empty
-      # list that then passes the union checks vacuously.
+      # opening `internal static readonly string[] ProductionAssemblyNames =`
+      # declaration line (arb-hxa: `internal`, not `private` -- the field must
+      # be visible outside BuiltAssemblies to its four consumer classes) to
+      # the closing `    ];` line and reads only the `"Name",` entries between
+      # them. If that shape changes (renamed field, reformatted array,
+      # different indent, a visibility change), the range must find ZERO
+      # lines and fail loudly below -- never silently produce a partial or
+      # empty list that then passes the union checks vacuously.
       - name: Verify every src assembly scanned by Architecture.Tests is referenced or allow-listed
         shell: bash
         run: |
           set -euo pipefail
 
-          scan_file="tests/Arbitarr.Architecture.Tests/ProductionProcessGlobalStateTests.cs"
+          [ -n "${TEST_ASSEMBLIES:-}" ] || { echo "BLOCKED: TEST_ASSEMBLIES is empty" >&2; exit 1; }
+
+          scan_file="tests/Arbitarr.Architecture.Tests/BuiltAssemblies.cs"
           csproj_file="tests/Arbitarr.Architecture.Tests/Arbitarr.Architecture.Tests.csproj"
 
           # Arbitarr.Host is the one documented exception: NU1605 blocks
@@ -862,17 +866,17 @@ jobs:
           # referenced instead.
           allow_listed="Arbitarr.Host"
 
-          scanned_names=$(sed -n '/^[[:space:]]*private static readonly string\[\] ProductionAssemblyNames =[[:space:]]*$/,/^[[:space:]]*\];[[:space:]]*$/p' "$scan_file" \
+          scanned_names=$(sed -n '/^[[:space:]]*internal static readonly string\[\] ProductionAssemblyNames =[[:space:]]*$/,/^[[:space:]]*\];[[:space:]]*$/p' "$scan_file" \
             | sed -n 's/^[[:space:]]*"\([A-Za-z0-9.]*\)",\{0,1\}[[:space:]]*$/\1/p')
 
           if [ -z "$scanned_names" ]; then
             echo "BLOCKED: found no assembly names between the 'ProductionAssemblyNames ='" >&2
             echo "declaration and its closing '];' in ${scan_file}. This extraction is a" >&2
             echo "narrow sed range over that exact shape (8-space indented \"Name\", entries" >&2
-            echo "between a 'private static readonly string[] ProductionAssemblyNames =' line" >&2
-            echo "and a bare '];' line) -- if the array was renamed or reformatted, fix this" >&2
-            echo "extraction rather than letting the checks below pass vacuously over zero" >&2
-            echo "names." >&2
+            echo "between an 'internal static readonly string[] ProductionAssemblyNames =' line" >&2
+            echo "and a bare '];' line) -- if the array was renamed, reformatted, or its" >&2
+            echo "visibility changed, fix this extraction rather than letting the checks below" >&2
+            echo "pass vacuously over zero names." >&2
             exit 1
           fi
 
@@ -934,10 +938,19 @@ jobs:
       # raw read of the file) -- this is the sln format's own convention, not
       # a line-ending artifact, so the check greps for that exact backslash
       # form rather than a slash-normalised one.
+      #
+      # This check is PRESENCE-ONLY: it greps for the project's `Project(...)`
+      # line and says nothing about the sln's per-configuration mapping. A
+      # project present but missing its `Debug|Any CPU.Build.0` line under
+      # GlobalSection(ProjectConfigurationPlatforms) still resolves here even
+      # though `dotnet build`/`dotnet test` silently skip building it -- that
+      # gap is not guarded by this step and is tracked separately (arb-exw).
       - name: Verify every test project is in Arbitarr.sln and overrides no AssemblyName
         shell: bash
         run: |
           set -euo pipefail
+
+          [ -n "${TEST_ASSEMBLIES:-}" ] || { echo "BLOCKED: TEST_ASSEMBLIES is empty" >&2; exit 1; }
 
           sln_file="Arbitarr.sln"
 
