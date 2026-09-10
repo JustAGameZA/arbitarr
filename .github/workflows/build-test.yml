@@ -728,6 +728,34 @@ jobs:
             exit 1
           fi
 
+          # A PARTIAL reformat (one group's assemblies line switched to single
+          # quotes, folded onto a block scalar, etc.) does not zero out
+          # assemblies_lines above -- it just makes the extraction miss that one
+          # group, and the union check below would then report the group's
+          # assemblies as "missing from the matrix", which points at the wrong
+          # cause: the assemblies are still there, the extraction just can't see
+          # them. Counting `- group:` entries and comparing against the number of
+          # extracted lines catches exactly this case, before the union logic
+          # runs, with a message that says what actually broke.
+          group_count=$(awk '
+            /^[[:space:]]*matrix:[[:space:]]*$/ { in_matrix=1 }
+            in_matrix && /^[[:space:]]*steps:[[:space:]]*$/ { exit }
+            in_matrix && /^[[:space:]]*-[[:space:]]*group:/ { n++ }
+            END { print n+0 }
+          ' "$workflow_file")
+
+          assemblies_count=$(printf '%s\n' "$assemblies_lines" | sed '/^$/d' | wc -l)
+
+          if [ "$assemblies_count" -ne "$group_count" ]; then
+            echo "BLOCKED: extraction broke -- found ${group_count} '- group:' entries but" >&2
+            echo "only ${assemblies_count} 'assemblies: \"...\"' lines in ${workflow_file}." >&2
+            echo "This means the matrix was partially reformatted (a group's assemblies line" >&2
+            echo "no longer matches the narrow literal-line scan this step uses), not that" >&2
+            echo "assemblies are missing from the matrix. Fix the extraction to match the new" >&2
+            echo "format, or revert the reformat." >&2
+            exit 1
+          fi
+
           union_list=$(printf '%s\n' "$assemblies_lines" \
             | sed -E 's/^[[:space:]]*assemblies:[[:space:]]*"([^"]*)".*$/\1/' \
             | tr ' ' '\n' \
@@ -749,6 +777,50 @@ jobs:
           fi
 
           echo "Matrix groups A/B/C union to exactly the ten TEST_ASSEMBLIES."
+
+      # arb-03v: the check above proves the matrix union equals TEST_ASSEMBLIES,
+      # but nothing proves TEST_ASSEMBLIES itself still matches the tests/ tree.
+      # An eleventh tests/*.Tests project (or a rename) is otherwise INVISIBLE to
+      # the merge lane: prep's build-output assertion, the matrix-union step and
+      # the gate's trx-set check all consume the same hand-maintained list, so a
+      # project missing from that list simply never runs and the ratchet floor
+      # ratchets over the smaller set without ever failing red. nightly.yml
+      # already catches this (`find tests -name '*.Tests.csproj'`, asserted
+      # against a hard-coded `expected=10`) but nightly is not a required check
+      # and runs once a day, so a bad PR merges hours before anyone notices.
+      # This step is the same discovery, in the required lane, diffed by name
+      # against TEST_ASSEMBLIES instead of only counting. nightly.yml's own
+      # expected=10 assertion is intentionally left as-is: it is an independent
+      # measurement, not a copy of this one, and deleting it would remove the
+      # one check that still runs even if this file's guards job is ever
+      # bypassed or disabled.
+      - name: Verify TEST_ASSEMBLIES matches the tests/ tree
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tree_list=$(find tests -name '*.Tests.csproj' -exec basename {} .csproj \; | sort)
+
+          if [ -z "$tree_list" ]; then
+            echo "BLOCKED: no '*.Tests.csproj' found under tests/. Either the tree" >&2
+            echo "was moved/renamed or this find expression broke -- a check that passes" >&2
+            echo "vacuously over zero projects is worse than no check at all." >&2
+            exit 1
+          fi
+
+          expected_sorted=$(printf '%s\n' $TEST_ASSEMBLIES | sort -u)
+
+          missing_from_list=$(comm -23 <(printf '%s\n' "$tree_list") <(printf '%s\n' "$expected_sorted"))
+          missing_from_tree=$(comm -13 <(printf '%s\n' "$tree_list") <(printf '%s\n' "$expected_sorted"))
+
+          if [ -n "$missing_from_list" ] || [ -n "$missing_from_tree" ]; then
+            echo "BLOCKED: TEST_ASSEMBLIES does not match the tests/ tree." >&2
+            [ -n "$missing_from_list" ] && { echo "In the tree, missing from TEST_ASSEMBLIES:" >&2; echo "$missing_from_list" | sed 's/^/  /' >&2; }
+            [ -n "$missing_from_tree" ] && { echo "In TEST_ASSEMBLIES, no matching project in the tree:" >&2; echo "$missing_from_tree" | sed 's/^/  /' >&2; }
+            exit 1
+          fi
+
+          echo "TEST_ASSEMBLIES matches the tests/ tree exactly: $tree_list"
 
   # --------------------------------------------------------------------------
   # gate: the required check. Named EXACTLY `Build & test` so the existing
@@ -958,6 +1030,17 @@ jobs:
           done
 
           expected_sorted=$(printf '%s\n' $TEST_ASSEMBLIES | sort)
+          # found_sorted is a bare `sort`, NOT `sort -u`, and that is load-bearing,
+          # not an inconsistency to tidy toward the `sort -u` calls below. Keeping
+          # duplicates in found_sorted is what lets `uniq -d` (below) detect a
+          # basename appearing twice across ./TestResults/*/ -- a duplicate that
+          # `sort -u` would silently collapse to one occurrence before it was ever
+          # visible. missing_names/unexpected_names then apply `sort -u` on top of
+          # this same variable because THEY are set comparisons (present vs absent),
+          # where a duplicate would only cause `comm` to double-count a line it
+          # should compare once. Unifying the two functions onto one sort silently
+          # drops either duplicate detection or the set comparison, depending on
+          # which way it's "fixed".
           found_sorted=$(printf '%s' "$found_list" | sed '/^$/d' | sort)
 
           missing_names=$(comm -23 <(printf '%s\n' "$expected_sorted") <(printf '%s\n' "$found_sorted" | sort -u))
@@ -974,7 +1057,7 @@ jobs:
             exit 1
           fi
 
-          echo "All ten expected trx basenames present exactly once: $expected_sorted"
+          echo "All ten expected trx basenames present exactly once: $(printf '%s\n' "$expected_sorted" | tr '\n' ' ')"
 
           for trx in ./TestResults/*/*.trx; do
             [ -f "$trx" ] || continue
