@@ -223,9 +223,9 @@ public class TestProcessGlobalStateTests
         BuiltAssemblies.ResolveTestAssemblyPath(assemblyName);
 
     /// <summary>
-    /// Thin forwarder to <see cref="BuiltAssemblies.ResolvePath"/> — kept under this name to avoid
-    /// churning every consumer. See <see cref="BuiltAssemblies"/> for the walk itself.
+    /// Thin forwarder to <see cref="BuiltAssemblies.ResolveAssemblyPath"/> — kept under this name to
+    /// avoid churning every consumer. See <see cref="BuiltAssemblies"/> for the walk itself.
     /// </summary>
     internal static string? ResolveAssemblyPath(string rootDirectoryName, string assemblyName) =>
-        BuiltAssemblies.ResolvePath(rootDirectoryName, assemblyName);
+        BuiltAssemblies.ResolveAssemblyPath(rootDirectoryName, assemblyName);
 }
