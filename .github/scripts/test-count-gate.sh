@@ -303,8 +303,26 @@ enforce_backend_floor() {
     # Each .trx's <ResultSummary><Counters .../> element carries both "total" (includes
     # skipped tests) and "executed" (tests that actually ran). Use "executed" so a
     # skipped test can't be counted toward the floor without actually running.
-    count=$(grep -o 'executed="[0-9]*"' "$trx" | head -1 | grep -o '[0-9]*')
-    count=${count:-0}
+    #
+    # `|| true` and the explicit BLOCK below, for the same reason as the shard
+    # sum loop above (arb-4f1). Under `set -euo pipefail` the ASSIGNMENT carries
+    # the pipeline's status, so a trx with no readable executed= figure ended
+    # this step at this line -- and the `count=${count:-0}` that used to follow
+    # could never be reached to supply its default, because the assignment that
+    # would have needed it had already killed the step. The old form therefore
+    # did not silently under-count as it appears to; it died with no message.
+    # Neither behaviour is right: a count that could not be read is not a count
+    # of zero, and treating it as one would let a malformed result file lower
+    # the run total toward the floor while looking like a real shrink.
+    count=$(grep -o 'executed="[0-9]*"' "$trx" | head -1 | grep -o '[0-9]*') || true
+    if ! printf '%s' "$count" | grep -qE '^[0-9]+$'; then
+      echo "BLOCKED: ${trx} carries no parseable executed= figure." >&2
+      echo "Its <ResultSummary><Counters/> element is missing or malformed, so this" >&2
+      echo "assembly's executed count cannot be read and the run total would be short by" >&2
+      echo "however many tests it actually ran -- indistinguishable from a real shrink" >&2
+      echo "against the floor. Blocking by name instead." >&2
+      exit 1
+    fi
     total=$((total + count))
   done
 

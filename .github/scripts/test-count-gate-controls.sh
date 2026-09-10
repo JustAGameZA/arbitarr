@@ -245,6 +245,29 @@ expect_block "the same trx basename twice blocks" "$d" check_trx_set \
   "Duplicated (same basename across group directories)" "${gate_env[@]}"
 
 # --- the ratchet floor
+# An unparseable trx in the WHOLE-RUN sum must be named too, not folded in as a
+# zero (arb-4f1). The unsharded assembly is the target here: check_shard_records
+# never looks at it, so only enforce_backend_floor can catch this one. Asserted
+# both ways -- the file is named, AND the floor message is absent, since a trx
+# counted as zero would drop the total below the floor and report a shrink that
+# never happened.
+d="$tmp_root/badtrx_run"
+make_good_fixture "$d"
+printf '<TestRun><ResultSummary/></TestRun>
+'   > "$d/TestResults/trx-O/Demo.Other.Tests.trx"
+out=$(run_gate "$d" enforce_backend_floor "${gate_env[@]}")
+if printf '%s' "$out" | grep -qF "carries no parseable executed= figure"   && printf '%s' "$out" | grep -qF "Demo.Other.Tests.trx"; then
+  if printf '%s' "$out" | grep -qF "is below master's last measured count"; then
+    fail "unparseable trx in the whole-run sum blocks by name"       "reported a floor breach, not the file"
+  else
+    pass "unparseable trx in the whole-run sum blocks by name"
+  fi
+else
+  fail "unparseable trx in the whole-run sum blocks by name" "did not name the file as the fault"
+  printf '%s
+' "$out" | sed 's/^/        /'
+fi
+
 d="$tmp_root/floor"
 make_good_fixture "$d"
 expect_block "a count below the floor blocks" "$d" enforce_backend_floor \

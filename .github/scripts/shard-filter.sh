@@ -19,21 +19,33 @@
 # i to shard (i % N) + 1.
 #
 # The assignment is round-robin over the SORTED class list, and it is
-# deliberately not weighted. Measured locally (49 classes, 363 tests,
-# 313.8 s of summed test time): the shards come out 202/161 tests and
-# 1 m 38 s / 25 s wall, which looks worth rebalancing and is not.
+# deliberately not weighted. Balance is adequate, so index-mod-N stays.
+#
+# HISTORY, not current evidence. The measurement that originally
+# justified leaving this unweighted (arb-adm: 49 classes, 363 tests,
+# 313.8 s summed, shards of 202/161 tests and 1 m 38 s / 25 s wall) is
+# superseded and is kept only to explain why weighting was rejected.
 # xunit runs maxParallelThreads=4 collections in parallel but never
 # splits a single class, so a shard's wall clock is
-# max(its summed time / 4, its heaviest class) -- and ONE class,
-# AuthEndpointsTests, is 80.9 s of the 313.8 s (86 s wall on its own).
-# Whichever shard holds it cannot finish sooner than that, so all three
-# candidate strategies -- this index round-robin, greedy longest-first
-# by test count, and greedy longest-first by MEASURED time (the best
-# any weighting could do) -- model to the SAME ~81 s job. Reweighting
-# buys nothing while costing a weights table that goes stale silently.
-# Going below ~81 s needs AuthEndpointsTests itself made faster or
-# split into several classes, not a cleverer partition -- that is
-# arb-n3q. See arb-adm for the measurement behind this comment.
+# max(its summed time / 4, its heaviest class). Back then ONE class,
+# AuthEndpointsTests, was 80.9 s of the 313.8 s, so whichever shard
+# held it could not finish sooner and all three candidate strategies --
+# this index round-robin, greedy longest-first by test count, and
+# greedy longest-first by MEASURED time (the best any weighting could
+# do) -- modelled to the SAME ~81 s job. That floor was structural: no
+# partition could go below it.
+#
+# arb-n3q (merged as PR #183) removed it by splitting that class into
+# seven. On #183's run the shards came out even -- A1 executed 182
+# tests in 39 s and A2 181 in 36 s -- so the imbalance the paragraph
+# above describes no longer exists, and none of those figures should be
+# read as describing the suite today. The heaviest class is now
+# AdminApiKeyRouteEnumerationTests at about 33 s, and the remaining
+# per-class floor is AuthPasswordChangeRateLimitTests at about 26-30 s,
+# which is one KDF-heavy test; its only lever is arb-hsm, not a
+# cleverer partition. Reweighting still buys nothing, and would still
+# cost a weights table that goes stale silently -- as this comment
+# itself did.
 #
 # Deriving both shards from one sorted list is what makes the partition
 # complete BY CONSTRUCTION: every discovered class lands in exactly one
@@ -228,6 +240,13 @@ shard_filter() {
     printf '%s\n' "$classes"
   } > "./TestResults/${a}.shard${k}of${n}.listed"
   # The trailing `.` is invariant 2 and is NOT a typo to tidy away.
+  #
+  # Placement is a function of sorted class NAME, not of cost: renaming a class
+  # or adding one re-parities every class after it in the sorted list. After
+  # such a change, check that the two heaviest classes did not land on the same
+  # shard. Nothing here enforces that -- the exact-sum gate proves the partition
+  # is COMPLETE, never that it is balanced -- so a re-parity that co-locates
+  # them shows up only as a slower job.
   terms=$(printf '%s\n' "$classes" \
           | awk -v k="$k" -v n="$n" 'NR % n == (k % n) { print "FullyQualifiedName~" $0 "." }' \
           | paste -sd'|' -)
