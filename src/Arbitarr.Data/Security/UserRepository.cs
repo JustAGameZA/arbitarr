@@ -88,7 +88,7 @@ public sealed class UserRepository
     /// interleaving in which both commit. SQLite serialises writers, so the second transaction's
     /// re-check genuinely observes the first's committed row. A same-username race is caught by the
     /// index; a different-username race is caught by the in-transaction count. Both are tested,
-    /// concurrently, by <c>AuthEndpointsTests.Concurrent_first_run_setup_creates_exactly_one_account</c>
+    /// concurrently, by <c>AuthSetupEndpointsTests.Concurrent_first_run_setup_creates_exactly_one_account</c>
     /// — which drives real parallel requests rather than asserting the shape of this code, and uses
     /// DISTINCT usernames on purpose so it exercises the in-transaction re-check rather than the
     /// unique index, which is the easier half.</para>
@@ -223,7 +223,7 @@ public sealed class UserRepository
     /// hash at the CURRENT iteration count regardless of what the old row used. So a hash written at
     /// PBKDF2/100,000 verifies here and the row lands at the configured cost afterwards, with no
     /// branch to get wrong. Asserted by
-    /// <c>AuthEndpointsTests.A_password_hashed_at_the_old_iteration_count_can_still_be_changed</c>.</para>
+    /// <c>AuthPasswordChangeSemanticsTests.A_password_hashed_at_the_old_iteration_count_can_still_be_changed</c>.</para>
     ///
     /// <para><b>BOTH KDF INVOCATIONS HAPPEN OUTSIDE THE TRANSACTION</b>, for the reason
     /// <see cref="CreateFirstUserAsync"/> records — and more strongly, because this path runs TWO of

@@ -16,7 +16,7 @@ namespace Arbitarr.Integration.Tests;
 /// credential answered. A session and an equivalently-scoped #58 API key are interchangeable at the
 /// gate, and a session is refused exactly where an equivalently-scoped key would be.
 ///
-/// <para><b>WHY THIS FILE EXISTS SEPARATELY FROM <see cref="AuthEndpointsTests"/>.</b> Those tests
+/// <para><b>WHY THIS FILE EXISTS SEPARATELY FROM <see cref="AuthSessionEndpointsTests"/>.</b> Those tests
 /// ask "does the session surface work?"; these ask "is there one authorization model or two?" The
 /// owner ruling on #44 names a second model as "the exact failure this pair exists to prevent", and
 /// the property is not visible from either credential's own tests — only from driving the SAME
@@ -27,7 +27,7 @@ namespace Arbitarr.Integration.Tests;
 /// With no key configured the resolver answers <c>NotConfigured</c> and #43's bootstrap bypass
 /// admits any local caller — which is every caller here — so the gate would answer 200 without ever
 /// consulting a credential and every comparison below would be between two bypasses rather than
-/// between two authorizations. See <c>AuthEndpointsTests.ConfigureAdminKeyAsync</c> for the same
+/// between two authorizations. See <c>AuthEndpointTestSupport.ConfigureAdminKeyAsync</c> for the same
 /// trap in its other form.</para>
 /// </summary>
 public sealed class SessionAndKeyAuthorizeIdenticallyTests
