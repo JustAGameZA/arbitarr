@@ -35,15 +35,11 @@ public sealed class SqliteConnectionOptions
     /// expressible purely via connection-string keywords in a way that's guaranteed to be
     /// verified, so it is set (and verified) explicitly by <see cref="SqliteConnectionFactory"/>
     /// after opening — this string only carries the busy timeout and cache mode.
+    ///
+    /// <para>Delegates to <see cref="DatabaseConnectionStrings.Application"/> rather than building
+    /// the string here, so this shape has exactly one definition. A restore clears the pool for
+    /// every string that type produces; a second definition drifting from it would be a pool
+    /// nothing clears (arb-n21).</para>
     /// </summary>
-    public string ToConnectionString()
-    {
-        var builder = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
-        {
-            DataSource = DatabasePath,
-            Cache = Microsoft.Data.Sqlite.SqliteCacheMode.Default,
-        };
-
-        return builder.ToString();
-    }
+    public string ToConnectionString() => DatabaseConnectionStrings.Application(DatabasePath);
 }

@@ -202,8 +202,16 @@ public sealed class RestoreService
     /// share lock, so overwriting <c>arbitarr.db</c> fails outright with a sharing violation - and
     /// on Linux, where the overwrite would be permitted, it is worse: the pooled handles keep
     /// reading the replaced inode, so the process would carry on serving the OLD database while the
-    /// new one sat on disk looking applied. <see cref="SqliteConnection.ClearAllPools"/> closes them
-    /// for real, which is the only reason the replacement below is safe to attempt at all.</para>
+    /// new one sat on disk looking applied. <see cref="SqlitePoolCleaner.ClearPoolsFor"/> closes
+    /// them for real, which is the only reason the replacement below is safe to attempt at all.
+    ///
+    /// <para>It clears the pool for EVERY connection string naming this database
+    /// (<see cref="DatabaseConnectionStrings.ForDatabase"/>), not just the one the application
+    /// itself opens: pools are keyed by the full connection string, so a second string naming the
+    /// same file is a second pool that clearing the first does not touch. It is deliberately NOT
+    /// <see cref="SqliteConnection.ClearAllPools"/>, which would also close the log store's
+    /// connections and every other unrelated pool in the process — the over-reach behind
+    /// arb-cbc/arb-5ba (arb-n21).</para>
     ///
     /// <para>The WAL and shared-memory sidecars of the OLD database are then deleted alongside it.
     /// Leaving them beside a replaced main file is the one way this operation can corrupt rather
@@ -239,7 +247,7 @@ public sealed class RestoreService
             File.Copy(stagedDatabasePath, incomingDatabase, overwrite: true);
             File.Copy(stagedSecretKeyPath, incomingSecretKey, overwrite: true);
 
-            SqliteConnection.ClearAllPools();
+            SqlitePoolCleaner.ClearPoolsFor(_paths.DatabasePath);
 
             TryDelete(_paths.DatabasePath + "-wal");
             TryDelete(_paths.DatabasePath + "-shm");
