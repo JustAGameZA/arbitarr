@@ -22,6 +22,12 @@ namespace Arbitarr.Data.Tests;
 /// B, and then assert PER CONNECTION STRING that a freshly-opened connection reads B. A surviving
 /// pooled handle hands back its cached open file — marker A — on Linux, and makes the replace throw
 /// on Windows. Both platforms fail if a pool was missed.</para>
+///
+/// <para><b>Why this class may clear pools under parallel execution.</b> Every string it clears
+/// embeds one of its own fixtures' GUID-distinct paths (including the <c>.incoming</c> one), and
+/// pools are keyed by the full string, so no neighbouring test's pool is reachable from here. That
+/// isolation is a property of the fixture paths: pointing any of these strings at a fixed path
+/// would reintroduce the cross-test interference this bead exists to close.</para>
 /// </summary>
 public sealed class SqlitePoolCleanerTests : IDisposable
 {

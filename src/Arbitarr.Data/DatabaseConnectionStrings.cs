@@ -89,9 +89,12 @@ public static class DatabaseConnectionStrings
     ///
     /// <para>Adding a shape here is what makes it covered. Adding one anywhere else is the bug this
     /// type exists to prevent, and <c>NoInlineDatabaseConnectionStringsTests</c> (in
-    /// <c>tests/Arbitarr.Architecture.Tests</c>) is what stops it silently: it reads this
+    /// <c>tests/Arbitarr.Architecture.Tests</c>) closes the BUILDER shape: it reads this
     /// assembly's IL and fails any type outside its named allow-list that constructs a
-    /// <c>SqliteConnectionStringBuilder</c> or a <c>SqliteConnection</c>.</para>
+    /// <c>SqliteConnectionStringBuilder</c> or a <c>SqliteConnection</c>. It cannot see a string
+    /// hand-concatenated inside a type that is allowed to open connections, so those types are
+    /// trusted by convention to take every string from here; that obligation is stated at each
+    /// of their call sites, not enforced by the scan.</para>
     /// </summary>
     public static IEnumerable<string> ForDatabase(string databasePath)
     {

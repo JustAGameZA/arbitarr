@@ -20,10 +20,12 @@ namespace Arbitarr.Data.Backup;
 /// replaced inode, so the process reads the old database while the restored one sits on disk
 /// looking applied. That is why the set comes from
 /// <see cref="DatabaseConnectionStrings.ForDatabase"/> rather than being listed here — one source,
-/// which a new call site cannot bypass without failing
+/// which a new call site cannot bypass with a builder without failing
 /// <c>NoInlineDatabaseConnectionStringsTests</c> (in <c>tests/Arbitarr.Architecture.Tests</c>): it
 /// reads this assembly's IL and fails any type outside its named allow-list that constructs a
-/// <c>SqliteConnectionStringBuilder</c> or a <c>SqliteConnection</c>.</para>
+/// <c>SqliteConnectionStringBuilder</c> or a <c>SqliteConnection</c>. The scan cannot see a string
+/// hand-concatenated inside a type that is allowed to open connections; those types are trusted
+/// by convention to take every string from <see cref="DatabaseConnectionStrings"/>.</para>
 /// </summary>
 public static class SqlitePoolCleaner
 {
