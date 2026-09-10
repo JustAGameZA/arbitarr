@@ -131,9 +131,12 @@ public sealed class AuthSetupEndpointsTests
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Add(AdminApiKeyFilter.SessionRequestHeaderName, "1");
 
+        // ADR 0012 dropped the floor to 1, so the only below-floor value is the empty string. Derived
+        // from the constant rather than hard-coded, so this test tracks the floor wherever it goes.
+        var belowFloor = new string('x', UserRepository.MinPasswordLength - 1);
         using var response = await client.PostAsJsonAsync(
             AuthEndpoints.SetupRoute,
-            new { username = Username, password = "short" });
+            new { username = Username, password = belowFloor });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
 

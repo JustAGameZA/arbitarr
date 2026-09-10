@@ -156,20 +156,31 @@ public static class AuthEndpoints
         SessionRepository sessions,
         UserRepository users,
         SettingsRepository settings,
+        LanPassthroughOptions lanPassthrough,
         CancellationToken cancellationToken)
     {
         var setupRequired = !await users.AnyUserAsync(cancellationToken);
 
+        // arb-lan-passthrough (ADR 0012): when passthrough is on and the caller is on a trusted
+        // socket peer, the SPA must not send them to the login screen, because the gate
+        // (AdminApiKeyFilter) will admit their subsequent admin calls with no cookie. A REAL session
+        // is still consulted first so a signed-in operator keeps seeing their username; passthrough
+        // is the fallback for a local caller with no (or no valid) cookie, and reports authenticated
+        // with no username, there being no account row to name. Setup, if still required, wins: an
+        // unclaimed instance should still offer account creation.
+        var passthroughAdmits = lanPassthrough.Enabled && !setupRequired
+            && TrustedNetwork.IsTrusted(httpContext.Connection.RemoteIpAddress);
+
         if (!httpContext.Request.Cookies.TryGetValue(ISessionAuthenticator.CookieName, out var token)
             || string.IsNullOrEmpty(token))
         {
-            return Results.Ok(new SessionResponse(Authenticated: false, Username: null, setupRequired));
+            return Results.Ok(new SessionResponse(Authenticated: passthroughAdmits, Username: null, setupRequired));
         }
 
         var resolution = await authenticator.AuthenticateAsync(token, ApiKeyScope.Admin, cancellationToken);
         if (resolution.Outcome is not CredentialResolutionOutcome.Authorized)
         {
-            return Results.Ok(new SessionResponse(Authenticated: false, Username: null, setupRequired));
+            return Results.Ok(new SessionResponse(Authenticated: passthroughAdmits, Username: null, setupRequired));
         }
 
         // Re-read the row to name the operator. The authenticator deliberately does not carry a
