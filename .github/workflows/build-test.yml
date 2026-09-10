@@ -536,6 +536,25 @@ jobs:
             # here is wrong. One listed row is one test case the run will
             # execute, which is precisely what the gate compares against the
             # summed executed=.
+            #
+            # That last sentence is CONTINGENT, not structural, and the day it
+            # stops being true this check goes red on an innocent partition.
+            # It holds because every theory in this assembly has its data
+            # available at DISCOVERY time: today 23 [Theory], 70 [InlineData],
+            # and one [MemberData] over two literal arrays, which --list-tests
+            # enumerates as its full 12 rows. A [MemberData] backed by
+            # something computed at RUN time -- a database read, a file glob --
+            # would be listed ONCE and executed N times, so the sum would
+            # exceed the recorded count and the gate would report the UNDER
+            # message ("a test fell into NEITHER shard") against a partition
+            # that is perfectly correct.
+            #
+            # The response to that is to revisit THIS check -- count such
+            # theories from the trx side, or record them separately -- and NOT
+            # to relax the assertion to `>=`. A `>=` restores exactly the
+            # over-count blindness the whole bead exists to close: it is the
+            # lower bound the ratchet already gives, and a test running in two
+            # shards would once again pass by adding to the total.
             tests=$(printf '%s\n' "$names" | sed '/^$/d' | wc -l | tr -d ' ')
             # Fail closed on zero, separately from the $classes emptiness check
             # above. An empty or unparsed listing would otherwise record tests=0,
