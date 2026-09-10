@@ -21,6 +21,21 @@
 # Asserts the set of trx basenames under ./TestResults/*/ is exactly the set
 # TEST_ASSEMBLIES and SHARD_ASSEMBLIES imply, each appearing exactly once.
 check_trx_set() {
+  # Block by name on an unset input (arb-2nx), rather than letting
+  # `set -euo pipefail` kill this at the first use of the variable with
+  # bash's unnamed "unbound variable" -- which for TEST_ASSEMBLIES is deep
+  # inside the loop below, not at the top where the cause is visible.
+  if [ -z "${TEST_ASSEMBLIES:-}" ]; then
+    echo "BLOCKED: check_trx_set requires TEST_ASSEMBLIES to be set." >&2
+    exit 1
+  fi
+  # SHARD_ASSEMBLIES may legitimately be EMPTY (no assembly is sharded --
+  # see build-test.yml's own "No assembly is sharded" branch), so only
+  # unset, not empty, is a fault here.
+  if [ -z "${SHARD_ASSEMBLIES+x}" ]; then
+    echo "BLOCKED: check_trx_set requires SHARD_ASSEMBLIES to be set." >&2
+    exit 1
+  fi
 
   # Assert the trx SET by name, not just the count (arb-6ke). A
   # misspelled matrix.assemblies entry plus a duplicate across groups
@@ -108,6 +123,12 @@ check_trx_set() {
 # byte-identical .listed record and that the shards' summed executed= equals the
 # discovered count that record carries.
 check_shard_records() {
+  # Block by name on an unset input (arb-2nx). SHARD_ASSEMBLIES may
+  # legitimately be empty (no assembly is sharded), so only unset is a fault.
+  if [ -z "${SHARD_ASSEMBLIES+x}" ]; then
+    echo "BLOCKED: check_shard_records requires SHARD_ASSEMBLIES to be set." >&2
+    exit 1
+  fi
 
   # Completeness of a shard split, proven independently of the ratchet
   # (arb-adm, tightened by arb-u9i). Each shard job recorded the SORTED
@@ -295,6 +316,23 @@ check_shard_records() {
 # Sums executed= across every trx and ratchets it against master's last measured
 # count. Sets BACKEND_COUNT in $GITHUB_ENV.
 enforce_backend_floor() {
+  # Block by name on an unset input (arb-2nx), rather than letting
+  # `set -euo pipefail` kill this with bash's unnamed "unbound variable" --
+  # for GITHUB_ENV that would otherwise happen at line 334 below, AFTER the
+  # count has already been printed, which reads like a partial pass.
+  if [ -z "${BACKEND_FLOOR:-}" ]; then
+    echo "BLOCKED: enforce_backend_floor requires BACKEND_FLOOR to be set." >&2
+    exit 1
+  fi
+  if [ -z "${FLOOR_SOURCE:-}" ]; then
+    echo "BLOCKED: enforce_backend_floor requires FLOOR_SOURCE to be set." >&2
+    exit 1
+  fi
+  if [ -z "${GITHUB_ENV:-}" ]; then
+    echo "BLOCKED: enforce_backend_floor requires GITHUB_ENV to be set." >&2
+    exit 1
+  fi
+
   local floor="$BACKEND_FLOOR"
   local total=0
 

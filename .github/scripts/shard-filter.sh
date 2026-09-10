@@ -86,11 +86,11 @@
 #      both shards derived the same bad list. (The exact-sum check
 #      below WOULD fire on that, since the recorded test count comes
 #      from the same listing; this assertion stays because it names the
-#      cause where the sum names only the symptom.) Widening the class alone is not accepted as
-#      the guard, so every parsed name is also asserted to start with
-#      the assembly's root namespace AND carry at least one segment
-#      beyond it -- a namespace-only token is BLOCKED by name, never
-#      silently treated as a wildcard.
+#      cause where the sum names only the symptom.) Widening the class
+#      alone is not accepted as the guard, so every parsed name is also
+#      asserted to start with the assembly's root namespace AND carry at
+#      least one segment beyond it -- a namespace-only token is BLOCKED
+#      by name, never silently treated as a wildcard.
 #
 #   2. The terms are TERMINATED. `FullyQualifiedName~<Class>` is a
 #      SUBSTRING match, so a class whose name is a prefix of another
@@ -109,6 +109,12 @@
 shard_filter() {
   local dll="$1" k="$2" n="$3" a="$4"
   local listing names classes count tests terms bad
+  # Block by name on an unset input (arb-2nx), before the --list-tests call
+  # below that would otherwise use an empty filter silently.
+  if [ -z "${TEST_FILTER:-}" ]; then
+    echo "BLOCKED: shard_filter requires TEST_FILTER to be set." >&2
+    exit 1
+  fi
   # ONE --list-tests run feeds BOTH records. The test count and the
   # class list must describe the SAME discovery, or the gate's
   # exact-sum assertion compares a count against a partition it does
