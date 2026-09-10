@@ -44,12 +44,10 @@ a file an in-flight operation on the current run is still writing. `StagingFileN
 the sweep's whole contract: a new staging writer must register its prefix there, or its orphans are
 never reclaimed.
 
-**Because `backup-staging/` and the config database share the config directory's filesystem,
-`RestoreService.ApplyValidatedFiles`'s `File.Move` calls are renames, not cross-device copies** —
-the validated database and secret are copied beside their targets first (still within the config
-directory) and then moved onto the live paths, which is what makes that final step atomic. Moving
-staging back to the OS temp directory would put it on a different volume from the config directory
-in the general case and silently turn that rename back into a copy.
+**Staging lives under the config directory rather than the OS temp directory.** See
+[ADR 0013](../adr/0013-backup-staging-under-config-directory.md) for why (atomic rename across the
+`RestoreService.ApplyValidatedFiles` `File.Move` calls, and the alternative rejected in favour of
+it).
 
 ### Connection pools are keyed by the full string
 
