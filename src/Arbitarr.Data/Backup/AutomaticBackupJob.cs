@@ -37,6 +37,7 @@ public sealed class AutomaticBackupJob
     private readonly BackupStateStore _state;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger _logger;
+    // Never mutated after construction in production; only WithDeleteFileForTests writes it.
     private Action<FileInfo> _deleteFile = file => file.Delete();
 
     public AutomaticBackupJob(
@@ -120,6 +121,9 @@ public sealed class AutomaticBackupJob
                 deleteFile(file);
                 pruned++;
             }
+            // No OperationCanceledException guard precedes this broad catch: the loop is
+            // synchronous and the cancellation token is deliberately not threaded into it. If a
+            // token is ever threaded through, add the guard ahead of this broad catch.
             catch (Exception ex)
             {
                 // Any delete failure (locked archive, permissions, ...) is logged and skipped
