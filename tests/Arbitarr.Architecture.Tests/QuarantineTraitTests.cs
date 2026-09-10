@@ -310,35 +310,9 @@ public class QuarantineTraitTests
         }
     }
 
-    /// <summary>
-    /// Finds a test project's built assembly by walking from this assembly's own output directory
-    /// to the sibling project's, preserving the configuration and target-framework segments — so
-    /// the scan works unchanged under <c>-c Release</c>, which CI uses. Mirrors
-    /// <see cref="TestProcessGlobalStateTests"/>'s resolver deliberately: two scans that disagree
-    /// about which assemblies exist would let a project be covered by one and silently missed by
-    /// the other.
-    /// </summary>
-    private static string? ResolveTestAssemblyPath(string assemblyName)
-    {
-        // .../tests/Arbitarr.Architecture.Tests/bin/<configuration>/<tfm>/
-        var here = new DirectoryInfo(AppContext.BaseDirectory);
-        var targetFramework = here.Name;
-        var configuration = here.Parent?.Name;
-        var testsRoot = here.Parent?.Parent?.Parent?.Parent;
-
-        if (configuration is null || testsRoot is null)
-        {
-            return null;
-        }
-
-        var candidate = Path.Combine(
-            testsRoot.FullName,
-            assemblyName,
-            "bin",
-            configuration,
-            targetFramework,
-            assemblyName + ".dll");
-
-        return File.Exists(candidate) ? candidate : null;
-    }
+    // The parent-walk that resolves a sibling test assembly's build output lives once, on
+    // TestProcessGlobalStateTests.ResolveTestAssemblyPath — see its remarks for why the walk depth
+    // and the configuration/TFM-preserving logic must not be duplicated here.
+    private static string? ResolveTestAssemblyPath(string assemblyName) =>
+        TestProcessGlobalStateTests.ResolveTestAssemblyPath(assemblyName);
 }

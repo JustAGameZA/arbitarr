@@ -231,7 +231,10 @@ public class TestProcessGlobalStateTests
     /// <summary>
     /// Finds a test project's built assembly by walking from this assembly's own output directory
     /// to the sibling project's, preserving the configuration and target-framework segments — so
-    /// the scan works unchanged under <c>-c Release</c>, which CI uses.
+    /// the scan works unchanged under <c>-c Release</c>, which CI uses. Also called by
+    /// <see cref="QuarantineTraitTests"/>, which resolves the same ten test assemblies for the same
+    /// reason (arb-2nm): two copies of this walk would let the depth drift between the two scans
+    /// without either ever failing loudly.
     /// </summary>
     internal static string? ResolveTestAssemblyPath(string assemblyName) =>
         ResolveAssemblyPath("tests", assemblyName);
@@ -242,7 +245,9 @@ public class TestProcessGlobalStateTests
     ///
     /// <para>Shared with <see cref="ProductionProcessGlobalStateTests"/> rather than duplicated:
     /// two copies of this walk would drift, and the one that drifted would start returning null and
-    /// fail loudly — or worse, silently scan nothing if a caller ever treated null as "clean".</para>
+    /// fail loudly — or worse, silently scan nothing if a caller ever treated null as "clean". The
+    /// five-parent depth and the configuration-from-parent-name logic exist exactly once, here; see
+    /// <see cref="ResolveTestAssemblyPath"/> above for the other consumer.</para>
     /// </summary>
     internal static string? ResolveAssemblyPath(string rootDirectoryName, string assemblyName)
     {
