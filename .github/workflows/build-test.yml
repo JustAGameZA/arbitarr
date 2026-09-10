@@ -842,6 +842,12 @@ jobs:
       # ProjectReference would leave a stale allow-list entry masking a graph
       # that could now do the job on its own.
       #
+      # arb-2p6: the check is bidirectional. A src project added as a
+      # ProjectReference but never added to ProductionAssemblyNames is caught
+      # too (comm -13 below) -- otherwise it silently escapes the scan (and the
+      # ClearAllPools/global-state bans it enforces), which is exactly the
+      # vacuous-pass class the array's own doc comment argues against.
+      #
       # The extraction below is a NARROW sed address range, not a C# parser
       # (scripts/test-affected.sh's own comment bans parsing C# from bash for
       # the same reason: this step runs in CI only). It matches from the
@@ -853,7 +859,7 @@ jobs:
       # different indent, a visibility change), the range must find ZERO
       # lines and fail loudly below -- never silently produce a partial or
       # empty list that then passes the union checks vacuously.
-      - name: Verify every src assembly scanned by Architecture.Tests is referenced or allow-listed
+      - name: Verify Architecture.Tests scan list and reference graph match in both directions
         shell: bash
         run: |
           set -euo pipefail
@@ -908,8 +914,13 @@ jobs:
           unreferenced=$(comm -23 <(printf '%s\n' "$scanned_sorted") <(printf '%s\n' "$referenced_names"))
           unreferenced_unlisted=$(comm -23 <(printf '%s\n' "$unreferenced") <(printf '%s\n' "$allow_listed_sorted"))
           stale_allow_listed=$(comm -12 <(printf '%s\n' "$allow_listed_sorted") <(printf '%s\n' "$referenced_names"))
+          # arb-2p6: the reverse direction. A src project added as a ProjectReference but
+          # never added to ProductionAssemblyNames silently escapes the scan (and the
+          # ClearAllPools/global-state bans it enforces) -- the same vacuous-pass class the
+          # array's own doc comment argues against, just approached from the other set.
+          unscanned=$(comm -13 <(printf '%s\n' "$scanned_sorted") <(printf '%s\n' "$referenced_names"))
 
-          if [ -n "$unreferenced_unlisted" ] || [ -n "$stale_allow_listed" ]; then
+          if [ -n "$unreferenced_unlisted" ] || [ -n "$stale_allow_listed" ] || [ -n "$unscanned" ]; then
             echo "BLOCKED: ${scan_file}'s ProductionAssemblyNames drifted from the" >&2
             echo "Architecture.Tests reference graph." >&2
             if [ -n "$unreferenced_unlisted" ]; then
@@ -924,10 +935,18 @@ jobs:
               echo "case alone unless Host itself is the name being removed):" >&2
               echo "$stale_allow_listed" | sed 's/^/  /' >&2
             fi
+            if [ -n "$unscanned" ]; then
+              echo "Referenced by ${csproj_file} but not in ${scan_file}'s ProductionAssemblyNames" >&2
+              echo "-- this project's IL is never scanned, so it silently escapes the" >&2
+              echo "ClearAllPools/global-state bans. Add it to ProductionAssemblyNames, or if it" >&2
+              echo "is deliberately unscanned, explain why in a comment there rather than" >&2
+              echo "leaving it silently absent:" >&2
+              echo "$unscanned" | sed 's/^/  /' >&2
+            fi
             exit 1
           fi
 
-          echo "Every scanned assembly is referenced or allow-listed, and the allow-list has no stale entries."
+          echo "Every scanned assembly is referenced or allow-listed (no stale allow-list entries), and every referenced src project is scanned."
 
       # arb-hbt: BuiltAssemblies.TestAssemblyNames (arb-hxa) is the C# list the IL
       # scans in TestProcessGlobalStateTests and QuarantineTraitTests iterate over,
