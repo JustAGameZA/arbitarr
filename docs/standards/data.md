@@ -82,7 +82,7 @@ one place all four are listed.
 
 **What the IL scan does and does not close.** `NoInlineDatabaseConnectionStringsTests` (also listed
 in the section linked above) reads `Arbitarr.Data`'s IL and fails any type outside its named
-allow-list that constructs a `SqliteConnectionStringBuilder` or a `SqliteConnection` — it closes the
+allow-lists that constructs a `SqliteConnectionStringBuilder` or a `SqliteConnection` — it closes the
 **builder** shape. It cannot see a string hand-concatenated inside a type that is allowed to open
 connections, so those types are **trusted by convention** to take every string from
 `DatabaseConnectionStrings`; that obligation is stated at each of their call sites, not enforced by

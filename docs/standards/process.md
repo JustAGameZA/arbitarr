@@ -137,12 +137,12 @@ below.
   using xunit's own test discovery so that a quarantined test in an assembly that fails to load, or
   one hidden behind a custom discoverer, still cannot escape the check by simply not appearing.
 
-Two other test classes in the same project — `AiMediaIsolationTests`, `CoreIsolationTests`,
+Seven other test classes in the same project. Five — `AiMediaIsolationTests`, `CoreIsolationTests`,
 `AssemblyNamingTests`, `DependencyDirectionTests` and `HostIsolationTests` — load assemblies with
 `System.Reflection` (`Assembly.LoadFrom`) instead of Cecil; they check reference graphs and naming,
-not IL bodies, so they do not need to see inside a method. `SourceTreeNamingTests` and
-`SecretReaderSingleCallerTests` scan the source tree as text (`.csproj`/`.sln` contents and call-site
-line matches respectively), not compiled output at all. None of the five are Cecil scans and none are
+not IL bodies, so they do not need to see inside a method. The other two, `SourceTreeNamingTests` and
+`SecretReaderSingleCallerTests`, scan the source tree as text (`.csproj`/`.sln` contents and call-site
+line matches respectively), not compiled output at all. None of the seven are Cecil scans and none are
 listed above.
 
 ---
