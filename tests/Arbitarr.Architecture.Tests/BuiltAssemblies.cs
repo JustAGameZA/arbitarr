@@ -94,6 +94,14 @@ internal static class BuiltAssemblies
         ResolveAssemblyPath("tests", assemblyName);
 
     /// <summary>
+    /// Number of parent directories between <see cref="AppContext.BaseDirectory"/> and the
+    /// repository root, for a project shaped <c>&lt;root&gt;/tests/&lt;Project&gt;/bin/
+    /// &lt;Configuration&gt;/&lt;tfm&gt;/</c> — five segments below root: tfm, Configuration, bin,
+    /// Project, tests.
+    /// </summary>
+    private const int ParentsFromAssemblyDirectoryToRepositoryRoot = 5;
+
+    /// <summary>
     /// Finds a built assembly under <paramref name="rootDirectoryName"/> (<c>tests</c> or
     /// <c>src</c>), preserving this assembly's own configuration and target-framework segments.
     ///
@@ -111,14 +119,6 @@ internal static class BuiltAssemblies
     /// doing so. A missing assembly therefore FAILS the scan loudly rather than passing vacuously
     /// over an empty set.</para>
     /// </summary>
-    /// <summary>
-    /// Number of parent directories between <see cref="AppContext.BaseDirectory"/> and the
-    /// repository root, for a project shaped <c>&lt;root&gt;/tests/&lt;Project&gt;/bin/
-    /// &lt;Configuration&gt;/&lt;tfm&gt;/</c> — five segments below root: tfm, Configuration, bin,
-    /// Project, tests.
-    /// </summary>
-    private const int ParentsFromAssemblyDirectoryToRepositoryRoot = 5;
-
     internal static string? ResolveAssemblyPath(string rootDirectoryName, string assemblyName)
     {
         // .../tests/Arbitarr.Architecture.Tests/bin/<configuration>/<tfm>/
@@ -142,7 +142,7 @@ internal static class BuiltAssemblies
         {
             throw new InvalidOperationException(
                 $"BuiltAssemblies.ResolveAssemblyPath walked {ParentsFromAssemblyDirectoryToRepositoryRoot} " +
-                $"parent director{(ParentsFromAssemblyDirectoryToRepositoryRoot == 1 ? "y" : "ies")} up from " +
+                "parent directories up from " +
                 $"AppContext.BaseDirectory ('{startDirectory}') and landed on " +
                 $"'{repositoryRoot.FullName}', which does not contain Arbitarr.sln. This means the walk " +
                 "depth no longer matches this assembly's output directory shape, not that the target " +
