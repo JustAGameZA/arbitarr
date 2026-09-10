@@ -17,9 +17,17 @@ namespace Arbitarr.Host.Backup;
 /// single pass at startup is the whole job. <c>ExecuteAsync</c> runs it and returns; it does not
 /// loop or hold the host's shutdown token.</para>
 ///
-/// <para><b>Runs after other hosted services register but does not block them</b> — registered
-/// alongside the other hosted services in <c>Program.cs</c>; see the comment there for ordering.
-/// </para>
+/// <para><b>The no-race mechanism is the process-start cut-off, not hosted-service ordering.</b>
+/// <c>BackgroundService.ExecuteAsync</c> is NOT awaited before the host reports started (that is
+/// why <c>StagingSweepIntegrationTests</c> polls rather than asserting immediately) — Kestrel can
+/// already be serving requests while this pass is still enumerating the directory. What actually
+/// makes that safe is that THIS service captures <c>processStartUtc</c> once, below, before calling
+/// <see cref="StagingSweep.Run(string, DateTime, ILogger)"/> — <c>Run</c> itself does not capture
+/// anything, it only receives the instant and skips any file whose last write is at or after it. A
+/// request-path writer that starts after the cut-off therefore can never have its file swept,
+/// regardless of how far startup has otherwise progressed. A per-file <c>DateTime.UtcNow</c>
+/// "tidy-up" in <see cref="StagingSweep"/> would reintroduce exactly this race — see the
+/// <c>&gt;=</c> comment there.</para>
 /// </summary>
 public sealed class StagingSweepService(
     BackupPaths paths,

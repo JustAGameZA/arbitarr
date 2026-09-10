@@ -70,6 +70,30 @@ public sealed class StagingSweepTests : IDisposable
     }
 
     [Fact]
+    public void A_file_written_at_exactly_the_cut_off_instant_survives()
+    {
+        Directory.CreateDirectory(StagingDir);
+
+        // Truncate to whole seconds: File.SetLastWriteTimeUtc round-trips exactly at that
+        // granularity on every filesystem CI uses, so the comparison below is a true tie rather
+        // than an off-by-a-few-ticks near-miss.
+        var processStart = new DateTime(
+            DateTime.UtcNow.Ticks / TimeSpan.TicksPerSecond * TimeSpan.TicksPerSecond,
+            DateTimeKind.Utc);
+
+        var tiedPath = Path.Combine(StagingDir, StagingFileNames.UploadPrefix + "tied");
+        File.WriteAllText(tiedPath, "staging test content");
+        File.SetLastWriteTimeUtc(tiedPath, processStart);
+
+        var deleted = StagingSweep.Run(StagingDir, processStart, NullLogger.Instance);
+
+        // >= , not > : a file written at or after the cut-off is treated as in-flight on THIS run
+        // and must never be swept, even when its timestamp exactly equals processStartUtc.
+        Assert.Equal(0, deleted);
+        Assert.True(File.Exists(tiedPath), "A file written at exactly the cut-off instant must survive the sweep.");
+    }
+
+    [Fact]
     public void A_missing_staging_directory_does_not_throw_and_reports_zero()
     {
         Assert.False(Directory.Exists(StagingDir));
@@ -116,6 +140,43 @@ public sealed class StagingSweepTests : IDisposable
         Assert.Contains(
             logger.Warnings,
             w => w.Contains(Path.GetFileName(lockedPath), StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void A_hostile_delete_failure_outside_IOException_and_UnauthorizedAccessException_is_skipped_and_others_still_delete()
+    {
+        Directory.CreateDirectory(StagingDir);
+        var processStart = DateTime.UtcNow;
+
+        var hostilePath = WriteFile(StagingDir, StagingFileNames.UploadPrefix + "hostile", ageMinutes: 30);
+        var deletablePath = WriteFile(StagingDir, StagingFileNames.UploadPrefix + "deletable", ageMinutes: 30);
+
+        var logger = new CapturingLogger();
+
+        // NotSupportedException (e.g. from a hostile/malformed path) is neither an IOException nor
+        // an UnauthorizedAccessException, so the narrow `when (ex is IOException or
+        // UnauthorizedAccessException)` filter does NOT catch it here -- it escapes Run entirely,
+        // and the sibling file below is never reached. This is the positive control for widening
+        // the catch filter to `catch (Exception ex)`: with the old narrow filter, this test fails
+        // because the NotSupportedException propagates out of StagingSweep.Run instead of being
+        // logged and skipped.
+        var deleted = StagingSweep.Run(StagingDir, processStart, logger, path =>
+        {
+            if (string.Equals(path, hostilePath, StringComparison.Ordinal))
+            {
+                throw new NotSupportedException("Simulated: hostile path rejected by the delete action.");
+            }
+
+            File.Delete(path);
+        });
+
+        Assert.Equal(1, deleted);
+        Assert.True(File.Exists(hostilePath), "The file that failed with a non-IO/UnauthorizedAccess exception must survive the sweep.");
+        Assert.False(File.Exists(deletablePath), "The deletable sibling must still be deleted despite the earlier failure.");
+
+        Assert.Contains(
+            logger.Warnings,
+            w => w.Contains(Path.GetFileName(hostilePath), StringComparison.Ordinal));
     }
 
     [Fact]
