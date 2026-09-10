@@ -40,6 +40,12 @@ on:
 # `include` entries, which is exactly why arb-bj7 adds a guards step that
 # unions the matrix groups and diffs them against this list instead. Sorted
 # and space-separated; consumers split on whitespace.
+#
+# BuiltAssemblies.TestAssemblyNames (tests/Arbitarr.Architecture.Tests/BuiltAssemblies.cs)
+# is a DELIBERATELY INDEPENDENT C# counterpart to this token, not a copy of it --
+# see that class's remarks for why the two are kept apart. The guards job's
+# "Verify BuiltAssemblies.TestAssemblyNames matches TEST_ASSEMBLIES" step (arb-hbt)
+# is what diffs them and catches drift between the two.
 env:
   TEST_FILTER: "Category!=Timing&Category!=Load&Category!=Quarantine"
   TEST_ASSEMBLIES: "Arbitarr.Ai.Tests Arbitarr.Api.Tests Arbitarr.Architecture.Tests Arbitarr.Core.Identity.Tests Arbitarr.Core.Tests Arbitarr.Data.Tests Arbitarr.Host.Tests Arbitarr.Integration.Tests Arbitarr.Media.Tests Arbitarr.Sources.NzbHydra.Tests"
@@ -922,6 +928,62 @@ jobs:
           fi
 
           echo "Every scanned assembly is referenced or allow-listed, and the allow-list has no stale entries."
+
+      # arb-hbt: BuiltAssemblies.TestAssemblyNames (arb-hxa) is the C# list the IL
+      # scans in TestProcessGlobalStateTests and QuarantineTraitTests iterate over,
+      # and it is DELIBERATELY INDEPENDENT of TEST_ASSEMBLIES above (see the class
+      # remarks in BuiltAssemblies.cs) -- the two guards below exist precisely to
+      # catch drift between them, not to merge them into one source of truth. Until
+      # this step, nothing diffed TestAssemblyNames against TEST_ASSEMBLIES: a name
+      # deleted from the C# list just made the scans iterate nine assemblies
+      # instead of ten, with no count or set assertion anywhere to notice (found by
+      # worker-20 while doing arb-hxa -- the intended positive control for that
+      # work did not fail anything before or after the extraction).
+      #
+      # The extraction is the SAME narrow sed range technique as
+      # ProductionAssemblyNames above, keyed to TestAssemblyNames' own declaration
+      # shape instead: from the opening `internal static readonly string[]
+      # TestAssemblyNames =` line to the closing bare `];` line, reading only
+      # `"Name",` entries between them. A reformatted declaration makes the range
+      # find ZERO names, which fails loudly below rather than letting the diff pass
+      # vacuously over an empty list.
+      - name: Verify BuiltAssemblies.TestAssemblyNames matches TEST_ASSEMBLIES
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          [ -n "${TEST_ASSEMBLIES:-}" ] || { echo "BLOCKED: TEST_ASSEMBLIES is empty" >&2; exit 1; }
+
+          scan_file="tests/Arbitarr.Architecture.Tests/BuiltAssemblies.cs"
+
+          scanned_names=$(sed -n '/^[[:space:]]*internal static readonly string\[\] TestAssemblyNames =[[:space:]]*$/,/^[[:space:]]*\];[[:space:]]*$/p' "$scan_file" \
+            | sed -n 's/^[[:space:]]*"\([A-Za-z0-9.]*\)",\{0,1\}[[:space:]]*$/\1/p')
+
+          if [ -z "$scanned_names" ]; then
+            echo "BLOCKED: found no assembly names between the 'TestAssemblyNames ='" >&2
+            echo "declaration and its closing '];' in ${scan_file}. This extraction is a" >&2
+            echo "narrow sed range over that exact shape (8-space indented \"Name\", entries" >&2
+            echo "between an 'internal static readonly string[] TestAssemblyNames =' line" >&2
+            echo "and a bare '];' line) -- if the array was renamed, reformatted, or its" >&2
+            echo "visibility changed, fix this extraction rather than letting the diff below" >&2
+            echo "pass vacuously over zero names." >&2
+            exit 1
+          fi
+
+          scanned_sorted=$(printf '%s\n' "$scanned_names" | sort -u)
+          expected_sorted=$(printf '%s\n' $TEST_ASSEMBLIES | sort -u)
+
+          missing_from_list=$(comm -23 <(printf '%s\n' "$expected_sorted") <(printf '%s\n' "$scanned_sorted"))
+          extra_in_list=$(comm -13 <(printf '%s\n' "$expected_sorted") <(printf '%s\n' "$scanned_sorted"))
+
+          if [ -n "$missing_from_list" ] || [ -n "$extra_in_list" ]; then
+            echo "BLOCKED: ${scan_file}'s TestAssemblyNames drifted from TEST_ASSEMBLIES." >&2
+            [ -n "$missing_from_list" ] && { echo "In TEST_ASSEMBLIES, missing from TestAssemblyNames (the IL scans silently" >&2; echo "skip these):" >&2; echo "$missing_from_list" | sed 's/^/  /' >&2; }
+            [ -n "$extra_in_list" ] && { echo "In TestAssemblyNames, not in TEST_ASSEMBLIES (scans an assembly this build" >&2; echo "does not produce):" >&2; echo "$extra_in_list" | sed 's/^/  /' >&2; }
+            exit 1
+          fi
+
+          echo "BuiltAssemblies.TestAssemblyNames matches TEST_ASSEMBLIES exactly."
 
       # arb-5sg (1 of 2): a tests/*.Tests project that is in TEST_ASSEMBLIES
       # and present in the tree but missing from Arbitarr.sln builds no dll --
