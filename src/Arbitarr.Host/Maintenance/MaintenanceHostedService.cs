@@ -64,8 +64,8 @@ public sealed class MaintenanceHostedService(
             }
             catch (Exception ex)
             {
-                // A failed maintenance pass must not take the host down: BackgroundService faults
-                // propagate to the host by default. Log and retry on the next tick.
+                // Per-item error handling (docs/standards/architecture.md). Log and retry on the
+                // next tick.
                 _logger.LogError(ex, "Maintenance job run failed; will retry next cycle.");
             }
 
