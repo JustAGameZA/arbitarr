@@ -231,11 +231,11 @@ arch_test_project=$(basename "$arch_csproj" .csproj)
 # Arbitarr.Host (NU1605 blocks that ProjectReference -- see the csproj's own comment
 # on its Mono.Cecil package reference), so Host is the only scanned src/ project the
 # project-reference graph built above cannot reach on its own. Its IL is still read,
-# by FILE PATH, in ProductionProcessGlobalStateTests.cs's ProductionAssemblyNames
-# array -- a change under src/Arbitarr.Host/ must select Architecture.Tests by name
-# here rather than through the graph. A future graph-invisible src/ assembly (another
-# NU1605 case) needs the same by-name addition; ProductionAssemblyNames in that file
-# is where to check whether one has appeared.
+# by FILE PATH, via BuiltAssemblies.ProductionAssemblyNames (arb-hxa; formerly on
+# ProductionProcessGlobalStateTests.cs directly) -- a change under src/Arbitarr.Host/
+# must select Architecture.Tests by name here rather than through the graph. A future
+# graph-invisible src/ assembly (another NU1605 case) needs the same by-name addition;
+# BuiltAssemblies.ProductionAssemblyNames is where to check whether one has appeared.
 #
 # Transitive dependents of one project: every node from which the project is
 # reachable along reference edges. Plain BFS over the edge list in awk.
@@ -278,8 +278,9 @@ while IFS= read -r path; do
         # EXCEPT Host (NU1605 blocks that ProjectReference), so Host is the
         # one scanned src/ project the reference graph alone cannot reach,
         # even though ProductionProcessGlobalStateTests still scans its IL by
-        # file path (see 2b above). A future graph-invisible src/ assembly
-        # needs the same by-name addition here.
+        # file path via BuiltAssemblies.ProductionAssemblyNames (arb-hxa; see
+        # 2b above). A future graph-invisible src/ assembly needs the same
+        # by-name addition here.
         case "$proj" in
           Arbitarr.Host) changed_projects["$arch_test_project"]=1 ;;
         esac
