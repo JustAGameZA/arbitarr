@@ -48,7 +48,11 @@ is no floor file to edit, and none to conflict on.
 
 Every `Build & test` run records what it measured — backend by summing `executed="N"` across the
 `.trx` files every matrix group uploaded, frontend from `numPassedTests` in `vitest-report.json` —
-into a `test-counts` artifact. Every run then resolves its floor by downloading that artifact from
+into a `test-counts` artifact. Before summing, the `gate` job asserts the downloaded `.trx` set by
+basename against `TEST_ASSEMBLIES` (each of the ten exactly once); the `guards` job separately
+verifies that the backend matrix groups union to that same list, and that the list matches the
+`tests/` tree (see [PR flow](#pr-flow) below and the comments in `build-test.yml`). Every run then
+resolves its floor by downloading that artifact from
 the latest *successful* `Build & test` run on `master` other than itself, and fails if either count
 came in below it. Selecting "other than itself" is what makes a push to master enforce the ratchet
 too: master is compared against its own predecessor, so a shrink merged by force is still caught.
@@ -246,13 +250,15 @@ matrix (A = Integration, B = Data + Api + Core, C = Host + Media + Ai + Core.Ide
 Sources.NzbHydra + Architecture), `frontend`, and `guards` — and `gate` aggregates them. Only `gate`
 carries a required-check name, so branch protection needs no edit when the job layout changes again.
 
-Two properties of that arrangement are load-bearing and easy to undo by accident. `gate` runs with
+Three properties of that arrangement are load-bearing and easy to undo by accident. `gate` runs with
 `if: always()`, so it must check every needed job's `result` **explicitly** — branch protection reads
 a *skipped* required check as satisfied, so a gate that merely inherited its dependencies' status
-would let a red matrix group merge. And every backend group restores the *full* `test-build`
+would let a red matrix group merge. Every backend group restores the *full* `test-build`
 artifact rather than only its own assemblies, because `Arbitarr.Architecture.Tests`' Mono.Cecil IL
 scan reads sibling build output and needs all ten test assemblies present in the same configuration
-and TFM.
+and TFM. And `guards` runs two checks that keep `TEST_ASSEMBLIES` honest: that the matrix groups
+union to exactly that list, and that the list itself matches the `*.Tests.csproj` projects under
+`tests/` — see [Test-count floors](#test-count-floors) above and the comments in `build-test.yml`.
 
 **A green `Deploy review environment` means the image builds and `/health` answers — nothing more.**
 Nothing is deployed; no review environment exists. The name describes an intent.
