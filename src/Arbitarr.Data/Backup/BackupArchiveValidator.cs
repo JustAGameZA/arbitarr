@@ -275,6 +275,12 @@ public static class BackupArchiveValidator
 
         try
         {
+            // Built inline, and on NoInlineDatabaseConnectionStringsTests' build-a-string list by
+            // name: `path` is always a STAGED TEMP file extracted
+            // from an uploaded archive, never the live database, so the pool this fills is not one a
+            // restore has to clear. The ReadOnly mode is part of that — this shape is for inspecting
+            // an untrusted file, and giving it a home in DatabaseConnectionStrings would put a
+            // never-live shape next to the live ones it exists to enumerate.
             using var connection = new SqliteConnection(
                 new SqliteConnectionStringBuilder { DataSource = path, Mode = SqliteOpenMode.ReadOnly }.ToString());
             connection.Open();

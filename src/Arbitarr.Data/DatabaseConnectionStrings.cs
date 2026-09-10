@@ -58,13 +58,40 @@ public static class DatabaseConnectionStrings
         }.ToString();
 
     /// <summary>
+    /// The string for a backup snapshot's DESTINATION file — the fresh temp file
+    /// <see cref="Backup.BackupService"/>'s <c>SnapshotDatabase</c> asks SQLite to write the backup
+    /// into.
+    ///
+    /// <para><b>Deliberately NOT one of <see cref="ForDatabase"/>'s shapes.</b> It names a file a
+    /// restore never replaces, so clearing its pool would be over-reach of exactly the kind this
+    /// type exists to end.</para>
+    ///
+    /// <para>It lives here anyway, rather than as an inline builder in <c>BackupService</c>, so
+    /// that <c>NoInlineDatabaseConnectionStringsTests</c> need not name <c>BackupService</c> among
+    /// the types allowed to BUILD a connection string. That test keeps two separate lists —
+    /// build-a-string and open-a-connection — precisely so a type trusted to open is not thereby
+    /// trusted to invent the shape; keeping <c>BackupService</c> off the builder list means a
+    /// future inline string there is still reported.</para>
+    /// </summary>
+    public static string SnapshotDestination(string destinationPath) =>
+        new SqliteConnectionStringBuilder
+        {
+            DataSource = destinationPath,
+        }.ToString();
+
+    /// <summary>
     /// Every connection string this assembly can open against <paramref name="databasePath"/>.
     /// <see cref="Backup.SqlitePoolCleaner"/> clears the pool for each, which is what lets a
     /// restore swap the file with no surviving handle on it.
     ///
+    /// <para><see cref="SnapshotDestination"/> is absent on purpose — see its own remarks: it names
+    /// a fresh temp file, not the database being replaced.</para>
+    ///
     /// <para>Adding a shape here is what makes it covered. Adding one anywhere else is the bug this
-    /// type exists to prevent, and <c>NoInlineDatabaseConnectionStringsTests</c> is what stops it
-    /// silently.</para>
+    /// type exists to prevent, and <c>NoInlineDatabaseConnectionStringsTests</c> (in
+    /// <c>tests/Arbitarr.Architecture.Tests</c>) is what stops it silently: it reads this
+    /// assembly's IL and fails any type outside its named allow-list that constructs a
+    /// <c>SqliteConnectionStringBuilder</c> or a <c>SqliteConnection</c>.</para>
     /// </summary>
     public static IEnumerable<string> ForDatabase(string databasePath)
     {

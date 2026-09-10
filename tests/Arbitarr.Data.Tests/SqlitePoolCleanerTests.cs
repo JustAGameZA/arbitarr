@@ -216,20 +216,48 @@ public sealed class SqlitePoolCleanerTests : IDisposable
     /// Replaces the database with a different file carrying <paramref name="marker"/>, the way the
     /// restore's File.Move does. The replacement is built elsewhere and moved over the path, so a
     /// surviving handle keeps the old inode rather than seeing an edit.
+    ///
+    /// <para>The finally mirrors <c>RestoreService.ApplyValidatedFiles</c>': the move is EXPECTED to
+    /// throw here on Windows — that is how the positive control detects an incomplete clear — and
+    /// without this the staged <c>{db}.incoming</c> survives every such run, so a later call's
+    /// <see cref="File.Delete(string)"/> is the only thing clearing it and a failure at that point
+    /// would surface as a confusing leftover rather than as the detection it is.</para>
     /// </summary>
     private static void ReplaceWithMarker(string path, string marker)
     {
         var incoming = path + ".incoming";
         File.Delete(incoming);
-        SeedMarker(incoming, marker);
 
-        // The incoming file's own pool must go, or it holds the handle instead.
-        using (var incomingConnection = new SqliteConnection(DatabaseConnectionStrings.Maintenance(incoming)))
+        try
         {
-            SqliteConnection.ClearPool(incomingConnection);
-        }
+            SeedMarker(incoming, marker);
 
-        File.Move(incoming, path, overwrite: true);
+            // The incoming file's own pool must go, or it holds the handle instead.
+            using (var incomingConnection = new SqliteConnection(DatabaseConnectionStrings.Maintenance(incoming)))
+            {
+                SqliteConnection.ClearPool(incomingConnection);
+            }
+
+            File.Move(incoming, path, overwrite: true);
+        }
+        finally
+        {
+            // Best-effort: a successful move already consumed the file, and a failure to tidy up
+            // must not replace the exception the caller is measuring.
+            try
+            {
+                if (File.Exists(incoming))
+                {
+                    File.Delete(incoming);
+                }
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+        }
     }
 
     private static string ReadMarker(string connectionString)

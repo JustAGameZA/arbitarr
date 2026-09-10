@@ -106,9 +106,14 @@ public sealed class BackupService
         source.Open();
 
         // The DESTINATION is a fresh snapshot file, not the live database, so it is deliberately
-        // not one of DatabaseConnectionStrings' shapes — a restore never replaces it.
+        // NOT one of DatabaseConnectionStrings.ForDatabase's shapes — a restore never replaces it.
+        // The string is still built by DatabaseConnectionStrings rather than inline here, so that
+        // NoInlineDatabaseConnectionStringsTests need not list BackupService among the types
+        // allowed to BUILD a connection string. This type is on that test's open-a-connection list
+        // and deliberately off its build-a-string one, which is what keeps a future inline string
+        // in this file reportable.
         using var destination = new SqliteConnection(
-            new SqliteConnectionStringBuilder { DataSource = destinationPath }.ToString());
+            DatabaseConnectionStrings.SnapshotDestination(destinationPath));
         destination.Open();
 
         source.BackupDatabase(destination);
@@ -125,10 +130,14 @@ public sealed class BackupService
     /// </summary>
     public static string? ReadAppliedMigrationId(string databasePath)
     {
-        // From DatabaseConnectionStrings, never formatted inline. This is called with the LIVE
-        // database path as well as with an extracted archive's, and when it is the live one the
-        // pool it fills must be one SqlitePoolCleaner clears (arb-n21). Taking the string from the
-        // one builder makes that true for both callers without either having to know which it is.
+        // From DatabaseConnectionStrings, never formatted inline. This method takes an ARBITRARY
+        // path: today's production callers pass a snapshot temp file (SnapshotDatabase's output)
+        // and a staged archive's extracted database (BackupArchiveValidator), neither of which a
+        // restore replaces — but nothing about the signature stops the LIVE path arriving, and
+        // BackupServiceTests already passes it. Taking the string from the one builder makes this
+        // site safe whichever path it is handed: if it is the live one, the pool it fills is one
+        // SqlitePoolCleaner already knows to clear (arb-n21), and no caller has to know which case
+        // it is in.
         using var connection = new SqliteConnection(
             DatabaseConnectionStrings.Maintenance(databasePath));
         connection.Open();
