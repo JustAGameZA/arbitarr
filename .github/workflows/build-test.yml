@@ -40,6 +40,12 @@ on:
 # `include` entries, which is exactly why arb-bj7 adds a guards step that
 # unions the matrix groups and diffs them against this list instead. Sorted
 # and space-separated; consumers split on whitespace.
+#
+# BuiltAssemblies.TestAssemblyNames (tests/Arbitarr.Architecture.Tests/BuiltAssemblies.cs)
+# is a DELIBERATELY INDEPENDENT C# counterpart to this token, not a copy of it --
+# see that class's remarks for why the two are kept apart. The guards job's
+# "Verify BuiltAssemblies.TestAssemblyNames matches TEST_ASSEMBLIES" step (arb-hbt)
+# is what diffs them and catches drift between the two.
 env:
   TEST_FILTER: "Category!=Timing&Category!=Load&Category!=Quarantine"
   TEST_ASSEMBLIES: "Arbitarr.Ai.Tests Arbitarr.Api.Tests Arbitarr.Architecture.Tests Arbitarr.Core.Identity.Tests Arbitarr.Core.Tests Arbitarr.Data.Tests Arbitarr.Host.Tests Arbitarr.Integration.Tests Arbitarr.Media.Tests Arbitarr.Sources.NzbHydra.Tests"
@@ -836,6 +842,12 @@ jobs:
       # ProjectReference would leave a stale allow-list entry masking a graph
       # that could now do the job on its own.
       #
+      # arb-2p6: the check is bidirectional. A src project added as a
+      # ProjectReference but never added to ProductionAssemblyNames is caught
+      # too (comm -13 below) -- otherwise it silently escapes the scan (and the
+      # ClearAllPools/global-state bans it enforces), which is exactly the
+      # vacuous-pass class the array's own doc comment argues against.
+      #
       # The extraction below is a NARROW sed address range, not a C# parser
       # (scripts/test-affected.sh's own comment bans parsing C# from bash for
       # the same reason: this step runs in CI only). It matches from the
@@ -847,7 +859,7 @@ jobs:
       # different indent, a visibility change), the range must find ZERO
       # lines and fail loudly below -- never silently produce a partial or
       # empty list that then passes the union checks vacuously.
-      - name: Verify every src assembly scanned by Architecture.Tests is referenced or allow-listed
+      - name: Verify Architecture.Tests scan list and reference graph match in both directions
         shell: bash
         run: |
           set -euo pipefail
@@ -902,8 +914,13 @@ jobs:
           unreferenced=$(comm -23 <(printf '%s\n' "$scanned_sorted") <(printf '%s\n' "$referenced_names"))
           unreferenced_unlisted=$(comm -23 <(printf '%s\n' "$unreferenced") <(printf '%s\n' "$allow_listed_sorted"))
           stale_allow_listed=$(comm -12 <(printf '%s\n' "$allow_listed_sorted") <(printf '%s\n' "$referenced_names"))
+          # arb-2p6: the reverse direction. A src project added as a ProjectReference but
+          # never added to ProductionAssemblyNames silently escapes the scan (and the
+          # ClearAllPools/global-state bans it enforces) -- the same vacuous-pass class the
+          # array's own doc comment argues against, just approached from the other set.
+          unscanned=$(comm -13 <(printf '%s\n' "$scanned_sorted") <(printf '%s\n' "$referenced_names"))
 
-          if [ -n "$unreferenced_unlisted" ] || [ -n "$stale_allow_listed" ]; then
+          if [ -n "$unreferenced_unlisted" ] || [ -n "$stale_allow_listed" ] || [ -n "$unscanned" ]; then
             echo "BLOCKED: ${scan_file}'s ProductionAssemblyNames drifted from the" >&2
             echo "Architecture.Tests reference graph." >&2
             if [ -n "$unreferenced_unlisted" ]; then
@@ -918,10 +935,74 @@ jobs:
               echo "case alone unless Host itself is the name being removed):" >&2
               echo "$stale_allow_listed" | sed 's/^/  /' >&2
             fi
+            if [ -n "$unscanned" ]; then
+              echo "Referenced by ${csproj_file} but not in ${scan_file}'s ProductionAssemblyNames" >&2
+              echo "-- this project's IL is never scanned, so it silently escapes the" >&2
+              echo "ClearAllPools/global-state bans. Add it to ProductionAssemblyNames, or if it" >&2
+              echo "is deliberately unscanned, explain why in a comment there rather than" >&2
+              echo "leaving it silently absent:" >&2
+              echo "$unscanned" | sed 's/^/  /' >&2
+            fi
             exit 1
           fi
 
-          echo "Every scanned assembly is referenced or allow-listed, and the allow-list has no stale entries."
+          echo "Every scanned assembly is referenced or allow-listed (no stale allow-list entries), and every referenced src project is scanned."
+
+      # arb-hbt: BuiltAssemblies.TestAssemblyNames (arb-hxa) is the C# list the IL
+      # scans in TestProcessGlobalStateTests and QuarantineTraitTests iterate over,
+      # and it is DELIBERATELY INDEPENDENT of TEST_ASSEMBLIES above (see the class
+      # remarks in BuiltAssemblies.cs) -- the two guards below exist precisely to
+      # catch drift between them, not to merge them into one source of truth. Until
+      # this step, nothing diffed TestAssemblyNames against TEST_ASSEMBLIES: a name
+      # deleted from the C# list just made the scans iterate nine assemblies
+      # instead of ten, with no count or set assertion anywhere to notice (found by
+      # worker-20 while doing arb-hxa -- the intended positive control for that
+      # work did not fail anything before or after the extraction).
+      #
+      # The extraction is the SAME narrow sed range technique as
+      # ProductionAssemblyNames above, keyed to TestAssemblyNames' own declaration
+      # shape instead: from the opening `internal static readonly string[]
+      # TestAssemblyNames =` line to the closing bare `];` line, reading only
+      # `"Name",` entries between them. A reformatted declaration makes the range
+      # find ZERO names, which fails loudly below rather than letting the diff pass
+      # vacuously over an empty list.
+      - name: Verify BuiltAssemblies.TestAssemblyNames matches TEST_ASSEMBLIES
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          [ -n "${TEST_ASSEMBLIES:-}" ] || { echo "BLOCKED: TEST_ASSEMBLIES is empty" >&2; exit 1; }
+
+          scan_file="tests/Arbitarr.Architecture.Tests/BuiltAssemblies.cs"
+
+          scanned_names=$(sed -n '/^[[:space:]]*internal static readonly string\[\] TestAssemblyNames =[[:space:]]*$/,/^[[:space:]]*\];[[:space:]]*$/p' "$scan_file" \
+            | sed -n 's/^[[:space:]]*"\([A-Za-z0-9.]*\)",\{0,1\}[[:space:]]*$/\1/p')
+
+          if [ -z "$scanned_names" ]; then
+            echo "BLOCKED: found no assembly names between the 'TestAssemblyNames ='" >&2
+            echo "declaration and its closing '];' in ${scan_file}. This extraction is a" >&2
+            echo "narrow sed range over that exact shape (8-space indented \"Name\", entries" >&2
+            echo "between an 'internal static readonly string[] TestAssemblyNames =' line" >&2
+            echo "and a bare '];' line) -- if the array was renamed, reformatted, or its" >&2
+            echo "visibility changed, fix this extraction rather than letting the diff below" >&2
+            echo "pass vacuously over zero names." >&2
+            exit 1
+          fi
+
+          scanned_sorted=$(printf '%s\n' "$scanned_names" | sort -u)
+          expected_sorted=$(printf '%s\n' $TEST_ASSEMBLIES | sort -u)
+
+          missing_from_list=$(comm -23 <(printf '%s\n' "$expected_sorted") <(printf '%s\n' "$scanned_sorted"))
+          extra_in_list=$(comm -13 <(printf '%s\n' "$expected_sorted") <(printf '%s\n' "$scanned_sorted"))
+
+          if [ -n "$missing_from_list" ] || [ -n "$extra_in_list" ]; then
+            echo "BLOCKED: ${scan_file}'s TestAssemblyNames drifted from TEST_ASSEMBLIES." >&2
+            [ -n "$missing_from_list" ] && { echo "In TEST_ASSEMBLIES, missing from TestAssemblyNames (the IL scans silently" >&2; echo "skip these):" >&2; echo "$missing_from_list" | sed 's/^/  /' >&2; }
+            [ -n "$extra_in_list" ] && { echo "In TestAssemblyNames, not in TEST_ASSEMBLIES (scans an assembly this build" >&2; echo "does not produce):" >&2; echo "$extra_in_list" | sed 's/^/  /' >&2; }
+            exit 1
+          fi
+
+          echo "BuiltAssemblies.TestAssemblyNames matches TEST_ASSEMBLIES exactly."
 
       # arb-5sg (1 of 2): a tests/*.Tests project that is in TEST_ASSEMBLIES
       # and present in the tree but missing from Arbitarr.sln builds no dll --
@@ -939,12 +1020,16 @@ jobs:
       # a line-ending artifact, so the check greps for that exact backslash
       # form rather than a slash-normalised one.
       #
-      # This check is PRESENCE-ONLY: it greps for the project's `Project(...)`
-      # line and says nothing about the sln's per-configuration mapping. A
-      # project present but missing its `Debug|Any CPU.Build.0` line under
-      # GlobalSection(ProjectConfigurationPlatforms) still resolves here even
-      # though `dotnet build`/`dotnet test` silently skip building it -- that
-      # gap is not guarded by this step and is tracked separately (arb-exw).
+      # arb-exw: presence in the sln is not enough -- `dotnet build Arbitarr.sln`
+      # (prep, above: `-c Release`) only actually builds a project whose GUID has a
+      # `{GUID}.Release|Any CPU.Build.0` line under
+      # GlobalSection(ProjectConfigurationPlatforms); Debug is never built by this
+      # workflow, so only Release is required here. A project with a `Project(...)`
+      # line but no matching Build.0 mapping is silently skipped by that build --
+      # no error, no dll -- which is exactly the failure this step's Project-line
+      # check used to claim it caught. The GUID is resolved per name from its own
+      # `Project(...) = "<Name>", "tests\<Name>\<Name>.csproj", "{GUID}"` line so the
+      # Build.0 grep cannot match a different project's mapping by coincidence.
       - name: Verify every test project is in Arbitarr.sln and overrides no AssemblyName
         shell: bash
         run: |
@@ -972,6 +1057,43 @@ jobs:
             printf '%s' "$missing_from_sln" | sed 's/^/  /' >&2
             exit 1
           fi
+
+          # arb-exw: presence in the sln does not mean the project actually builds --
+          # resolve each name's GUID from its Project(...) line, then require a
+          # Release|Any CPU.Build.0 mapping for that GUID (Release is the only
+          # configuration prep's `dotnet build Arbitarr.sln -c Release` builds).
+          missing_build0=""
+          for name in $TEST_ASSEMBLIES; do
+            pattern='tests\'"$name"'\'"$name"'.csproj'
+            project_line=$(grep -F "$pattern" "$sln_file" | head -1)
+            guid=$(printf '%s' "$project_line" | grep -oE '\{[0-9A-Fa-f-]+\}"$' | grep -oE '\{[0-9A-Fa-f-]+\}' || true)
+
+            if [ -z "$guid" ]; then
+              echo "BLOCKED: could not resolve a project GUID for ${name} from its" >&2
+              echo "'Project(...) = \"${name}\", \"${pattern}\", \"{GUID}\"' line in" >&2
+              echo "${sln_file}. The sln's Project-line shape must have changed; fix this" >&2
+              echo "extraction rather than letting the Build.0 check below pass vacuously." >&2
+              exit 1
+            fi
+
+            if ! grep -qF "${guid}.Release|Any CPU.Build.0" "$sln_file"; then
+              missing_build0="${missing_build0}${name} (${guid})"$'\n'
+            fi
+          done
+
+          if [ -n "$missing_build0" ]; then
+            echo "BLOCKED: ${sln_file} has a Project(...) line for a test project but no" >&2
+            echo "matching Release|Any CPU.Build.0 mapping under" >&2
+            echo "GlobalSection(ProjectConfigurationPlatforms). \`dotnet build Arbitarr.sln -c" >&2
+            echo "Release\` silently skips a project in this state -- no error, no dll -- so" >&2
+            echo "the earlier presence check passing is not evidence this project actually" >&2
+            echo "builds. Add a \"{GUID}.Release|Any CPU.Build.0 = Release|Any CPU\" line (and" >&2
+            echo "the matching ActiveCfg, if also missing) for:" >&2
+            printf '%s' "$missing_build0" | sed 's/^/  /' >&2
+            exit 1
+          fi
+
+          echo "Every TEST_ASSEMBLIES project has a Release|Any CPU.Build.0 mapping in ${sln_file}."
 
           # arb-5sg (2 of 2): every consumer derives the dll and trx BASENAME
           # from the TEST_ASSEMBLIES token, i.e. from the project name --

@@ -15,13 +15,14 @@ namespace Arbitarr.Architecture.Tests;
 /// an unbuilt project. Naming every assembly makes a new one a deliberate addition here.</para>
 ///
 /// <para><b>Independent of build-test.yml's TEST_ASSEMBLIES.</b> The CI workflow's
-/// <c>TEST_ASSEMBLIES</c> token is a deliberate INDEPENDENT oracle: its guards job diffs it against
-/// the tests/ tree and, separately, diffs <see cref="ProductionAssemblyNames"/> against the
-/// Architecture.Tests project-reference graph. The two are intentionally not merged into one
-/// source of truth — a drift between them is exactly what each guard exists to catch, so collapsing
-/// them would remove the check rather than simplify it. If you rename or move either array here,
-/// the workflow's extraction (a narrow sed range keyed to this class's shape, not a C# parser) must
-/// be repointed at the new location in the same change, or its guard goes vacuous.</para>
+/// <c>TEST_ASSEMBLIES</c> token is a deliberate INDEPENDENT oracle: its guards job diffs
+/// <c>TEST_ASSEMBLIES</c> itself against the tests/ tree, diffs <see cref="TestAssemblyNames"/>
+/// against <c>TEST_ASSEMBLIES</c> (arb-hbt), and separately diffs <see cref="ProductionAssemblyNames"/>
+/// against the Architecture.Tests project-reference graph (arb-9ae). The three are intentionally not
+/// merged into one source of truth — a drift between any pair is exactly what each guard exists to
+/// catch, so collapsing them would remove a check rather than simplify it. If you rename or move
+/// either array here, the workflow's extraction (a narrow sed range keyed to this class's shape, not
+/// a C# parser) must be repointed at the new location in the same change, or its guard goes vacuous.</para>
 /// </summary>
 internal static class BuiltAssemblies
 {
@@ -80,7 +81,7 @@ internal static class BuiltAssemblies
     /// the scan works unchanged under <c>-c Release</c>, which CI uses.
     /// </summary>
     internal static string? ResolveTestAssemblyPath(string assemblyName) =>
-        ResolvePath("tests", assemblyName);
+        ResolveAssemblyPath("tests", assemblyName);
 
     /// <summary>
     /// Finds a built assembly under <paramref name="rootDirectoryName"/> (<c>tests</c> or
@@ -100,7 +101,7 @@ internal static class BuiltAssemblies
     /// doing so. A missing assembly therefore FAILS the scan loudly rather than passing vacuously
     /// over an empty set.</para>
     /// </summary>
-    internal static string? ResolvePath(string rootDirectoryName, string assemblyName)
+    internal static string? ResolveAssemblyPath(string rootDirectoryName, string assemblyName)
     {
         // .../tests/Arbitarr.Architecture.Tests/bin/<configuration>/<tfm>/
         var here = new DirectoryInfo(AppContext.BaseDirectory);
