@@ -823,6 +823,196 @@ jobs:
 
           echo "TEST_ASSEMBLIES matches the tests/ tree exactly: $(printf '%s\n' "$tree_list" | tr '\n' ' ')"
 
+      # arb-9ae: ProductionProcessGlobalStateTests.cs scans src/ assemblies by
+      # FILE PATH, not through Architecture.Tests.csproj's ProjectReference
+      # graph (that scan exists precisely because Arbitarr.Host cannot be a
+      # ProjectReference there -- NU1605; see the csproj's own Mono.Cecil
+      # comment). Nothing previously enforced that its hand-written
+      # ProductionAssemblyNames array still matches the reference graph plus
+      # the one documented exception: a name added to the array with no
+      # matching ProjectReference (and not allow-listed) would scan an
+      # assembly no build guarantees exists yet, and a name that WAS
+      # allow-listed but has since gained a real ProjectReference would leave
+      # a stale allow-list entry masking a graph that could now do the job on
+      # its own.
+      #
+      # The extraction below is a NARROW sed address range, not a C# parser
+      # (scripts/test-affected.sh's own comment bans parsing C# from bash for
+      # the same reason: this step runs in CI only). It matches from the
+      # opening `private static readonly string[] ProductionAssemblyNames =`
+      # declaration line to the closing `    ];` line and reads only the
+      # `"Name",` entries between them. If that shape changes (renamed field,
+      # reformatted array, different indent), the range must find ZERO lines
+      # and fail loudly below -- never silently produce a partial or empty
+      # list that then passes the union checks vacuously.
+      - name: Verify every src assembly scanned by Architecture.Tests is referenced or allow-listed
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          scan_file="tests/Arbitarr.Architecture.Tests/ProductionProcessGlobalStateTests.cs"
+          csproj_file="tests/Arbitarr.Architecture.Tests/Arbitarr.Architecture.Tests.csproj"
+
+          # Arbitarr.Host is the one documented exception: NU1605 blocks
+          # Architecture.Tests.csproj from taking a ProjectReference on it, so
+          # its IL is read by file path instead (see the csproj comment and
+          # scripts/test-affected.sh's "2b" block). A name belongs here only
+          # when there is a real, currently-true reason it cannot be a
+          # ProjectReference -- not as a place to park a name that could be
+          # referenced instead.
+          allow_listed="Arbitarr.Host"
+
+          scanned_names=$(sed -n '/^[[:space:]]*private static readonly string\[\] ProductionAssemblyNames =[[:space:]]*$/,/^[[:space:]]*\];[[:space:]]*$/p' "$scan_file" \
+            | sed -n 's/^[[:space:]]*"\([A-Za-z0-9.]*\)",\{0,1\}[[:space:]]*$/\1/p')
+
+          if [ -z "$scanned_names" ]; then
+            echo "BLOCKED: found no assembly names between the 'ProductionAssemblyNames ='" >&2
+            echo "declaration and its closing '];' in ${scan_file}. This extraction is a" >&2
+            echo "narrow sed range over that exact shape (8-space indented \"Name\", entries" >&2
+            echo "between a 'private static readonly string[] ProductionAssemblyNames =' line" >&2
+            echo "and a bare '];' line) -- if the array was renamed or reformatted, fix this" >&2
+            echo "extraction rather than letting the checks below pass vacuously over zero" >&2
+            echo "names." >&2
+            exit 1
+          fi
+
+          referenced_names=$(grep -oE 'Include="[.][.][\][.][.][\]src[\][A-Za-z0-9.]+[\]' "$csproj_file" || true)
+          referenced_names=$(printf '%s' "$referenced_names" \
+            | sed -E 's/^Include="[.][.][\][.][.][\]src[\]([A-Za-z0-9.]+)[\]$/\1/' \
+            | sort -u)
+
+          if [ -z "$referenced_names" ]; then
+            echo "BLOCKED: found no ProjectReference entries matching the expected shape in" >&2
+            echo "${csproj_file}. This extraction looks for" >&2
+            echo '  Include="..\..\src\<Name>\<Name>.csproj"' >&2
+            echo "(Windows backslashes) -- if the csproj now uses forward slashes, a" >&2
+            echo "different relative path, or has no src/ ProjectReferences left, update this" >&2
+            echo "extraction's pattern rather than letting the checks below pass vacuously" >&2
+            echo "over zero referenced names." >&2
+            exit 1
+          fi
+
+          scanned_sorted=$(printf '%s\n' "$scanned_names" | sort -u)
+          allow_listed_sorted=$(printf '%s\n' "$allow_listed" | sort -u)
+
+          unreferenced=$(comm -23 <(printf '%s\n' "$scanned_sorted") <(printf '%s\n' "$referenced_names"))
+          unreferenced_unlisted=$(comm -23 <(printf '%s\n' "$unreferenced") <(printf '%s\n' "$allow_listed_sorted"))
+          stale_allow_listed=$(comm -12 <(printf '%s\n' "$allow_listed_sorted") <(printf '%s\n' "$referenced_names"))
+
+          if [ -n "$unreferenced_unlisted" ] || [ -n "$stale_allow_listed" ]; then
+            echo "BLOCKED: ${scan_file}'s ProductionAssemblyNames drifted from the" >&2
+            echo "Architecture.Tests reference graph." >&2
+            if [ -n "$unreferenced_unlisted" ]; then
+              echo "Scanned but neither referenced nor allow-listed (add a ProjectReference in" >&2
+              echo "${csproj_file}, or add the name to the allow_listed variable in this step" >&2
+              echo "AND to the hard-coded Host case in scripts/test-affected.sh's '2b' block):" >&2
+              echo "$unreferenced_unlisted" | sed 's/^/  /' >&2
+            fi
+            if [ -n "$stale_allow_listed" ]; then
+              echo "Allow-listed here but now has a real ProjectReference -- remove it from the" >&2
+              echo "allow_listed variable in this step (leave scripts/test-affected.sh's Host" >&2
+              echo "case alone unless Host itself is the name being removed):" >&2
+              echo "$stale_allow_listed" | sed 's/^/  /' >&2
+            fi
+            exit 1
+          fi
+
+          echo "Every scanned assembly is referenced or allow-listed, and the allow-list has no stale entries."
+
+      # arb-5sg (1 of 2): a tests/*.Tests project that is in TEST_ASSEMBLIES
+      # and present in the tree but missing from Arbitarr.sln builds no dll --
+      # `dotnet build Arbitarr.sln` in prep never sees it -- and the failure
+      # first surfaces at prep's "Assert the build output was restored" step
+      # with a message about a missing test-build artifact, which points at
+      # the artifact rather than at the actual cause. This step catches the
+      # same fault earlier, in guards (which needs nothing built), and names
+      # the sln directly.
+      #
+      # Arbitarr.sln is LF, and each test project's entry is a literal
+      # `tests\<Name>\<Name>.csproj` path with WINDOWS backslashes even though
+      # the file itself is not CRLF (verified with `git ls-files --eol` and a
+      # raw read of the file) -- this is the sln format's own convention, not
+      # a line-ending artifact, so the check greps for that exact backslash
+      # form rather than a slash-normalised one.
+      - name: Verify every test project is in Arbitarr.sln and overrides no AssemblyName
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sln_file="Arbitarr.sln"
+
+          missing_from_sln=""
+          for name in $TEST_ASSEMBLIES; do
+            pattern='tests\'"$name"'\'"$name"'.csproj'
+            if ! grep -qF "$pattern" "$sln_file"; then
+              missing_from_sln="${missing_from_sln}${name}"$'\n'
+            fi
+          done
+
+          if [ -n "$missing_from_sln" ]; then
+            echo "BLOCKED: ${sln_file} is missing a test project that TEST_ASSEMBLIES names." >&2
+            echo "Every consumer (prep's build-output assertion, the backend dll path, and" >&2
+            echo "LogFileName) derives the dll and trx names from the TEST_ASSEMBLIES token, so" >&2
+            echo "a project absent from the sln builds nothing and fails downstream with a" >&2
+            echo "message that points at the missing artifact, not at the sln. Add the missing" >&2
+            echo "project(s) to ${sln_file}:" >&2
+            printf '%s' "$missing_from_sln" | sed 's/^/  /' >&2
+            exit 1
+          fi
+
+          # arb-5sg (2 of 2): every consumer derives the dll and trx BASENAME
+          # from the TEST_ASSEMBLIES token, i.e. from the project name --
+          # ONLY <AssemblyName> can make that basename diverge from the
+          # project name at build time, so only <AssemblyName> is checked
+          # here. <RootNamespace> is deliberately NOT checked: it controls
+          # the default namespace new files are generated into, never the
+          # compiled output's file name, so a RootNamespace override has no
+          # mechanism to break the TEST_ASSEMBLIES-derived dll/trx lookup --
+          # flagging it would be a rule with no failure it actually catches.
+          # (Several test projects already declare a same-name RootNamespace
+          # today, which is exactly why a check here would need to special-
+          # case "matches the project name" to stay green, and that
+          # special-case is a sign the check has no real target.)
+          #
+          # Any <AssemblyName> declaration fails, even one that happens to
+          # repeat the project's own name: unlike RootNamespace, AssemblyName
+          # has no legitimate reason to be declared at all in a test project
+          # here (none is today), so a same-name AssemblyName is not
+          # tolerated as harmless -- it is redundant at best and one edit
+          # away from silently diverging at worst. Failing all of them keeps
+          # the check simple and keeps that drift from ever being possible.
+          # Built FROM $TEST_ASSEMBLIES (tests/<Name>/<Name>.csproj) rather than a
+          # tests/*.Tests/*.csproj glob, so this shares the one source of truth with
+          # the sln check above instead of silently iterating zero times (and
+          # printing the success line below with rc=0) when the glob matches
+          # nothing -- e.g. an empty or not-yet-checked-out tests/ tree.
+          bad_overrides=""
+          for name in $TEST_ASSEMBLIES; do
+            csproj="tests/${name}/${name}.csproj"
+            if [ ! -f "$csproj" ]; then
+              echo "BLOCKED: ${csproj} does not exist. Every name in TEST_ASSEMBLIES must have a" >&2
+              echo "matching tests/<Name>/<Name>.csproj on disk for this AssemblyName check (and" >&2
+              echo "the sln check above) to mean anything." >&2
+              exit 1
+            fi
+            while IFS= read -r tag_line; do
+              [ -z "$tag_line" ] && continue
+              bad_overrides="${bad_overrides}${csproj}: ${tag_line}"$'\n'
+            done < <(grep -oE '<AssemblyName>[^<]*</AssemblyName>' "$csproj")
+          done
+
+          if [ -n "$bad_overrides" ]; then
+            echo "BLOCKED: a test project declares <AssemblyName>. Every consumer derives the" >&2
+            echo "dll and trx basename from the TEST_ASSEMBLIES token (the project name), so" >&2
+            echo "any AssemblyName override -- even one that currently repeats the project" >&2
+            echo "name -- produces build output under a name that stops being guaranteed to" >&2
+            echo "match TEST_ASSEMBLIES the next time either value changes. Remove it:" >&2
+            printf '%s' "$bad_overrides" | sed 's/^/  /' >&2
+            exit 1
+          fi
+
+          echo "Every TEST_ASSEMBLIES project is in Arbitarr.sln and declares no AssemblyName override."
+
   # --------------------------------------------------------------------------
   # gate: the required check. Named EXACTLY `Build & test` so the existing
   # branch-protection rule keeps matching and NO branch-protection edit is
