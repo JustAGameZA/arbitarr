@@ -374,16 +374,19 @@ public sealed class ConcurrencyTests : IDisposable
     /// to distinguish "one thread got preempted" from "WAL is not in effect", because both can
     /// produce one slow read; the two shapes only separate at the tail distribution. p99 does
     /// distinguish them: a throwaway probe outside the repo (CLAUDE.md §4), replaying this exact
-    /// contention shape, measured WAL-mode p99 at 2.31/2.60/2.79ms across three runs (median
-    /// 0.08-0.16ms, max 29.6-75.6ms from ordinary scheduler noise) versus the misconfigured
-    /// (DELETE journal, busy_timeout=1) twin's p99 at 204.0/219.2/226.7ms (median still tiny at
-    /// 0.17-0.25ms, since only the tail is excluded by the writer's lock). Those probe numbers were
-    /// taken on a machine also running three other concurrent worker builds, so they are already
+    /// contention shape, measured WAL-mode p99 at 2.37/7.93/4.07/6.55/8.91ms across five runs
+    /// (median 0.07-0.17ms, max up to 214.6ms from ordinary scheduler noise) versus the
+    /// misconfigured (DELETE journal, busy_timeout=1) twin's p99 at 204.0/219.2/226.7ms (median
+    /// still tiny at 0.17-0.25ms, since only the tail is excluded by the writer's lock). The 214.6ms
+    /// max sample (WAL run 5, otherwise healthy: p99 8.91ms, median 0.07ms) is itself evidence the
+    /// old bound was wrong: under the old 250ms single-max ceiling that healthy run would have been
+    /// a near-miss -- exactly the shape that caused the original CI flake. Those probe numbers were
+    /// taken on a machine also running several other concurrent builds, so they are already
     /// pessimistic for the WAL side -- an idle machine's WAL p99 would sit lower still, not higher
-    /// -- and <see cref="MaxContendedReadP99Ms"/> still sits at roughly 18x that noisy-machine
-    /// worst-observed WAL p99 and roughly 4x below the weakest observed misconfigured p99: enough
-    /// margin to absorb CI jitter on the healthy side while still going red the moment the tail
-    /// blows up the way a real WAL failure does. The old ceiling survives only as
+    /// -- and <see cref="MaxContendedReadP99Ms"/> still sits at roughly 50 / 8.91 ≈ 5.6x the
+    /// noisy-machine worst-observed WAL p99 and roughly 4x below the weakest observed misconfigured
+    /// p99: enough margin to absorb CI jitter on the healthy side while still going red the moment
+    /// the tail blows up the way a real WAL failure does. The old ceiling survives only as
     /// <see cref="MaxContendedReadLatencyMs"/>, loosened to a starvation/stall guard on the max
     /// sample: it no longer polices ordinary tail latency (p99 does that), it only catches a
     /// reader thread that stops making progress altogether.
@@ -455,13 +458,14 @@ public sealed class ConcurrencyTests : IDisposable
     /// millisecond range even under scheduler jitter; a reader actually excluded by a writer's lock
     /// lands on SQLite's busy_timeout backoff schedule, two orders of magnitude above. Measured with
     /// a throwaway probe outside the repo (CLAUDE.md §4) replaying this exact contention shape,
-    /// on a machine also running three other concurrent worker builds (so these numbers are
-    /// already pessimistic for WAL, not favorable to this ceiling): WAL p99 was 2.31/2.60/2.79ms
-    /// across three runs; the misconfigured (DELETE journal, busy_timeout=1) twin's p99 was
-    /// 204.0/219.2/226.7ms. 50ms sits roughly 18x above that noisy-machine worst-observed WAL p99
-    /// and roughly 4x below the weakest observed misconfigured p99 -- see the
-    /// arb-ri2 remarks on <see cref="ReaderUnderRefreshWorkerContention_StaysFastAndNeverStarves"/>
-    /// for the full rationale (why p99 rather than max).
+    /// on a machine also running several other concurrent worker builds (so these numbers are
+    /// already pessimistic for WAL, not favorable to this ceiling): WAL p99 was
+    /// 2.37/7.93/4.07/6.55/8.91ms across five runs; the misconfigured (DELETE journal,
+    /// busy_timeout=1) twin's p99 was unchanged at 204.0/219.2/226.7ms. 50ms sits roughly
+    /// 50 / 8.91 ≈ 5.6x above that noisy-machine worst-observed WAL p99 and roughly 4x below the
+    /// weakest observed misconfigured p99 -- see the arb-ri2 remarks on
+    /// <see cref="ReaderUnderRefreshWorkerContention_StaysFastAndNeverStarves"/> for the full
+    /// rationale (why p99 rather than max).
     /// </summary>
     private const double MaxContendedReadP99Ms = 50.0;
 
@@ -470,9 +474,10 @@ public sealed class ConcurrencyTests : IDisposable
     /// 34410295869 failed on a 265.8ms outlier with p99 0.1ms, a scheduler preemption rather than a
     /// WAL regression) into a starvation/stall guard only. <see cref="MaxContendedReadP99Ms"/> now
     /// polices ordinary tail latency; this constant exists purely to catch a reader thread that
-    /// stops making progress altogether (an outright stall), so it is set several times looser than
-    /// any observed run -- WAL-mode max samples measured 29.6-75.6ms across three probe runs -- while
-    /// still sitting ~13x tighter than the sibling test's 1s stall threshold.
+    /// stops making progress altogether (an outright stall), so it is set well looser than any
+    /// observed run -- WAL-mode max samples measured up to 214.6ms across five probe runs, i.e.
+    /// 2000 / 214.6 ≈ 9.3x margin -- while still sitting ~13x tighter than the sibling test's 1s
+    /// stall threshold.
     /// </summary>
     private const double MaxContendedReadLatencyMs = 2000.0;
 
