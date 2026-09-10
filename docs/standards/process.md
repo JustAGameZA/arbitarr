@@ -76,6 +76,12 @@ Two counts and two parsers, deliberately, so neither suite's count can mask a co
 other. The frontend parses *passed*, not *total*, so a skipped or `todo` test cannot hold the floor
 up without running. Both are ratcheted from the same master run, so the pair moves together.
 
+**Recorded blind spot** (#182 architectural review): a `TEST_FILTER` change that narrows discovery
+and execution *consistently* to a nonzero count passes every per-assembly check — the shards agree,
+and the sum equals what discovery recorded — so it is caught only by the whole-run ratchet floor,
+which a narrowing in one assembly can hide inside another assembly's growth. Per-assembly floors
+would close it.
+
 ---
 
 ## Test categories
@@ -241,6 +247,16 @@ behind. Never mutate files in place, and never leave a mutation uncommitted in a
 
 **When one such assertion is found vacuous, sweep its whole file** — if the pattern failed once it
 was never established.
+
+**Gate logic that needs a positive control lives in a sourced script under `.github/scripts/`**, so
+the control invokes the shipped code rather than a verbatim copy of it. Inline workflow bash can only
+be exercised by slicing the YAML into a throwaway script, and a control run against that slice is
+evidence about the slice — it stays green while the workflow drifts away from it. The shard step and
+the test-count gate are therefore
+[`shard-filter.sh`](../../.github/scripts/shard-filter.sh) and
+[`test-count-gate.sh`](../../.github/scripts/test-count-gate.sh), which the workflow sources and
+[`test-count-gate-controls.sh`](../../.github/scripts/test-count-gate-controls.sh) — run by the
+`guards` job on every PR — sources too.
 
 **Assert per row** where a flag is written per row. "Some row has it" still passes when an
 implementation writes one value to all of them.
