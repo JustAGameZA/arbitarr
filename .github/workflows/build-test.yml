@@ -60,7 +60,7 @@ on:
 # not bring the gate under three minutes -- only splitting the one assembly can.
 env:
   TEST_FILTER: "Category!=Timing&Category!=Load&Category!=Quarantine"
-  SHARD_ASSEMBLIES: ""
+  SHARD_ASSEMBLIES: "Arbitarr.Integration.Tests:2"
   TEST_ASSEMBLIES: "Arbitarr.Ai.Tests Arbitarr.Api.Tests Arbitarr.Architecture.Tests Arbitarr.Core.Identity.Tests Arbitarr.Core.Tests Arbitarr.Data.Tests Arbitarr.Host.Tests Arbitarr.Integration.Tests Arbitarr.Media.Tests Arbitarr.Sources.NzbHydra.Tests"
 
 jobs:
@@ -152,9 +152,12 @@ jobs:
   # output. Assemblies WITHIN a group run sequentially (a loop), so the group is
   # the unit of parallelism and nothing new races inside a job.
   #
-  # Group A is Integration alone: it is by far the longest assembly and it is
-  # the only one holding several live ASP.NET hosts at once (arb-rga.4 sets
-  # maxParallelThreads 4 there).
+  # Groups A1 and A2 are the two shards of Integration: it is by far the longest
+  # assembly and it is the only one holding several live ASP.NET hosts at once
+  # (arb-rga.4 sets maxParallelThreads 4 there). Splitting it -- rather than
+  # moving whole assemblies between groups -- is what brings the gate under
+  # three minutes, because Integration alone exceeded the budget of the other
+  # two groups combined (arb-adm).
   # Group C carries Architecture, which is why every group restores the FULL
   # test output rather than only its own -- see the prep job's comment.
   # --------------------------------------------------------------------------
@@ -169,7 +172,10 @@ jobs:
       #
       # Measured peak RSS of the whole dotnet/testhost tree (see the PR body for
       # the per-assembly table):
-      #   group A  Integration      1.21 GiB  -- at maxParallelThreads 4
+      #   group A  Integration      1.21 GiB  -- at maxParallelThreads 4,
+      #                                    measured UNSHARDED; each of A1/A2 now
+      #                                    runs half the classes, so this is an
+      #                                    upper bound for either shard
       #   group B  max (Core)       0.42 GiB
       #   group C  max (Media)      0.31 GiB
       #
@@ -193,8 +199,21 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - group: A
+          # A1/A2 are the two shards of Arbitarr.Integration.Tests (arb-adm).
+          # ONE assembly token per entry is deliberate: the guards job's union
+          # check reads `assemblies: "..."` lines and requires one such line per
+          # `- group:` entry, so a shard must be a separate entry naming the same
+          # single token, never a second token on one line. The `shard:` value is
+          # what makes the repeat legal there -- see SHARD_ASSEMBLIES above and
+          # the guard's shard rules. Renaming these groups is safe for branch
+          # protection: only the gate job `Build & test` and `Deploy review
+          # environment` are required checks, never the matrix job names.
+          - group: A1
             assemblies: "Arbitarr.Integration.Tests"
+            shard: "1of2"
+          - group: A2
+            assemblies: "Arbitarr.Integration.Tests"
+            shard: "2of2"
           - group: B
             assemblies: "Arbitarr.Data.Tests Arbitarr.Api.Tests Arbitarr.Core.Tests"
           - group: C
@@ -816,7 +835,7 @@ jobs:
           echo "Tree-wide secret/topology guard passed."
 
       # arb-bj7: nothing else checks that the three backend matrix groups
-      # (A/B/C) together cover EXACTLY the ten assemblies
+      # (A1/A2/B/C) together cover EXACTLY the ten assemblies
       # TEST_ASSEMBLIES names. A one-token deletion in a rebase leaves the dll
       # present in the prep artifact (that assertion passes) but simply unrun
       # by any group; the gate's trx-set check (arb-6ke) would then report it
@@ -1532,7 +1551,8 @@ jobs:
           # one directory makes two identically-named trx overwrite each other,
           # and the loss shows up as a short executed= sum -- i.e. as a floor
           # breach in the wrong place. Each artifact keeps its own subdirectory
-          # (./TestResults/trx-A/, trx-B/, trx-C/) so a collision is impossible
+          # (./TestResults/trx-A1/, trx-A2/, trx-B/, trx-C/) so a collision is
+          # impossible
           # even before the per-assembly LogFileName above makes names unique.
           path: ./TestResults
 
