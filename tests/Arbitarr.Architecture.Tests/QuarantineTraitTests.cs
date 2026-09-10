@@ -10,10 +10,10 @@ namespace Arbitarr.Architecture.Tests;
 /// comes back to, which is the failure this test exists to make impossible.
 ///
 /// <para>The rule is enforced over the same ten test assemblies as
-/// <see cref="TestProcessGlobalStateTests"/>, by the same means and for the same reasons: the
-/// assemblies are found by PATH (they cannot be ProjectReferences here — NU1605), so the scan
-/// depends on them having been BUILT first, and a missing assembly FAILS loudly rather than passing
-/// vacuously over an empty set.</para>
+/// <see cref="TestProcessGlobalStateTests"/> (see <see cref="BuiltAssemblies.TestAssemblyNames"/>,
+/// arb-hxa), by the same means and for the same reasons: the assemblies are found by PATH (they
+/// cannot be ProjectReferences here — NU1605), so the scan depends on them having been BUILT first,
+/// and a missing assembly FAILS loudly rather than passing vacuously over an empty set.</para>
 ///
 /// <para><b>Why IL rather than xunit's own discovery.</b> Running the discoverer would only see the
 /// traits xunit chooses to surface for tests it decides to run, so a quarantined test in an
@@ -41,29 +41,10 @@ public class QuarantineTraitTests
     /// </summary>
     private const string BeadPattern = "^arb-[a-z0-9]{3,}$";
 
-    /// <summary>
-    /// Every test assembly in the solution, by project name — the same list, spelled out for the
-    /// same reason as <see cref="TestProcessGlobalStateTests"/>: a glob over whatever happens to be
-    /// on disk would silently skip a project that had not been built.
-    /// </summary>
-    private static readonly string[] TestAssemblyNames =
-    [
-        "Arbitarr.Ai.Tests",
-        "Arbitarr.Api.Tests",
-        "Arbitarr.Architecture.Tests",
-        "Arbitarr.Core.Identity.Tests",
-        "Arbitarr.Core.Tests",
-        "Arbitarr.Data.Tests",
-        "Arbitarr.Host.Tests",
-        "Arbitarr.Integration.Tests",
-        "Arbitarr.Media.Tests",
-        "Arbitarr.Sources.NzbHydra.Tests",
-    ];
-
     [Fact]
     public void No_quarantined_test_lacks_a_bead_trait()
     {
-        var assemblyPaths = TestAssemblyNames
+        var assemblyPaths = BuiltAssemblies.TestAssemblyNames
             .Select(name => (Name: name, Path: ResolveTestAssemblyPath(name)))
             .ToArray();
 
@@ -310,35 +291,9 @@ public class QuarantineTraitTests
         }
     }
 
-    /// <summary>
-    /// Finds a test project's built assembly by walking from this assembly's own output directory
-    /// to the sibling project's, preserving the configuration and target-framework segments — so
-    /// the scan works unchanged under <c>-c Release</c>, which CI uses. Mirrors
-    /// <see cref="TestProcessGlobalStateTests"/>'s resolver deliberately: two scans that disagree
-    /// about which assemblies exist would let a project be covered by one and silently missed by
-    /// the other.
-    /// </summary>
-    private static string? ResolveTestAssemblyPath(string assemblyName)
-    {
-        // .../tests/Arbitarr.Architecture.Tests/bin/<configuration>/<tfm>/
-        var here = new DirectoryInfo(AppContext.BaseDirectory);
-        var targetFramework = here.Name;
-        var configuration = here.Parent?.Name;
-        var testsRoot = here.Parent?.Parent?.Parent?.Parent;
-
-        if (configuration is null || testsRoot is null)
-        {
-            return null;
-        }
-
-        var candidate = Path.Combine(
-            testsRoot.FullName,
-            assemblyName,
-            "bin",
-            configuration,
-            targetFramework,
-            assemblyName + ".dll");
-
-        return File.Exists(candidate) ? candidate : null;
-    }
+    // The parent-walk that resolves a sibling test assembly's build output lives once, on
+    // TestProcessGlobalStateTests.ResolveTestAssemblyPath — see its remarks for why the walk depth
+    // and the configuration/TFM-preserving logic must not be duplicated here.
+    private static string? ResolveTestAssemblyPath(string assemblyName) =>
+        TestProcessGlobalStateTests.ResolveTestAssemblyPath(assemblyName);
 }

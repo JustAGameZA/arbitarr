@@ -717,6 +717,17 @@ builder.Services.AddHostedService(sp => new Arbitarr.Host.Maintenance.Maintenanc
     sp.GetRequiredService<TimeProvider>(),
     sp.GetRequiredService<ILogger<Arbitarr.Host.Maintenance.MaintenanceHostedService>>()));
 
+// arb-fxw: reclaims orphaned files left in BackupPaths.StagingDirectory by a hard kill
+// mid-restore/backup (each writer's own `finally` only runs if the process survives to reach it).
+// One-shot at startup, not a recurring timer -- see StagingSweepService's doc comment for why.
+// Registration order here does not guard against in-flight writers; ExecuteAsync is not awaited
+// before the host reports started, so Kestrel may already be serving. The no-race mechanism is
+// StagingSweep's processStartUtc cut-off -- see StagingSweepService's doc comment.
+builder.Services.AddHostedService(sp => new Arbitarr.Host.Backup.StagingSweepService(
+    sp.GetRequiredService<Arbitarr.Data.Backup.BackupPaths>(),
+    sp.GetRequiredService<TimeProvider>(),
+    sp.GetRequiredService<ILogger<Arbitarr.Host.Backup.StagingSweepService>>()));
+
 var app = builder.Build();
 
 // SEC-L2: load (or generate, on first run) the per-instance HMAC secret used to compute proxy

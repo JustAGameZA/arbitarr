@@ -19,175 +19,405 @@ on:
         type: boolean
         default: false
 
+# The category filter, written ONCE at workflow level and reused by every matrix
+# job, by the measure-filter report and by the recorded artifact. Keeping it in
+# one variable is what makes "the PR lane and the master lane run an identical
+# filter" true by construction rather than by strings being kept in step -- and
+# it is what stops the artifact ever recording a filter the run did not use.
+# Splitting the single test step into a matrix made this MORE load-bearing, not
+# less: three jobs now read it, and a per-job copy would let one group drift.
+# Timing/Load/Quarantine are excluded here and run unfiltered nightly
+# (arb-rga.8); see docs/adr/0011 and docs/standards/process.md.
+#
+# TEST_ASSEMBLIES is the single, hoisted definition of the ten test assembly
+# names (arb-6ke). Three places used to carry their own copy of this list --
+# the prep-job "Assert the build output was restored" step, the gate's trx
+# count, and (implicitly) the matrix groups -- and a misspelling in one could
+# drift from the other two without any check ever catching it. Now the prep
+# assertion and the gate's set assertion both read this one variable, so they
+# cannot drift apart; the matrix groups (~163-169) still list assemblies
+# literally because a workflow matrix cannot expand a variable into separate
+# `include` entries, which is exactly why arb-bj7 adds a guards step that
+# unions the matrix groups and diffs them against this list instead. Sorted
+# and space-separated; consumers split on whitespace.
+env:
+  TEST_FILTER: "Category!=Timing&Category!=Load&Category!=Quarantine"
+  TEST_ASSEMBLIES: "Arbitarr.Ai.Tests Arbitarr.Api.Tests Arbitarr.Architecture.Tests Arbitarr.Core.Identity.Tests Arbitarr.Core.Tests Arbitarr.Data.Tests Arbitarr.Host.Tests Arbitarr.Integration.Tests Arbitarr.Media.Tests Arbitarr.Sources.NzbHydra.Tests"
+
 jobs:
-  build-test:
-    name: Build & test
+  # --------------------------------------------------------------------------
+  # prep: restore + build the whole solution ONCE, and publish the test output
+  # for the matrix to consume.
+  #
+  # Building the solution here rather than per matrix group is not an
+  # optimisation, it is a correctness requirement. The Mono.Cecil IL scan in
+  # Arbitarr.Architecture.Tests (TestProcessGlobalStateTests) reads SIBLING
+  # build output: it walks from its own output directory to
+  # tests/*/bin/<config>/<tfm>/*.dll and needs all TEN test assemblies present
+  # in the SAME configuration and TFM (Ai, Api, Architecture, Core.Identity,
+  # Core, Data, Host, Integration, Media, Sources.NzbHydra). A group that built
+  # only its own projects would leave the others missing and the scan fails
+  # LOUDLY naming them -- deliberately, so a missing assembly can never pass
+  # vacuously over an empty set (CLAUDE.md section 4). See arb-rga.3 / PR #147.
+  #
+  # Since #157 (arb-n21) the same requirement extends to src/. Two further
+  # Architecture scans read PRODUCTION output through the same walk, calling
+  # ResolveAssemblyPath("src", ...) instead of ("tests", ...):
+  #   ProductionProcessGlobalStateTests reads all EIGHT production assemblies
+  #     (Ai, Api, Core, Core.Identity, Data, Host, Media, Sources.NzbHydra);
+  #   NoInlineDatabaseConnectionStringsTests reads Arbitarr.Data.
+  # They fail identically -- "Could not locate the built assembly for ..." --
+  # so the artifact must carry src/ output BESIDE tests/, not tests/ alone.
+  # src/Arbitarr.Web is the React frontend: no csproj, no managed output, which
+  # is why the production list is eight and not nine.
+  # --------------------------------------------------------------------------
+  prep:
+    name: Build (prep)
     runs-on: ubuntu-latest
-    # contents: read is inherited from the workflow-level block above and repeated
-    # here because naming a job-level `permissions` replaces it rather than adding
-    # to it. actions: read is what lets the floor step query the Actions API for
-    # master's last successful run and download its test-counts artifact.
-    permissions:
-      contents: read
-      actions: read
-    env:
-      DOTNET_GCHeapHardLimit: "0x80000000"
-      # Bootstrap floors, used ONLY when no test-counts artifact can be found on
-      # master (first run after this lands, or the artifact has expired). These are
-      # the numbers the master push run for the #108 merge (run 34197814222)
-      # printed. They are the one place in the ratchet where a count is written by
-      # hand: never edit them to anything but a number a master push run actually
-      # printed -- a pull_request run measures the PR, not master.
-      BOOTSTRAP_BACKEND_FLOOR: "1189"
-      BOOTSTRAP_FRONTEND_FLOOR: "296"
-      # The category filter, written ONCE and reused by the test step, the floor
-      # comparison and the recorded artifact. Keeping it in one variable is what
-      # makes "the PR lane and the master lane run an identical filter" true by
-      # construction rather than by two strings being kept in step -- and it is
-      # what stops the artifact ever recording a filter the run did not use.
-      # Timing/Load/Quarantine are excluded here and run unfiltered nightly
-      # (arb-rga.8); see docs/adr/0011 and docs/standards/process.md.
-      TEST_FILTER: "Category!=Timing&Category!=Load&Category!=Quarantine"
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      # ----------------------------------------------------------------------
-      # The test-count floor is a ratchet, not a committed file. The floor is
-      # whatever master last measured: every run uploads a test-counts artifact,
-      # and every run resolves its floor from the latest successful `Build & test`
-      # run on master OTHER THAN ITSELF. Selecting "other than itself" is what
-      # makes a push to master enforce the ratchet too -- a shrink merged by force
-      # is still caught, because master is compared against its own predecessor
-      # rather than against nothing.
-      #
-      # A committed floor file made every two test-adding PRs conflict by
-      # construction, and the "measurements, never arithmetic" rule then forced a
-      # full re-run of both suites after each rebase. The ratchet keeps the
-      # guarantee (a suite cannot silently shrink) with no file to conflict on.
-      # ----------------------------------------------------------------------
-      - name: Resolve test-count floors from master
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-
-          backend_floor="$BOOTSTRAP_BACKEND_FLOOR"
-          frontend_floor="$BOOTSTRAP_FRONTEND_FLOOR"
-          floor_source="bootstrap constant"
-
-          # `status=success` is the conclusion, so a run that failed for any reason
-          # (including on its own floor step) cannot become the floor. Ask for a
-          # handful and skip this run's own id: on a push to master, THIS run is a
-          # master run and would otherwise be compared against itself.
-          api_path="/repos/${GITHUB_REPOSITORY}/actions/workflows/build-test.yml/runs"
-          runs_json=$(gh api "${api_path}?branch=master&status=success&per_page=10" 2>/dev/null || echo '')
-
-          run_id=''
-          if [ -n "$runs_json" ]; then
-            jq_filter='[.workflow_runs[]? | select((.id | tostring) != $self)] | first | .id // empty'
-            run_id=$(printf '%s' "$runs_json" | jq -r --arg self "$GITHUB_RUN_ID" "$jq_filter")
-          fi
-
-          if [ -n "$run_id" ]; then
-            # download-artifact exits non-zero when the run has no such artifact
-            # (an older master run from before this ratchet landed, or an expired
-            # one). That is the bootstrap case, not a failure.
-            if gh run download "$run_id" --repo "$GITHUB_REPOSITORY" \
-                 --name test-counts --dir /tmp/floor >/dev/null 2>&1 \
-               && [ -f /tmp/floor/test-counts.json ]; then
-              b=$(jq -r '.backend // empty' /tmp/floor/test-counts.json)
-              f=$(jq -r '.frontend // empty' /tmp/floor/test-counts.json)
-              # The filter the artifact was MEASURED under. An artifact written
-              # before the filter field existed has none, which is treated
-              # exactly like a mismatch -- an unlabelled count cannot be shown to
-              # cover the same set of tests as this run, and assuming it does is
-              # the silent apples-to-oranges comparison this field exists to
-              # prevent.
-              artifact_filter=$(jq -r '.filter // empty' /tmp/floor/test-counts.json)
-
-              # Both counts must be present and numeric, or neither is used: a
-              # half-read artifact would silently drop one suite's floor to the
-              # bootstrap constant while looking like it had ratcheted.
-              if ! printf '%s' "$b" | grep -qE '^[0-9]+$' || ! printf '%s' "$f" | grep -qE '^[0-9]+$'; then
-                echo "test-counts artifact from run ${run_id} is unreadable; falling back to bootstrap constants." >&2
-              elif [ "$artifact_filter" != "$TEST_FILTER" ]; then
-                # Loud on purpose: ::notice:: surfaces in the run summary rather
-                # than only in the log body. A floor carried across a filter
-                # change would compare this run's count against a count of a
-                # different set of tests, which either blocks a correct PR or
-                # hides a real shrink.
-                echo "::notice title=Test-count floor fell back to bootstrap constants::The test-counts artifact from master run ${run_id} was measured under filter '${artifact_filter:-(none recorded)}', but this run uses filter '${TEST_FILTER}'. The two counts are not comparable, so the bootstrap constants (backend ${BOOTSTRAP_BACKEND_FLOOR}, frontend ${BOOTSTRAP_FRONTEND_FLOOR}) are used instead. Once master has run under the new filter, update the bootstrap constants from a number a master run actually printed (run this workflow via workflow_dispatch with measure-filter=true)."
-              else
-                backend_floor="$b"
-                frontend_floor="$f"
-                floor_source="master run ${run_id}"
-              fi
-            fi
-          fi
-
-          echo "BACKEND_FLOOR=$backend_floor" >> "$GITHUB_ENV"
-          echo "FRONTEND_FLOOR=$frontend_floor" >> "$GITHUB_ENV"
-          echo "FLOOR_SOURCE=$floor_source" >> "$GITHUB_ENV"
-          echo "Test-count floor source: $floor_source (backend: $backend_floor, frontend: $frontend_floor)"
 
       - name: Setup .NET
         uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
           dotnet-version: "10.0.x"
 
+      # There is no Directory.Packages.props in this repository (package
+      # versions are declared per-csproj, not centrally managed), so the key
+      # hashes the csproj files and any *.props that exist rather than naming a
+      # central manifest that is not there. If central package management is
+      # adopted later, Directory.Packages.props is matched by **/*.props already.
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/*.props') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
       - name: Restore
         run: dotnet restore Arbitarr.sln
 
+      # -m:1 stays. It is a memory bound, not a speed choice: parallel project
+      # builds on a 2-core runner drove the compiler into swap. See
+      # CONTRIBUTING.md's Build & test description.
       - name: Build (sequential)
         run: dotnet build Arbitarr.sln -c Release -m:1 --no-restore
 
-      - name: Test
-        run: >-
-          dotnet test Arbitarr.sln -c Release --no-build
-          --filter "$TEST_FILTER"
-          --logger trx --results-directory ./TestResults
+      # Both roots are uploaded. src/ is not a convenience: the two Architecture
+      # scans added by #157 resolve src/<Assembly>/bin/Release/net10.0/ by
+      # walking up from their own output directory, so src/ must exist at the
+      # same relative depth as tests/ or those scans fail loudly.
+      #
+      # Adding the second root MOVES THE ARCHIVE ROOT. upload-artifact v4 roots
+      # the archive at the least common ancestor of everything it uploads: with
+      # `tests/*/...` alone that was `tests/`, but `tests/*/...` plus `src/*/...`
+      # share only the workspace root, so entries are now `tests/X/bin/...` and
+      # `src/Y/bin/...` with the prefix intact. Every consumer's download `path:`
+      # changed from `tests` to `.` to match -- unpacking into `tests` now would
+      # produce `tests/tests/X/...` and `tests/src/Y/...`, and both scans plus
+      # the ten-dll assertion would fail on paths that look almost right.
+      - name: Upload build output
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
+        with:
+          name: test-build
+          path: |
+            tests/*/bin/Release/net10.0/**
+            src/*/bin/Release/net10.0/**
+          if-no-files-found: error
+          retention-days: 1
 
-      - name: Enforce test-count floor
+  # --------------------------------------------------------------------------
+  # backend: three runners, one per assembly group, all consuming prep's build
+  # output. Assemblies WITHIN a group run sequentially (a loop), so the group is
+  # the unit of parallelism and nothing new races inside a job.
+  #
+  # Group A is Integration alone: it is by far the longest assembly and it is
+  # the only one holding several live ASP.NET hosts at once (arb-rga.4 sets
+  # maxParallelThreads 4 there).
+  # Group C carries Architecture, which is why every group restores the FULL
+  # test output rather than only its own -- see the prep job's comment.
+  # --------------------------------------------------------------------------
+  backend:
+    name: Backend (${{ matrix.group }})
+    runs-on: ubuntu-latest
+    needs: prep
+    env:
+      # 2 GB, uniform across all three groups. arb-rga.6's third comment asked
+      # this bead to DECIDE this number from a measurement rather than inherit
+      # it, and the sampler in the test step below is what produced the answer.
+      #
+      # Measured peak RSS of the whole dotnet/testhost tree (see the PR body for
+      # the per-assembly table):
+      #   group A  Integration      1.21 GiB  -- at maxParallelThreads 4
+      #   group B  max (Core)       0.42 GiB
+      #   group C  max (Media)      0.31 GiB
+      #
+      # Integration is the only group holding several live ASP.NET hosts, and it
+      # still sits at ~60% of this cap. The caveat that keeps that honest: the
+      # measurement is tree RSS (runtime, native allocations and mapped files
+      # included) while this variable caps only the managed GC heap, so actual
+      # heap use is strictly below 1.21 GiB and the real headroom is larger than
+      # the ratio suggests.
+      #
+      # Uncapped was considered and rejected: it makes the runner's own memory
+      # the only bound, so a future leak in an Integration fixture grows until
+      # the runner is OOM-killed -- an opaque failure -- instead of hitting a
+      # limit that names itself.
+      DOTNET_GCHeapHardLimit: "0x80000000"
+    strategy:
+      # A red group must not cancel the others: the gate sums executed= across
+      # every group's trx, and a cancelled sibling would report a shrunken count
+      # on top of the real failure, making the floor look breached when it was
+      # never measured at all.
+      fail-fast: false
+      matrix:
+        include:
+          - group: A
+            assemblies: "Arbitarr.Integration.Tests"
+          - group: B
+            assemblies: "Arbitarr.Data.Tests Arbitarr.Api.Tests Arbitarr.Core.Tests"
+          - group: C
+            assemblies: "Arbitarr.Host.Tests Arbitarr.Media.Tests Arbitarr.Ai.Tests Arbitarr.Core.Identity.Tests Arbitarr.Sources.NzbHydra.Tests Arbitarr.Architecture.Tests"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: "10.0.x"
+
+      # upload-artifact v4 roots the archive at the least common ancestor of the
+      # uploaded paths. prep uploads TWO roots -- `tests/*/bin/...` and
+      # `src/*/bin/...` -- whose only common ancestor is the workspace root, so
+      # the archive holds `tests/Arbitarr.Api.Tests/bin/...` and
+      # `src/Arbitarr.Data/bin/...` with both prefixes intact, and it unpacks at
+      # `.` rather than into `tests/`.
+      #
+      # That `.` is load-bearing, not tidiness. Both the tests/ walk and the
+      # src/ walk in the Architecture scans are RELATIVE to the repository root
+      # (five parents up from an assembly's own output directory), so the two
+      # trees must sit beside each other exactly as they do in the checkout.
+      # Unpacking into `tests/` would nest them one level deeper and every scan
+      # would report "Could not locate the built assembly".
+      #
+      # download-artifact v7+ runs on node24 and needs runner >= 2.327.1. Every job
+      # here is `runs-on: ubuntu-latest` (GitHub-hosted), which satisfies that; it
+      # is called out because moving any of these jobs to a self-hosted runner
+      # would break the download rather than the thing that was changed.
+      - name: Download build output
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: test-build
+          path: .
+
+      # The Cecil scans fail loudly on a missing sibling, but they only run in
+      # group C. A truncated artifact would otherwise let A and B run a smaller
+      # set of tests and report a smaller executed= sum, which the gate reads as
+      # a floor breach in the wrong place -- or, if the floor happened to be low
+      # enough, as a pass. Assert the precondition in every group, where the
+      # failure names the actual cause instead of a count.
+      #
+      # BOTH roots are asserted. tests/ feeds TestProcessGlobalStateTests; src/
+      # feeds ProductionProcessGlobalStateTests (all eight production
+      # assemblies) and NoInlineDatabaseConnectionStringsTests (Arbitarr.Data),
+      # added by #157. Those two are why src/ is in the artifact at all, so a
+      # src/ path missing here is the exact failure this step exists to name.
+      # src/Arbitarr.Web is absent from the list on purpose: it is the React
+      # frontend, has no csproj, and produces no managed output to resolve.
+      - name: Assert the build output was restored
         shell: bash
         run: |
           set -euo pipefail
 
-          floor="$BACKEND_FLOOR"
+          missing=0
 
-          total=0
-          for trx in ./TestResults/*.trx; do
-            [ -f "$trx" ] || continue
-            # Each .trx's <ResultSummary><Counters .../> element carries both "total" (includes
-            # skipped tests) and "executed" (tests that actually ran). Use "executed" so a
-            # skipped test can't be counted toward the floor without actually running.
-            count=$(grep -o 'executed="[0-9]*"' "$trx" | head -1 | grep -o '[0-9]*')
-            count=${count:-0}
-            total=$((total + count))
+          # TEST_ASSEMBLIES is the single hoisted list (arb-6ke); this loop no
+          # longer carries its own copy of the ten names.
+          for a in $TEST_ASSEMBLIES; do
+            dll="tests/${a}/bin/Release/net10.0/${a}.dll"
+            if [ ! -f "$dll" ]; then
+              echo "BLOCKED: missing test assembly ${dll} from the test-build artifact." >&2
+              missing=1
+            fi
           done
 
-          echo "Executed test count: $total (floor: $floor)"
-          echo "Backend floor source: $FLOOR_SOURCE"
-          # Recorded here rather than at the end of the job so the count is written
-          # even if a later step fails: the ratchet's input is what this run
-          # measured, not whether every other gate happened to pass.
-          echo "BACKEND_COUNT=$total" >> "$GITHUB_ENV"
-          if [ "$total" -lt "$floor" ]; then
-            echo "BLOCKED: executed test count ($total) is below master's last measured count ($floor, from $FLOOR_SOURCE)." >&2
+          for a in Arbitarr.Ai Arbitarr.Api Arbitarr.Core Arbitarr.Core.Identity \
+                   Arbitarr.Data Arbitarr.Host Arbitarr.Media \
+                   Arbitarr.Sources.NzbHydra; do
+            dll="src/${a}/bin/Release/net10.0/${a}.dll"
+            if [ ! -f "$dll" ]; then
+              echo "BLOCKED: missing production assembly ${dll} from the test-build artifact." >&2
+              missing=1
+            fi
+          done
+
+          if [ "$missing" -ne 0 ]; then
+            echo "" >&2
+            echo "All ten test assemblies AND all eight production assemblies must be present" >&2
+            echo "in the same configuration and TFM. Four Architecture scans resolve them by" >&2
+            echo "walking from their own output directory to a sibling tree, and fail rather" >&2
+            echo "than passing vacuously over a smaller set:" >&2
+            echo "  TestProcessGlobalStateTests               reads tests/*/bin/Release/net10.0/" >&2
+            echo "  QuarantineTraitTests                      reads tests/*/bin/Release/net10.0/  (arb-2nm)" >&2
+            echo "  ProductionProcessGlobalStateTests         reads src/*/bin/Release/net10.0/  (#157)" >&2
+            echo "  NoInlineDatabaseConnectionStringsTests    reads src/Arbitarr.Data/...       (#157)" >&2
             exit 1
           fi
 
-      # ----------------------------------------------------------------------
-      # Frontend (src/Arbitarr.Web). These steps sit AFTER the .NET test-count
-      # floor and BEFORE the tree-wide secret/topology guard deliberately: the
-      # backend floor above parses executed="N" out of .trx, the frontend floor
-      # below parses numPassedTests out of the Vitest JSON report. Two counts,
-      # two parsers, so neither suite's count can mask a collapse in the other.
-      # Both are ratcheted against the SAME master run, so the pair moves
-      # together and one suite cannot be ratcheted from a run that never
-      # measured the other.
-      # ----------------------------------------------------------------------
+          echo "All ten test assemblies present under tests/*/bin/Release/net10.0/."
+          echo "All eight production assemblies present under src/*/bin/Release/net10.0/."
+
+      # The built dll is run DIRECTLY, not via the csproj. `dotnet test <csproj>
+      # --no-build` still evaluates the project and needs obj/project.assets.json,
+      # which the artifact does not carry (only bin/ is uploaded). Verified
+      # locally that dll mode reports counts identical to csproj mode under this
+      # filter: Data 218, Api 181, Core 384 -- the same numbers #154 measured.
+      - name: Test (group ${{ matrix.group }})
+        shell: bash
+        env:
+          GROUP_ASSEMBLIES: ${{ matrix.assemblies }}
+        run: |
+          set -euo pipefail
+
+          # DOTNET_GCHeapHardLimit is set once at job level and applies to every
+          # group; see the comment on it for the measurement behind the number.
+          echo "DOTNET_GCHeapHardLimit: $DOTNET_GCHeapHardLimit"
+
+          mkdir -p ./TestResults
+
+          # Peak memory is sampled, not taken from `/usr/bin/time -v`. time -v
+          # reports the max RSS of the process it waits for (plus children it has
+          # already reaped), and `dotnet test` runs the tests in a SEPARATE
+          # testhost process -- so time -v reports the driver and misses the
+          # thing under measurement entirely. The first run of this workflow
+          # showed exactly that: Integration, which holds up to four live ASP.NET
+          # hosts, reported a LOWER peak (110 MB) than Core/Api (222 MB), which
+          # hold none. A number that ranks the groups backwards cannot be used to
+          # decide a heap cap, which is what arb-rga.6's third comment asks for.
+          #
+          # Instead sample the whole process tree's RSS while the run is in
+          # flight and keep the maximum. 1 s is fine: the question is whether the
+          # group approaches a 2 GB cap, not the exact byte.
+          # The sampler must never be able to fail the job: it is instrumentation,
+          # and a measurement that can red a green suite is worse than no
+          # measurement. Every part that can fail is neutralised -- `|| echo 0`
+          # on the sample, `|| status=$?` on the wait -- so the only thing
+          # deciding this step's exit code is dotnet test itself.
+          sample_peak() {
+            out="$1" ; shift
+            peak=0
+            "$@" &
+            pid=$!
+            while kill -0 "$pid" 2>/dev/null; do
+              # Sum RSS across the whole dotnet/testhost tree: the driver, the
+              # testhost the tests actually run in, and any host they spawn.
+              # awk always prints exactly one number (`s+0`), so `cur` is a single
+              # integer whenever ps worked. If ps is unavailable the pipeline
+              # yields nothing and `cur` is empty -- hence the numeric test below
+              # rather than `${cur:-0}`, which on a two-line value would feed
+              # `[ ... -gt ... ]` something it reports as "integer expected".
+              cur=$(ps -eo rss,comm --no-headers 2>/dev/null \
+                    | awk '$2 ~ /^(dotnet|testhost)/ {s+=$1} END {print s+0}') || cur=''
+              # An explicit if, not `[ ... ] && peak=...`: under set -e a
+              # trailing false test would take the shell down with it.
+              if printf '%s' "$cur" | grep -qE '^[0-9]+$' && [ "$cur" -gt "$peak" ]; then
+                peak="$cur"
+              fi
+              sleep 1
+            done
+            # `wait` returns the child's status, which is the one that matters:
+            # `$?` at this point belongs to the loop above, not to dotnet test.
+            # Capture it directly off `wait` so nothing can run in between --
+            # what would lose it is a BARE `local`/declaration executing between
+            # the command and the read, since that resets `$?` to its own exit
+            # code. (An assignment like `local status=$?` is NOT the broken
+            # shape; the two run_grep helpers below declare with a bare `local`
+            # FIRST and only then run the command, which is equally safe.) Kept
+            # as plain globals here so the question does not arise.
+            status=0
+            wait "$pid" || status=$?
+            echo "${peak:-0}" > "$out"
+            return "$status"
+          }
+
+          for a in $GROUP_ASSEMBLIES; do
+            dll="tests/${a}/bin/Release/net10.0/${a}.dll"
+            echo "::group::${a}"
+            start=$(date +%s)
+            # LogFileName is NOT cosmetic. The default trx name is
+            # <vm-hostname>_<yyyy-MM-dd_HH_mm_ss>.trx, which carries no assembly
+            # name, so two assemblies finishing in the same second on two runners
+            # that happen to share a VM hostname produce the SAME basename. The
+            # gate then loses one file and reports a short count as a floor
+            # breach. That is not hypothetical: run 3 of this PR summed 1311
+            # instead of 1492 because Api (181) and Core.Identity (34) both wrote
+            # the same default name. Naming the file after the assembly makes the
+            # basename unique by construction, independent of runner or timing.
+            sample_peak "./TestResults/${a}.peakkb" \
+              dotnet test "$dll" \
+                --filter "$TEST_FILTER" \
+                --logger "trx;LogFileName=${a}.trx" --results-directory ./TestResults
+            echo "$(( $(date +%s) - start ))" > "./TestResults/${a}.secs"
+            echo "peak dotnet+testhost RSS: $(cat "./TestResults/${a}.peakkb") KB in $(cat "./TestResults/${a}.secs") s"
+            echo "::endgroup::"
+          done
+
+      - name: Report peak memory (group ${{ matrix.group }})
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "### Backend group ${{ matrix.group }} peak memory"
+            echo ""
+            echo "| Assembly | Peak dotnet+testhost RSS (KB) | Wall clock |"
+            echo "|---|---|---|"
+            for f in ./TestResults/*.peakkb; do
+              [ -f "$f" ] || continue
+              a=$(basename "$f" .peakkb)
+              rss=$(cat "$f" 2>/dev/null || echo '?')
+              secs=$(cat "./TestResults/${a}.secs" 2>/dev/null || echo '?')
+              echo "| $a | $rss | ${secs}s |"
+            done
+            echo ""
+            echo "Heap cap (all groups): $DOTNET_GCHeapHardLimit"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Each group's trx go up under their own name; the gate downloads trx-*
+      # and sums executed= across all of them exactly as the single job did.
+      - name: Upload test results (group ${{ matrix.group }})
+        if: always()
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
+        with:
+          name: trx-${{ matrix.group }}
+          path: ./TestResults/*.trx
+          if-no-files-found: error
+          retention-days: 1
+
+  # --------------------------------------------------------------------------
+  # frontend: runs in parallel with prep and the backend matrix. It has no .NET
+  # dependency at all, so making it wait on the build was pure serialisation --
+  # it was only ever downstream because everything lived in one job.
+  #
+  # The floor is ENFORCED in the gate, not here. The floor value is resolved
+  # from master's test-counts artifact, which needs `actions: read`; keeping
+  # both enforcements in the one job that holds that permission avoids widening
+  # this job's token, and keeps "both floors ratchet from the SAME master run"
+  # true by construction rather than by two jobs independently resolving what
+  # they hope is the same run id. The count reaches the gate as a job output.
+  # --------------------------------------------------------------------------
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    outputs:
+      count: ${{ steps.count.outputs.count }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
       - name: Setup Node
         uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
@@ -327,13 +557,12 @@ jobs:
         working-directory: src/Arbitarr.Web
         run: npm test
 
-      - name: Enforce frontend test-count floor
+      - name: Read frontend test count
+        id: count
         shell: bash
         working-directory: src/Arbitarr.Web
         run: |
           set -euo pipefail
-
-          floor="$FRONTEND_FLOOR"
 
           report="vitest-report.json"
           if [ ! -f "$report" ]; then
@@ -351,13 +580,23 @@ jobs:
             exit 1
           fi
 
-          echo "Frontend passed test count: $total (floor: $floor)"
-          echo "Frontend floor source: $FLOOR_SOURCE"
-          echo "FRONTEND_COUNT=$total" >> "$GITHUB_ENV"
-          if [ "$total" -lt "$floor" ]; then
-            echo "BLOCKED: frontend passed test count ($total) is below master's last measured count ($floor, from $FLOOR_SOURCE)." >&2
-            exit 1
-          fi
+          echo "Frontend passed test count: $total"
+          echo "count=$total" >> "$GITHUB_OUTPUT"
+
+
+  # --------------------------------------------------------------------------
+  # guards: the tree-wide secret/topology sweep, on its own runner. It needs
+  # nothing but a checkout (it is git grep over the tracked tree), so hanging it
+  # off the build meant a ~10 s check waited minutes for a compiler it never
+  # used. Its position relative to the test steps carried no meaning -- it scans
+  # the tree, not the results.
+  # --------------------------------------------------------------------------
+  guards:
+    name: Guards
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Tree-wide secret/topology guard
         shell: bash
@@ -448,6 +687,634 @@ jobs:
           fi
 
           echo "Tree-wide secret/topology guard passed."
+
+      # arb-bj7: nothing else checks that the three backend matrix groups
+      # (A/B/C, ~176-183) together cover EXACTLY the ten assemblies
+      # TEST_ASSEMBLIES names. A one-token deletion in a rebase leaves the dll
+      # present in the prep artifact (that assertion passes) but simply unrun
+      # by any group; the gate's trx-set check (arb-6ke) would then report it
+      # as a "missing trx", which is correct but arrives late, only on the
+      # affected PR, and without pointing at the matrix as the cause. This
+      # step catches the same fault earlier and directly, on every PR, with no
+      # artifact needed -- guards runs standalone.
+      #
+      # The extraction below is a narrow literal-line scan, not a YAML parser:
+      # it reads only `assemblies: "..."` lines between the backend job's
+      # `matrix:` and `steps:` keys. python3 is available on ubuntu-latest
+      # runners but NOT in local git-bash, and this step must also run
+      # locally as a positive control, so it is kept to awk/sed rather than a
+      # YAML library. That narrowness is deliberate: if the matrix is ever
+      # reformatted (flow sequence, block scalar, different key or indent),
+      # the extraction must find ZERO assemblies lines and fail loudly on an
+      # empty union below, never silently produce a partial or wrong one.
+      - name: Verify matrix groups union to the asserted ten assemblies
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          workflow_file=".github/workflows/build-test.yml"
+
+          assemblies_lines=$(awk '
+            /^[[:space:]]*matrix:[[:space:]]*$/ { in_matrix=1 }
+            in_matrix && /^[[:space:]]*steps:[[:space:]]*$/ { exit }
+            in_matrix && /^[[:space:]]*assemblies:[[:space:]]*"/ { print }
+          ' "$workflow_file")
+
+          if [ -z "$assemblies_lines" ]; then
+            echo "BLOCKED: no 'assemblies: \"...\"' lines found under the backend job's matrix." >&2
+            echo "in ${workflow_file}. The extraction expects one such line per matrix group;" >&2
+            echo "if the matrix was reformatted (flow sequence, block scalar, different" >&2
+            echo "key/indent), update this extraction rather than letting the union check" >&2
+            echo "pass vacuously over zero entries." >&2
+            exit 1
+          fi
+
+          # A PARTIAL reformat (one group's assemblies line switched to single
+          # quotes, folded onto a block scalar, etc.) does not zero out
+          # assemblies_lines above -- it just makes the extraction miss that one
+          # group, and the union check below would then report the group's
+          # assemblies as "missing from the matrix", which points at the wrong
+          # cause: the assemblies are still there, the extraction just can't see
+          # them. Counting `- group:` entries and comparing against the number of
+          # extracted lines catches exactly this case, before the union logic
+          # runs, with a message that says what actually broke.
+          group_count=$(awk '
+            /^[[:space:]]*matrix:[[:space:]]*$/ { in_matrix=1 }
+            in_matrix && /^[[:space:]]*steps:[[:space:]]*$/ { exit }
+            in_matrix && /^[[:space:]]*-[[:space:]]*group:/ { n++ }
+            END { print n+0 }
+          ' "$workflow_file")
+
+          assemblies_count=$(printf '%s\n' "$assemblies_lines" | sed '/^$/d' | wc -l)
+
+          if [ "$assemblies_count" -ne "$group_count" ]; then
+            echo "BLOCKED: extraction broke -- found ${group_count} '- group:' entries but" >&2
+            echo "only ${assemblies_count} 'assemblies: \"...\"' lines in ${workflow_file}." >&2
+            echo "This means the matrix was partially reformatted (a group's assemblies line" >&2
+            echo "no longer matches the narrow literal-line scan this step uses), not that" >&2
+            echo "assemblies are missing from the matrix. Fix the extraction to match the new" >&2
+            echo "format, or revert the reformat." >&2
+            exit 1
+          fi
+
+          union_list=$(printf '%s\n' "$assemblies_lines" \
+            | sed -E 's/^[[:space:]]*assemblies:[[:space:]]*"([^"]*)".*$/\1/' \
+            | tr ' ' '\n' \
+            | sed '/^$/d')
+
+          union_sorted=$(printf '%s\n' "$union_list" | sort -u)
+          expected_sorted=$(printf '%s\n' $TEST_ASSEMBLIES | sort -u)
+
+          missing_from_matrix=$(comm -23 <(printf '%s\n' "$expected_sorted") <(printf '%s\n' "$union_sorted"))
+          extra_in_matrix=$(comm -13 <(printf '%s\n' "$expected_sorted") <(printf '%s\n' "$union_sorted"))
+          dup_in_matrix=$(printf '%s\n' "$union_list" | sort | uniq -d)
+
+          if [ -n "$missing_from_matrix" ] || [ -n "$extra_in_matrix" ] || [ -n "$dup_in_matrix" ]; then
+            echo "BLOCKED: matrix groups A/B/C do not union to exactly TEST_ASSEMBLIES." >&2
+            [ -n "$missing_from_matrix" ] && { echo "Missing from the matrix (in TEST_ASSEMBLIES, not run by any group):" >&2; echo "$missing_from_matrix" | sed 's/^/  /' >&2; }
+            [ -n "$extra_in_matrix" ] && { echo "Extra in the matrix (not in TEST_ASSEMBLIES):" >&2; echo "$extra_in_matrix" | sed 's/^/  /' >&2; }
+            [ -n "$dup_in_matrix" ] && { echo "Duplicated across matrix groups:" >&2; echo "$dup_in_matrix" | sed 's/^/  /' >&2; }
+            exit 1
+          fi
+
+          echo "Matrix groups A/B/C union to exactly the ten TEST_ASSEMBLIES."
+
+      # arb-03v: the check above proves the matrix union equals TEST_ASSEMBLIES,
+      # but nothing proves TEST_ASSEMBLIES itself still matches the tests/ tree.
+      # An eleventh tests/*.Tests project (or a rename) is otherwise INVISIBLE to
+      # the merge lane: prep's build-output assertion, the matrix-union step and
+      # the gate's trx-set check all consume the same hand-maintained list, so a
+      # project missing from that list simply never runs and the ratchet floor
+      # ratchets over the smaller set without ever failing red. nightly.yml
+      # already catches this (`find tests -name '*.Tests.csproj'`, asserted
+      # against a hard-coded `expected=10`) but nightly is not a required check
+      # and runs once a day, so a bad PR merges hours before anyone notices.
+      # This step is the same discovery, in the required lane, diffed by name
+      # against TEST_ASSEMBLIES instead of only counting. nightly.yml's own
+      # expected=10 assertion is intentionally left as-is: it is an independent
+      # measurement, not a copy of this one, and deleting it would remove the
+      # one check that still runs even if this file's guards job is ever
+      # bypassed or disabled.
+      - name: Verify TEST_ASSEMBLIES matches the tests/ tree
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tree_list=$(find tests -name '*.Tests.csproj' -exec basename {} .csproj \; | sort)
+
+          if [ -z "$tree_list" ]; then
+            echo "BLOCKED: no '*.Tests.csproj' found under tests/. Either the tree" >&2
+            echo "was moved/renamed or this find expression broke -- a check that passes" >&2
+            echo "vacuously over zero projects is worse than no check at all." >&2
+            exit 1
+          fi
+
+          expected_sorted=$(printf '%s\n' $TEST_ASSEMBLIES | sort -u)
+
+          missing_from_list=$(comm -23 <(printf '%s\n' "$tree_list") <(printf '%s\n' "$expected_sorted"))
+          missing_from_tree=$(comm -13 <(printf '%s\n' "$tree_list") <(printf '%s\n' "$expected_sorted"))
+
+          if [ -n "$missing_from_list" ] || [ -n "$missing_from_tree" ]; then
+            echo "BLOCKED: TEST_ASSEMBLIES does not match the tests/ tree." >&2
+            [ -n "$missing_from_list" ] && { echo "In the tree, missing from TEST_ASSEMBLIES:" >&2; echo "$missing_from_list" | sed 's/^/  /' >&2; }
+            [ -n "$missing_from_tree" ] && { echo "In TEST_ASSEMBLIES, no matching project in the tree:" >&2; echo "$missing_from_tree" | sed 's/^/  /' >&2; }
+            exit 1
+          fi
+
+          echo "TEST_ASSEMBLIES matches the tests/ tree exactly: $(printf '%s\n' "$tree_list" | tr '\n' ' ')"
+
+      # arb-9ae: BuiltAssemblies.cs (arb-hxa; formerly ProductionProcessGlobalStateTests.cs
+      # directly) scans src/ assemblies by FILE PATH, not through
+      # Architecture.Tests.csproj's ProjectReference graph (that scan exists
+      # precisely because Arbitarr.Host cannot be a ProjectReference there --
+      # NU1605; see the csproj's own Mono.Cecil comment). Nothing previously
+      # enforced that its hand-written ProductionAssemblyNames array still
+      # matches the reference graph plus the one documented exception: a name
+      # added to the array with no matching ProjectReference (and not
+      # allow-listed) would scan an assembly no build guarantees exists yet,
+      # and a name that WAS allow-listed but has since gained a real
+      # ProjectReference would leave a stale allow-list entry masking a graph
+      # that could now do the job on its own.
+      #
+      # The extraction below is a NARROW sed address range, not a C# parser
+      # (scripts/test-affected.sh's own comment bans parsing C# from bash for
+      # the same reason: this step runs in CI only). It matches from the
+      # opening `internal static readonly string[] ProductionAssemblyNames =`
+      # declaration line (arb-hxa: `internal`, not `private` -- the field must
+      # be visible outside BuiltAssemblies to its four consumer classes) to
+      # the closing `    ];` line and reads only the `"Name",` entries between
+      # them. If that shape changes (renamed field, reformatted array,
+      # different indent, a visibility change), the range must find ZERO
+      # lines and fail loudly below -- never silently produce a partial or
+      # empty list that then passes the union checks vacuously.
+      - name: Verify every src assembly scanned by Architecture.Tests is referenced or allow-listed
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          [ -n "${TEST_ASSEMBLIES:-}" ] || { echo "BLOCKED: TEST_ASSEMBLIES is empty" >&2; exit 1; }
+
+          scan_file="tests/Arbitarr.Architecture.Tests/BuiltAssemblies.cs"
+          csproj_file="tests/Arbitarr.Architecture.Tests/Arbitarr.Architecture.Tests.csproj"
+
+          # Arbitarr.Host is the one documented exception: NU1605 blocks
+          # Architecture.Tests.csproj from taking a ProjectReference on it, so
+          # its IL is read by file path instead (see the csproj comment and
+          # scripts/test-affected.sh's "2b" block). A name belongs here only
+          # when there is a real, currently-true reason it cannot be a
+          # ProjectReference -- not as a place to park a name that could be
+          # referenced instead.
+          allow_listed="Arbitarr.Host"
+
+          scanned_names=$(sed -n '/^[[:space:]]*internal static readonly string\[\] ProductionAssemblyNames =[[:space:]]*$/,/^[[:space:]]*\];[[:space:]]*$/p' "$scan_file" \
+            | sed -n 's/^[[:space:]]*"\([A-Za-z0-9.]*\)",\{0,1\}[[:space:]]*$/\1/p')
+
+          if [ -z "$scanned_names" ]; then
+            echo "BLOCKED: found no assembly names between the 'ProductionAssemblyNames ='" >&2
+            echo "declaration and its closing '];' in ${scan_file}. This extraction is a" >&2
+            echo "narrow sed range over that exact shape (8-space indented \"Name\", entries" >&2
+            echo "between an 'internal static readonly string[] ProductionAssemblyNames =' line" >&2
+            echo "and a bare '];' line) -- if the array was renamed, reformatted, or its" >&2
+            echo "visibility changed, fix this extraction rather than letting the checks below" >&2
+            echo "pass vacuously over zero names." >&2
+            exit 1
+          fi
+
+          referenced_names=$(grep -oE 'Include="[.][.][\][.][.][\]src[\][A-Za-z0-9.]+[\]' "$csproj_file" || true)
+          referenced_names=$(printf '%s' "$referenced_names" \
+            | sed -E 's/^Include="[.][.][\][.][.][\]src[\]([A-Za-z0-9.]+)[\]$/\1/' \
+            | sort -u)
+
+          if [ -z "$referenced_names" ]; then
+            echo "BLOCKED: found no ProjectReference entries matching the expected shape in" >&2
+            echo "${csproj_file}. This extraction looks for" >&2
+            echo '  Include="..\..\src\<Name>\<Name>.csproj"' >&2
+            echo "(Windows backslashes) -- if the csproj now uses forward slashes, a" >&2
+            echo "different relative path, or has no src/ ProjectReferences left, update this" >&2
+            echo "extraction's pattern rather than letting the checks below pass vacuously" >&2
+            echo "over zero referenced names." >&2
+            exit 1
+          fi
+
+          scanned_sorted=$(printf '%s\n' "$scanned_names" | sort -u)
+          allow_listed_sorted=$(printf '%s\n' "$allow_listed" | sort -u)
+
+          unreferenced=$(comm -23 <(printf '%s\n' "$scanned_sorted") <(printf '%s\n' "$referenced_names"))
+          unreferenced_unlisted=$(comm -23 <(printf '%s\n' "$unreferenced") <(printf '%s\n' "$allow_listed_sorted"))
+          stale_allow_listed=$(comm -12 <(printf '%s\n' "$allow_listed_sorted") <(printf '%s\n' "$referenced_names"))
+
+          if [ -n "$unreferenced_unlisted" ] || [ -n "$stale_allow_listed" ]; then
+            echo "BLOCKED: ${scan_file}'s ProductionAssemblyNames drifted from the" >&2
+            echo "Architecture.Tests reference graph." >&2
+            if [ -n "$unreferenced_unlisted" ]; then
+              echo "Scanned but neither referenced nor allow-listed (add a ProjectReference in" >&2
+              echo "${csproj_file}, or add the name to the allow_listed variable in this step" >&2
+              echo "AND to the hard-coded Host case in scripts/test-affected.sh's '2b' block):" >&2
+              echo "$unreferenced_unlisted" | sed 's/^/  /' >&2
+            fi
+            if [ -n "$stale_allow_listed" ]; then
+              echo "Allow-listed here but now has a real ProjectReference -- remove it from the" >&2
+              echo "allow_listed variable in this step (leave scripts/test-affected.sh's Host" >&2
+              echo "case alone unless Host itself is the name being removed):" >&2
+              echo "$stale_allow_listed" | sed 's/^/  /' >&2
+            fi
+            exit 1
+          fi
+
+          echo "Every scanned assembly is referenced or allow-listed, and the allow-list has no stale entries."
+
+      # arb-5sg (1 of 2): a tests/*.Tests project that is in TEST_ASSEMBLIES
+      # and present in the tree but missing from Arbitarr.sln builds no dll --
+      # `dotnet build Arbitarr.sln` in prep never sees it -- and the failure
+      # first surfaces at prep's "Assert the build output was restored" step
+      # with a message about a missing test-build artifact, which points at
+      # the artifact rather than at the actual cause. This step catches the
+      # same fault earlier, in guards (which needs nothing built), and names
+      # the sln directly.
+      #
+      # Arbitarr.sln is LF, and each test project's entry is a literal
+      # `tests\<Name>\<Name>.csproj` path with WINDOWS backslashes even though
+      # the file itself is not CRLF (verified with `git ls-files --eol` and a
+      # raw read of the file) -- this is the sln format's own convention, not
+      # a line-ending artifact, so the check greps for that exact backslash
+      # form rather than a slash-normalised one.
+      #
+      # This check is PRESENCE-ONLY: it greps for the project's `Project(...)`
+      # line and says nothing about the sln's per-configuration mapping. A
+      # project present but missing its `Debug|Any CPU.Build.0` line under
+      # GlobalSection(ProjectConfigurationPlatforms) still resolves here even
+      # though `dotnet build`/`dotnet test` silently skip building it -- that
+      # gap is not guarded by this step and is tracked separately (arb-exw).
+      - name: Verify every test project is in Arbitarr.sln and overrides no AssemblyName
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          [ -n "${TEST_ASSEMBLIES:-}" ] || { echo "BLOCKED: TEST_ASSEMBLIES is empty" >&2; exit 1; }
+
+          sln_file="Arbitarr.sln"
+
+          missing_from_sln=""
+          for name in $TEST_ASSEMBLIES; do
+            pattern='tests\'"$name"'\'"$name"'.csproj'
+            if ! grep -qF "$pattern" "$sln_file"; then
+              missing_from_sln="${missing_from_sln}${name}"$'\n'
+            fi
+          done
+
+          if [ -n "$missing_from_sln" ]; then
+            echo "BLOCKED: ${sln_file} is missing a test project that TEST_ASSEMBLIES names." >&2
+            echo "Every consumer (prep's build-output assertion, the backend dll path, and" >&2
+            echo "LogFileName) derives the dll and trx names from the TEST_ASSEMBLIES token, so" >&2
+            echo "a project absent from the sln builds nothing and fails downstream with a" >&2
+            echo "message that points at the missing artifact, not at the sln. Add the missing" >&2
+            echo "project(s) to ${sln_file}:" >&2
+            printf '%s' "$missing_from_sln" | sed 's/^/  /' >&2
+            exit 1
+          fi
+
+          # arb-5sg (2 of 2): every consumer derives the dll and trx BASENAME
+          # from the TEST_ASSEMBLIES token, i.e. from the project name --
+          # ONLY <AssemblyName> can make that basename diverge from the
+          # project name at build time, so only <AssemblyName> is checked
+          # here. <RootNamespace> is deliberately NOT checked: it controls
+          # the default namespace new files are generated into, never the
+          # compiled output's file name, so a RootNamespace override has no
+          # mechanism to break the TEST_ASSEMBLIES-derived dll/trx lookup --
+          # flagging it would be a rule with no failure it actually catches.
+          # (Several test projects already declare a same-name RootNamespace
+          # today, which is exactly why a check here would need to special-
+          # case "matches the project name" to stay green, and that
+          # special-case is a sign the check has no real target.)
+          #
+          # Any <AssemblyName> declaration fails, even one that happens to
+          # repeat the project's own name: unlike RootNamespace, AssemblyName
+          # has no legitimate reason to be declared at all in a test project
+          # here (none is today), so a same-name AssemblyName is not
+          # tolerated as harmless -- it is redundant at best and one edit
+          # away from silently diverging at worst. Failing all of them keeps
+          # the check simple and keeps that drift from ever being possible.
+          # Built FROM $TEST_ASSEMBLIES (tests/<Name>/<Name>.csproj) rather than a
+          # tests/*.Tests/*.csproj glob, so this shares the one source of truth with
+          # the sln check above instead of silently iterating zero times (and
+          # printing the success line below with rc=0) when the glob matches
+          # nothing -- e.g. an empty or not-yet-checked-out tests/ tree.
+          bad_overrides=""
+          for name in $TEST_ASSEMBLIES; do
+            csproj="tests/${name}/${name}.csproj"
+            if [ ! -f "$csproj" ]; then
+              echo "BLOCKED: ${csproj} does not exist. Every name in TEST_ASSEMBLIES must have a" >&2
+              echo "matching tests/<Name>/<Name>.csproj on disk for this AssemblyName check (and" >&2
+              echo "the sln check above) to mean anything." >&2
+              exit 1
+            fi
+            while IFS= read -r tag_line; do
+              [ -z "$tag_line" ] && continue
+              bad_overrides="${bad_overrides}${csproj}: ${tag_line}"$'\n'
+            done < <(grep -oE '<AssemblyName>[^<]*</AssemblyName>' "$csproj")
+          done
+
+          if [ -n "$bad_overrides" ]; then
+            echo "BLOCKED: a test project declares <AssemblyName>. Every consumer derives the" >&2
+            echo "dll and trx basename from the TEST_ASSEMBLIES token (the project name), so" >&2
+            echo "any AssemblyName override -- even one that currently repeats the project" >&2
+            echo "name -- produces build output under a name that stops being guaranteed to" >&2
+            echo "match TEST_ASSEMBLIES the next time either value changes. Remove it:" >&2
+            printf '%s' "$bad_overrides" | sed 's/^/  /' >&2
+            exit 1
+          fi
+
+          echo "Every TEST_ASSEMBLIES project is in Arbitarr.sln and declares no AssemblyName override."
+
+  # --------------------------------------------------------------------------
+  # gate: the required check. Named EXACTLY `Build & test` so the existing
+  # branch-protection rule keeps matching and NO branch-protection edit is
+  # needed -- the job that carried this name before was the whole build, and the
+  # name is now carried by the job that aggregates it.
+  #
+  # `if: always()` is what lets this job run when a needed job failed, so it can
+  # report the failure as its own. That makes the explicit result check below
+  # THE load-bearing line of this workflow: with `always()`, this job runs
+  # regardless, and without that check it would happily succeed on top of a red
+  # matrix job. And a SKIPPED job -- which is what a needed job's failure would
+  # otherwise make this -- is treated by branch protection as a satisfied
+  # required check, not a failed one. So a gate that merely inherited its
+  # needs' status would let a red backend group merge. Every needed job's
+  # `result` must be `success` explicitly, and anything else fails this job.
+  # --------------------------------------------------------------------------
+  gate:
+    name: Build & test
+    runs-on: ubuntu-latest
+    needs: [prep, backend, frontend, guards]
+    if: always()
+    # contents: read is inherited from the workflow-level block above and repeated
+    # here because naming a job-level `permissions` replaces it rather than adding
+    # to it. actions: read is what lets the floor step query the Actions API for
+    # master's last successful run and download its test-counts artifact.
+    permissions:
+      contents: read
+      actions: read
+    env:
+      # Bootstrap floors, used ONLY when no test-counts artifact can be found on
+      # master (first run after this lands, or the artifact has expired). These are
+      # the numbers the master push run for the #108 merge (run 34197814222)
+      # printed. They are the one place in the ratchet where a count is written by
+      # hand: never edit them to anything but a number a master push run actually
+      # printed -- a pull_request run measures the PR, not master.
+      BOOTSTRAP_BACKEND_FLOOR: "1189"
+      BOOTSTRAP_FRONTEND_FLOOR: "296"
+      FRONTEND_COUNT: ${{ needs.frontend.outputs.count }}
+    steps:
+      # ----------------------------------------------------------------------
+      # THE load-bearing step. See the job comment above: `if: always()` means
+      # this job runs even when a needed job failed, and branch protection
+      # counts a skipped required check as satisfied. Neither of those is a bug
+      # to work around -- together they are the only way a single required-check
+      # name can speak for four jobs -- but they mean the aggregate verdict has
+      # to be computed here, explicitly, rather than inherited.
+      # ----------------------------------------------------------------------
+      - name: Require every needed job to have succeeded
+        shell: bash
+        env:
+          PREP_RESULT: ${{ needs.prep.result }}
+          BACKEND_RESULT: ${{ needs.backend.result }}
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+          GUARDS_RESULT: ${{ needs.guards.result }}
+        run: |
+          set -euo pipefail
+
+          fail=0
+          # `backend` is a matrix job: its aggregated `result` is `success` only
+          # when EVERY group succeeded, so one entry covers all three groups.
+          for pair in "prep:$PREP_RESULT" "backend:$BACKEND_RESULT" \
+                      "frontend:$FRONTEND_RESULT" "guards:$GUARDS_RESULT"; do
+            job="${pair%%:*}"
+            result="${pair##*:}"
+            echo "${job}: ${result}"
+            if [ "$result" != "success" ]; then
+              echo "BLOCKED: job '${job}' did not succeed (result: ${result})." >&2
+              fail=1
+            fi
+          done
+
+          if [ "$fail" -ne 0 ]; then
+            echo "" >&2
+            echo "This gate carries the required-check name 'Build & test' for the whole" >&2
+            echo "workflow. It must fail explicitly when any job it aggregates failed, was" >&2
+            echo "cancelled or was skipped -- branch protection treats a skipped check as" >&2
+            echo "satisfied, so an unchecked gate would let a red matrix job merge." >&2
+            exit 1
+          fi
+
+          echo "All aggregated jobs succeeded."
+
+      # ----------------------------------------------------------------------
+      # The test-count floor is a ratchet, not a committed file. The floor is
+      # whatever master last measured: every run uploads a test-counts artifact,
+      # and every run resolves its floor from the latest successful `Build & test`
+      # run on master OTHER THAN ITSELF. Selecting "other than itself" is what
+      # makes a push to master enforce the ratchet too -- a shrink merged by force
+      # is still caught, because master is compared against its own predecessor
+      # rather than against nothing.
+      #
+      # A committed floor file made every two test-adding PRs conflict by
+      # construction, and the "measurements, never arithmetic" rule then forced a
+      # full re-run of both suites after each rebase. The ratchet keeps the
+      # guarantee (a suite cannot silently shrink) with no file to conflict on.
+      # ----------------------------------------------------------------------
+      - name: Resolve test-count floors from master
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          backend_floor="$BOOTSTRAP_BACKEND_FLOOR"
+          frontend_floor="$BOOTSTRAP_FRONTEND_FLOOR"
+          floor_source="bootstrap constant"
+
+          # `status=success` is the conclusion, so a run that failed for any reason
+          # (including on its own floor step) cannot become the floor. Ask for a
+          # handful and skip this run's own id: on a push to master, THIS run is a
+          # master run and would otherwise be compared against itself.
+          api_path="/repos/${GITHUB_REPOSITORY}/actions/workflows/build-test.yml/runs"
+          runs_json=$(gh api "${api_path}?branch=master&status=success&per_page=10" 2>/dev/null || echo '')
+
+          run_id=''
+          if [ -n "$runs_json" ]; then
+            jq_filter='[.workflow_runs[]? | select((.id | tostring) != $self)] | first | .id // empty'
+            run_id=$(printf '%s' "$runs_json" | jq -r --arg self "$GITHUB_RUN_ID" "$jq_filter")
+          fi
+
+          if [ -n "$run_id" ]; then
+            # download-artifact exits non-zero when the run has no such artifact
+            # (an older master run from before this ratchet landed, or an expired
+            # one). That is the bootstrap case, not a failure.
+            if gh run download "$run_id" --repo "$GITHUB_REPOSITORY" \
+                 --name test-counts --dir /tmp/floor >/dev/null 2>&1 \
+               && [ -f /tmp/floor/test-counts.json ]; then
+              b=$(jq -r '.backend // empty' /tmp/floor/test-counts.json)
+              f=$(jq -r '.frontend // empty' /tmp/floor/test-counts.json)
+              # The filter the artifact was MEASURED under. An artifact written
+              # before the filter field existed has none, which is treated
+              # exactly like a mismatch -- an unlabelled count cannot be shown to
+              # cover the same set of tests as this run, and assuming it does is
+              # the silent apples-to-oranges comparison this field exists to
+              # prevent.
+              artifact_filter=$(jq -r '.filter // empty' /tmp/floor/test-counts.json)
+
+              # Both counts must be present and numeric, or neither is used: a
+              # half-read artifact would silently drop one suite's floor to the
+              # bootstrap constant while looking like it had ratcheted.
+              if ! printf '%s' "$b" | grep -qE '^[0-9]+$' || ! printf '%s' "$f" | grep -qE '^[0-9]+$'; then
+                echo "test-counts artifact from run ${run_id} is unreadable; falling back to bootstrap constants." >&2
+              elif [ "$artifact_filter" != "$TEST_FILTER" ]; then
+                # Loud on purpose: ::notice:: surfaces in the run summary rather
+                # than only in the log body. A floor carried across a filter
+                # change would compare this run's count against a count of a
+                # different set of tests, which either blocks a correct PR or
+                # hides a real shrink.
+                echo "::notice title=Test-count floor fell back to bootstrap constants::The test-counts artifact from master run ${run_id} was measured under filter '${artifact_filter:-(none recorded)}', but this run uses filter '${TEST_FILTER}'. The two counts are not comparable, so the bootstrap constants (backend ${BOOTSTRAP_BACKEND_FLOOR}, frontend ${BOOTSTRAP_FRONTEND_FLOOR}) are used instead. Once master has run under the new filter, update the bootstrap constants from a number a master run actually printed (run this workflow via workflow_dispatch with measure-filter=true)."
+              else
+                backend_floor="$b"
+                frontend_floor="$f"
+                floor_source="master run ${run_id}"
+              fi
+            fi
+          fi
+
+          echo "BACKEND_FLOOR=$backend_floor" >> "$GITHUB_ENV"
+          echo "FRONTEND_FLOOR=$frontend_floor" >> "$GITHUB_ENV"
+          echo "FLOOR_SOURCE=$floor_source" >> "$GITHUB_ENV"
+          echo "Test-count floor source: $floor_source (backend: $backend_floor, frontend: $frontend_floor)"
+
+      - name: Download test results
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: trx-*
+          # Deliberately NOT merge-multiple. Flattening the three artifacts into
+          # one directory makes two identically-named trx overwrite each other,
+          # and the loss shows up as a short executed= sum -- i.e. as a floor
+          # breach in the wrong place. Each artifact keeps its own subdirectory
+          # (./TestResults/trx-A/, trx-B/, trx-C/) so a collision is impossible
+          # even before the per-assembly LogFileName above makes names unique.
+          path: ./TestResults
+
+      - name: Enforce test-count floor
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          floor="$BACKEND_FLOOR"
+
+          total=0
+
+          # Assert the trx SET by name, not just the count (arb-6ke). A
+          # misspelled matrix.assemblies entry plus a duplicate across groups
+          # can still yield ten files -- the count check that used to run here
+          # would pass over a different test set than the floor was measured
+          # over. Compare sorted basenames against TEST_ASSEMBLIES (the same
+          # hoisted list the prep-job assertion uses, so the two cannot drift
+          # apart) and require every basename to appear EXACTLY ONCE across
+          # ./TestResults/*/  -- a duplicate is as much a loss as a missing
+          # file, since it means some other assembly's trx never arrived.
+          #
+          # Two levels: the artifacts are NOT flattened (see the download step),
+          # so each group's trx live under ./TestResults/trx-<group>/. The glob
+          # is quoted only where expanded into a command argument; an empty
+          # match here still enters the loop body once with a literal
+          # non-existent path, which `[ -f ]` filters out -- so a run with zero
+          # trx falls through to an empty `found` list and fails the "missing"
+          # branch below by naming all ten, rather than passing vacuously.
+          found_list=""
+          for trx in ./TestResults/*/*.trx; do
+            [ -f "$trx" ] || continue
+            base=$(basename "$trx" .trx)
+            found_list="${found_list}${base}"$'\n'
+          done
+
+          expected_sorted=$(printf '%s\n' $TEST_ASSEMBLIES | sort)
+          # found_sorted is a bare `sort`, NOT `sort -u`, and that is load-bearing,
+          # not an inconsistency to tidy toward the `sort -u` calls below. Keeping
+          # duplicates in found_sorted is what lets `uniq -d` (below) detect a
+          # basename appearing twice across ./TestResults/*/ -- a duplicate that
+          # `sort -u` would silently collapse to one occurrence before it was ever
+          # visible. missing_names/unexpected_names then apply `sort -u` on top of
+          # this same variable because THEY are set comparisons (present vs absent),
+          # where a duplicate would only cause `comm` to double-count a line it
+          # should compare once. Unifying the two functions onto one sort silently
+          # drops either duplicate detection or the set comparison, depending on
+          # which way it's "fixed".
+          found_sorted=$(printf '%s' "$found_list" | sed '/^$/d' | sort)
+
+          missing_names=$(comm -23 <(printf '%s\n' "$expected_sorted") <(printf '%s\n' "$found_sorted" | sort -u))
+          unexpected_names=$(comm -13 <(printf '%s\n' "$expected_sorted") <(printf '%s\n' "$found_sorted" | sort -u))
+          duplicate_names=$(printf '%s\n' "$found_sorted" | uniq -d)
+
+          if [ -n "$missing_names" ] || [ -n "$unexpected_names" ] || [ -n "$duplicate_names" ]; then
+            echo "BLOCKED: trx set does not match the expected ten test assemblies by name." >&2
+            [ -n "$missing_names" ] && { echo "Missing (expected, no trx found):" >&2; echo "$missing_names" | sed 's/^/  /' >&2; }
+            [ -n "$unexpected_names" ] && { echo "Unexpected (trx found, not in TEST_ASSEMBLIES):" >&2; echo "$unexpected_names" | sed 's/^/  /' >&2; }
+            [ -n "$duplicate_names" ] && { echo "Duplicated (same basename across group directories):" >&2; echo "$duplicate_names" | sed 's/^/  /' >&2; }
+            echo "Files present:" >&2
+            ls -1 ./TestResults/*/*.trx >&2 2>/dev/null || echo "(none)" >&2
+            exit 1
+          fi
+
+          echo "All ten expected trx basenames present exactly once: $(printf '%s\n' "$expected_sorted" | tr '\n' ' ')"
+
+          for trx in ./TestResults/*/*.trx; do
+            [ -f "$trx" ] || continue
+            # Each .trx's <ResultSummary><Counters .../> element carries both "total" (includes
+            # skipped tests) and "executed" (tests that actually ran). Use "executed" so a
+            # skipped test can't be counted toward the floor without actually running.
+            count=$(grep -o 'executed="[0-9]*"' "$trx" | head -1 | grep -o '[0-9]*')
+            count=${count:-0}
+            total=$((total + count))
+          done
+
+          echo "Executed test count: $total (floor: $floor)"
+          echo "Backend floor source: $FLOOR_SOURCE"
+          # Recorded here rather than at the end of the job so the count is written
+          # even if a later step fails: the ratchet's input is what this run
+          # measured, not whether every other gate happened to pass.
+          echo "BACKEND_COUNT=$total" >> "$GITHUB_ENV"
+          if [ "$total" -lt "$floor" ]; then
+            echo "BLOCKED: executed test count ($total) is below master's last measured count ($floor, from $FLOOR_SOURCE)." >&2
+            exit 1
+          fi
+
+      # Two counts and two parsers, deliberately, so neither suite's count can
+      # mask a collapse in the other: the backend floor above parses executed="N"
+      # out of the .trx, this one reads the frontend job's output, which that job
+      # parsed from numPassedTests in the Vitest JSON report. Both are ratcheted
+      # against the SAME master run resolved above, so the pair moves together
+      # and one suite cannot be ratcheted from a run that never measured the other.
+      - name: Enforce frontend test-count floor
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          floor="$FRONTEND_FLOOR"
+          total="$FRONTEND_COUNT"
+
+          # The frontend job succeeded (the aggregate check above proved it), so
+          # an empty or non-numeric count here means the output did not survive
+          # the job boundary rather than that the suite was empty. Failing loudly
+          # beats comparing an empty string against the floor, which `-lt` would
+          # read as 0 and block on -- or, worse, a future refactor could read as
+          # a pass.
+          if ! printf '%s' "$total" | grep -qE '^[0-9]+$'; then
+            echo "BLOCKED: frontend job output 'count' was not a number ('${total}')." >&2
+            exit 1
+          fi
+
+          echo "Frontend passed test count: $total (floor: $floor)"
+          echo "Frontend floor source: $FLOOR_SOURCE"
+          if [ "$total" -lt "$floor" ]; then
+            echo "BLOCKED: frontend passed test count ($total) is below master's last measured count ($floor, from $FLOOR_SOURCE)." >&2
+            exit 1
+          fi
 
       # A measure-filter run exists to PRINT a number for the bootstrap
       # constants, so it must not also write the artifact: publishing a count

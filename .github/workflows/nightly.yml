@@ -48,11 +48,12 @@ on:
 # never ran them. It is not in branch protection's required checks either.
 
 env:
-  # Kept identical to build-test.yml's job-level value (see that file's env
-  # block). A test-hosting class here can hold a live ASP.NET host at ~1.06 GB
-  # RSS, and Integration runs four at a time (xunit.runner.json, arb-rga.4); the
-  # two settings are only safe as a PAIR, so a nightly that raised this limit
-  # would be exercising a memory profile no PR ever runs.
+  # Kept identical to build-test.yml's `backend` job env block (arb-rga.6 moved
+  # TEST_FILTER to workflow level but left this cap on the backend job itself).
+  # A test-hosting class here can hold a live ASP.NET host at ~1.06 GB RSS, and
+  # Integration runs four at a time (xunit.runner.json, arb-rga.4); the two
+  # settings are only safe as a PAIR, so a nightly that raised this limit would
+  # be exercising a memory profile no PR ever runs.
   DOTNET_GCHeapHardLimit: "0x80000000"
 
 jobs:

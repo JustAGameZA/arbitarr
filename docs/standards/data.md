@@ -26,6 +26,69 @@ unvetted text surface to a file operators carry around widens the blast radius f
 benefit, and logs are not configuration. Exporting the log store is a support-bundle feature and a
 different artefact with different handling — not an extra entry here.
 
+### Backup, restore, and the staging directory
+
+**Every backup and restore location is derived from the one injected config directory.**
+`BackupPaths` builds `BackupDirectory` (`backups/`) and `StagingDirectory` (`backup-staging/`) by
+combining the same `configDirectory` that `Program.cs` uses for the database and the secret, so
+these paths can never point somewhere else. Neither directory is under `wwwroot`, and
+`UseStaticFiles` serves only `wwwroot` — nothing in the request pipeline maps either path, which is
+the property to preserve if the static-file configuration is ever revisited.
+
+**`backup-staging/` is a sibling of `backups/`, not a child of it**, and holds only transient
+restore/backup working files: the upload spool, the validator's extraction, the download build, and
+the pre-zip snapshot. Nothing in it is intended to survive a process lifetime — every writer cleans
+it up in a `finally`, and a startup sweep (`StagingSweepService` / `StagingSweep`) reclaims any
+orphan left behind by a hard kill, using the process-start instant as a cut-off so it never deletes
+a file an in-flight operation on the current run is still writing. `StagingFileNames.AllPrefixes` is
+the sweep's whole contract: a new staging writer must register its prefix there, or its orphans are
+never reclaimed.
+
+**Because `backup-staging/` and the config database share the config directory's filesystem,
+`RestoreService.ApplyValidatedFiles`'s `File.Move` calls are renames, not cross-device copies** —
+the validated database and secret are copied beside their targets first (still within the config
+directory) and then moved onto the live paths, which is what makes that final step atomic. Moving
+staging back to the OS temp directory would put it on a different volume from the config directory
+in the general case and silently turn that rename back into a copy.
+
+### Connection pools are keyed by the full string
+
+**Microsoft.Data.Sqlite keys its connection pools by the FULL connection string, not by the
+file.** Two strings naming one file are two independent pools, and clearing one leaves the other's
+handles open. This is why a restore that swaps `arbitarr.db` has to drop every pool that names it,
+and why "every pool that names it" has to be a closed set.
+
+**Every connection string naming the application database is built by
+`DatabaseConnectionStrings`** (`src/Arbitarr.Data/DatabaseConnectionStrings.cs`) — never formatted
+inline at a call site. It is the only place that knows the complete set of shapes, and
+`DatabaseConnectionStrings.ForDatabase(path)` enumerates them. **A new shape must be added to
+`ForDatabase`**, or it is a pool nothing clears. The failure is silent in the worst way on Linux:
+the file swap succeeds, the stale pooled handle keeps serving the replaced inode, and the process
+carries on reading the old database while the restored one sits on disk looking applied. The log
+store's string is deliberately absent from that set — it names a separate file a restore never
+replaces, and clearing it would be the over-reach described next.
+
+**`SqliteConnection.ClearAllPools()` is banned.** It is process-global: it force-closes every pooled
+connection in the process, including those of unrelated databases and of whatever test happens to
+be running alongside — the mechanism behind arb-cbc/arb-5ba. **The replacement is
+`SqlitePoolCleaner.ClearPoolsFor(path)`** (`src/Arbitarr.Data/Backup/SqlitePoolCleaner.cs`),
+which clears exactly the pools `ForDatabase` enumerates for that one file; tests use
+`Arbitarr.TestSupport`'s `SqliteTestDatabase` / `SqlitePools`, which scope the clear the same way.
+The ban itself is enforced by two of the Cecil IL scans in `tests/Arbitarr.Architecture.Tests` —
+`ProductionProcessGlobalStateTests` (every `src/` assembly) and `TestProcessGlobalStateTests` (every
+test assembly) — named alongside the other two scans in
+[process.md's Cecil IL scans section](process.md#cecil-il-scans-in-architecturetests), which is the
+one place all four are listed.
+
+**What the IL scan does and does not close.** `NoInlineDatabaseConnectionStringsTests` (also listed
+in the section linked above) reads `Arbitarr.Data`'s IL and fails any type outside its named
+allow-lists that constructs a `SqliteConnectionStringBuilder` or a `SqliteConnection` — it closes the
+**builder** shape. It cannot see a string hand-concatenated inside a type that is allowed to open
+connections, so those types are **trusted by convention** to take every string from
+`DatabaseConnectionStrings`; that obligation is stated at each of their call sites, not enforced by
+the scan. Do not read the green test as proof that no inline string exists anywhere — it proves no
+type outside the list builds one.
+
 ---
 
 ## Provenance is mandatory on degraded paths

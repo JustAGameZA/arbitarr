@@ -54,9 +54,11 @@ public sealed class BackupService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(destinationPath);
 
+        // Arb-3gd: this instance's own BackupPaths.StagingDirectory, not the machine-wide
+        // Path.GetTempPath() — see BackupPaths.StagingSubdirectoryName's doc comment.
         var snapshotPath = Path.Combine(
-            Path.GetTempPath(),
-            "arbitarr-snapshot-" + Guid.NewGuid().ToString("N") + ".db");
+            _paths.EnsureStagingDirectory(),
+            StagingFileNames.SnapshotPrefix + Guid.NewGuid().ToString("N") + ".db");
 
         try
         {

@@ -285,6 +285,12 @@ mistaken restore is itself recoverable. It is never swept by automatic-backup
 retention — the moment it is most needed is exactly when later scheduled backups
 would have pushed it off the end of a retained list.
 
+**Staging directory.** `backup-staging/`, a sibling of `backups/` under the config
+directory, holding only transient restore/backup working files that a startup
+sweep reclaims if a hard kill leaves them behind. See
+[docs/standards/data.md](docs/standards/data.md#backup-restore-and-the-staging-directory)
+for the full rule.
+
 **Snapshot versioning.** Metadata is cached against a hash of the source
 snapshot it came from, so an upstream edit invalidates stale entries rather than
 serving them indefinitely.

@@ -24,34 +24,23 @@ namespace Arbitarr.Architecture.Tests;
 /// <c>Environment.SetEnvironmentVariable</c> is NOT banned here — production configuration code has
 /// legitimate reasons to set process environment, and the test-side ban exists because two hosts
 /// starting concurrently in ONE process overwrite each other, which is a test-host problem.</para>
+///
+/// <para><b>The assembly list</b> now lives on <see cref="BuiltAssemblies.ProductionAssemblyNames"/>
+/// (arb-hxa). It is DELIBERATELY INDEPENDENT of build-test.yml's own <c>TEST_ASSEMBLIES</c> token —
+/// that workflow's guards job diffs its own list against this project's reference graph as a
+/// separate oracle, and the two are not merged into one source of truth on purpose (a drift between
+/// them is exactly what that guard exists to catch). If the workflow's guard step targets this file
+/// by name or line shape, and this array has since moved, the guard's extraction must be repointed
+/// at <see cref="BuiltAssemblies"/> in the same change or it fails to find the array at all.</para>
 /// </summary>
 public class ProductionProcessGlobalStateTests
 {
     private const string BannedMethod = "Microsoft.Data.Sqlite.SqliteConnection::ClearAllPools";
 
-    /// <summary>
-    /// Every production assembly, by project name. Spelled out rather than globbed for the same
-    /// reason <see cref="TestProcessGlobalStateTests"/> spells its list out: a glob over whatever
-    /// happens to be on disk silently skips a project that was not built, and a silently skipped
-    /// project is a vacuous pass (CLAUDE.md section 4). Arbitarr.Web is absent because it is the
-    /// React frontend, which builds no managed assembly.
-    /// </summary>
-    private static readonly string[] ProductionAssemblyNames =
-    [
-        "Arbitarr.Ai",
-        "Arbitarr.Api",
-        "Arbitarr.Core",
-        "Arbitarr.Core.Identity",
-        "Arbitarr.Data",
-        "Arbitarr.Host",
-        "Arbitarr.Media",
-        "Arbitarr.Sources.NzbHydra",
-    ];
-
     [Fact]
     public void No_production_assembly_clears_every_connection_pool_in_the_process()
     {
-        var assemblyPaths = ProductionAssemblyNames
+        var assemblyPaths = BuiltAssemblies.ProductionAssemblyNames
             .Select(name => (Name: name, Path: TestProcessGlobalStateTests.ResolveAssemblyPath("src", name)))
             .ToArray();
 
