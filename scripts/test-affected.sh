@@ -51,6 +51,11 @@
 # -m:1 is kept on `dotnet test` because CLAUDE.md section 4 still requires it;
 # retiring it is bead arb-8qw and is not this script's call.
 #
+# This script builds Debug on purpose (no `-c` anywhere below), while CI prep
+# builds Release: the two must not diverge (see the --no-build build comment
+# above), so a first run against an existing bin/Release tree still rebuilds
+# Debug from scratch rather than reusing it.
+#
 # Portability: bash 4+, git, awk, sed, grep, sort, find. Runs under git-bash on
 # Windows and under Linux. No python3, no bc, no GNU-only flags.
 
@@ -196,6 +201,42 @@ done < "$projects_file"
 all_test_projects=$(sed -n 's#^tests/\([^/]*\.Tests\)/.*#\1#p' "$projects_file" | sort -u)
 all_test_count=$(printf '%s\n' "$all_test_projects" | grep -c . || true)
 
+# ----------------------------------------------------------------------------
+# 2b. Arbitarr.Architecture.Tests: found on disk, and its Host trigger rule.
+#
+# The project name/dir come from the csproj that actually exists, so a rename
+# fails loudly instead of this script silently selecting nothing for it.
+# ----------------------------------------------------------------------------
+arch_csproj_matches=$(find tests -mindepth 2 -maxdepth 2 -name 'Arbitarr.Architecture.Tests.csproj' 2>/dev/null)
+arch_csproj_count=$(printf '%s\n' "$arch_csproj_matches" | grep -c . || true)
+if [ "$arch_csproj_count" -eq 0 ]; then
+  echo "test-affected: no tests/*/Arbitarr.Architecture.Tests.csproj found on disk;" >&2
+  echo "the Architecture.Tests trigger rule cannot be applied. Fix the project name" >&2
+  echo "or path before relying on this script's selection." >&2
+  exit 2
+elif [ "$arch_csproj_count" -gt 1 ]; then
+  # Picking the first match (e.g. via `head -n1`) would silently choose one of
+  # two ambiguous projects rather than flag the ambiguity -- fail loudly and
+  # name every match instead.
+  echo "test-affected: more than one Arbitarr.Architecture.Tests.csproj found on disk:" >&2
+  printf '%s\n' "$arch_csproj_matches" | sed 's/^/  /' >&2
+  echo "test-affected: cannot pick one; remove the duplicate before relying on this" >&2
+  echo "script's selection." >&2
+  exit 2
+fi
+arch_csproj="$arch_csproj_matches"
+arch_test_project=$(basename "$arch_csproj" .csproj)
+
+# Arbitarr.Architecture.Tests.csproj references every scanned src/ assembly EXCEPT
+# Arbitarr.Host (NU1605 blocks that ProjectReference -- see the csproj's own comment
+# on its Mono.Cecil package reference), so Host is the only scanned src/ project the
+# project-reference graph built above cannot reach on its own. Its IL is still read,
+# by FILE PATH, in ProductionProcessGlobalStateTests.cs's ProductionAssemblyNames
+# array -- a change under src/Arbitarr.Host/ must select Architecture.Tests by name
+# here rather than through the graph. A future graph-invisible src/ assembly (another
+# NU1605 case) needs the same by-name addition; ProductionAssemblyNames in that file
+# is where to check whether one has appeared.
+#
 # Transitive dependents of one project: every node from which the project is
 # reachable along reference edges. Plain BFS over the edge list in awk.
 dependents_of() {
@@ -232,12 +273,25 @@ while IFS= read -r path; do
       proj=${path#*/}; proj=${proj%%/*}
       if [ -f "src/$proj/$proj.csproj" ] || [ -f "tests/$proj/$proj.csproj" ]; then
         changed_projects["$proj"]=1
-        # Any tests/ change also selects Architecture.Tests: its Mono.Cecil IL
-        # scans read the OTHER test assemblies' compiled output by file path,
-        # not via a <ProjectReference>, so the reference graph alone can't see
-        # that dependency.
+        # A change under src/Arbitarr.Host/ also selects Architecture.Tests:
+        # Architecture.Tests.csproj references every scanned src/ assembly
+        # EXCEPT Host (NU1605 blocks that ProjectReference), so Host is the
+        # one scanned src/ project the reference graph alone cannot reach,
+        # even though ProductionProcessGlobalStateTests still scans its IL by
+        # file path (see 2b above). A future graph-invisible src/ assembly
+        # needs the same by-name addition here.
+        case "$proj" in
+          Arbitarr.Host) changed_projects["$arch_test_project"]=1 ;;
+        esac
+        # Any tests/ change ALSO selects Architecture.Tests outright, union'd
+        # with the Host rule above rather than replacing it: Arbitarr.TestSupport
+        # is compiled into every test assembly the Cecil scans read by file path,
+        # but Architecture.Tests.csproj has no ProjectReference to TestSupport
+        # (or to any tests/ project), so the project graph never reaches it
+        # either. Without this blanket rule a TestSupport-only change would
+        # select nothing for Architecture.Tests even though its output changed.
         case "$path" in
-          tests/*) changed_projects['Arbitarr.Architecture.Tests']=1 ;;
+          tests/*) changed_projects["$arch_test_project"]=1 ;;
         esac
       else
         # A directory under src/ or tests/ with no csproj is not a project this
