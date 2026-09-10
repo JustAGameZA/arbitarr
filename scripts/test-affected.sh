@@ -232,6 +232,13 @@ while IFS= read -r path; do
       proj=${path#*/}; proj=${proj%%/*}
       if [ -f "src/$proj/$proj.csproj" ] || [ -f "tests/$proj/$proj.csproj" ]; then
         changed_projects["$proj"]=1
+        # Any tests/ change also selects Architecture.Tests: its Mono.Cecil IL
+        # scans read the OTHER test assemblies' compiled output by file path,
+        # not via a <ProjectReference>, so the reference graph alone can't see
+        # that dependency.
+        case "$path" in
+          tests/*) changed_projects['Arbitarr.Architecture.Tests']=1 ;;
+        esac
       else
         # A directory under src/ or tests/ with no csproj is not a project this
         # script knows how to map, so treat it as out-of-tree.
@@ -262,9 +269,12 @@ fi
 # 4. Report
 # ----------------------------------------------------------------------------
 if [ "${#reasons[@]}" -gt 0 ]; then
-  for p in $(printf '%s\n' "${!reasons[@]}" | sort); do
+  # Read line-by-line rather than `for p in $(...)`, which word-splits on IFS:
+  # a path containing a space would otherwise be split across two "words" and
+  # abort under `set -u` when the second half is looked up in `reasons`.
+  while IFS= read -r p; do
     echo "Reason: $p -> ${reasons[$p]}"
-  done
+  done < <(printf '%s\n' "${!reasons[@]}" | sort)
   echo
 fi
 
@@ -300,6 +310,11 @@ if [ "$backend_count" -gt 0 ]; then
   if [ "$no_build" -eq 0 ]; then
     # See the header: the solution is built once so Architecture.Tests' IL scans
     # find every sibling assembly. -m:1 on the build bounds memory use, as in CI.
+    # No -c here, deliberately: both this build and the `dotnet test --no-build`
+    # calls below default to Debug, so the IL scans and the test run resolve the
+    # SAME output directory. Passing -c Release on one side and not the other
+    # would build twice into two different bin/ trees and Architecture.Tests
+    # would find nothing.
     run dotnet build "$SOLUTION" -m:1 || true
   fi
   if [ "$status" -eq 0 ]; then
