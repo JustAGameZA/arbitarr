@@ -143,6 +143,7 @@ builder.Services.AddSingleton(sp => new Arbitarr.Data.Backup.AutomaticBackupJob(
     sp.GetRequiredService<Arbitarr.Data.Backup.BackupPaths>(),
     sp.GetRequiredService<Arbitarr.Data.Backup.BackupService>(),
     sp.GetRequiredService<Arbitarr.Data.Backup.BackupStateStore>(),
+    sp.GetRequiredService<ILogger<Arbitarr.Data.Backup.AutomaticBackupJob>>(),
     sp.GetRequiredService<TimeProvider>()));
 builder.Services.AddSingleton(sp => new Arbitarr.Api.Admin.RestoreCoordinator(
     sp.GetRequiredService<IHostApplicationLifetime>(),
