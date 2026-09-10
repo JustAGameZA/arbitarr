@@ -1020,12 +1020,16 @@ jobs:
       # a line-ending artifact, so the check greps for that exact backslash
       # form rather than a slash-normalised one.
       #
-      # This check is PRESENCE-ONLY: it greps for the project's `Project(...)`
-      # line and says nothing about the sln's per-configuration mapping. A
-      # project present but missing its `Debug|Any CPU.Build.0` line under
-      # GlobalSection(ProjectConfigurationPlatforms) still resolves here even
-      # though `dotnet build`/`dotnet test` silently skip building it -- that
-      # gap is not guarded by this step and is tracked separately (arb-exw).
+      # arb-exw: presence in the sln is not enough -- `dotnet build Arbitarr.sln`
+      # (prep, above: `-c Release`) only actually builds a project whose GUID has a
+      # `{GUID}.Release|Any CPU.Build.0` line under
+      # GlobalSection(ProjectConfigurationPlatforms); Debug is never built by this
+      # workflow, so only Release is required here. A project with a `Project(...)`
+      # line but no matching Build.0 mapping is silently skipped by that build --
+      # no error, no dll -- which is exactly the failure this step's Project-line
+      # check used to claim it caught. The GUID is resolved per name from its own
+      # `Project(...) = "<Name>", "tests\<Name>\<Name>.csproj", "{GUID}"` line so the
+      # Build.0 grep cannot match a different project's mapping by coincidence.
       - name: Verify every test project is in Arbitarr.sln and overrides no AssemblyName
         shell: bash
         run: |
@@ -1053,6 +1057,43 @@ jobs:
             printf '%s' "$missing_from_sln" | sed 's/^/  /' >&2
             exit 1
           fi
+
+          # arb-exw: presence in the sln does not mean the project actually builds --
+          # resolve each name's GUID from its Project(...) line, then require a
+          # Release|Any CPU.Build.0 mapping for that GUID (Release is the only
+          # configuration prep's `dotnet build Arbitarr.sln -c Release` builds).
+          missing_build0=""
+          for name in $TEST_ASSEMBLIES; do
+            pattern='tests\'"$name"'\'"$name"'.csproj'
+            project_line=$(grep -F "$pattern" "$sln_file" | head -1)
+            guid=$(printf '%s' "$project_line" | grep -oE '\{[0-9A-Fa-f-]+\}"$' | grep -oE '\{[0-9A-Fa-f-]+\}' || true)
+
+            if [ -z "$guid" ]; then
+              echo "BLOCKED: could not resolve a project GUID for ${name} from its" >&2
+              echo "'Project(...) = \"${name}\", \"${pattern}\", \"{GUID}\"' line in" >&2
+              echo "${sln_file}. The sln's Project-line shape must have changed; fix this" >&2
+              echo "extraction rather than letting the Build.0 check below pass vacuously." >&2
+              exit 1
+            fi
+
+            if ! grep -qF "${guid}.Release|Any CPU.Build.0" "$sln_file"; then
+              missing_build0="${missing_build0}${name} (${guid})"$'\n'
+            fi
+          done
+
+          if [ -n "$missing_build0" ]; then
+            echo "BLOCKED: ${sln_file} has a Project(...) line for a test project but no" >&2
+            echo "matching Release|Any CPU.Build.0 mapping under" >&2
+            echo "GlobalSection(ProjectConfigurationPlatforms). \`dotnet build Arbitarr.sln -c" >&2
+            echo "Release\` silently skips a project in this state -- no error, no dll -- so" >&2
+            echo "the earlier presence check passing is not evidence this project actually" >&2
+            echo "builds. Add a \"{GUID}.Release|Any CPU.Build.0 = Release|Any CPU\" line (and" >&2
+            echo "the matching ActiveCfg, if also missing) for:" >&2
+            printf '%s' "$missing_build0" | sed 's/^/  /' >&2
+            exit 1
+          fi
+
+          echo "Every TEST_ASSEMBLIES project has a Release|Any CPU.Build.0 mapping in ${sln_file}."
 
           # arb-5sg (2 of 2): every consumer derives the dll and trx BASENAME
           # from the TEST_ASSEMBLIES token, i.e. from the project name --
