@@ -28,8 +28,21 @@ on:
 # less: three jobs now read it, and a per-job copy would let one group drift.
 # Timing/Load/Quarantine are excluded here and run unfiltered nightly
 # (arb-rga.8); see docs/adr/0011 and docs/standards/process.md.
+#
+# TEST_ASSEMBLIES is the single, hoisted definition of the ten test assembly
+# names (arb-6ke). Three places used to carry their own copy of this list --
+# the prep-job "Assert the build output was restored" step, the gate's trx
+# count, and (implicitly) the matrix groups -- and a misspelling in one could
+# drift from the other two without any check ever catching it. Now the prep
+# assertion and the gate's set assertion both read this one variable, so they
+# cannot drift apart; the matrix groups (~163-169) still list assemblies
+# literally because a workflow matrix cannot expand a variable into separate
+# `include` entries, which is exactly why arb-bj7 adds a guards step that
+# unions the matrix groups and diffs them against this list instead. Sorted
+# and space-separated; consumers split on whitespace.
 env:
   TEST_FILTER: "Category!=Timing&Category!=Load&Category!=Quarantine"
+  TEST_ASSEMBLIES: "Arbitarr.Ai.Tests Arbitarr.Api.Tests Arbitarr.Architecture.Tests Arbitarr.Core.Identity.Tests Arbitarr.Core.Tests Arbitarr.Data.Tests Arbitarr.Host.Tests Arbitarr.Integration.Tests Arbitarr.Media.Tests Arbitarr.Sources.NzbHydra.Tests"
 
 jobs:
   # --------------------------------------------------------------------------
@@ -221,10 +234,9 @@ jobs:
 
           missing=0
 
-          for a in Arbitarr.Ai.Tests Arbitarr.Api.Tests Arbitarr.Architecture.Tests \
-                   Arbitarr.Core.Identity.Tests Arbitarr.Core.Tests Arbitarr.Data.Tests \
-                   Arbitarr.Host.Tests Arbitarr.Integration.Tests Arbitarr.Media.Tests \
-                   Arbitarr.Sources.NzbHydra.Tests; do
+          # TEST_ASSEMBLIES is the single hoisted list (arb-6ke); this loop no
+          # longer carries its own copy of the ten names.
+          for a in $TEST_ASSEMBLIES; do
             dll="tests/${a}/bin/Release/net10.0/${a}.dll"
             if [ ! -f "$dll" ]; then
               echo "BLOCKED: missing test assembly ${dll} from the test-build artifact." >&2
@@ -675,6 +687,69 @@ jobs:
 
           echo "Tree-wide secret/topology guard passed."
 
+      # arb-bj7: nothing else checks that the three backend matrix groups
+      # (A/B/C, ~176-183) together cover EXACTLY the ten assemblies
+      # TEST_ASSEMBLIES names. A one-token deletion in a rebase leaves the dll
+      # present in the prep artifact (that assertion passes) but simply unrun
+      # by any group; the gate's trx-set check (arb-6ke) would then report it
+      # as a "missing trx", which is correct but arrives late, only on the
+      # affected PR, and without pointing at the matrix as the cause. This
+      # step catches the same fault earlier and directly, on every PR, with no
+      # artifact needed -- guards runs standalone.
+      #
+      # The extraction below is a narrow literal-line scan, not a YAML parser:
+      # it reads only `assemblies: "..."` lines between the backend job's
+      # `matrix:` and `steps:` keys. python3 is available on ubuntu-latest
+      # runners but NOT in local git-bash, and this step must also run
+      # locally as a positive control, so it is kept to awk/sed rather than a
+      # YAML library. That narrowness is deliberate: if the matrix is ever
+      # reformatted (flow sequence, block scalar, different key or indent),
+      # the extraction must find ZERO assemblies lines and fail loudly on an
+      # empty union below, never silently produce a partial or wrong one.
+      - name: Verify matrix groups union to the asserted ten assemblies
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          workflow_file=".github/workflows/build-test.yml"
+
+          assemblies_lines=$(awk '
+            /^[[:space:]]*matrix:[[:space:]]*$/ { in_matrix=1 }
+            in_matrix && /^[[:space:]]*steps:[[:space:]]*$/ { exit }
+            in_matrix && /^[[:space:]]*assemblies:[[:space:]]*"/ { print }
+          ' "$workflow_file")
+
+          if [ -z "$assemblies_lines" ]; then
+            echo "BLOCKED: no 'assemblies: \"...\"' lines found under the backend job's matrix." >&2
+            echo "in ${workflow_file}. The extraction expects one such line per matrix group;" >&2
+            echo "if the matrix was reformatted (flow sequence, block scalar, different" >&2
+            echo "key/indent), update this extraction rather than letting the union check" >&2
+            echo "pass vacuously over zero entries." >&2
+            exit 1
+          fi
+
+          union_list=$(printf '%s\n' "$assemblies_lines" \
+            | sed -E 's/^[[:space:]]*assemblies:[[:space:]]*"([^"]*)".*$/\1/' \
+            | tr ' ' '\n' \
+            | sed '/^$/d')
+
+          union_sorted=$(printf '%s\n' "$union_list" | sort -u)
+          expected_sorted=$(printf '%s\n' $TEST_ASSEMBLIES | sort -u)
+
+          missing_from_matrix=$(comm -23 <(printf '%s\n' "$expected_sorted") <(printf '%s\n' "$union_sorted"))
+          extra_in_matrix=$(comm -13 <(printf '%s\n' "$expected_sorted") <(printf '%s\n' "$union_sorted"))
+          dup_in_matrix=$(printf '%s\n' "$union_list" | sort | uniq -d)
+
+          if [ -n "$missing_from_matrix" ] || [ -n "$extra_in_matrix" ] || [ -n "$dup_in_matrix" ]; then
+            echo "BLOCKED: matrix groups A/B/C do not union to exactly TEST_ASSEMBLIES." >&2
+            [ -n "$missing_from_matrix" ] && { echo "Missing from the matrix (in TEST_ASSEMBLIES, not run by any group):" >&2; echo "$missing_from_matrix" | sed 's/^/  /' >&2; }
+            [ -n "$extra_in_matrix" ] && { echo "Extra in the matrix (not in TEST_ASSEMBLIES):" >&2; echo "$extra_in_matrix" | sed 's/^/  /' >&2; }
+            [ -n "$dup_in_matrix" ] && { echo "Duplicated across matrix groups:" >&2; echo "$dup_in_matrix" | sed 's/^/  /' >&2; }
+            exit 1
+          fi
+
+          echo "Matrix groups A/B/C union to exactly the ten TEST_ASSEMBLIES."
+
   # --------------------------------------------------------------------------
   # gate: the required check. Named EXACTLY `Build & test` so the existing
   # branch-protection rule keeps matching and NO branch-protection edit is
@@ -857,32 +932,49 @@ jobs:
           floor="$BACKEND_FLOOR"
 
           total=0
-          # One trx per test assembly, so the count is the all-ten list the
-          # backend groups assert against (Ai, Api, Architecture, Core.Identity,
-          # Core, Data, Host, Integration, Media, Sources.NzbHydra). The gate
-          # runs in a different job from that list, so the number is repeated
-          # here as a literal rather than shared; if an assembly is ever added,
-          # this and that list move together.
-          EXPECTED_TRX=10
 
+          # Assert the trx SET by name, not just the count (arb-6ke). A
+          # misspelled matrix.assemblies entry plus a duplicate across groups
+          # can still yield ten files -- the count check that used to run here
+          # would pass over a different test set than the floor was measured
+          # over. Compare sorted basenames against TEST_ASSEMBLIES (the same
+          # hoisted list the prep-job assertion uses, so the two cannot drift
+          # apart) and require every basename to appear EXACTLY ONCE across
+          # ./TestResults/*/  -- a duplicate is as much a loss as a missing
+          # file, since it means some other assembly's trx never arrived.
+          #
           # Two levels: the artifacts are NOT flattened (see the download step),
-          # so each group's trx live under ./TestResults/trx-<group>/.
-          found=0
+          # so each group's trx live under ./TestResults/trx-<group>/. The glob
+          # is quoted only where expanded into a command argument; an empty
+          # match here still enters the loop body once with a literal
+          # non-existent path, which `[ -f ]` filters out -- so a run with zero
+          # trx falls through to an empty `found` list and fails the "missing"
+          # branch below by naming all ten, rather than passing vacuously.
+          found_list=""
           for trx in ./TestResults/*/*.trx; do
             [ -f "$trx" ] || continue
-            found=$((found + 1))
+            base=$(basename "$trx" .trx)
+            found_list="${found_list}${base}"$'\n'
           done
 
-          # Assert the file COUNT before summing. A lost or duplicate-named trx
-          # otherwise reaches the floor comparison as a smaller number and is
-          # reported as a test-count regression, which sends the reader hunting
-          # for deleted tests that do not exist. Fail on the real cause instead.
-          if [ "$found" -ne "$EXPECTED_TRX" ]; then
-            echo "BLOCKED: expected $EXPECTED_TRX trx files (one per test assembly), found $found." >&2
+          expected_sorted=$(printf '%s\n' $TEST_ASSEMBLIES | sort)
+          found_sorted=$(printf '%s' "$found_list" | sed '/^$/d' | sort)
+
+          missing_names=$(comm -23 <(printf '%s\n' "$expected_sorted") <(printf '%s\n' "$found_sorted" | sort -u))
+          unexpected_names=$(comm -13 <(printf '%s\n' "$expected_sorted") <(printf '%s\n' "$found_sorted" | sort -u))
+          duplicate_names=$(printf '%s\n' "$found_sorted" | uniq -d)
+
+          if [ -n "$missing_names" ] || [ -n "$unexpected_names" ] || [ -n "$duplicate_names" ]; then
+            echo "BLOCKED: trx set does not match the expected ten test assemblies by name." >&2
+            [ -n "$missing_names" ] && { echo "Missing (expected, no trx found):" >&2; echo "$missing_names" | sed 's/^/  /' >&2; }
+            [ -n "$unexpected_names" ] && { echo "Unexpected (trx found, not in TEST_ASSEMBLIES):" >&2; echo "$unexpected_names" | sed 's/^/  /' >&2; }
+            [ -n "$duplicate_names" ] && { echo "Duplicated (same basename across group directories):" >&2; echo "$duplicate_names" | sed 's/^/  /' >&2; }
             echo "Files present:" >&2
             ls -1 ./TestResults/*/*.trx >&2 2>/dev/null || echo "(none)" >&2
             exit 1
           fi
+
+          echo "All ten expected trx basenames present exactly once: $expected_sorted"
 
           for trx in ./TestResults/*/*.trx; do
             [ -f "$trx" ] || continue
