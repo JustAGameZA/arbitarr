@@ -515,9 +515,10 @@ public sealed class ConcurrencyTests : IDisposable
     /// ran. If the refresh worker died immediately (a misconfigured harness, a swallowed startup
     /// exception), reads would run uncontended, the p99 and max would be trivially small, and the
     /// WAL-mode primary assertion would pass for the wrong reason -- the same vacuity shape
-    /// <see cref="MinContendedReads"/> already closes for the read side. Measured by running the
-    /// primary (WAL) test 5x locally against this exact harness: <c>WriteCycleCount</c> (completed
-    /// writes) was 32/36/33/36/34 (smallest observed 32). 6 sits at roughly 32 / 6 ≈ 5.3x margin
+    /// <see cref="MinContendedReads"/> already closes for the read side. Measured across three
+    /// independent 5x local runs of the primary (WAL) test against this exact harness:
+    /// <c>WriteCycleCount</c> (completed writes) was 32/36/33/36/34, then 38/32/41/32/23, then
+    /// 19/20/21/19/21 (15 runs total; smallest observed 19). 6 sits at roughly 19 / 6 ≈ 3.2x margin
     /// below that smallest observed value -- enough to absorb a slow or loaded CI box without
     /// masking a writer that is not actually cycling. This is a non-vacuity floor, not a performance
     /// bound: it exists only to prove the writer ran at all, not to police how fast it ran.
@@ -546,11 +547,12 @@ public sealed class ConcurrencyTests : IDisposable
     /// busy-retry backoff window before giving up, so the twin's loop is time-bound by that backoff
     /// rather than CPU-bound the way the primary test's fast completions are -- expect roughly an
     /// order of magnitude fewer iterations per measurement window than the primary test sees,
-    /// regardless of CI machine speed. Measured by running the twin 5x locally against this exact
-    /// harness: <c>WriteAttemptCount</c> was 5/3/3/3/4 (completed 0/0/0/0/2 respectively; smallest
-    /// observed attempts 3). 2 is deliberately the thinnest margin in this file -- there is no room
-    /// for a healthy 5x-style safety factor at this scale -- but it still proves the writer loop
-    /// iterated more than once, which is all a non-vacuity check at this timescale can honestly claim.
+    /// regardless of CI machine speed. Measured across two independent 5x local runs of the twin
+    /// against this exact harness: <c>WriteAttemptCount</c> was 5/3/3/3/4 (completed 0/0/0/0/2
+    /// respectively), then 7/3/5/3/3 (completed 1/0/0/0/0 respectively) -- minimum 3 in every sample
+    /// so far. 2 is deliberately the thinnest margin in this file -- there is no room for a healthy
+    /// 5x-style safety factor at this scale -- but it still proves the writer loop iterated more than
+    /// once, which is all a non-vacuity check at this timescale can honestly claim.
     /// </summary>
     private const int MinWriterAttempts = 2;
 
