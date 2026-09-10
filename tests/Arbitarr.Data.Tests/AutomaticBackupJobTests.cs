@@ -361,8 +361,142 @@ public sealed class AutomaticBackupJobTests : IDisposable
         Assert.True(state.LastBackup.TakenAt < lateInstant);
     }
 
-    private AutomaticBackupJob NewJob(BackupStateStore state) =>
-        new(_paths, new BackupService(_paths, _time), state, _time);
+    /// <summary>
+    /// #arb-7fm: the middle of three stale archives cannot be deleted; the run still deletes the
+    /// other two and reports the survivors' count, and the failure is logged rather than silently
+    /// dropped or allowed to stop the pass.
+    ///
+    /// <para>Neither a held <see cref="FileStream"/> opened with <see cref="FileShare.None"/> nor
+    /// the read-only file attribute reliably makes <c>File.Delete</c> throw on Linux CI: a second
+    /// handle from the SAME process is not blocked by an earlier <c>FileShare.None</c> there, and
+    /// Linux <c>unlink()</c> permission comes from the DIRECTORY, not the file's own read-only bit
+    /// (this failed exactly this way in CI — <c>ArchivesPruned</c> came back 3, not 2 — before this
+    /// test was switched to the seam below). This test is about
+    /// <c>AutomaticBackupJob</c>'s catch-and-continue behaviour, not about reproducing a real
+    /// OS-level lock, so it uses <see cref="AutomaticBackupJob.WithDeleteFileForTests"/> to inject a
+    /// delete action GUARANTEED to throw for exactly the locked file on every platform — the same
+    /// technique <c>StagingSweepTests</c> uses for <c>StagingSweep.Run</c>'s injectable-delete
+    /// overload.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_locked_archive_is_skipped_and_logged_while_the_other_stale_archives_are_still_pruned()
+    {
+        var state = new BackupStateStore();
+        var logger = new CapturingLogger();
+        var job = NewJob(state, logger);
+
+        var names = new List<string>();
+        for (var pass = 0; pass < 3; pass++)
+        {
+            // retainedCount: 3 keeps all three archives seeded here; the pruning-to-one happens in
+            // the locked pass below, so all three still exist when the lock is taken.
+            await job.RunAsync(retainedCount: 3);
+            names.Add(BackupPaths.AutomaticFilePrefix +
+                _time.GetUtcNow().UtcDateTime.ToString("yyyyMMdd'T'HHmmss'Z'") + ".zip");
+            _time.Advance(TimeSpan.FromHours(1));
+            await Task.Delay(15);
+        }
+
+        // All three archives exist; names[2] is the newest. A retainedCount of 1 on the next pass
+        // would prune names[0] and names[1] — make the delete for names[1] guaranteed to fail.
+        var lockedPath = Path.Combine(_paths.BackupDirectory, names[1]);
+        Assert.True(File.Exists(lockedPath));
+
+        job.WithDeleteFileForTests(file =>
+        {
+            if (string.Equals(file.FullName, lockedPath, StringComparison.Ordinal))
+            {
+                throw new IOException("Simulated: this file cannot be deleted.");
+            }
+
+            file.Delete();
+        });
+
+        var result = await job.RunAsync(retainedCount: 1);
+
+        Assert.Equal(2, result.ArchivesPruned);
+
+        var survivors = Directory
+            .GetFiles(_paths.BackupDirectory, BackupPaths.AutomaticFilePrefix + "*.zip")
+            .Select(Path.GetFileName)
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.Contains(names[1], survivors, StringComparer.Ordinal);
+        Assert.DoesNotContain(names[0], survivors);
+
+        Assert.Contains(
+            logger.Warnings,
+            w => w.Contains(names[1], StringComparison.Ordinal));
+    }
+
+    private AutomaticBackupJob NewJob(BackupStateStore state, Microsoft.Extensions.Logging.ILogger? logger = null) =>
+        new(
+            _paths,
+            new BackupService(_paths, _time),
+            state,
+            AsTypedLogger(logger),
+            _time);
+
+    // The production constructor requires a logger (arb-7fm: DI must not be able to construct the
+    // job silently without one), so this test helper always supplies one — either the caller's
+    // CapturingLogger, adapted to the typed ILogger<T> shape, or Microsoft.Extensions.Logging.Abstractions'
+    // NullLogger<T> when no assertions on log output are needed.
+    private static Microsoft.Extensions.Logging.ILogger<AutomaticBackupJob> AsTypedLogger(
+        Microsoft.Extensions.Logging.ILogger? logger) =>
+        logger is null
+            ? Microsoft.Extensions.Logging.Abstractions.NullLogger<AutomaticBackupJob>.Instance
+            : new TypedLoggerAdapter(logger);
+
+    /// <summary>
+    /// Adapts a plain <see cref="Microsoft.Extensions.Logging.ILogger"/> test double (such as
+    /// <see cref="CapturingLogger"/>) to the <see cref="Microsoft.Extensions.Logging.ILogger{TCategoryName}"/>
+    /// shape <see cref="AutomaticBackupJob"/>'s constructor takes, without needing a real
+    /// <c>ILoggerFactory</c> in these unit tests.
+    /// </summary>
+    private sealed class TypedLoggerAdapter(Microsoft.Extensions.Logging.ILogger inner)
+        : Microsoft.Extensions.Logging.ILogger<AutomaticBackupJob>
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => inner.BeginScope(state);
+
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => inner.IsEnabled(logLevel);
+
+        public void Log<TState>(
+            Microsoft.Extensions.Logging.LogLevel logLevel,
+            Microsoft.Extensions.Logging.EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            inner.Log(logLevel, eventId, state, exception, formatter);
+    }
+
+    /// <summary>
+    /// A minimal <see cref="Microsoft.Extensions.Logging.ILogger"/> that records formatted Warning
+    /// messages, so the per-file-warning contract can be asserted directly rather than trusted. Same
+    /// shape as <c>StagingSweepTests.CapturingLogger</c>.
+    /// </summary>
+    private sealed class CapturingLogger : Microsoft.Extensions.Logging.ILogger
+    {
+        public List<string> Warnings { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            Microsoft.Extensions.Logging.LogLevel logLevel,
+            Microsoft.Extensions.Logging.EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            var message = formatter(state, exception);
+
+            if (logLevel == Microsoft.Extensions.Logging.LogLevel.Warning)
+            {
+                Warnings.Add(message);
+            }
+        }
+    }
 
     private void SeedLiveState()
     {

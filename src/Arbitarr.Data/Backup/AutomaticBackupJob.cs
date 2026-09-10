@@ -1,4 +1,5 @@
 using System.Globalization;
+using Microsoft.Extensions.Logging;
 
 namespace Arbitarr.Data.Backup;
 
@@ -35,16 +36,20 @@ public sealed class AutomaticBackupJob
     private readonly BackupService _backupService;
     private readonly BackupStateStore _state;
     private readonly TimeProvider _timeProvider;
+    private readonly ILogger _logger;
+    private Action<FileInfo> _deleteFile = file => file.Delete();
 
     public AutomaticBackupJob(
         BackupPaths paths,
         BackupService backupService,
         BackupStateStore state,
+        ILogger<AutomaticBackupJob> logger,
         TimeProvider? timeProvider = null)
     {
         _paths = paths ?? throw new ArgumentNullException(nameof(paths));
         _backupService = backupService ?? throw new ArgumentNullException(nameof(backupService));
         _state = state ?? throw new ArgumentNullException(nameof(state));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
@@ -71,7 +76,7 @@ public sealed class AutomaticBackupJob
 
         _state.RecordBackup(takenAt, automatic: true);
 
-        var pruned = PruneToRetainedCount(retainedCount);
+        var pruned = PruneToRetainedCount(retainedCount, _deleteFile);
         return new AutomaticBackupResult(BackupTaken: true, ArchivesPruned: pruned);
     }
 
@@ -82,8 +87,18 @@ public sealed class AutomaticBackupJob
     /// pre-restore safety copy shares this directory and must never be swept by retention: it is
     /// the one archive an operator reaches for when a restore went wrong, and the moment it is most
     /// needed is exactly when several automatic backups have since pushed it down a list.
+    ///
+    /// <para><paramref name="deleteFile"/> is production's <see cref="FileInfo.Delete()"/> by
+    /// default (see the field initializer). <c>AutomaticBackupJobTests</c> replaces it via
+    /// <see cref="WithDeleteFileForTests"/> to deterministically fail one specific file: neither a
+    /// held <see cref="FileStream"/> opened with <see cref="FileShare.None"/> nor the read-only
+    /// file attribute reliably makes <c>Delete()</c> throw on Linux CI — a second handle from the
+    /// SAME process is not blocked by an earlier <c>FileShare.None</c> there, and Linux
+    /// <c>unlink()</c> permission comes from the DIRECTORY, not the file's own read-only bit. See
+    /// the identical reasoning on <see cref="StagingSweep.Run(string, DateTime, ILogger, Action{string})"/>,
+    /// which this mirrors.</para>
     /// </summary>
-    private int PruneToRetainedCount(int retainedCount)
+    private int PruneToRetainedCount(int retainedCount, Action<FileInfo> deleteFile)
     {
         if (!Directory.Exists(_paths.BackupDirectory))
         {
@@ -102,19 +117,32 @@ public sealed class AutomaticBackupJob
         {
             try
             {
-                file.Delete();
+                deleteFile(file);
                 pruned++;
             }
-            catch (IOException)
+            catch (Exception ex)
             {
-                // A locked archive is skipped and retried next pass rather than failing the run;
-                // the backup itself already succeeded and is the half that matters.
-            }
-            catch (UnauthorizedAccessException)
-            {
+                // Any delete failure (locked archive, permissions, ...) is logged and skipped
+                // rather than failing the run; the backup itself already succeeded and is the
+                // half that matters, and the remaining stale archives should still be pruned.
+                _logger.LogWarning(
+                    ex,
+                    "Could not delete stale automatic backup archive {FileName}; it will be retried next pass.",
+                    file.Name);
             }
         }
 
         return pruned;
+    }
+
+    /// <summary>
+    /// Test-only seam: replaces the delete action <see cref="RunAsync"/> uses when pruning, so
+    /// <c>AutomaticBackupJobTests</c> can make one specific archive's delete deterministically fail
+    /// on every platform (see <see cref="PruneToRetainedCount"/>'s remarks). Production never calls
+    /// this — the field's initializer, <c>file =&gt; file.Delete()</c>, is what every real run uses.
+    /// </summary>
+    public void WithDeleteFileForTests(Action<FileInfo> deleteFile)
+    {
+        _deleteFile = deleteFile ?? throw new ArgumentNullException(nameof(deleteFile));
     }
 }

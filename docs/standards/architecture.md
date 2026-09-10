@@ -164,15 +164,13 @@ guard yet" example, not a narrow-filter example: it takes no cancellation token 
 OCE guard, and if one is ever threaded through, the guard must be added ahead of the existing broad
 catches.
 
-The convention's one standing narrow-filter site — this list IS exhaustive — is
-`AutomaticBackupJob.PruneToRetainedCount`,
-called from `MaintenanceHostedService.RunAutomaticBackupAsync` (this section's own reference site
-above). Its per-file delete loop catches `IOException` and `UnauthorizedAccessException` separately
-rather than broadly, and only the `IOException` arm carries a comment justifying the narrow filter
-("a locked archive is skipped and retried next pass rather than failing the run; the backup itself
-already succeeded and is the half that matters"); the `UnauthorizedAccessException` arm is empty and
-uncommented, so today this site ships the rule already violated. Follow-up: arb-7fm brings it into
-line, either by adding the same justification to both arms or by widening to the broad-catch form.
+There is no standing narrow-filter site today: arb-7fm widened
+`AutomaticBackupJob.PruneToRetainedCount`'s per-file delete loop (called from
+`MaintenanceHostedService.RunAutomaticBackupAsync`, this section's own reference site above) from
+two narrow `catch (IOException)` / `catch (UnauthorizedAccessException)` arms — the second of which
+was empty and uncommented — to a single `catch (Exception ex)` that logs a warning naming the file
+and continues, matching #168's earlier widening of `StagingSweep.Run`. The "backup itself already
+succeeded and is the half that matters" rationale carries over to the broad catch's comment.
 
 Where CONTRIBUTING.md or another standards doc states a general exception-handling rule, link to
 it rather than repeating it here; none currently does, so this section is the only statement of the
