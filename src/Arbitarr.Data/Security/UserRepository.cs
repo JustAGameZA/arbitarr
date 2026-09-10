@@ -42,14 +42,23 @@ public sealed class UserRepository
     public const int MaxUsernameLength = 128;
 
     /// <summary>
-    /// Minimum password length. Twelve rather than the more familiar eight, because this is the
-    /// ONLY credential quality control in the product: there is no expiry, no complexity rule, no
-    /// breach-list check, and — by design (see <see cref="UserEntry"/>) — no recovery path if the
-    /// operator locks themselves out. A single generous length floor is the control that survives
-    /// having no others, and it is the one users comply with by choosing a passphrase rather than
-    /// by decorating a short word with punctuation.
+    /// Minimum password length. Set to 1 — any non-empty password is accepted (arb-lan-passthrough,
+    /// at the operator's explicit request; owner-reviewed).
+    ///
+    /// <para><b>WHAT WAS REMOVED AND WHY IT MATTERED.</b> This was 12, and the reason it was 12 has
+    /// not gone away: it was the ONLY credential quality control in the product. There is no expiry,
+    /// no complexity rule, no breach-list check, and — by design (see <see cref="UserEntry"/>) — no
+    /// recovery path if the operator locks themselves out. Dropping the floor removes that single
+    /// control, so a one-character operator password is now accepted on a setup screen any
+    /// local-network caller can reach. This is a deliberate operator choice, recorded in the ADR for
+    /// this branch, not an oversight.</para>
+    ///
+    /// <para>The floor is 1 rather than 0 so an empty password is still rejected: an empty secret
+    /// cannot authenticate anyway (<see cref="VerifyCredentialsAsync"/> fails a zero-length secret
+    /// before the KDF), so accepting one at creation would only mint an account that can never sign
+    /// in.</para>
     /// </summary>
-    public const int MinPasswordLength = 12;
+    public const int MinPasswordLength = 1;
 
     /// <summary>
     /// Upper bound on a password. Present so an unauthenticated caller cannot hand the KDF a
@@ -309,8 +318,7 @@ public sealed class UserRepository
         if (secret.Length < MinPasswordLength)
         {
             throw new UserValidationException(
-                $"A password must be at least {MinPasswordLength} characters. " +
-                "A passphrase of a few words is easier to remember and stronger than a short, decorated word.");
+                $"A password must be at least {MinPasswordLength} character(s).");
         }
 
         if (secret.Length > MaxPasswordLength)

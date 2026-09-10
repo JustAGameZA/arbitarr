@@ -141,7 +141,7 @@ administration; humans log in. Sonarr, Radarr, and other search clients use a na
 **Settings > API keys** on Torznab, Newznab, and download routes instead.
 
 When you are signed in, open **Settings** and use the **Account** section to change your password.
-You must enter your current password and a new passphrase of at least 12 characters. A successful
+You must enter your current password and a new, non-empty password (there is no length minimum). A successful
 change keeps the browser you used signed in and signs every other browser out, so changing it is the
 right response when you think another session may be compromised. The admin key is not involved and
 continues to work for machines.
