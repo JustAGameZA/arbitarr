@@ -123,12 +123,23 @@ it. The defence has to be at registration.
 
 ## Error handling in background and maintenance work
 
+This convention governs REPEATING per-item work where a skipped item is recoverable on the next
+pass. It does not cover one-shot startup work that establishes an invariant the process cannot
+serve requests without: `Program.cs`'s startup migration catches only to wrap the raw EF/SQLite
+exception before re-throwing ("A failure here is always fatal to startup — there is no safe way to
+serve requests against a database that isn't at the expected schema version"), which is the
+opposite of swallow-and-continue. `StagingSweepService` draws the same line from its own side: its
+swallow is justified precisely because the sweep is not invariant-establishing ("an orphan left in
+place for one more run is a much smaller problem than the host refusing to start").
+
 **A failure that affects one item is caught broadly (`catch (Exception)`) and logged, so the
 remaining items still run.** Only cancellation propagates, via a
 `catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)` guard placed
 *before* the broad catch.
 
-Reference shape: `MaintenanceHostedService.ExecuteAsync`
+Reference shape (illustrative, not exhaustive — `NotificationHostedService.ExecuteAsync` and
+`ClassifierPollingWorker.ExecuteAsync` follow the same shape and are not listed below):
+`MaintenanceHostedService.ExecuteAsync`
 wraps each of its three per-pass jobs — the main-database maintenance job, the log-database trim,
 and the automatic backup — in its own OCE-guard-then-broad-catch pair, so a failure in one cannot
 stop the other two. `RefreshWorker` applies the same shape twice: once per cycle
@@ -153,7 +164,8 @@ guard yet" example, not a narrow-filter example: it takes no cancellation token 
 OCE guard, and if one is ever threaded through, the guard must be added ahead of the existing broad
 catches.
 
-The convention's one standing narrow-filter site is `AutomaticBackupJob.PruneToRetainedCount`,
+The convention's one standing narrow-filter site — this list IS exhaustive — is
+`AutomaticBackupJob.PruneToRetainedCount`,
 called from `MaintenanceHostedService.RunAutomaticBackupAsync` (this section's own reference site
 above). Its per-file delete loop catches `IOException` and `UnauthorizedAccessException` separately
 rather than broadly, and only the `IOException` arm carries a comment justifying the narrow filter
