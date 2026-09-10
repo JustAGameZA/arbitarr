@@ -1403,6 +1403,27 @@ jobs:
           fi
 
           echo "All aggregated jobs succeeded."
+      # The gate SOURCES .github/scripts/test-count-gate.sh, so the file has to
+      # be on disk -- and this job, alone among the five, had no checkout: it
+      # consumed artifacts only. The inline bash this replaced needed none,
+      # because it travelled inside the workflow YAML the runner already had.
+      # Moving the logic into a file is what made a checkout load-bearing here,
+      # and its absence failed this step with "No such file or directory" rather
+      # than as a gate verdict.
+      #
+      # Sparse: only .github/scripts is fetched. The gate reads no other tracked
+      # file, and a full checkout would land src/ and tests/ beside the
+      # ./TestResults the artifacts download into. Blobless + sparse keeps this
+      # to well under a second.
+      #
+      # AFTER the job-result check above deliberately: that check must be the
+      # first thing that can fail here, so a red matrix is reported as a red
+      # matrix and never as a checkout error.
+      - name: Checkout gate scripts
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          filter: blob:none
+          sparse-checkout: .github/scripts
 
       # ----------------------------------------------------------------------
       # The test-count floor is a ratchet, not a committed file. The floor is
