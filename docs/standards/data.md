@@ -26,6 +26,42 @@ unvetted text surface to a file operators carry around widens the blast radius f
 benefit, and logs are not configuration. Exporting the log store is a support-bundle feature and a
 different artefact with different handling — not an extra entry here.
 
+### Connection pools are keyed by the full string
+
+**Microsoft.Data.Sqlite keys its connection pools by the FULL connection string, not by the
+file.** Two strings naming one file are two independent pools, and clearing one leaves the other's
+handles open. This is why a restore that swaps `arbitarr.db` has to drop every pool that names it,
+and why "every pool that names it" has to be a closed set.
+
+**Every connection string naming the application database is built by
+`DatabaseConnectionStrings`** (`src/Arbitarr.Data/DatabaseConnectionStrings.cs`) — never formatted
+inline at a call site. It is the only place that knows the complete set of shapes, and
+`DatabaseConnectionStrings.ForDatabase(path)` enumerates them. **A new shape must be added to
+`ForDatabase`**, or it is a pool nothing clears. The failure is silent in the worst way on Linux:
+the file swap succeeds, the stale pooled handle keeps serving the replaced inode, and the process
+carries on reading the old database while the restored one sits on disk looking applied. The log
+store's string is deliberately absent from that set — it names a separate file a restore never
+replaces, and clearing it would be the over-reach described next.
+
+**`SqliteConnection.ClearAllPools()` is banned.** It is process-global: it force-closes every pooled
+connection in the process, including those of unrelated databases and of whatever test happens to
+be running alongside — the mechanism behind arb-cbc/arb-5ba. `ProductionProcessGlobalStateTests`
+bans it across every `src/` assembly and `TestProcessGlobalStateTests` across every test
+assembly, both in `tests/Arbitarr.Architecture.Tests`, both by reading the IL with Cecil so that an
+alias or a wrapper cannot evade the ban. **The replacement is
+`SqlitePoolCleaner.ClearPoolsFor(path)`** (`src/Arbitarr.Data/Backup/SqlitePoolCleaner.cs`),
+which clears exactly the pools `ForDatabase` enumerates for that one file; tests use
+`Arbitarr.TestSupport`'s `SqliteTestDatabase` / `SqlitePools`, which scope the clear the same way.
+
+**What the IL scan does and does not close.** `NoInlineDatabaseConnectionStringsTests` reads
+`Arbitarr.Data`'s IL and fails any type outside its named allow-list that constructs a
+`SqliteConnectionStringBuilder` or a `SqliteConnection` — it closes the **builder** shape. It
+cannot see a string hand-concatenated inside a type that is allowed to open connections, so those
+types are **trusted by convention** to take every string from `DatabaseConnectionStrings`; that
+obligation is stated at each of their call sites, not enforced by the scan. Do not read the green
+test as proof that no inline string exists anywhere — it proves no type outside the list builds
+one.
+
 ---
 
 ## Provenance is mandatory on degraded paths
