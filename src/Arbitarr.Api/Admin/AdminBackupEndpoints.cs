@@ -136,10 +136,12 @@ public static class AdminBackupEndpoints
     {
         var takenAt = timeProvider.GetUtcNow();
 
-        // Built at a temp path and streamed from there. Never inside the repository tree and never
-        // under a statically-served directory — plan §3.3.
+        // Built at a staging path and streamed from there. Never inside the repository tree and
+        // never under a statically-served directory — plan §3.3. Arb-3gd: this instance's own
+        // BackupPaths.StagingDirectory, not the machine-wide Path.GetTempPath() — see that
+        // property's doc comment for why the shared system temp directory was the wrong place.
         var archivePath = Path.Combine(
-            Path.GetTempPath(),
+            paths.EnsureStagingDirectory(),
             "arbitarr-download-" + Guid.NewGuid().ToString("N") + ".zip");
 
         try
@@ -227,6 +229,7 @@ public static class AdminBackupEndpoints
         RestoreCoordinator coordinator,
         BackupStateStore state,
         ArbitarrDbContext dbContext,
+        BackupPaths paths,
         TimeProvider timeProvider,
         CancellationToken cancellationToken)
     {
@@ -326,8 +329,13 @@ public static class AdminBackupEndpoints
             return TooLarge();
         }
 
+        // Arb-3gd: this instance's own BackupPaths.StagingDirectory, not the machine-wide
+        // Path.GetTempPath() — see BackupPaths.StagingSubdirectoryName's doc comment. Resolved (and
+        // the directory created) only here, AFTER the bootstrap-refusal check above and after the
+        // confirmation/size gates: a refused request must stage nothing, so nothing above this line
+        // may touch the staging directory.
         var stagedPath = Path.Combine(
-            Path.GetTempPath(),
+            paths.EnsureStagingDirectory(),
             "arbitarr-upload-" + Guid.NewGuid().ToString("N") + ".zip");
 
         try

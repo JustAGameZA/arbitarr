@@ -58,7 +58,7 @@ public sealed class RestoreServiceTests : IDisposable
         var path = Path.Combine(_configDirectory, "not-a-zip.zip");
         File.WriteAllText(path, "this is plainly not a zip archive");
 
-        var result = BackupArchiveValidator.Validate(path, KnownMigrations);
+        var result = BackupArchiveValidator.Validate(path, KnownMigrations, _paths.StagingDirectory);
 
         Assert.Equal(BackupValidationFailure.NotAnArchive, result.Failure);
         Assert.False(result.IsValid);
@@ -72,7 +72,7 @@ public sealed class RestoreServiceTests : IDisposable
         // applied with a warning.
         var path = BuildArchive(includeDatabase: true, includeSecret: false, migrationId: CurrentMigration);
 
-        var result = BackupArchiveValidator.Validate(path, KnownMigrations);
+        var result = BackupArchiveValidator.Validate(path, KnownMigrations, _paths.StagingDirectory);
 
         Assert.Equal(BackupValidationFailure.MissingEntry, result.Failure);
         Assert.Contains(BackupArchiveLayout.SecretKeyEntryName, result.Message, StringComparison.Ordinal);
@@ -83,7 +83,7 @@ public sealed class RestoreServiceTests : IDisposable
     {
         var path = BuildArchive(includeDatabase: false, includeSecret: true, migrationId: null);
 
-        var result = BackupArchiveValidator.Validate(path, KnownMigrations);
+        var result = BackupArchiveValidator.Validate(path, KnownMigrations, _paths.StagingDirectory);
 
         Assert.Equal(BackupValidationFailure.MissingEntry, result.Failure);
         Assert.Contains(BackupArchiveLayout.DatabaseEntryName, result.Message, StringComparison.Ordinal);
@@ -100,7 +100,7 @@ public sealed class RestoreServiceTests : IDisposable
             WriteBytesEntry(archive, BackupArchiveLayout.SecretKeyEntryName, RandomNumberGenerator.GetBytes(32));
         }
 
-        var result = BackupArchiveValidator.Validate(path, KnownMigrations);
+        var result = BackupArchiveValidator.Validate(path, KnownMigrations, _paths.StagingDirectory);
 
         Assert.Equal(BackupValidationFailure.CorruptDatabase, result.Failure);
     }
@@ -112,7 +112,7 @@ public sealed class RestoreServiceTests : IDisposable
         // failure surfaces later and somewhere else.
         var path = BuildArchive(includeDatabase: true, includeSecret: true, migrationId: FutureMigration);
 
-        var result = BackupArchiveValidator.Validate(path, KnownMigrations);
+        var result = BackupArchiveValidator.Validate(path, KnownMigrations, _paths.StagingDirectory);
 
         Assert.Equal(BackupValidationFailure.SchemaTooNew, result.Failure);
         Assert.Contains(FutureMigration, result.Message, StringComparison.Ordinal);
@@ -127,12 +127,12 @@ public sealed class RestoreServiceTests : IDisposable
         // strings. This asserts the thing actually required.
         var messages = new[]
         {
-            BackupArchiveValidator.Validate(WriteText("junk.zip", "junk"), KnownMigrations).Message,
+            BackupArchiveValidator.Validate(WriteText("junk.zip", "junk"), KnownMigrations, _paths.StagingDirectory).Message,
             BackupArchiveValidator.Validate(
-                BuildArchive(includeDatabase: true, includeSecret: false, migrationId: CurrentMigration), KnownMigrations).Message,
-            BackupArchiveValidator.Validate(BuildCorruptArchive(), KnownMigrations).Message,
+                BuildArchive(includeDatabase: true, includeSecret: false, migrationId: CurrentMigration), KnownMigrations, _paths.StagingDirectory).Message,
+            BackupArchiveValidator.Validate(BuildCorruptArchive(), KnownMigrations, _paths.StagingDirectory).Message,
             BackupArchiveValidator.Validate(
-                BuildArchive(includeDatabase: true, includeSecret: true, migrationId: FutureMigration), KnownMigrations).Message,
+                BuildArchive(includeDatabase: true, includeSecret: true, migrationId: FutureMigration), KnownMigrations, _paths.StagingDirectory).Message,
         };
 
         Assert.Equal(4, messages.Distinct(StringComparer.Ordinal).Count());
@@ -146,7 +146,7 @@ public sealed class RestoreServiceTests : IDisposable
         // EF migrates it forward on the next start.
         var path = BuildArchive(includeDatabase: true, includeSecret: true, migrationId: OldMigration);
 
-        var result = BackupArchiveValidator.Validate(path, KnownMigrations);
+        var result = BackupArchiveValidator.Validate(path, KnownMigrations, _paths.StagingDirectory);
 
         Assert.True(result.IsValid, result.Message);
     }
@@ -168,13 +168,62 @@ public sealed class RestoreServiceTests : IDisposable
         var path = BuildArchiveWithOversizedDatabaseEntry();
 
         var stagedBefore = CountStagedValidationFiles();
-        using var result = BackupArchiveValidator.Validate(path, KnownMigrations);
+        using var result = BackupArchiveValidator.Validate(path, KnownMigrations, _paths.StagingDirectory);
 
         Assert.Equal(BackupValidationFailure.EntryTooLarge, result.Failure);
         Assert.Null(result.StagedDatabasePath);
 
         // Nothing was extracted: the refusal came from the declared length, before any write.
         Assert.Equal(stagedBefore, CountStagedValidationFiles());
+    }
+
+    /// <summary>
+    /// arb-3gd POSITIVE CONTROL for the "nothing was staged" assertion above. It proves two things,
+    /// each with its own half:
+    ///
+    /// <list type="number">
+    ///   <item>A file with the validator's own prefix, planted in THIS instance's staging directory,
+    ///   DOES change <see cref="CountStagedValidationFiles"/> — so the equality assertion above is a
+    ///   real check on this instance and not a comparison of two calls that could never differ.</item>
+    ///   <item>The same file, planted in the MACHINE-WIDE system temp directory instead, does NOT
+    ///   change it — proving the count is genuinely scoped to this instance's directory and not
+    ///   still reading the shared one arb-3gd moved it off of.</item>
+    /// </list>
+    /// </summary>
+    [Fact]
+    public void The_staged_file_count_detects_a_planted_file_in_this_instance_and_ignores_a_bystander_elsewhere()
+    {
+        Directory.CreateDirectory(_paths.StagingDirectory);
+        var before = CountStagedValidationFiles();
+
+        var plantedInInstance = Path.Combine(
+            _paths.StagingDirectory, "arbitarr-restore-validate-" + Guid.NewGuid().ToString("N"));
+        File.WriteAllText(plantedInInstance, "planted by the positive control");
+        try
+        {
+            // Half 1: a file placed where the validator actually stages IS detected.
+            Assert.NotEqual(before, CountStagedValidationFiles());
+        }
+        finally
+        {
+            File.Delete(plantedInInstance);
+        }
+
+        Assert.Equal(before, CountStagedValidationFiles());
+
+        var bystanderPath = Path.Combine(
+            Path.GetTempPath(), "arbitarr-restore-validate-" + Guid.NewGuid().ToString("N"));
+        File.WriteAllText(bystanderPath, "a bystander process's file in the shared system temp dir");
+        try
+        {
+            // Half 2: the SAME prefix, in the shared system temp dir a bystander process would use,
+            // is NOT detected — the count reads this instance's directory only.
+            Assert.Equal(before, CountStagedValidationFiles());
+        }
+        finally
+        {
+            File.Delete(bystanderPath);
+        }
     }
 
     /// <summary>
@@ -203,7 +252,7 @@ public sealed class RestoreServiceTests : IDisposable
         // POSITIVE CONTROL for the refusal above: the same shape, honestly sized, must pass.
         var legitimate = BuildArchive(includeDatabase: true, includeSecret: true, migrationId: CurrentMigration);
 
-        using var result = BackupArchiveValidator.Validate(legitimate, KnownMigrations);
+        using var result = BackupArchiveValidator.Validate(legitimate, KnownMigrations, _paths.StagingDirectory);
 
         Assert.True(
             result.IsValid,
@@ -402,13 +451,17 @@ public sealed class RestoreServiceTests : IDisposable
     }
 
     /// <summary>
-    /// How many validator staging files currently exist. The validator stages into the system temp
-    /// directory under a fixed prefix, so counting them is how a test asserts that a refusal wrote
-    /// nothing - and it tolerates other tests running concurrently, because it compares a delta
-    /// rather than an absolute.
+    /// How many validator staging files currently exist under THIS TEST'S OWN instance directory
+    /// (<c>_paths.StagingDirectory</c>), not the machine-wide system temp directory (arb-3gd) — the
+    /// validator now stages there, so this is instance-scoped rather than process-global. Counting
+    /// rather than asserting zero, and compared as a delta by the caller, tolerates other tests in
+    /// this same class running in the same process; it does not depend on other processes at all
+    /// now, which is the property arb-3gd exists to establish.
     /// </summary>
-    private static int CountStagedValidationFiles() =>
-        Directory.EnumerateFiles(Path.GetTempPath(), "arbitarr-restore-validate-*").Count();
+    private int CountStagedValidationFiles() =>
+        Directory.Exists(_paths.StagingDirectory)
+            ? Directory.EnumerateFiles(_paths.StagingDirectory, "arbitarr-restore-validate-*").Count()
+            : 0;
 
     /// <summary>
     /// An archive whose database entry HONESTLY declares more than
