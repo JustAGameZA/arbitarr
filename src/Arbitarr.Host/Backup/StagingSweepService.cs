@@ -21,12 +21,13 @@ namespace Arbitarr.Host.Backup;
 /// <c>BackgroundService.ExecuteAsync</c> is NOT awaited before the host reports started (that is
 /// why <c>StagingSweepIntegrationTests</c> polls rather than asserting immediately) — Kestrel can
 /// already be serving requests while this pass is still enumerating the directory. What actually
-/// makes that safe is <see cref="StagingSweep.Run(string, DateTime, ILogger)"/>: it captures
-/// "process start" once, before enumeration (see <c>processStartUtc</c> below), and skips any file
-/// whose last write is at or after that instant. A request-path writer that starts after the
-/// cut-off therefore can never have its file swept, regardless of how far startup has otherwise
-/// progressed. A per-file <c>DateTime.UtcNow</c> "tidy-up" in <see cref="StagingSweep"/> would
-/// reintroduce exactly this race — see the <c>&gt;=</c> comment there.</para>
+/// makes that safe is that THIS service captures <c>processStartUtc</c> once, below, before calling
+/// <see cref="StagingSweep.Run(string, DateTime, ILogger)"/> — <c>Run</c> itself does not capture
+/// anything, it only receives the instant and skips any file whose last write is at or after it. A
+/// request-path writer that starts after the cut-off therefore can never have its file swept,
+/// regardless of how far startup has otherwise progressed. A per-file <c>DateTime.UtcNow</c>
+/// "tidy-up" in <see cref="StagingSweep"/> would reintroduce exactly this race — see the
+/// <c>&gt;=</c> comment there.</para>
 /// </summary>
 public sealed class StagingSweepService(
     BackupPaths paths,

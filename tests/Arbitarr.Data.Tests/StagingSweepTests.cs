@@ -70,6 +70,30 @@ public sealed class StagingSweepTests : IDisposable
     }
 
     [Fact]
+    public void A_file_written_at_exactly_the_cut_off_instant_survives()
+    {
+        Directory.CreateDirectory(StagingDir);
+
+        // Truncate to whole seconds: File.SetLastWriteTimeUtc round-trips exactly at that
+        // granularity on every filesystem CI uses, so the comparison below is a true tie rather
+        // than an off-by-a-few-ticks near-miss.
+        var processStart = new DateTime(
+            DateTime.UtcNow.Ticks / TimeSpan.TicksPerSecond * TimeSpan.TicksPerSecond,
+            DateTimeKind.Utc);
+
+        var tiedPath = Path.Combine(StagingDir, StagingFileNames.UploadPrefix + "tied");
+        File.WriteAllText(tiedPath, "staging test content");
+        File.SetLastWriteTimeUtc(tiedPath, processStart);
+
+        var deleted = StagingSweep.Run(StagingDir, processStart, NullLogger.Instance);
+
+        // >= , not > : a file written at or after the cut-off is treated as in-flight on THIS run
+        // and must never be swept, even when its timestamp exactly equals processStartUtc.
+        Assert.Equal(0, deleted);
+        Assert.True(File.Exists(tiedPath), "A file written at exactly the cut-off instant must survive the sweep.");
+    }
+
+    [Fact]
     public void A_missing_staging_directory_does_not_throw_and_reports_zero()
     {
         Assert.False(Directory.Exists(StagingDir));
