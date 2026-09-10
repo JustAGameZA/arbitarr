@@ -43,7 +43,7 @@ skipped) — so a request-path writer that starts after the cut-off can never ha
 regardless of how far startup has otherwise progressed by the time the sweep's enumeration
 completes.
 
-## Alternatives considered
+## Alternatives rejected
 
 - **Keep staging on the OS temp directory (`Path.GetTempPath()`).** Rejected. It is on a different
   volume from the config directory in the general case (a separate `tmpfs` mount is the normal
@@ -51,15 +51,15 @@ completes.
   reopen the torn-write window they exist to close. It is also machine-wide rather than
   per-instance, which made a staging-related test or invariant race any other process using the
   same well-known prefix (arb-3gd) — including another test host in the same CI run.
-- **Rely on OS/container temp cleaners to reclaim orphans instead of a startup sweep.** Rejected
-  implicitly by staying on the config volume: unlike the OS temp directory, the config volume is
-  not reliably cleared between runs, so without an explicit reclaimer an orphan left by a hard kill
-  is permanent. This is what makes `StagingSweepService` necessary once staging moved off temp,
-  not merely convenient.
+- **Rely on OS/container temp cleaners to reclaim orphans instead of a startup sweep.** Rejected:
+  unlike the OS temp directory, the config volume is not reliably cleared between runs, so without
+  an explicit reclaimer an orphan left by a hard kill is permanent. This is what makes
+  `StagingSweepService` necessary once staging moved off temp, not merely convenient.
 - **A directory-walk backup that would need to explicitly skip staging.** Not how the archive is
   built, and not a design this repo wants to invite: `BackupService.WriteArchiveAsync` writes named
-  entries only — `BackupArchiveLayout.DatabaseEntryName` from a database snapshot and
-  `BackupArchiveLayout.SecretKeyEntryName` from `_paths.SecretKeyPath` — so nothing under
+  entries only — `BackupArchiveLayout.DatabaseEntryName` from a database snapshot,
+  `BackupArchiveLayout.SecretKeyEntryName` from `_paths.SecretKeyPath`, and
+  `BackupArchiveLayout.ManifestEntryName` for the manifest — so nothing under
   `StagingDirectory` can leak into an archive by construction. `BackupPaths` keeps
   `StagingDirectory` a sibling of `BackupDirectory`, not a child of it, so a future feature that
   *does* walk `BackupDirectory` (a retention sweep, an export) still cannot pick up an in-flight
@@ -76,7 +76,8 @@ completes.
   starts with a known prefix.
 - Backups must not drag staging along, and the mechanism that holds is structural rather than an
   exclusion list to keep in sync: `BackupService.WriteArchiveAsync` copies named files
-  (`BackupArchiveLayout.DatabaseEntryName`, `BackupArchiveLayout.SecretKeyEntryName`) into the
+  (`BackupArchiveLayout.DatabaseEntryName`, `BackupArchiveLayout.SecretKeyEntryName`,
+  `BackupArchiveLayout.ManifestEntryName`) into the
   archive and never enumerates a directory, so `StagingDirectory`'s contents cannot appear in an
   archive regardless of what transient files happen to be sitting there at backup time.
 - See [docs/standards/data.md](../standards/data.md#backup-restore-and-the-staging-directory) for
