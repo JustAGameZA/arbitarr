@@ -46,6 +46,17 @@ jobs:
   # only its own projects would leave the others missing and the scan fails
   # LOUDLY naming them -- deliberately, so a missing assembly can never pass
   # vacuously over an empty set (CLAUDE.md section 4). See arb-rga.3 / PR #147.
+  #
+  # Since #157 (arb-n21) the same requirement extends to src/. Two further
+  # Architecture scans read PRODUCTION output through the same walk, calling
+  # ResolveAssemblyPath("src", ...) instead of ("tests", ...):
+  #   ProductionProcessGlobalStateTests reads all EIGHT production assemblies
+  #     (Ai, Api, Core, Core.Identity, Data, Host, Media, Sources.NzbHydra);
+  #   NoInlineDatabaseConnectionStringsTests reads Arbitarr.Data.
+  # They fail identically -- "Could not locate the built assembly for ..." --
+  # so the artifact must carry src/ output BESIDE tests/, not tests/ alone.
+  # src/Arbitarr.Web is the React frontend: no csproj, no managed output, which
+  # is why the production list is eight and not nine.
   # --------------------------------------------------------------------------
   prep:
     name: Build (prep)
@@ -81,11 +92,26 @@ jobs:
       - name: Build (sequential)
         run: dotnet build Arbitarr.sln -c Release -m:1 --no-restore
 
-      - name: Upload test build output
+      # Both roots are uploaded. src/ is not a convenience: the two Architecture
+      # scans added by #157 resolve src/<Assembly>/bin/Release/net10.0/ by
+      # walking up from their own output directory, so src/ must exist at the
+      # same relative depth as tests/ or those scans fail loudly.
+      #
+      # Adding the second root MOVES THE ARCHIVE ROOT. upload-artifact v4 roots
+      # the archive at the least common ancestor of everything it uploads: with
+      # `tests/*/...` alone that was `tests/`, but `tests/*/...` plus `src/*/...`
+      # share only the workspace root, so entries are now `tests/X/bin/...` and
+      # `src/Y/bin/...` with the prefix intact. Every consumer's download `path:`
+      # changed from `tests` to `.` to match -- unpacking into `tests` now would
+      # produce `tests/tests/X/...` and `tests/src/Y/...`, and both scans plus
+      # the ten-dll assertion would fail on paths that look almost right.
+      - name: Upload build output
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
         with:
           name: test-build
-          path: tests/*/bin/Release/net10.0/**
+          path: |
+            tests/*/bin/Release/net10.0/**
+            src/*/bin/Release/net10.0/**
           if-no-files-found: error
           retention-days: 1
 
@@ -151,33 +177,50 @@ jobs:
           dotnet-version: "10.0.x"
 
       # upload-artifact v4 roots the archive at the least common ancestor of the
-      # uploaded paths, which for `tests/*/bin/...` is `tests/`. So the archive
-      # holds `Arbitarr.Api.Tests/bin/...`, NOT `tests/Arbitarr.Api.Tests/...`,
-      # and it must be unpacked INTO tests/ to land where the Cecil scan and the
-      # dll paths below expect it.
+      # uploaded paths. prep uploads TWO roots -- `tests/*/bin/...` and
+      # `src/*/bin/...` -- whose only common ancestor is the workspace root, so
+      # the archive holds `tests/Arbitarr.Api.Tests/bin/...` and
+      # `src/Arbitarr.Data/bin/...` with both prefixes intact, and it unpacks at
+      # `.` rather than into `tests/`.
+      #
+      # That `.` is load-bearing, not tidiness. Both the tests/ walk and the
+      # src/ walk in the Architecture scans are RELATIVE to the repository root
+      # (five parents up from an assembly's own output directory), so the two
+      # trees must sit beside each other exactly as they do in the checkout.
+      # Unpacking into `tests/` would nest them one level deeper and every scan
+      # would report "Could not locate the built assembly".
       #
       # download-artifact v7+ runs on node24 and needs runner >= 2.327.1. Every job
       # here is `runs-on: ubuntu-latest` (GitHub-hosted), which satisfies that; it
       # is called out because moving any of these jobs to a self-hosted runner
       # would break the download rather than the thing that was changed.
-      - name: Download test build output
+      - name: Download build output
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: test-build
-          path: tests
+          path: .
 
-      # The Cecil scan fails loudly on a missing sibling, but it only runs in
+      # The Cecil scans fail loudly on a missing sibling, but they only run in
       # group C. A truncated artifact would otherwise let A and B run a smaller
       # set of tests and report a smaller executed= sum, which the gate reads as
       # a floor breach in the wrong place -- or, if the floor happened to be low
       # enough, as a pass. Assert the precondition in every group, where the
       # failure names the actual cause instead of a count.
-      - name: Assert all ten test assemblies were restored
+      #
+      # BOTH roots are asserted. tests/ feeds TestProcessGlobalStateTests; src/
+      # feeds ProductionProcessGlobalStateTests (all eight production
+      # assemblies) and NoInlineDatabaseConnectionStringsTests (Arbitarr.Data),
+      # added by #157. Those two are why src/ is in the artifact at all, so a
+      # src/ path missing here is the exact failure this step exists to name.
+      # src/Arbitarr.Web is absent from the list on purpose: it is the React
+      # frontend, has no csproj, and produces no managed output to resolve.
+      - name: Assert the build output was restored
         shell: bash
         run: |
           set -euo pipefail
 
           missing=0
+
           for a in Arbitarr.Ai.Tests Arbitarr.Api.Tests Arbitarr.Architecture.Tests \
                    Arbitarr.Core.Identity.Tests Arbitarr.Core.Tests Arbitarr.Data.Tests \
                    Arbitarr.Host.Tests Arbitarr.Integration.Tests Arbitarr.Media.Tests \
@@ -189,15 +232,30 @@ jobs:
             fi
           done
 
+          for a in Arbitarr.Ai Arbitarr.Api Arbitarr.Core Arbitarr.Core.Identity \
+                   Arbitarr.Data Arbitarr.Host Arbitarr.Media \
+                   Arbitarr.Sources.NzbHydra; do
+            dll="src/${a}/bin/Release/net10.0/${a}.dll"
+            if [ ! -f "$dll" ]; then
+              echo "BLOCKED: missing production assembly ${dll} from the test-build artifact." >&2
+              missing=1
+            fi
+          done
+
           if [ "$missing" -ne 0 ]; then
             echo "" >&2
-            echo "All ten test assemblies must be present in the same configuration and TFM:" >&2
-            echo "Arbitarr.Architecture.Tests' Mono.Cecil IL scan reads sibling build output and" >&2
-            echo "fails on a missing assembly rather than passing vacuously over a smaller set." >&2
+            echo "All ten test assemblies AND all eight production assemblies must be present" >&2
+            echo "in the same configuration and TFM. Three Architecture scans resolve them by" >&2
+            echo "walking from their own output directory to a sibling tree, and fail rather" >&2
+            echo "than passing vacuously over a smaller set:" >&2
+            echo "  TestProcessGlobalStateTests               reads tests/*/bin/Release/net10.0/" >&2
+            echo "  ProductionProcessGlobalStateTests         reads src/*/bin/Release/net10.0/  (#157)" >&2
+            echo "  NoInlineDatabaseConnectionStringsTests    reads src/Arbitarr.Data/...       (#157)" >&2
             exit 1
           fi
 
           echo "All ten test assemblies present under tests/*/bin/Release/net10.0/."
+          echo "All eight production assemblies present under src/*/bin/Release/net10.0/."
 
       # The built dll is run DIRECTLY, not via the csproj. `dotnet test <csproj>
       # --no-build` still evaluates the project and needs obj/project.assets.json,
