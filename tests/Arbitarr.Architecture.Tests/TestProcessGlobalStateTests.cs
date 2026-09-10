@@ -24,7 +24,7 @@ namespace Arbitarr.Architecture.Tests;
 /// mentions but not the calls its body makes. Reading the IL with Cecil sees the actual
 /// <c>call</c> instruction whatever the source spelled, so the ban cannot be evaded by rephrasing.
 /// This is a ban with NO allow-list: a test that genuinely needs one of these has a design problem
-/// an exemption would hide.
+/// an exemption would hide.</para>
 ///
 /// <para><b>Scope: TEST IL only.</b> This scan covers the assemblies named below and nothing else.
 /// Production code is scanned separately by <see cref="ProductionProcessGlobalStateTests"/>, which
