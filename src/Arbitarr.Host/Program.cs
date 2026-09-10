@@ -247,12 +247,22 @@ builder.Services.AddScoped<DatabaseSizeReporter>();
 // selection between PaginationSnapshotService's fixed-TTL and live-TTL overloads) so the
 // live-TTL ctor is always the one the Host wires up.
 builder.Services.AddScoped<ISnapshotTtlSource, SettingsSnapshotTtlSource>();
+
+// arb-b5z: which sources produced a snapshot is part of what that snapshot IS, so the resolved
+// source set is a component of the snapshot token. Registered SCOPED rather than as a singleton
+// instance because ResolvedSourceConfiguration is still empty at this point in startup -- it is
+// written by SourceSeeder after app.Build() -- so the fingerprint has to be derived when a request
+// first resolves it, not here. Its value is then constant for the process, which is the intent: it
+// is not trying to notice a source change while running (it cannot), it is making sure the NEXT
+// process cannot be served the SQLite-persisted snapshots this one left behind.
+builder.Services.AddScoped<ISourceSetFingerprintSource, Arbitarr.Host.Sources.ResolvedSourceSetFingerprintSource>();
 builder.Services.AddScoped(sp => new PaginationSnapshotService(
     sp.GetRequiredService<UpstreamMergeStage>(),
     sp.GetRequiredService<SearchResultCacheStage>(),
     sp.GetRequiredService<IQuerySnapshotStore>(),
     sp.GetRequiredService<TimeProvider>(),
-    sp.GetRequiredService<ISnapshotTtlSource>()));
+    sp.GetRequiredService<ISnapshotTtlSource>(),
+    sp.GetRequiredService<ISourceSetFingerprintSource>()));
 
 // M7-7/R20: worker-health snapshot, singleton so both the hosted RefreshWorker (writer) and
 // StatusEndpoint (reader) share the same instance across the app's lifetime.
@@ -573,6 +583,60 @@ builder.Services.AddScoped<Arbitarr.Data.Media.ArrInstanceRepository>();
 builder.Services.AddHttpClient<Arbitarr.Core.Media.SonarrConnectivityProber>()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 
+// arb-u1c: the SINGLE production reader of the stored Sonarr API key. Both the admin connectivity
+// probe and the search path's identity resolver need an authenticated request against the
+// configured Sonarr; routing both through this one type is what keeps
+// ArrInstanceRepository.ReadApiKeyForUpstreamRequestAsync at exactly one call site, which is the
+// form that guarantee takes (CLAUDE.md section 1, docs/standards/architecture.md). It lives in
+// Arbitarr.Data because both Arbitarr.Api and Arbitarr.Media already reference that project and
+// neither may reference the other.
+builder.Services.AddScoped<Arbitarr.Data.Media.SonarrCredentialProvider>();
+
+// arb-u1c: the identity resolver that turns Sonarr's tvdbid into the series title the search path
+// sends upstream. Registered against the Core.Identity contract, so Arbitarr.Api (which builds the
+// search query) never sees Arbitarr.Media -- this composition root is the only place that knows
+// which implementation is in play (ADR 0001).
+//
+// Registered UNCONDITIONALLY even though it is useless without a configured Sonarr, because the
+// configuration lives in the database and can be written at any time from the admin UI. A
+// registration gated on a startup-time read would leave the resolver permanently absent for anyone
+// who configures Sonarr after boot -- which is everyone, on a first run. SeriesTitleResolver reads
+// the rows per call and returns null throughout when they are missing, so an unconfigured instance
+// costs one settings read and changes no behaviour.
+builder.Services.AddScoped<Arbitarr.Core.Identity.IIdentityResolver, Arbitarr.Media.Providers.SeriesTitleResolver>();
+
+// The memo behind SeriesTitleResolver's tvdbid->title lookup. SINGLETON, deliberately: the resolver
+// itself is scoped (it reads per-request database state), so a scoped cache would be a fresh empty
+// cache on every request and would memoise nothing at all. The entries are a series id and a public
+// title with a five-minute TTL -- no per-user or credential-derived state -- so one instance shared
+// across requests is correct rather than merely convenient.
+builder.Services.AddMemoryCache();
+
+// The client the *arr identity lookup rides on. NAMED rather than typed because ArrApiProvider is
+// constructed per call around configuration read from the database (see SeriesTitleResolver), so DI
+// cannot activate it as a typed client.
+//
+// AllowAutoRedirect is disabled for the same SSRF reason as the probe above: a misconfigured address
+// answering 30x must not make this process reissue a request CARRYING SONARR'S API KEY at a host
+// nobody configured.
+//
+// NO .RemoveAllLoggers() HERE, for the same measured reason as SonarrConnectivityProber above and
+// subject to the same condition: ArrApiProvider.BuildEpisodeUri puts the key in the QUERY STRING,
+// and .NET's own logging handler collapses the whole query string to "?*" before formatting the
+// message. Move the key into a URL PATH segment and neither that collapse nor LogMessageCleanser
+// (which does not scrub paths, CLAUDE.md §1) covers it, and this registration would need
+// .RemoveAllLoggers().
+//
+// THE TIMEOUT IS SET HERE, ONCE, and ArrApiProvider must never assign HttpClient.Timeout itself:
+// the provider is constructed per call around this POOLED client, and HttpClient throws on that
+// assignment once a request has started on the instance, so two concurrent searches were enough to
+// make one throw. A caller wanting a shorter bound uses a linked CancellationTokenSource instead --
+// SeriesTitleResolver.LookupBudget is exactly that, and is why this longer value is safe here.
+builder.Services.AddHttpClient(
+        Arbitarr.Media.Providers.SeriesTitleResolver.ArrHttpClientName,
+        client => client.Timeout = Arbitarr.Media.Providers.ArrApiProviderOptions.DefaultRequestTimeout)
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+
 // #89: the AI backend's connectivity probe. AllowAutoRedirect is disabled for the same SEC-M5 SSRF
 // reason as the OllamaClient registration above -- a misconfigured address answering 30x must not
 // make this process issue a request at a host nobody configured.
@@ -650,6 +714,17 @@ builder.Services.AddHostedService(sp => new Arbitarr.Host.Maintenance.Maintenanc
     sp.GetRequiredService<IServiceScopeFactory>(),
     sp.GetRequiredService<TimeProvider>(),
     sp.GetRequiredService<ILogger<Arbitarr.Host.Maintenance.MaintenanceHostedService>>()));
+
+// arb-fxw: reclaims orphaned files left in BackupPaths.StagingDirectory by a hard kill
+// mid-restore/backup (each writer's own `finally` only runs if the process survives to reach it).
+// One-shot at startup, not a recurring timer -- see StagingSweepService's doc comment for why.
+// Registration order here does not guard against in-flight writers; ExecuteAsync is not awaited
+// before the host reports started, so Kestrel may already be serving. The no-race mechanism is
+// StagingSweep's processStartUtc cut-off -- see StagingSweepService's doc comment.
+builder.Services.AddHostedService(sp => new Arbitarr.Host.Backup.StagingSweepService(
+    sp.GetRequiredService<Arbitarr.Data.Backup.BackupPaths>(),
+    sp.GetRequiredService<TimeProvider>(),
+    sp.GetRequiredService<ILogger<Arbitarr.Host.Backup.StagingSweepService>>()));
 
 var app = builder.Build();
 
@@ -799,6 +874,10 @@ app.MapGet("/torznab/api", async (
     InMemoryReleaseLookup releaseLookup,
     RecentSearchLog recentSearchLog,
     Arbitarr.Core.Diagnostics.IEventSink eventSink,
+    // arb-u1c: nullable so the route still resolves when no Sonarr instance is configured; the
+    // registration below is conditional on nothing, but the resolver itself returns null throughout
+    // when the instance rows are absent.
+    Arbitarr.Core.Identity.IIdentityResolver? identityResolver,
     IReadOnlyList<IUpstreamSource> sources,
     HttpRequest request,
     CancellationToken cancellationToken) =>
@@ -833,7 +912,8 @@ app.MapGet("/torznab/api", async (
         IdParamClamp.ClampProviderId(IdParamClamp.ParseOptional(tmdbid)),
         IdParamClamp.ClampSeason(IdParamClamp.ParseOptional(season)),
         IdParamClamp.ClampEpisode(IdParamClamp.ParseOptional(ep)),
-        clientContext?.Name).ConfigureAwait(false);
+        clientContext?.Name,
+        identityResolver).ConfigureAwait(false);
 })
     .WithClassification(RouteClassification.PublicRead);
 
@@ -860,6 +940,10 @@ app.MapGet("/newznab/api", async (
     InMemoryReleaseLookup releaseLookup,
     RecentSearchLog recentSearchLog,
     Arbitarr.Core.Diagnostics.IEventSink eventSink,
+    // arb-u1c: nullable so the route still resolves when no Sonarr instance is configured; the
+    // registration below is conditional on nothing, but the resolver itself returns null throughout
+    // when the instance rows are absent.
+    Arbitarr.Core.Identity.IIdentityResolver? identityResolver,
     IReadOnlyList<IUpstreamSource> sources,
     HttpRequest request,
     CancellationToken cancellationToken) =>
@@ -894,7 +978,8 @@ app.MapGet("/newznab/api", async (
         IdParamClamp.ClampProviderId(IdParamClamp.ParseOptional(tmdbid)),
         IdParamClamp.ClampSeason(IdParamClamp.ParseOptional(season)),
         IdParamClamp.ClampEpisode(IdParamClamp.ParseOptional(ep)),
-        clientContext?.Name).ConfigureAwait(false);
+        clientContext?.Name,
+        identityResolver).ConfigureAwait(false);
 })
     .WithClassification(RouteClassification.PublicRead);
 

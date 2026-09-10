@@ -1,5 +1,5 @@
 using Arbitarr.Data.Sources;
-using Microsoft.Data.Sqlite;
+using Arbitarr.TestSupport;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,26 +16,14 @@ namespace Arbitarr.Data.Tests;
 /// </summary>
 public sealed class SourceRepositoryTests : IDisposable
 {
-    private readonly string _dbPath;
+    private readonly SqliteTestDatabase _database = new("arr-searcher-sources-test");
 
-    public SourceRepositoryTests()
-    {
-        _dbPath = Path.Combine(Path.GetTempPath(), $"arr-searcher-sources-test-{Guid.NewGuid():N}.db");
-    }
-
-    public void Dispose()
-    {
-        SqliteConnection.ClearAllPools();
-        if (File.Exists(_dbPath))
-        {
-            File.Delete(_dbPath);
-        }
-    }
+    public void Dispose() => _database.Dispose();
 
     private ArbitarrDbContext CreateContext()
     {
         var optionsBuilder = new DbContextOptionsBuilder<ArbitarrDbContext>();
-        optionsBuilder.UseSqlite($"Data Source={_dbPath}");
+        optionsBuilder.UseSqlite(_database.ConnectionString);
         var context = new ArbitarrDbContext(optionsBuilder.Options);
         context.Database.Migrate();
         return context;
@@ -48,7 +36,7 @@ public sealed class SourceRepositoryTests : IDisposable
         // settings row (stand-in for pre-existing operator data), then migrate the rest of the way
         // (including AddSourcesTable) and confirm the earlier row survives untouched.
         var optionsBuilder = new DbContextOptionsBuilder<ArbitarrDbContext>();
-        optionsBuilder.UseSqlite($"Data Source={_dbPath}");
+        optionsBuilder.UseSqlite(_database.ConnectionString);
 
         using (var context = new ArbitarrDbContext(optionsBuilder.Options))
         {

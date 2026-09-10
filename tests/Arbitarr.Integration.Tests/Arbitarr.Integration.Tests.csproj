@@ -25,10 +25,16 @@
     <ProjectReference Include="..\..\src\Arbitarr.Core.Identity\Arbitarr.Core.Identity.csproj" />
     <ProjectReference Include="..\..\src\Arbitarr.Media\Arbitarr.Media.csproj" />
     <ProjectReference Include="..\..\src\Arbitarr.Ai\Arbitarr.Ai.csproj" />
+    <ProjectReference Include="..\Arbitarr.TestSupport\Arbitarr.TestSupport.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <None Include="..\..\docs\fixtures\nzbhydra\*.xml" Link="fixtures\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The parallelism cap (arb-rga.4) only takes effect if the runner finds this file BESIDE the
+         test assembly. Without CopyToOutputDirectory it stays in the source tree, the runner never
+         reads it, and the assembly silently runs at the default unbounded width — green, and not
+         what was measured. -->
+    <None Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

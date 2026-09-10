@@ -12,6 +12,14 @@ namespace Arbitarr.Ai.Tests;
 /// Uses an in-memory fake <see cref="IOllamaClient"/> with a fixed simulated inference delay so the
 /// assertion is about the worker/gate's own overhead, not real model latency.
 /// </summary>
+/// <remarks>
+/// Category=Load (arb-rga.5): the whole class is one deliberately contended measurement — 20
+/// concurrent requests queued against the MaxInFlight=1 gate, asserted as a p95 overhead ratio.
+/// What it varies is concurrency, not elapsed time alone, which is what separates Load from Timing.
+/// Excluded from the PR and master lanes by the shared category filter and run unfiltered nightly;
+/// see docs/standards/process.md and docs/adr/0011.
+/// </remarks>
+[Trait("Category", "Load")]
 public class ClassifierWorkerLoadTests
 {
     private static ReleaseCandidate Candidate(string title) => new()

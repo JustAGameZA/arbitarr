@@ -428,6 +428,46 @@ public sealed class AdminArrEndpointsTests : IClassFixture<ArbitarrWebApplicatio
     }
 
     /// <summary>
+    /// A stored address with NO key is a half-configured instance, and the probe refuses it rather
+    /// than sending an unauthenticated request Sonarr answers 401.
+    /// </summary>
+    /// <remarks>
+    /// Reporting that as <c>AuthenticationFailed</c> would be a true statement about the request and
+    /// a misleading one about the configuration: the operator's fix is "supply a key", not "correct
+    /// the key you supplied". It would also record a breaker failure against a Sonarr that is not
+    /// broken. Since arb-u1c the whole credential is obtained as a unit from
+    /// <c>SonarrCredentialProvider</c>, so this state is refused by construction rather than by each
+    /// consumer remembering to check.
+    /// </remarks>
+    [Fact]
+    public async Task The_probe_refuses_a_half_configured_instance_that_has_an_address_but_no_key()
+    {
+        await SeedAdminKeyAsync();
+        await ClearConfigurationAsync();
+        await _factory.SeedAsync(async db =>
+        {
+            await new ArrInstanceRepository(db).SetAsync(
+                "http://192.0.2.72:8989",
+                apiKey: null,
+                CancellationToken.None);
+        });
+
+        using var client = _factory.CreateClient();
+
+        // The positive control: the address really IS stored, so the refusal below is about the
+        // missing key rather than about an instance that was never configured at all — which is the
+        // case the test above already covers and which would otherwise make this one vacuous.
+        Assert.Equal(
+            "http://192.0.2.72:8989",
+            await ReadStoredValueAsync(ArrInstanceRepository.SonarrBaseUrlSettingName));
+        Assert.Null(await ReadStoredValueAsync(ArrInstanceRepository.SonarrApiKeySettingName));
+
+        using var response = await SendAsync(client, HttpMethod.Post, SonarrTestRoute);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    /// <summary>
     /// The probe's answer is a closed enum plus wording derived from that enum alone, so no probe
     /// failure path can carry the key. The address here is an RFC 5737 documentation form that
     /// nothing answers on, so the outcome is a reachability failure — which is exactly the path most

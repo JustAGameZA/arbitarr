@@ -17,6 +17,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Arbitarr.Media\Arbitarr.Media.csproj" />
+    <!-- arb-u1c: SeriesTitleResolver reads the Sonarr instance rows through ArrInstanceRepository,
+         so its tests need a real ArbitarrDbContext. Arbitarr.Media already references Arbitarr.Data,
+         so this adds no new dependency direction, only visibility of a type the subject takes. -->
+    <ProjectReference Include="..\..\src\Arbitarr.Data\Arbitarr.Data.csproj" />
+    <ProjectReference Include="..\Arbitarr.TestSupport\Arbitarr.TestSupport.csproj" />
   </ItemGroup>
 
   <ItemGroup>

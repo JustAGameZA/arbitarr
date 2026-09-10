@@ -1,6 +1,6 @@
 using Arbitarr.Data.Entities;
 using Arbitarr.Data.Maintenance;
-using Microsoft.Data.Sqlite;
+using Arbitarr.TestSupport;
 using Microsoft.EntityFrameworkCore;
 
 namespace Arbitarr.Data.Tests;
@@ -12,21 +12,14 @@ namespace Arbitarr.Data.Tests;
 /// </summary>
 public sealed class DatabaseSizeReporterTests : IDisposable
 {
-    private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"arr-searcher-dbsize-test-{Guid.NewGuid():N}.db");
+    private readonly SqliteTestDatabase _database = new("arr-searcher-dbsize-test");
 
-    public void Dispose()
-    {
-        SqliteConnection.ClearAllPools();
-        if (File.Exists(_dbPath))
-        {
-            File.Delete(_dbPath);
-        }
-    }
+    public void Dispose() => _database.Dispose();
 
     private ArbitarrDbContext CreateContext()
     {
         var optionsBuilder = new DbContextOptionsBuilder<ArbitarrDbContext>();
-        optionsBuilder.UseSqlite($"Data Source={_dbPath}");
+        optionsBuilder.UseSqlite(_database.ConnectionString);
         return new ArbitarrDbContext(optionsBuilder.Options);
     }
 

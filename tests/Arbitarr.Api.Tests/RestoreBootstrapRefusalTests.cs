@@ -50,6 +50,7 @@ public sealed class RestoreBootstrapRefusalTests
             coordinator: null!,
             state: null!,
             dbContext: null!,
+            paths: null!,
             timeProvider: TimeProvider.System,
             cancellationToken: CancellationToken.None);
 
@@ -80,6 +81,7 @@ public sealed class RestoreBootstrapRefusalTests
             coordinator: null!,
             state: null!,
             dbContext: null!,
+            paths: null!,
             timeProvider: TimeProvider.System,
             cancellationToken: CancellationToken.None));
     }

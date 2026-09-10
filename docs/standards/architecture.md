@@ -69,8 +69,18 @@ clearing is in [ADR 0010](../adr/0010-secrets-clear-route.md) — do not restate
 
 - **Source API keys are write-only rows** under `source:{id}:api_key` — a colon-namespaced name no
   `SettingKey` enum value can produce.
-- **`SourceRepository.ReadApiKeyForUpstreamRequestAsync` has exactly one caller.** The guarantee
-  *is* the call-site count; a second caller is a second place to audit.
+- **Every `ReadApiKeyForUpstreamRequestAsync` has exactly one caller.** The guarantee *is* the
+  call-site count; a second caller is a second place to audit. `SecretReaderSingleCallerTests`
+  counts them, because the comments claiming "the one place" stayed correct-looking while arb-u1c
+  added a second caller beside them and three reviews read the comments instead of counting.
+  - `SourceRepository`'s is called from `AdminSourceEndpoints`.
+  - `ArrInstanceRepository`'s is called from `SonarrCredentialProvider`, and from nowhere else.
+    **Two consumers, one reader**: the admin connectivity probe and the search path's identity
+    resolver both need an authenticated request against the configured Sonarr, and both take a
+    `SonarrCredential` from that provider rather than reading the key themselves. It lives in
+    `Arbitarr.Data` because `Arbitarr.Api` and `Arbitarr.Media` both reference that project and
+    neither may reference the other — so a second consumer costs a new consumer, never a new caller.
+    That is the shape to reach for when a third arrives.
 - **The admin key is session-only in Zustand** on the frontend — never `localStorage`, never
   `sessionStorage`, never a query string. CI rejects browser-storage references in the web project.
 - **The admin key stays absent from `SettingsCatalog`**, which feeds both the settings PUT

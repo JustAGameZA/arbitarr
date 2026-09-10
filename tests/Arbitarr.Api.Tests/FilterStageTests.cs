@@ -7,7 +7,7 @@ using Arbitarr.Data;
 using Arbitarr.Data.Entities;
 using Arbitarr.Data.Filtering;
 using Arbitarr.Data.Settings;
-using Microsoft.Data.Sqlite;
+using Arbitarr.TestSupport;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
@@ -23,27 +23,15 @@ namespace Arbitarr.Api.Tests;
 /// </summary>
 public sealed class FilterStageTests : IDisposable
 {
-    private readonly string _dbPath;
+    private readonly SqliteTestDatabase _database = new("arbitarr-filterstage-test");
     private static readonly DateTimeOffset Now = new(2026, 8, 30, 12, 0, 0, TimeSpan.Zero);
 
-    public FilterStageTests()
-    {
-        _dbPath = Path.Combine(Path.GetTempPath(), $"arbitarr-filterstage-test-{Guid.NewGuid():N}.db");
-    }
-
-    public void Dispose()
-    {
-        SqliteConnection.ClearAllPools();
-        if (File.Exists(_dbPath))
-        {
-            File.Delete(_dbPath);
-        }
-    }
+    public void Dispose() => _database.Dispose();
 
     private ArbitarrDbContext CreateContext()
     {
         var optionsBuilder = new DbContextOptionsBuilder<ArbitarrDbContext>();
-        optionsBuilder.UseSqlite($"Data Source={_dbPath}");
+        optionsBuilder.UseSqlite(_database.ConnectionString);
         var context = new ArbitarrDbContext(optionsBuilder.Options);
         context.Database.Migrate();
         return context;
@@ -244,6 +232,11 @@ public sealed class FilterStageTests : IDisposable
     /// backtracking-engine fallback (NonBacktracking alone would make a backreference-free
     /// "(a+)+$"-style pattern linear-time and it would never time out).
     /// </summary>
+    // Category=Timing (arb-rga.5) on this fact ALONE, not on the class. It is the only one of this
+    // class's nine facts that asserts elapsed wall time (the Stopwatch bound below); the other eight
+    // are shadow-mode, profile-mapping and title-normalisation assertions with no clock in them and
+    // must keep running in the PR lane.
+    [Trait("Category", "Timing")]
     [Fact]
     public async Task ApplyAsync_HazardousPatternTimesOut_PipelineFailsOpen_BenignRuleStillApplies()
     {

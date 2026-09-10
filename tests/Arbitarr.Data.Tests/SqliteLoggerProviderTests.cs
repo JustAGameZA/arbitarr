@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Arbitarr.Data.Logging;
+using Arbitarr.TestSupport;
 using Microsoft.Extensions.Logging;
 using Xunit;
 
@@ -22,7 +23,11 @@ public sealed class SqliteLoggerProviderTests : IDisposable
 
     public void Dispose()
     {
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        // Scoped to the log databases under THIS class's own temp directory rather than
+        // ClearAllPools(), which would also close pooled connections belonging to test classes
+        // running in parallel (arb-rga.3). LogStore's own connection string (Mode/Cache/Pooling)
+        // is what keys its pool, and ClearPoolsForDirectory covers that shape.
+        SqlitePools.ClearPoolsForDirectory(_directory);
         try
         {
             Directory.Delete(_directory, recursive: true);
@@ -103,6 +108,13 @@ public sealed class SqliteLoggerProviderTests : IDisposable
         Assert.Contains("boom", entry.Exception);
     }
 
+    // Category=Timing (arb-rga.5) on this fact ALONE, not on the class. It is the only one of this
+    // class's nine facts that asserts elapsed wall time (the 1,000-line loop under a 2s stopwatch
+    // below). The other eight are functional — including
+    // Messages_are_cleansed_before_they_are_stored, a secrets-adjacent assertion that must keep
+    // running on every PR — so a class-level trait would pull real coverage out of the merge path
+    // to buy back time this one fact does not cost.
+    [Trait("Category", "Timing")]
     [Fact]
     public void Logging_does_not_block_the_caller()
     {

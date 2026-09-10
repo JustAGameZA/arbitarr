@@ -1,6 +1,6 @@
 using Arbitarr.Core.Settings;
 using Arbitarr.Data.Settings;
-using Microsoft.Data.Sqlite;
+using Arbitarr.TestSupport;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
@@ -13,26 +13,14 @@ namespace Arbitarr.Data.Tests;
 /// </summary>
 public sealed class SettingsRepositoryTests : IDisposable
 {
-    private readonly string _dbPath;
+    private readonly SqliteTestDatabase _database = new("arr-searcher-settings-test");
 
-    public SettingsRepositoryTests()
-    {
-        _dbPath = Path.Combine(Path.GetTempPath(), $"arr-searcher-settings-test-{Guid.NewGuid():N}.db");
-    }
-
-    public void Dispose()
-    {
-        SqliteConnection.ClearAllPools();
-        if (File.Exists(_dbPath))
-        {
-            File.Delete(_dbPath);
-        }
-    }
+    public void Dispose() => _database.Dispose();
 
     private ArbitarrDbContext CreateContext()
     {
         var optionsBuilder = new DbContextOptionsBuilder<ArbitarrDbContext>();
-        optionsBuilder.UseSqlite($"Data Source={_dbPath}");
+        optionsBuilder.UseSqlite(_database.ConnectionString);
         var context = new ArbitarrDbContext(optionsBuilder.Options);
         context.Database.Migrate();
         return context;

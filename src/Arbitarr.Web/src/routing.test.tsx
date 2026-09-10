@@ -2,6 +2,7 @@ import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { NAV_ENTRIES } from './components/shell/SidebarNav';
 import { renderApp, renderAppWithBrowserHistory } from './test/renderApp';
 import { useAdminKeyStore } from './state/adminKeyStore';
 import { mockApi, signedIn } from './test/mockApi';
@@ -56,20 +57,43 @@ describe('routing', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'System' })).toBeInTheDocument();
   });
 
-  it('renders the 404 inside the shell so navigation is still available', () => {
+  it('renders the 404 inside the shell so navigation is still available', async () => {
     renderApp('/no-such-page');
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Page not found' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Page not found' }),
+    ).toBeInTheDocument();
     // The point of a 404 inside the shell: the operator is not stranded on a
     // bare error page with no way back.
     expect(screen.getByRole('navigation', { name: 'Main' })).toBeInTheDocument();
   });
 
-  it('routes every sidebar destination to something other than the 404', () => {
+  it('routes every sidebar destination to something other than the 404', async () => {
     // Catches a nav entry whose path has no matching route -- the link would
     // render fine and quietly land on the not-found page.
-    for (const path of ['/', '/search', '/rules', '/suppressions', '/settings', '/system']) {
+    //
+    // arb-kmp: each destination is awaited by its OWN <h1> before the negative
+    // assertion runs. A bare synchronous queryByRole was weak in two ways that
+    // compound under load: it could read the tree before the route committed,
+    // and "no Page-not-found heading" is satisfied by a tree with nothing in it
+    // at all -- so a destination that rendered NOTHING passed just as happily
+    // as one that rendered correctly. Waiting for the expected heading first is
+    // what makes the absence below mean something. Each name is the surface's
+    // real PageHeader title, so a renamed heading fails here rather than
+    // silently weakening the check.
+    //
+    // The list swept is NAV_ENTRIES itself, not a copy of it. A copy is what
+    // let Activity (#55) sit in the sidebar and in routes.tsx while this sweep
+    // still swept only six of the seven: a missing row in a literal list is
+    // invisible, because a shorter list is not a failing one. Reading the real
+    // list means a nav entry added in one place cannot escape the sweep.
+    //
+    // `label` doubles as the expected <h1>: every surface's PageHeader title is
+    // its nav label. That is asserted here, not assumed -- a surface whose
+    // heading stops matching its label fails this test.
+    for (const { to: path, label: heading } of NAV_ENTRIES) {
       const { unmount } = renderApp(path);
+      expect(await screen.findByRole('heading', { level: 1, name: heading })).toBeInTheDocument();
       expect(screen.queryByRole('heading', { level: 1, name: 'Page not found' })).toBeNull();
       unmount();
     }

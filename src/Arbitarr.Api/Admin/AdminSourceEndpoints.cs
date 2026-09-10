@@ -85,10 +85,11 @@ public sealed record SourceTestResponse(bool Success, string Outcome, string Mes
 /// sending NO body at all — that bodilessness is load-bearing and must not be "fixed".</para>
 ///
 /// <para><b>Validation is not duplicated here.</b> <see cref="SourceRepository"/> already rejects
-/// non-absolute/non-http(s) URLs, empty or colliding display names, and empty kinds, with the AC24
-/// reject-never-clamp posture. This layer only translates
-/// <see cref="SourceValidationException"/> into a 400 — one validation floor, in one place,
-/// already tested.</para>
+/// non-absolute/non-http(s) URLs, empty or colliding display names, and kinds that are empty or
+/// outside <see cref="SourceRepository.KnownKinds"/> — which, because the comparison is ordinal,
+/// includes a merely wrongly-cased <c>"nzbhydra"</c> — with the AC24 reject-never-clamp posture.
+/// This layer only translates <see cref="SourceValidationException"/> into a 400 — one validation
+/// floor, in one place, already tested.</para>
 /// </summary>
 public static class AdminSourceEndpoints
 {

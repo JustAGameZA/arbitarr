@@ -89,13 +89,25 @@ public static class BackupArchiveValidator
     /// Validates the archive at <paramref name="archivePath"/> against the migrations
     /// <paramref name="knownMigrationIds"/> the running build can apply.
     /// </summary>
-    public static BackupValidationResult Validate(string archivePath, IReadOnlyCollection<string> knownMigrationIds)
+    /// <param name="archivePath">The uploaded (or test-built) archive to validate.</param>
+    /// <param name="knownMigrationIds">The migrations this build can apply.</param>
+    /// <param name="stagingDirectory">
+    /// Where the two entries are extracted to while they are checked (arb-3gd). Callers pass the
+    /// claiming instance's own <see cref="BackupPaths.StagingDirectory"/> — never the machine-wide
+    /// <c>Path.GetTempPath()</c> this used before, which made "nothing was staged" assertions
+    /// process-global instead of instance-scoped. Created if it does not already exist.
+    /// </param>
+    public static BackupValidationResult Validate(
+        string archivePath, IReadOnlyCollection<string> knownMigrationIds, string stagingDirectory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(archivePath);
         ArgumentNullException.ThrowIfNull(knownMigrationIds);
+        ArgumentException.ThrowIfNullOrWhiteSpace(stagingDirectory);
+
+        Directory.CreateDirectory(stagingDirectory);
 
         var stem = Path.Combine(
-            Path.GetTempPath(), "arbitarr-restore-validate-" + Guid.NewGuid().ToString("N"));
+            stagingDirectory, StagingFileNames.RestoreValidatePrefix + Guid.NewGuid().ToString("N"));
         var stagedDatabase = stem + ".db";
         var stagedSecretKey = stem + ".key";
         var succeeded = false;
@@ -275,6 +287,12 @@ public static class BackupArchiveValidator
 
         try
         {
+            // Built inline, and on NoInlineDatabaseConnectionStringsTests' build-a-string list by
+            // name: `path` is always a STAGED TEMP file extracted
+            // from an uploaded archive, never the live database, so the pool this fills is not one a
+            // restore has to clear. The ReadOnly mode is part of that — this shape is for inspecting
+            // an untrusted file, and giving it a home in DatabaseConnectionStrings would put a
+            // never-live shape next to the live ones it exists to enumerate.
             using var connection = new SqliteConnection(
                 new SqliteConnectionStringBuilder { DataSource = path, Mode = SqliteOpenMode.ReadOnly }.ToString());
             connection.Open();

@@ -19,11 +19,8 @@ export const ROUTES: ReadonlyArray<[string, string]> = [
   ['/system', 'System'],
 ];
 
-/** The app name suffixed onto every non-index title. */
+/** The app name suffixed onto every route's title. */
 export const APP_NAME = 'Arbitarr';
-
-/** Title used for the index route (plain app name, no page name prefix). */
-export const INDEX_TITLE = APP_NAME;
 
 /** Title used for any path that does not match a row in ROUTES. */
 export const NOT_FOUND_TITLE = `Page not found — ${APP_NAME}`;
@@ -31,14 +28,11 @@ export const NOT_FOUND_TITLE = `Page not found — ${APP_NAME}`;
 /**
  * Resolves the document title for a given pathname.
  *
- * The index route ("/") gets the plain app name; every other known route
- * gets "<Name> — Arbitarr"; anything unmatched falls back to the 404 title.
+ * Every known route -- including the index route ("/"), which is the
+ * Dashboard -- gets "<Name> — Arbitarr", the same convention across the
+ * board; anything unmatched falls back to the 404 title.
  */
 export function resolveDocumentTitle(pathname: string): string {
-  if (pathname === '/') {
-    return INDEX_TITLE;
-  }
-
   const match = ROUTES.find(([path]) => path === pathname);
   if (!match) {
     return NOT_FOUND_TITLE;

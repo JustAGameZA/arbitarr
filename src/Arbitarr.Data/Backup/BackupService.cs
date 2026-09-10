@@ -54,9 +54,11 @@ public sealed class BackupService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(destinationPath);
 
+        // Arb-3gd: this instance's own BackupPaths.StagingDirectory, not the machine-wide
+        // Path.GetTempPath() — see BackupPaths.StagingSubdirectoryName's doc comment.
         var snapshotPath = Path.Combine(
-            Path.GetTempPath(),
-            "arbitarr-snapshot-" + Guid.NewGuid().ToString("N") + ".db");
+            _paths.EnsureStagingDirectory(),
+            StagingFileNames.SnapshotPrefix + Guid.NewGuid().ToString("N") + ".db");
 
         try
         {
@@ -98,12 +100,22 @@ public sealed class BackupService
     /// </summary>
     private void SnapshotDatabase(string destinationPath)
     {
+        // From DatabaseConnectionStrings, never formatted inline: this names the LIVE database, so
+        // its pool is one of the pools a restore must clear before swapping the file. Building the
+        // string here instead would create a pool SqlitePoolCleaner does not know about (arb-n21).
         using var source = new SqliteConnection(
-            new SqliteConnectionStringBuilder { DataSource = _paths.DatabasePath }.ToString());
+            DatabaseConnectionStrings.Maintenance(_paths.DatabasePath));
         source.Open();
 
+        // The DESTINATION is a fresh snapshot file, not the live database, so it is deliberately
+        // NOT one of DatabaseConnectionStrings.ForDatabase's shapes — a restore never replaces it.
+        // The string is still built by DatabaseConnectionStrings rather than inline here, so that
+        // NoInlineDatabaseConnectionStringsTests need not list BackupService among the types
+        // allowed to BUILD a connection string. This type is on that test's open-a-connection list
+        // and deliberately off its build-a-string one, which is what keeps a future inline string
+        // in this file reportable.
         using var destination = new SqliteConnection(
-            new SqliteConnectionStringBuilder { DataSource = destinationPath }.ToString());
+            DatabaseConnectionStrings.SnapshotDestination(destinationPath));
         destination.Open();
 
         source.BackupDatabase(destination);
@@ -120,8 +132,16 @@ public sealed class BackupService
     /// </summary>
     public static string? ReadAppliedMigrationId(string databasePath)
     {
+        // From DatabaseConnectionStrings, never formatted inline. This method takes an ARBITRARY
+        // path: today's production callers pass a snapshot temp file (SnapshotDatabase's output)
+        // and a staged archive's extracted database (BackupArchiveValidator), neither of which a
+        // restore replaces — but nothing about the signature stops the LIVE path arriving, and
+        // BackupServiceTests already passes it. Taking the string from the one builder makes this
+        // site safe whichever path it is handed: if it is the live one, the pool it fills is one
+        // SqlitePoolCleaner already knows to clear (arb-n21), and no caller has to know which case
+        // it is in.
         using var connection = new SqliteConnection(
-            new SqliteConnectionStringBuilder { DataSource = databasePath }.ToString());
+            DatabaseConnectionStrings.Maintenance(databasePath));
         connection.Open();
 
         // Two statements, not one CASE expression. SQLite PREPARES a whole statement before

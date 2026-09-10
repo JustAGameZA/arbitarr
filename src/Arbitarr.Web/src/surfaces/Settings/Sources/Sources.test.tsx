@@ -99,6 +99,22 @@ describe('Sources section', () => {
     ).toBeInTheDocument();
   }, TEST_TIMEOUT_MS);
 
+  // F-020c: Sources carries the same "Restart required" badge as the
+  // Maintenance interval setting, matching its own copy ("take effect on the
+  // next restart") a few lines below. The heading stays exactly "Sources" --
+  // the badge is a sibling of the <h2>, not nested inside it, so it does not
+  // fold into the heading's accessible name.
+  it('carries a Restart required badge next to the Sources heading', async () => {
+    mockApi({ [SOURCES]: { body: sources } });
+    renderSurface(<SourcesSection />);
+
+    expect(await screen.findByRole('heading', { name: 'Sources' })).toBeInTheDocument();
+    expect(screen.getByText('Restart required')).toBeInTheDocument();
+    expect(
+      screen.getByText(/These are stored in the database and take effect on the next restart/),
+    ).toBeInTheDocument();
+  }, TEST_TIMEOUT_MS);
+
   it('sends the typed key on create, and omits the field entirely when none was typed', async () => {
     const user = userEvent.setup({ delay: null });
     const api = mockApi({ [SOURCES]: { body: [] } });

@@ -60,20 +60,34 @@ public sealed class PaginationSnapshotService
     private readonly IQuerySnapshotStore _snapshotStore;
     private readonly TimeProvider _timeProvider;
     private readonly ISnapshotTtlSource _ttlSource;
+    private readonly ISourceSetFingerprintSource _sourceSetFingerprintSource;
 
     /// <summary>
     /// Fixed-TTL constructor: wraps <paramref name="ttl"/> (or <see cref="DefaultTtl"/> when null)
     /// in a <see cref="StaticSnapshotTtlSource"/>. Used directly by tests and by any caller that
     /// wants a TTL fixed for the service's lifetime — existing call sites and their semantics are
     /// unchanged.
+    ///
+    /// <para>arb-b5z: <paramref name="sourceSetFingerprintSource"/> defaults to
+    /// <see cref="StaticSourceSetFingerprintSource.Empty"/>, a fixed empty fingerprint, so every
+    /// pre-existing call site (all fourteen of them, across the golden/rendering/pagination test
+    /// files) keeps compiling and behaving exactly as before — a caller that never told this type
+    /// about a source set gets the pre-arb-b5z token shape verbatim.</para>
     /// </summary>
     public PaginationSnapshotService(
         UpstreamMergeStage mergeStage,
         SearchResultCacheStage cacheStage,
         IQuerySnapshotStore snapshotStore,
         TimeProvider timeProvider,
-        TimeSpan? ttl = null)
-        : this(mergeStage, cacheStage, snapshotStore, timeProvider, new StaticSnapshotTtlSource(ttl ?? DefaultTtl))
+        TimeSpan? ttl = null,
+        ISourceSetFingerprintSource? sourceSetFingerprintSource = null)
+        : this(
+            mergeStage,
+            cacheStage,
+            snapshotStore,
+            timeProvider,
+            new StaticSnapshotTtlSource(ttl ?? DefaultTtl),
+            sourceSetFingerprintSource)
     {
     }
 
@@ -90,13 +104,15 @@ public sealed class PaginationSnapshotService
         SearchResultCacheStage cacheStage,
         IQuerySnapshotStore snapshotStore,
         TimeProvider timeProvider,
-        ISnapshotTtlSource ttlSource)
+        ISnapshotTtlSource ttlSource,
+        ISourceSetFingerprintSource? sourceSetFingerprintSource = null)
     {
         _mergeStage = mergeStage ?? throw new ArgumentNullException(nameof(mergeStage));
         _cacheStage = cacheStage ?? throw new ArgumentNullException(nameof(cacheStage));
         _snapshotStore = snapshotStore ?? throw new ArgumentNullException(nameof(snapshotStore));
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         _ttlSource = ttlSource ?? throw new ArgumentNullException(nameof(ttlSource));
+        _sourceSetFingerprintSource = sourceSetFingerprintSource ?? StaticSourceSetFingerprintSource.Empty;
     }
 
     /// <summary>
@@ -114,7 +130,8 @@ public sealed class PaginationSnapshotService
     {
         ArgumentNullException.ThrowIfNull(query);
 
-        var snapshotToken = ComputeSnapshotToken(searchType, query);
+        var sourceSetFingerprint = await _sourceSetFingerprintSource.GetAsync(cancellationToken).ConfigureAwait(false);
+        var snapshotToken = ComputeSnapshotToken(searchType, query, sourceSetFingerprint);
         var now = _timeProvider.GetUtcNow();
 
         var cached = await _snapshotStore.GetAsync(snapshotToken, now, cancellationToken).ConfigureAwait(false);
@@ -202,12 +219,48 @@ public sealed class PaginationSnapshotService
     /// mode differs therefore resolves to a genuinely different upstream request and must not share
     /// a snapshot, even where the raw strings coincide.
     /// </para>
+    ///
+    /// <para>
+    /// <b>arb-u1c: <see cref="SearchQuery.Absolute"/> AND <see cref="SearchQuery.ResolvedTitle"/>
+    /// are components, and the title is the one that needs justifying.</b> It is derived from
+    /// <see cref="SearchQuery.TvdbId"/>, which is already hashed here, so including it does fragment
+    /// snapshots that the id alone would have collapsed. It is included anyway because this token is
+    /// consumed ABOVE the two-age cache — a hit returns before <see cref="SearchResultCacheStage"/>
+    /// is ever reached — so a separation existing only in the two-age key is unreachable for any
+    /// query a live snapshot covers. Without the title here, the first anime search issued before
+    /// Sonarr is configured materialises an id-only result set that is then served back to every
+    /// correctly resolved search for that episode for this snapshot's whole TTL: configuring Sonarr
+    /// would appear to do nothing.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>The fragmentation that buys is bounded, and deliberately so.</b> The title is a pure
+    /// function of the tvdbid, so per series it takes one value per memo epoch — at most one extra
+    /// split, unresolved versus resolved, not a new snapshot per request. The bound is
+    /// <c>SeriesTitleResolver</c>'s memo, and specifically its SHORTER negative TTL: an unresolved
+    /// answer is what selects the extra variant, so pinning it as long as a resolved one would stack
+    /// the memo window on top of this TTL. If that negative TTL is ever lengthened toward the
+    /// positive one, this trade-off is what it is spending.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>arb-b5z: the source-set fingerprint is a component because a snapshot is a materialized
+    /// RESULT SET, and which upstreams produced it is part of what it is.</b> The same q/cat against
+    /// a different set of sources is a different answer and must not reuse the row. It is appended
+    /// last and separated like every other component, so an EMPTY fingerprint — the default for any
+    /// caller that has not been told about a source set — contributes nothing but its separator and
+    /// leaves those callers producing exactly the token they produced before this was added. See
+    /// <see cref="ISourceSetFingerprintSource"/> for why the failure this prevents is a cross-restart
+    /// one rather than an in-process one.
+    /// </para>
     /// </summary>
-    private static string ComputeSnapshotToken(string searchType, SearchQuery query)
+    private static string ComputeSnapshotToken(string searchType, SearchQuery query, string sourceSetFingerprint)
     {
         var normalizedCategories = string.Join(",", query.Categories.OrderBy(c => c));
         var raw = $"{searchType}\u001f{query.Type}\u001f{query.Protocol}\u001f{query.QueryText}\u001f{normalizedCategories}" +
-                  $"\u001f{query.TvdbId}\u001f{query.TmdbId}\u001f{query.Season}\u001f{query.Episode}";
+                  $"\u001f{query.TvdbId}\u001f{query.TmdbId}\u001f{query.Season}\u001f{query.Episode}" +
+                  $"\u001f{query.Absolute}\u001f{query.ResolvedTitle}" +
+                  $"\u001f{sourceSetFingerprint}";
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
         return Convert.ToHexString(hash);
     }
@@ -271,4 +324,50 @@ public sealed class StaticSnapshotTtlSource(TimeSpan ttl) : ISnapshotTtlSource
     private readonly TimeSpan _ttl = ttl;
 
     public ValueTask<TimeSpan> GetAsync(CancellationToken cancellationToken) => ValueTask.FromResult(_ttl);
+}
+
+/// <summary>
+/// arb-b5z: abstracts how <see cref="PaginationSnapshotService"/> obtains a fingerprint of the
+/// source set its snapshots were materialized from, so that a snapshot built against one set of
+/// upstream sources is never served to a request running against a different one.
+/// </summary>
+/// <remarks>
+/// <para><b>THE BUG THIS EXISTS FOR IS ACROSS A RESTART, NOT WITHIN A PROCESS, and getting that
+/// backwards makes the fix look like a no-op.</b> The resolved source configuration is settled once
+/// at startup (<c>SourceSeeder</c> writes <c>ResolvedSourceConfiguration</c> before the first
+/// request), so within one process the source set cannot change and this fingerprint cannot move.
+/// What DOES change across a source edit is the process — one is required today — and
+/// <see cref="IQuerySnapshotStore"/> is SQLite-backed, so snapshot rows outlive it. Without the
+/// fingerprint, an operator who adds or enables a source and restarts is still served the
+/// pre-restart snapshot for any identical query, for the remainder of that row's TTL: the new
+/// source's releases are simply missing and nothing indicates why.</para>
+///
+/// <para>Putting the fingerprint in the token retires those rows by construction rather than by
+/// deleting them — the new process addresses a different token, and the old rows expire unread.
+/// That is why no invalidate-on-mutation hook is needed anywhere.</para>
+/// </remarks>
+public interface ISourceSetFingerprintSource
+{
+    ValueTask<string> GetAsync(CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// Wraps a fixed source-set fingerprint for the lifetime of the owning
+/// <see cref="PaginationSnapshotService"/>.
+/// </summary>
+/// <remarks>
+/// <see cref="Empty"/> is the default every pre-existing call site gets, and it is deliberately the
+/// empty string: it appends nothing distinguishing to the hashed component list, so a caller that
+/// has never been told about a source set produces the pre-arb-b5z token byte for byte. That keeps
+/// this change invisible to every existing test and caller, and makes the fingerprint's absence a
+/// value rather than a special case in <see cref="PaginationSnapshotService"/>.
+/// </remarks>
+public sealed class StaticSourceSetFingerprintSource(string fingerprint) : ISourceSetFingerprintSource
+{
+    /// <summary>The no-fingerprint default, preserving the token shape that shipped before arb-b5z.</summary>
+    public static readonly StaticSourceSetFingerprintSource Empty = new(string.Empty);
+
+    private readonly string _fingerprint = fingerprint ?? string.Empty;
+
+    public ValueTask<string> GetAsync(CancellationToken cancellationToken) => ValueTask.FromResult(_fingerprint);
 }

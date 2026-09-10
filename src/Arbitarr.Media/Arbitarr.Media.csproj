@@ -7,6 +7,17 @@
     <RootNamespace>Arbitarr.Media</RootNamespace>
   </PropertyGroup>
 
+  <!-- arb-u1c: IHttpClientFactory only. SeriesTitleResolver builds ArrApiProvider per call around
+       configuration read from the database, so it needs to ask for a client by name rather than
+       receive a DI-activated typed one. This is the abstractions package, not the hosting stack:
+       it adds no reference to Arbitarr.Ai and so does not affect ADR 0001's NetArchTest rules. -->
+  <!-- arb-u1c: IMemoryCache backs SeriesTitleResolver's tvdbid->title memo, which is what keeps a
+       repeated anime search off both the database and the network. Same ADR 0001 note as above. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="10.0.11" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Arbitarr.Core\Arbitarr.Core.csproj" />
     <ProjectReference Include="..\Arbitarr.Core.Identity\Arbitarr.Core.Identity.csproj" />
