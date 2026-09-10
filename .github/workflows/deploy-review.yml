@@ -26,18 +26,50 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      # Computed in its own step rather than inline: the `build-args` block below is
+      # YAML, not shell, so a `$(date ...)` written there would be passed through
+      # literally and the image would carry the command text as its build timestamp.
+      - name: Compute build timestamp
+        id: stamp
+        shell: bash
+        run: echo "value=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      # buildx replaces the plain `docker build` solely to get a layer cache across
+      # runs (`type=gha`). The image content is unchanged: same Dockerfile, same
+      # three build args, same tag.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
       - name: Build container image
         # Issue #46/R1: pass the commit SHA and a tag through as build args so the image
         # itself carries what CI actually built. Without this, GET /api/system/build on a
         # CI-built image would render "unknown (local build)" for every build-time field --
         # correct as a fallback, but wrong for a real CI-built image, and exactly the gap
         # a deployment-drift check needs not to have.
-        run: |
-          docker build -f Dockerfile -t arbitarr-review:ci \
-            --build-arg COMMIT_SHA="${{ github.sha }}" \
-            --build-arg IMAGE_TAG="arbitarr-review:ci" \
-            --build-arg BUILD_TIMESTAMP_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            .
+        #
+        # `push: false` with `load: true` is not the default pair, and both halves matter:
+        # buildx builds into its own cache and would otherwise leave the local Docker
+        # daemon without the image, but every step after this one (the AC21 dataset scan,
+        # `docker run`, the compose stack) addresses `arbitarr-review:ci` through that
+        # daemon. `load` is what puts it there. Nothing is pushed anywhere -- this
+        # workflow has no registry credentials and needs none.
+        #
+        # The gha cache backend needs no extra permission: it authenticates with the
+        # Actions runtime token the runner already holds, not with GITHUB_TOKEN, so the
+        # workflow-level `permissions: contents: read` above is left exactly as it was.
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          load: true
+          tags: arbitarr-review:ci
+          build-args: |
+            COMMIT_SHA=${{ github.sha }}
+            IMAGE_TAG=arbitarr-review:ci
+            BUILD_TIMESTAMP_UTC=${{ steps.stamp.outputs.value }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Assert no dataset is baked into the image (AC21)
         shell: bash

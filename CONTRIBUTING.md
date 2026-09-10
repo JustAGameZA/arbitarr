@@ -104,10 +104,13 @@ Arbitarr never silently guesses. Any code path that degrades (source unreachable
 
 Every PR must pass two required checks before merge:
 
-- **`Build & test`** — restores, builds (`dotnet build -m:1`, sequential to bound memory use),
-  and runs the full test suite, backend and frontend. It also ratchets both test counts against
-  master's last measured counts so the suite can't silently shrink, and re-runs the
-  secret/topology guard over the whole tree.
+- **`Build & test`** — the aggregating `gate` job of a five-job workflow: `prep` restores and
+  builds the solution once (`dotnet build -m:1`, sequential to bound memory use) and publishes the
+  test binaries; a three-way `backend` matrix runs the suite by assembly group against those
+  binaries; `frontend` runs typecheck, lint and the Vitest suite in parallel with all of it; and
+  `guards` re-runs the secret/topology guard over the whole tree. `gate` fails unless every one of
+  them succeeded, and ratchets both test counts against master's last measured counts so the suite
+  can't silently shrink. It is the only job whose name is a required check.
 - **`Deploy review environment`** — builds the container image from `Dockerfile` and smoke-checks
   that the running container answers `GET /health`. **A green tick here means the image builds
   and `/health` answers — nothing more.** It does not mean anything was deployed anywhere; no
