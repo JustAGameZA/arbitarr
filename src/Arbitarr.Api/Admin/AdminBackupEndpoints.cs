@@ -142,7 +142,7 @@ public static class AdminBackupEndpoints
         // property's doc comment for why the shared system temp directory was the wrong place.
         var archivePath = Path.Combine(
             paths.EnsureStagingDirectory(),
-            "arbitarr-download-" + Guid.NewGuid().ToString("N") + ".zip");
+            StagingFileNames.DownloadPrefix + Guid.NewGuid().ToString("N") + ".zip");
 
         try
         {
@@ -336,7 +336,7 @@ public static class AdminBackupEndpoints
         // may touch the staging directory.
         var stagedPath = Path.Combine(
             paths.EnsureStagingDirectory(),
-            "arbitarr-upload-" + Guid.NewGuid().ToString("N") + ".zip");
+            StagingFileNames.UploadPrefix + Guid.NewGuid().ToString("N") + ".zip");
 
         try
         {
