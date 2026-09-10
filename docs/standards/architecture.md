@@ -118,3 +118,37 @@ token, say) is not covered — such registrations need `.RemoveAllLoggers()`.
 
 *Why:* care taken inside a typed client cannot defend against a handler the container wraps around
 it. The defence has to be at registration.
+
+---
+
+## Error handling in background and maintenance work
+
+**A failure that affects one item is caught broadly (`catch (Exception)`) and logged, so the
+remaining items still run.** Only cancellation propagates, via a
+`catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)` guard placed
+*before* the broad catch.
+
+Reference shape: `MaintenanceHostedService.ExecuteAsync` (`src/Arbitarr.Host/Maintenance/MaintenanceHostedService.cs:57-118`)
+wraps each of its three per-pass jobs — the main-database maintenance job, the log-database trim,
+and the automatic backup — in its own OCE-guard-then-broad-catch pair, so a failure in one cannot
+stop the other two. `RefreshWorker` applies the same shape twice: once per cycle
+(`ExecuteAsync`, `src/Arbitarr.Core/Caching/RefreshWorker.cs:173-188`) and once per source inside
+`RefreshOneAsync` (`src/Arbitarr.Core/Caching/RefreshWorker.cs:307-336`, using a bare
+`catch (OperationCanceledException) when (...) { throw; }` ahead of the broad catch, since a
+returned `bool` rather than `break` carries the per-entry failure).
+
+`SqliteLoggerProvider.DrainAsync`'s swallow of the store write
+(`src/Arbitarr.Data/Logging/SqliteLoggerProvider.cs:173-185`) is the same convention applied
+without an OCE guard: the background pump owns no `stoppingToken` to check cancellation against, so
+there is nothing for such a guard to test — the broad catch alone is correct there.
+
+**A narrow type filter on per-item background work (e.g. `catch (IOException or
+UnauthorizedAccessException)`) is the exception and needs a stated justification in a comment.**
+`StagingSweep.Run`'s two per-file catches (`src/Arbitarr.Data/Backup/StagingSweep.cs:83-87,101-104`)
+already use the broad `catch (Exception)` form, not a narrow type filter — #168 widened them to
+match this convention. `Run` takes no cancellation token today, so it has no OCE guard; if one is
+ever threaded through, the guard must be added ahead of the existing broad catches.
+
+Where CONTRIBUTING.md or another standards doc states a general exception-handling rule, link to
+it rather than repeating it here; none currently does, so this section is the only statement of the
+background-work convention.
