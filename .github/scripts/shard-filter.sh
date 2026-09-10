@@ -130,6 +130,17 @@ shard_filter() {
   # rather than written out again here: a second hard-coded copy is a
   # thing to keep in sync, and the failure of keeping it in sync is
   # this check quietly matching nothing.
+  #
+  # It is load-bearing for the recorded COUNT too, not only for the
+  # partition (arb-4f1, #182 LOW-4). $classes and $tests come from the
+  # SAME listing, so a truncated parse that collapses names to a bare
+  # namespace also mis-parses the rows $tests is counted from -- the
+  # header this writes would then record a count describing a listing
+  # nobody would want, and the gate's exact-sum assertion would compare
+  # the executed sum against it and be satisfied. Blocking here stops
+  # the bad count from ever being written, which is why this check
+  # cannot be relaxed on the grounds that the sum check would catch it:
+  # the sum check's own reference value comes through this parse.
   bad=$(printf '%s\n' "$classes" | grep -v -e "^${a}\..\+" || true)
   if [ -n "$bad" ]; then
     echo "BLOCKED: --list-tests of ${a} parsed name(s) that are not a class under" >&2

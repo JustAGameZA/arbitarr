@@ -202,7 +202,18 @@ check_shard_records() {
 
     # The header is parsed only AFTER the copies were proven identical,
     # so this reads a value every shard agreed on.
-    recorded=$(sed -n 's/^tests=\([0-9][0-9]*\)$/\1/p' "$reference" | head -1)
+    #
+    # LINE 1 ONLY (arb-4f1, #182 LOW-1). The old parse scanned the whole file
+    # for the first line matching `tests=N` and took that. The rest of the file
+    # is the CLASS LIST, and a class named `tests=123` -- or any future record
+    # line of that shape -- would be read as the discovered count from wherever
+    # it sat, while the readers below (`sed '1d'`) go on stripping line 1 as the
+    # header. The count and the list would then describe different things, and
+    # the exact-sum assertion would compare against a number no discovery
+    # produced. The writer puts the header on line 1, so the reader requires it
+    # there: this matches nothing when line 1 is a class name, and the
+    # empty-$recorded branch below blocks instead of reading further down.
+    recorded=$(sed -n '1{s/^tests=\([0-9][0-9]*\)$/\1/p;}' "$reference")
     if [ -z "$recorded" ]; then
       echo "BLOCKED: ${reference} carries no parseable 'tests=N' header line." >&2
       echo "The shard step writes it as the first line; without it there is no discovered" >&2
@@ -220,12 +231,38 @@ check_shard_records() {
     # directions, per assembly, against the number that assembly's own
     # discovery produced. The floor check stays as it is -- it ratchets
     # the whole run, including the unsharded assemblies this cannot see.
+    #
+    # This loop sums whatever trx it finds and does NOT check that it found one
+    # per shard -- it relies on check_trx_set having already proven the trx
+    # basename set is exactly right, and on the .listed checks above having
+    # proven one record per declared shard (arb-4f1, #182 LOW-3). Both run
+    # BEFORE this, and the gate step invokes them in that order for this reason.
+    # Read on its own the loop looks like it would under-count a missing shard
+    # and report UNDER; in place it cannot be reached with a shard missing,
+    # because the set check names it first. Reordering the calls, or invoking
+    # this function alone, re-opens that.
     shard_sum=0
     for k in $(seq 1 "$shards"); do
       for trx in ./TestResults/*/"${asm}.shard${k}of${shards}.trx"; do
         [ -f "$trx" ] || continue
         c=$(grep -o 'executed="[0-9]*"' "$trx" | head -1 | grep -o '[0-9]*')
-        shard_sum=$((shard_sum + ${c:-0}))
+        # BLOCK by name on an unparseable trx (arb-4f1, #182 LOW-2). `${c:-0}`
+        # used to fold a trx with no readable executed= figure into the sum as a
+        # zero, so a truncated or malformed result file was reported as the
+        # shards executing FEWER tests than were discovered -- the UNDER message,
+        # which says "a test fell into NEITHER shard" and sends the reader to the
+        # partition. The partition would be fine and the file would be the fault.
+        # A count that could not be read is not a count of zero, so name the file
+        # here where the cause is visible.
+        if ! printf '%s' "$c" | grep -qE '^[0-9]+$'; then
+          echo "BLOCKED: ${trx} carries no parseable executed= figure." >&2
+          echo "Its <ResultSummary><Counters/> element is missing or malformed, so this shard's" >&2
+          echo "executed count cannot be read. Treating it as 0 would report the shards as" >&2
+          echo "having executed fewer tests than were discovered -- an incomplete PARTITION --" >&2
+          echo "when the fault is this file. Blocking by name instead." >&2
+          exit 1
+        fi
+        shard_sum=$((shard_sum + c))
       done
     done
 
