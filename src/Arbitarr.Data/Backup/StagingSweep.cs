@@ -60,7 +60,7 @@ public static class StagingSweep
 
         if (!Directory.Exists(stagingDirectory))
         {
-            logger.LogInformation("Staging sweep: {Count} orphaned file(s) deleted (no staging directory yet).", 0);
+            logger.LogInformation("Staging sweep: no staging directory yet, nothing to delete.");
             return 0;
         }
 
@@ -80,7 +80,7 @@ public static class StagingSweep
             {
                 lastWriteUtc = File.GetLastWriteTimeUtc(path);
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (Exception ex)
             {
                 logger.LogWarning(ex, "Staging sweep: could not read the last-write time of {FileName}; leaving it in place.", name);
                 continue;
@@ -98,7 +98,7 @@ public static class StagingSweep
                 deleteFile(path);
                 deleted++;
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            catch (Exception ex)
             {
                 logger.LogWarning(ex, "Staging sweep: could not delete orphaned staging file {FileName}.", name);
             }
