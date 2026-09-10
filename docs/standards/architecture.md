@@ -128,26 +128,39 @@ remaining items still run.** Only cancellation propagates, via a
 `catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)` guard placed
 *before* the broad catch.
 
-Reference shape: `MaintenanceHostedService.ExecuteAsync` (`src/Arbitarr.Host/Maintenance/MaintenanceHostedService.cs:57-118`)
+Reference shape: `MaintenanceHostedService.ExecuteAsync`
 wraps each of its three per-pass jobs — the main-database maintenance job, the log-database trim,
 and the automatic backup — in its own OCE-guard-then-broad-catch pair, so a failure in one cannot
 stop the other two. `RefreshWorker` applies the same shape twice: once per cycle
-(`ExecuteAsync`, `src/Arbitarr.Core/Caching/RefreshWorker.cs:173-188`) and once per source inside
-`RefreshOneAsync` (`src/Arbitarr.Core/Caching/RefreshWorker.cs:307-336`, using a bare
+(`RefreshWorker.ExecuteAsync`) and once per source inside
+`RefreshWorker.RefreshOneAsync`, using a bare
 `catch (OperationCanceledException) when (...) { throw; }` ahead of the broad catch, since a
-returned `bool` rather than `break` carries the per-entry failure).
+returned `bool` rather than `break` carries the per-entry failure.
 
-`SqliteLoggerProvider.DrainAsync`'s swallow of the store write
-(`src/Arbitarr.Data/Logging/SqliteLoggerProvider.cs:173-185`) is the same convention applied
-without an OCE guard: the background pump owns no `stoppingToken` to check cancellation against, so
-there is nothing for such a guard to test — the broad catch alone is correct there.
+`SqliteLoggerProvider.DrainAsync`'s swallow of the store write is the same convention applied
+without an OCE guard — but not because the pump has no token to check: `DrainAsync` does hold a
+`cancellationToken` and passes it straight through to `_store.WriteAsync(batch, cancellationToken)`.
+The reason is the one its own comment gives: this is a log sink, and the one thing a log sink must
+never do is turn "could not record a problem" into a new, louder problem. So the catch stays broad
+and unconditional even though a cancellation token is in scope — the pump swallows cancellation
+along with everything else rather than letting it propagate.
 
 **A narrow type filter on per-item background work (e.g. `catch (IOException or
 UnauthorizedAccessException)`) is the exception and needs a stated justification in a comment.**
-`StagingSweep.Run`'s two per-file catches (`src/Arbitarr.Data/Backup/StagingSweep.cs:83-87,101-104`)
-already use the broad `catch (Exception)` form, not a narrow type filter — #168 widened them to
-match this convention. `Run` takes no cancellation token today, so it has no OCE guard; if one is
-ever threaded through, the guard must be added ahead of the existing broad catches.
+`StagingSweep.Run`'s two per-file catches already use the broad `catch (Exception)` form, not a
+narrow type filter — #168 widened them to match this convention, so `Run` is the "no token, so no
+guard yet" example, not a narrow-filter example: it takes no cancellation token today, so it has no
+OCE guard, and if one is ever threaded through, the guard must be added ahead of the existing broad
+catches.
+
+The convention's one standing narrow-filter site is `AutomaticBackupJob.PruneToRetainedCount`,
+called from `MaintenanceHostedService.RunAutomaticBackupAsync` (this section's own reference site
+above). Its per-file delete loop catches `IOException` and `UnauthorizedAccessException` separately
+rather than broadly, and only the `IOException` arm carries a comment justifying the narrow filter
+("a locked archive is skipped and retried next pass rather than failing the run; the backup itself
+already succeeded and is the half that matters"); the `UnauthorizedAccessException` arm is empty and
+uncommented, so today this site ships the rule already violated. Follow-up: arb-7fm brings it into
+line, either by adding the same justification to both arms or by widening to the broad-catch form.
 
 Where CONTRIBUTING.md or another standards doc states a general exception-handling rule, link to
 it rather than repeating it here; none currently does, so this section is the only statement of the
