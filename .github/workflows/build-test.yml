@@ -257,10 +257,11 @@ jobs:
           if [ "$missing" -ne 0 ]; then
             echo "" >&2
             echo "All ten test assemblies AND all eight production assemblies must be present" >&2
-            echo "in the same configuration and TFM. Three Architecture scans resolve them by" >&2
+            echo "in the same configuration and TFM. Four Architecture scans resolve them by" >&2
             echo "walking from their own output directory to a sibling tree, and fail rather" >&2
             echo "than passing vacuously over a smaller set:" >&2
             echo "  TestProcessGlobalStateTests               reads tests/*/bin/Release/net10.0/" >&2
+            echo "  QuarantineTraitTests                      reads tests/*/bin/Release/net10.0/  (arb-2nm)" >&2
             echo "  ProductionProcessGlobalStateTests         reads src/*/bin/Release/net10.0/  (#157)" >&2
             echo "  NoInlineDatabaseConnectionStringsTests    reads src/Arbitarr.Data/...       (#157)" >&2
             exit 1
@@ -820,7 +821,7 @@ jobs:
             exit 1
           fi
 
-          echo "TEST_ASSEMBLIES matches the tests/ tree exactly: $tree_list"
+          echo "TEST_ASSEMBLIES matches the tests/ tree exactly: $(printf '%s\n' "$tree_list" | tr '\n' ' ')"
 
   # --------------------------------------------------------------------------
   # gate: the required check. Named EXACTLY `Build & test` so the existing
