@@ -76,7 +76,7 @@ have to stay in sync with which routes read it.
 - `SessionCookie` is the one place the flags are written, for setting and clearing alike — a
   browser deletes a cookie only when the attributes agree, so a second copy of these flags would be
   a logout that silently fails.
-- Enforced by `AuthEndpointsTests`, which asserts `HttpOnly` and `SameSite=Lax` are present and
+- Enforced by `AuthSessionEndpointsTests`, which asserts `HttpOnly` and `SameSite=Lax` are present and
   `Secure` is **absent** over plain HTTP, and by a test that a cookie presented without
   `X-Arbitarr-Session` does not authorise. That second test only bites on an instance with an admin
   key configured — otherwise ADR 0004's bootstrap bypass admits the caller regardless.

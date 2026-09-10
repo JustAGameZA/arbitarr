@@ -86,7 +86,7 @@ prevent.
   ever disabled. Closing it requires `ForwardedHeaders` with `KnownProxies` populated — never
   unconditional trust in `X-Forwarded-For`, which would also let a remote caller present itself as
   local to the bootstrap and first-run-setup checks. README documents the trade for operators.
-- Enforced by `AuthEndpointsTests`, which asserts both halves: the early failures answer `401` and
+- Enforced by `AuthCsrfAndLogoutEndpointsTests`, which asserts both halves: the early failures answer `401` and
   the budget's exhaustion answers `429`. Asserting only that a `429` appears would pass against a
   limiter broken in the opposite direction — one that refused everything from the first attempt —
   so a companion test proves the correct password still works before the limit is reached.
