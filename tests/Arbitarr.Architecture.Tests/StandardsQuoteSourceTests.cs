@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text.RegularExpressions;
 using Xunit;
 
@@ -43,7 +44,7 @@ public class StandardsQuoteSourceTests
 
     /// <summary>
     /// Extracts the sentence architecture.md quotes (in parentheses, double-quoted) immediately
-    /// after "StagingSweepService draws the same line from its own side" in the section named by
+    /// after "`StagingSweepService` draws the same line from its own side" in the section named by
     /// <see cref="SectionHeading"/>. Returns an empty string if the section, the anchor phrase, or
     /// the quoted text cannot be found - callers must not treat that as success.
     /// </summary>
@@ -56,10 +57,17 @@ public class StandardsQuoteSourceTests
             return string.Empty;
         }
 
+        // Bound the slice at the next "## " heading so a later section's own parenthetical
+        // quote can never satisfy this extraction (arb-hez review fix).
         var sectionText = architectureDoc[sectionIndex..];
+        var nextHeadingIndex = sectionText.IndexOf("\n## ", 1, StringComparison.Ordinal);
+        if (nextHeadingIndex >= 0)
+        {
+            sectionText = sectionText[..nextHeadingIndex];
+        }
 
         var anchorIndex = sectionText.IndexOf(
-            "StagingSweepService", StringComparison.Ordinal);
+            "`StagingSweepService` draws the same line from its own side", StringComparison.Ordinal);
         if (anchorIndex < 0)
         {
             return string.Empty;
@@ -111,19 +119,22 @@ public class StandardsQuoteSourceTests
             repoRoot, "src", "Arbitarr.Host", "Backup", "StagingSweepService.cs");
         Assert.True(File.Exists(sourcePath), $"Expected to find {sourcePath}.");
 
-        // Strip leading "//" line-comment markers before normalizing whitespace, or a comment
-        // that wraps across lines (as this one does) would have "// " spliced into the middle
-        // of the sentence where the source's line break falls.
+        // Restrict the haystack to the "//" comment lines only (not the whole stripped source
+        // file), so this test fails if the cited sentence is deleted from the comment even when
+        // the same prose survives elsewhere, e.g. in a string literal (arb-hez review fix).
         var rawSourceText = File.ReadAllText(sourcePath);
-        var uncommented = Regex.Replace(
-            rawSourceText, @"^[ \t]*//", string.Empty, RegexOptions.Multiline, RegexTimeout);
-        var sourceText = NormalizeWhitespace(uncommented);
+        var commentLines = rawSourceText
+            .Split('\n')
+            .Select(line => line.TrimEnd('\r').TrimStart(' ', '\t'))
+            .Where(line => line.StartsWith("//", StringComparison.Ordinal))
+            .Select(line => line[2..]);
+        var sourceText = NormalizeWhitespace(string.Join(" ", commentLines));
 
         Assert.DoesNotContain(perturbed, sourceText, StringComparison.Ordinal);
 
         // Now the real assertion: the doc's quoted sentence, unperturbed, is in the source
-        // (both normalized to single-spaced prose so line-wrap position cannot cause a
-        // false mismatch).
+        // comment lines (both normalized to single-spaced prose so line-wrap position cannot
+        // cause a false mismatch).
         Assert.Contains(quoted, sourceText, StringComparison.Ordinal);
     }
 
