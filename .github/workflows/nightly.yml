@@ -83,13 +83,80 @@ jobs:
       # NO --filter. That absence is the entire point of this job; a filter added
       # here would make the nightly a slower copy of the PR lane and leave
       # Timing/Load/Quarantine running nowhere at all.
+      #
+      # ONE TRX PER PROJECT, not one for the solution. `dotnet test Arbitarr.sln`
+      # with a single --logger LogFileName runs each of the ten test assemblies in
+      # turn and points all ten at the SAME output path; VSTest overwrites (it
+      # prints "WARNING: Overwriting results file"), so only the last assembly's
+      # trx survives. The summary would then report one assembly's numbers as the
+      # whole suite, with the failures of the other nine silently absent -- the
+      # same silent-green shape this workflow exists to prevent. So the projects
+      # are enumerated and run one at a time, mirroring job 2's already-correct
+      # per-iteration naming, which also makes the summary's Assembly column a
+      # clean label rather than the constant "full-suite".
+      #
+      # --no-build throughout: the single solution build above already produced
+      # every assembly, and rebuilding per project would multiply this job's
+      # wall-clock by ten.
       - name: Test (unfiltered)
         id: backend-tests
         continue-on-error: true
-        run: >-
-          dotnet test Arbitarr.sln -c Release --no-build
-          --logger "trx;LogFileName=full-suite.trx"
-          --results-directory ./TestResults
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          mkdir -p ./TestResults
+
+          # Derived from the tree, never hard-coded: a project added to tests/ is
+          # picked up automatically. The count is then ASSERTED, so a project that
+          # silently disappears (renamed out of the *.Tests convention, or dropped
+          # from the tree) fails this step loudly instead of shrinking the suite
+          # unnoticed. Update the expected number deliberately when the set of test
+          # projects genuinely changes.
+          projects=()
+          while IFS= read -r csproj; do
+            projects+=("$csproj")
+          done < <(find tests -mindepth 2 -maxdepth 2 -name '*.Tests.csproj' -path 'tests/*.Tests/*' | sort)
+
+          expected=10
+          if [ "${#projects[@]}" -ne "$expected" ]; then
+            echo "::error title=Unexpected test project count::found ${#projects[@]} test projects under tests/, expected ${expected}. Found: ${projects[*]}"
+            exit 1
+          fi
+          echo "Found ${#projects[@]} test projects:"
+          printf '  %s\n' "${projects[@]}"
+
+          failed_projects=""
+          for csproj in "${projects[@]}"; do
+            # Arbitarr.Core.Tests.csproj -> Core (the summary's Assembly column).
+            name=$(basename "$csproj" .csproj)
+            name=${name#Arbitarr.}
+            name=${name%.Tests}
+
+            echo "::group::${name}"
+            # A failing assembly must NOT stop the loop: this job's whole purpose
+            # is a complete picture of the unfiltered suite, and aborting at the
+            # first red assembly would skip every one after it -- reporting less
+            # than the single-trx bug it replaces.
+            if dotnet test "$csproj" -c Release --no-build \
+                 --logger "trx;LogFileName=${name}.trx" \
+                 --results-directory ./TestResults; then
+              echo "${name}: passed"
+            else
+              echo "${name}: FAILED"
+              failed_projects="${failed_projects} ${name}"
+            fi
+            echo "::endgroup::"
+          done
+
+          if [ -n "$failed_projects" ]; then
+            echo "Failing assemblies:${failed_projects}"
+            # The gate step re-derives the job status from this step's recorded
+            # outcome, so the exit status has to reflect the failure even though
+            # the loop swallowed each project's own exit code.
+            exit 1
+          fi
+          echo "All ${#projects[@]} assemblies passed."
 
       # How many tests CARRY the excluded traits. --list-tests discovers without
       # executing, so this is cheap and, unlike an executed count, it still
@@ -104,11 +171,29 @@ jobs:
           set -uo pipefail
           mkdir -p ./TestResults
           for category in Timing Load; do
+            # DISCOVERY FAILURE MUST NOT READ AS ZERO. `dotnet test ... | grep -c`
+            # in one pipeline conflates two different outcomes: "discovery ran and
+            # found no test carrying the trait" and "discovery itself broke". Both
+            # end in `grep -c` printing 0 and `|| true` swallowing the status, and
+            # a 0 in the summary is then read as "the trait is unused" -- which is
+            # exactly the conclusion that would justify deleting the lane. So the
+            # discovery command is run on its OWN, its exit status captured
+            # separately from grep's, and a failure writes the sentinel `n/a`
+            # (rendered as-is by the summary) plus a warning, never a number.
+            listing=$(dotnet test Arbitarr.sln -c Release --no-build \
+                        --filter "Category=$category" --list-tests 2>/dev/null) && rc=0 || rc=$?
+
+            if [ "$rc" -ne 0 ]; then
+              echo "::warning title=Trait discovery failed::--list-tests for Category=${category} exited ${rc}; recording 'n/a' rather than 0, which would misread as 'the trait is unused'."
+              printf '%s\t%s\n' "$category" "n/a" >> ./TestResults/category-counts.tsv
+              continue
+            fi
+
             # --list-tests prints one indented line per discovered test after a
             # header; count the indented lines rather than parsing the header.
-            n=$(dotnet test Arbitarr.sln -c Release --no-build \
-                  --filter "Category=$category" --list-tests 2>/dev/null \
-                | grep -cE '^\s{4,}\S' || true)
+            # `grep -c` exits 1 on zero matches, which here is a legitimate zero,
+            # so its status is discarded -- unlike the discovery status above.
+            n=$(printf '%s\n' "$listing" | grep -cE '^\s{4,}\S' || true)
             printf '%s\t%s\n' "$category" "${n:-0}" >> ./TestResults/category-counts.tsv
           done
           cat ./TestResults/category-counts.tsv
@@ -333,7 +418,6 @@ jobs:
           # one and MISSES the nested one -- reporting the flake hunt while
           # silently dropping the entire unfiltered run, which reads as a smaller
           # green summary rather than as an error.
-          shopt -s nullglob
           while IFS= read -r -u 3 trx; do
             base=$(basename "$trx" .trx)
             # The job is the FIRST path segment under ./results, whatever the
@@ -357,7 +441,17 @@ jobs:
               name=$(printf '%s' "$name" | sed -e 's/&quot;/"/g' -e "s/&apos;/'/g" \
                                                -e 's/&lt;/</g' -e 's/&gt;/>/g' -e 's/&amp;/\&/g')
               printf '%s\t%s\t%s\t%s\n' "$job_dir" "$assembly" "$name" "$iteration" >> "$failures_tsv"
-            done < <(tr '<' '\n' < "$trx" | grep '^UnitTestResult ')
+            # `tr -d '\r\n'` BEFORE the split on '<'. A testName can legitimately
+            # contain a literal newline -- a [Theory] whose inline data holds one
+            # arrives in the trx as a real line break inside the attribute value.
+            # Splitting on '<' alone leaves that break in place, so the record is
+            # torn in two: the fragment carrying `outcome=` and the fragment
+            # carrying the rest become separate lines, `outcome` parses empty on
+            # both, the `[ "$outcome" = "Failed" ]` guard drops them, and a
+            # genuinely failing test vanishes from the failures table. Deleting
+            # the newlines first makes the whole document one line, after which
+            # the '<' split is the only thing that creates line boundaries.
+            done < <(tr -d '\r\n' < "$trx" | tr '<' '\n' | grep '^UnitTestResult ')
 
             # "executed", not "total" -- the same attribute and the same parse as
             # build-test.yml's floor step, so the two never disagree about what a
@@ -373,7 +467,6 @@ jobs:
           # would let the inner one consume the outer one's file list -- processing
           # the first trx and silently ignoring every other one.
           done 3< <(find ./results -type f -name '*.trx' | sort)
-          shopt -u nullglob
 
           {
             echo "### Tests that failed in any iteration"
@@ -390,10 +483,17 @@ jobs:
               echo "|---|---|---|---|"
               # -k4,4n so iterations sort NUMERICALLY: a lexical sort renders
               # "3, 5, 10" as "10, 3, 5", which misreads once the hunt passes 9.
+              # A test name may contain a literal `|` -- a [Theory] with an inline
+              # string, or a name mentioning a bitwise-or -- and an unescaped one
+              # ends the markdown cell early, shifting every later column of that
+              # row and making the iteration numbers land under the wrong heading.
+              # Escaped once, into `name`, so the grouping key and the rendered
+              # cell stay the same string.
               sort -t$'\t' -k1,1 -k2,2 -k3,3 -k4,4n "$failures_tsv" | awk -F'\t' '
-                { key = $1 "\t" $2 "\t" $3
+                { name = $3; gsub(/\|/, "\\|", name)
+                  key = $1 "\t" $2 "\t" name
                   if (key != prev && NR > 1) { printf "| %s | %s | `%s` | %s |\n", pj, pa, pt, iters; iters = "" }
-                  if (key != prev) { pj = $1; pa = $2; pt = $3; iters = "" }
+                  if (key != prev) { pj = $1; pa = $2; pt = name; iters = "" }
                   iters = (iters == "" ? $4 : iters ", " $4)
                   prev = key }
                 END { if (NR > 0) printf "| %s | %s | `%s` | %s |\n", pj, pa, pt, iters }'
