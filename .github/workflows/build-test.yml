@@ -876,9 +876,21 @@ jobs:
             exit 1
           fi
 
-          referenced_names=$(grep -oE 'Include="[.][.][\][.][.][\]src[\][A-Za-z0-9.]+[\]' "$csproj_file" \
+          referenced_names=$(grep -oE 'Include="[.][.][\][.][.][\]src[\][A-Za-z0-9.]+[\]' "$csproj_file" || true)
+          referenced_names=$(printf '%s' "$referenced_names" \
             | sed -E 's/^Include="[.][.][\][.][.][\]src[\]([A-Za-z0-9.]+)[\]$/\1/' \
             | sort -u)
+
+          if [ -z "$referenced_names" ]; then
+            echo "BLOCKED: found no ProjectReference entries matching the expected shape in" >&2
+            echo "${csproj_file}. This extraction looks for" >&2
+            echo '  Include="..\..\src\<Name>\<Name>.csproj"' >&2
+            echo "(Windows backslashes) -- if the csproj now uses forward slashes, a" >&2
+            echo "different relative path, or has no src/ ProjectReferences left, update this" >&2
+            echo "extraction's pattern rather than letting the checks below pass vacuously" >&2
+            echo "over zero referenced names." >&2
+            exit 1
+          fi
 
           scanned_sorted=$(printf '%s\n' "$scanned_names" | sort -u)
           allow_listed_sorted=$(printf '%s\n' "$allow_listed" | sort -u)
@@ -969,8 +981,20 @@ jobs:
           # tolerated as harmless -- it is redundant at best and one edit
           # away from silently diverging at worst. Failing all of them keeps
           # the check simple and keeps that drift from ever being possible.
+          # Built FROM $TEST_ASSEMBLIES (tests/<Name>/<Name>.csproj) rather than a
+          # tests/*.Tests/*.csproj glob, so this shares the one source of truth with
+          # the sln check above instead of silently iterating zero times (and
+          # printing the success line below with rc=0) when the glob matches
+          # nothing -- e.g. an empty or not-yet-checked-out tests/ tree.
           bad_overrides=""
-          for csproj in tests/*.Tests/*.csproj; do
+          for name in $TEST_ASSEMBLIES; do
+            csproj="tests/${name}/${name}.csproj"
+            if [ ! -f "$csproj" ]; then
+              echo "BLOCKED: ${csproj} does not exist. Every name in TEST_ASSEMBLIES must have a" >&2
+              echo "matching tests/<Name>/<Name>.csproj on disk for this AssemblyName check (and" >&2
+              echo "the sln check above) to mean anything." >&2
+              exit 1
+            fi
             while IFS= read -r tag_line; do
               [ -z "$tag_line" ] && continue
               bad_overrides="${bad_overrides}${csproj}: ${tag_line}"$'\n'
