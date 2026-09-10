@@ -276,10 +276,19 @@ jobs:
             dll="tests/${a}/bin/Release/net10.0/${a}.dll"
             echo "::group::${a}"
             start=$(date +%s)
+            # LogFileName is NOT cosmetic. The default trx name is
+            # <vm-hostname>_<yyyy-MM-dd_HH_mm_ss>.trx, which carries no assembly
+            # name, so two assemblies finishing in the same second on two runners
+            # that happen to share a VM hostname produce the SAME basename. The
+            # gate then loses one file and reports a short count as a floor
+            # breach. That is not hypothetical: run 3 of this PR summed 1311
+            # instead of 1492 because Api (181) and Core.Identity (34) both wrote
+            # the same default name. Naming the file after the assembly makes the
+            # basename unique by construction, independent of runner or timing.
             sample_peak "./TestResults/${a}.peakkb" \
               dotnet test "$dll" \
                 --filter "$TEST_FILTER" \
-                --logger trx --results-directory ./TestResults
+                --logger "trx;LogFileName=${a}.trx" --results-directory ./TestResults
             echo "$(( $(date +%s) - start ))" > "./TestResults/${a}.secs"
             echo "peak dotnet+testhost RSS: $(cat "./TestResults/${a}.peakkb") KB in $(cat "./TestResults/${a}.secs") s"
             echo "::endgroup::"
@@ -774,7 +783,12 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: trx-*
-          merge-multiple: true
+          # Deliberately NOT merge-multiple. Flattening the three artifacts into
+          # one directory makes two identically-named trx overwrite each other,
+          # and the loss shows up as a short executed= sum -- i.e. as a floor
+          # breach in the wrong place. Each artifact keeps its own subdirectory
+          # (./TestResults/trx-A/, trx-B/, trx-C/) so a collision is impossible
+          # even before the per-assembly LogFileName above makes names unique.
           path: ./TestResults
 
       - name: Enforce test-count floor
@@ -785,7 +799,34 @@ jobs:
           floor="$BACKEND_FLOOR"
 
           total=0
-          for trx in ./TestResults/*.trx; do
+          # One trx per test assembly, so the count is the all-ten list the
+          # backend groups assert against (Ai, Api, Architecture, Core.Identity,
+          # Core, Data, Host, Integration, Media, Sources.NzbHydra). The gate
+          # runs in a different job from that list, so the number is repeated
+          # here as a literal rather than shared; if an assembly is ever added,
+          # this and that list move together.
+          EXPECTED_TRX=10
+
+          # Two levels: the artifacts are NOT flattened (see the download step),
+          # so each group's trx live under ./TestResults/trx-<group>/.
+          found=0
+          for trx in ./TestResults/*/*.trx; do
+            [ -f "$trx" ] || continue
+            found=$((found + 1))
+          done
+
+          # Assert the file COUNT before summing. A lost or duplicate-named trx
+          # otherwise reaches the floor comparison as a smaller number and is
+          # reported as a test-count regression, which sends the reader hunting
+          # for deleted tests that do not exist. Fail on the real cause instead.
+          if [ "$found" -ne "$EXPECTED_TRX" ]; then
+            echo "BLOCKED: expected $EXPECTED_TRX trx files (one per test assembly), found $found." >&2
+            echo "Files present:" >&2
+            ls -1 ./TestResults/*/*.trx >&2 2>/dev/null || echo "(none)" >&2
+            exit 1
+          fi
+
+          for trx in ./TestResults/*/*.trx; do
             [ -f "$trx" ] || continue
             # Each .trx's <ResultSummary><Counters .../> element carries both "total" (includes
             # skipped tests) and "executed" (tests that actually ran). Use "executed" so a
