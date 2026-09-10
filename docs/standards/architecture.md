@@ -135,7 +135,10 @@ place for one more run is a much smaller problem than the host refusing to start
 **A failure that affects one item is caught broadly (`catch (Exception)`) and logged, so the
 remaining items still run.** Only cancellation propagates, via a
 `catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)` guard placed
-*before* the broad catch.
+*before* the broad catch. The rule exists because an unhandled exception out of `ExecuteAsync`
+faults the `BackgroundService`, and `BackgroundServiceExceptionBehavior.StopHost` — the default
+since .NET 6, and not overridden anywhere in `src/` — turns that fault into host shutdown, so the
+consequence of not catching is a dead process, not a skipped item.
 
 Reference shape (illustrative, not exhaustive — `NotificationHostedService.ExecuteAsync` and
 `ClassifierPollingWorker.ExecuteAsync` follow the same shape and are not listed below):
@@ -163,16 +166,6 @@ narrow type filter — #168 widened them to match this convention, so `Run` is t
 guard yet" example, not a narrow-filter example: it takes no cancellation token today, so it has no
 OCE guard, and if one is ever threaded through, the guard must be added ahead of the existing broad
 catches.
-
-The convention's one standing narrow-filter site — this list IS exhaustive — is
-`AutomaticBackupJob.PruneToRetainedCount`,
-called from `MaintenanceHostedService.RunAutomaticBackupAsync` (this section's own reference site
-above). Its per-file delete loop catches `IOException` and `UnauthorizedAccessException` separately
-rather than broadly, and only the `IOException` arm carries a comment justifying the narrow filter
-("a locked archive is skipped and retried next pass rather than failing the run; the backup itself
-already succeeded and is the half that matters"); the `UnauthorizedAccessException` arm is empty and
-uncommented, so today this site ships the rule already violated. Follow-up: arb-7fm brings it into
-line, either by adding the same justification to both arms or by widening to the broad-catch form.
 
 Where CONTRIBUTING.md or another standards doc states a general exception-handling rule, link to
 it rather than repeating it here; none currently does, so this section is the only statement of the
