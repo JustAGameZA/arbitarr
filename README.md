@@ -88,7 +88,20 @@ configured; the admin UI is served at `http://arbitarr.example.invalid:8080/admi
 | `ARBITARR__SOURCES__NZBHYDRA__APIKEY` | NZBHydra2's own API key (outbound credential) |
 | `ARBITARR__APIKEY` | Legacy single inbound Torznab/Newznab client key; remains accepted after upgrading |
 | `ARBITARR__CLIENTAPIKEYS__<n>__NAME` / `...__KEY` | Legacy named inbound client keys; remain accepted after upgrading |
-| `ARBITARR_CONFIG_DIR` | Runtime state directory (defaults to `/config`; mount a volume there) |
+| `ARBITARR_CONFIG_DIR` | Runtime state directory (defaults to `/config`; mount a volume there) — see [What lives in the config directory](#what-lives-in-the-config-directory) |
+
+### What lives in the config directory
+
+| Path | Contents |
+|---|---|
+| `arbitarr.db` | The configuration database |
+| `arbitarr-logs.db` | The separate log store, kept apart so a config backup does not drag logs along |
+| `backups/` | Automatic backups and the pre-restore safety copy |
+| `backup-staging/` | Transient; swept automatically at startup, safe to empty when stopped |
+| `release-guid-secret.key` | The per-instance release-GUID secret |
+
+See [docs/standards/data.md](docs/standards/data.md#backup-restore-and-the-staging-directory) for
+what governs these locations.
 
 Three distinct keys exist, deliberately: the **NZBHydra2 key** (Arbitarr calling out), the
 **client key(s)** (*arr apps calling in), and the **admin key** (below, gating mutating admin

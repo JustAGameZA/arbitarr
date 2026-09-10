@@ -26,6 +26,31 @@ unvetted text surface to a file operators carry around widens the blast radius f
 benefit, and logs are not configuration. Exporting the log store is a support-bundle feature and a
 different artefact with different handling — not an extra entry here.
 
+### Backup, restore, and the staging directory
+
+**Every backup and restore location is derived from the one injected config directory.**
+`BackupPaths` builds `BackupDirectory` (`backups/`) and `StagingDirectory` (`backup-staging/`) by
+combining the same `configDirectory` that `Program.cs` uses for the database and the secret, so
+these paths can never point somewhere else. Neither directory is under `wwwroot`, and
+`UseStaticFiles` serves only `wwwroot` — nothing in the request pipeline maps either path, which is
+the property to preserve if the static-file configuration is ever revisited.
+
+**`backup-staging/` is a sibling of `backups/`, not a child of it**, and holds only transient
+restore/backup working files: the upload spool, the validator's extraction, the download build, and
+the pre-zip snapshot. Nothing in it is intended to survive a process lifetime — every writer cleans
+it up in a `finally`, and a startup sweep (`StagingSweepService` / `StagingSweep`) reclaims any
+orphan left behind by a hard kill, using the process-start instant as a cut-off so it never deletes
+a file an in-flight operation on the current run is still writing. `StagingFileNames.AllPrefixes` is
+the sweep's whole contract: a new staging writer must register its prefix there, or its orphans are
+never reclaimed.
+
+**Because `backup-staging/` and the config database share the config directory's filesystem,
+`RestoreService.ApplyValidatedFiles`'s `File.Move` calls are renames, not cross-device copies** —
+the validated database and secret are copied beside their targets first (still within the config
+directory) and then moved onto the live paths, which is what makes that final step atomic. Moving
+staging back to the OS temp directory would put it on a different volume from the config directory
+in the general case and silently turn that rename back into a copy.
+
 ### Connection pools are keyed by the full string
 
 **Microsoft.Data.Sqlite keys its connection pools by the FULL connection string, not by the
