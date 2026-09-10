@@ -75,7 +75,7 @@ completes.
   orphans are never reclaimed by the sweep — `StagingSweep.Run` only touches files whose name
   starts with a known prefix.
 - Backups must not drag staging along, and the mechanism that holds is structural rather than an
-  exclusion list to keep in sync: `BackupService.WriteArchiveAsync` copies named files
+  exclusion list to keep in sync: `BackupService.WriteArchiveAsync` writes named entries
   (`BackupArchiveLayout.DatabaseEntryName`, `BackupArchiveLayout.SecretKeyEntryName`,
   `BackupArchiveLayout.ManifestEntryName`) into the
   archive and never enumerates a directory, so `StagingDirectory`'s contents cannot appear in an
