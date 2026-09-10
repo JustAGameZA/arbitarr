@@ -145,7 +145,7 @@ public sealed class RestoreService
         IReadOnlyCollection<string> knownMigrationIds,
         CancellationToken cancellationToken)
     {
-        using var validation = BackupArchiveValidator.Validate(archivePath, knownMigrationIds);
+        using var validation = BackupArchiveValidator.Validate(archivePath, knownMigrationIds, _paths.StagingDirectory);
         if (!validation.IsValid)
         {
             // Nothing has been written at this point, and nothing will be. The pre-restore backup

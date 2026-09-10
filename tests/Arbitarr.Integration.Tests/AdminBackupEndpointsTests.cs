@@ -284,7 +284,7 @@ public sealed class AdminBackupEndpointsTests : IClassFixture<ArbitarrWebApplica
         await using var factory = new ArbitarrWebApplicationFactory();
         using var client = factory.CreateClient();
 
-        var stagedBefore = CountStagedRestoreFiles();
+        var stagedBefore = CountStagedRestoreFiles(factory);
 
         using var content = BuildUpload(
             Encoding.UTF8.GetBytes("an archive the attacker chose"),
@@ -311,7 +311,61 @@ public sealed class AdminBackupEndpointsTests : IClassFixture<ArbitarrWebApplica
         // The refusal happened BEFORE the form was read, so the attacker's upload was never spooled
         // to the disk this feature exists to protect. A 503 that still wrote the file would be a
         // refusal in name only.
-        Assert.Equal(stagedBefore, CountStagedRestoreFiles());
+        //
+        // arb-3gd: compared against THIS factory's own instance staging directory, not the
+        // machine-wide system temp directory — see CountStagedRestoreFiles.
+        Assert.Equal(stagedBefore, CountStagedRestoreFiles(factory));
+    }
+
+    /// <summary>
+    /// arb-3gd POSITIVE CONTROL for the assertion above, in two halves:
+    ///
+    /// <list type="number">
+    ///   <item>A file with the upload prefix planted in THIS factory's own instance staging
+    ///   directory changes what <see cref="CountStagedRestoreFiles"/> reports — so the equality
+    ///   assertion above is a real check, not two calls that could never disagree.</item>
+    ///   <item>The identical file, planted in the machine-wide system temp directory a bystander
+    ///   process would use, does NOT change it — proving the count reads this instance's directory
+    ///   only, which is the property that makes it parallel-safe across assemblies.</item>
+    /// </list>
+    /// </summary>
+    [Fact]
+    public async Task Staged_restore_file_count_detects_a_planted_file_in_this_instance_and_ignores_a_bystander_elsewhere()
+    {
+        await using var factory = new ArbitarrWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var stagingDirectory = factory.Services
+            .GetRequiredService<Arbitarr.Data.Backup.BackupPaths>().StagingDirectory;
+        Directory.CreateDirectory(stagingDirectory);
+
+        var before = CountStagedRestoreFiles(factory);
+
+        var plantedInInstance = Path.Combine(
+            stagingDirectory, "arbitarr-upload-" + Guid.NewGuid().ToString("N") + ".zip");
+        File.WriteAllText(plantedInInstance, "planted by the positive control");
+        try
+        {
+            Assert.NotEqual(before, CountStagedRestoreFiles(factory));
+        }
+        finally
+        {
+            File.Delete(plantedInInstance);
+        }
+
+        Assert.Equal(before, CountStagedRestoreFiles(factory));
+
+        var bystanderPath = Path.Combine(
+            Path.GetTempPath(), "arbitarr-upload-" + Guid.NewGuid().ToString("N") + ".zip");
+        File.WriteAllText(bystanderPath, "a bystander process's file in the shared system temp dir");
+        try
+        {
+            Assert.Equal(before, CountStagedRestoreFiles(factory));
+        }
+        finally
+        {
+            File.Delete(bystanderPath);
+        }
     }
 
     /// <summary>
@@ -415,12 +469,27 @@ public sealed class AdminBackupEndpointsTests : IClassFixture<ArbitarrWebApplica
     // IClassFixture-scoped class (Name is the SettingEntry primary key), so a second test seeding
     // the same key would collide with a unique-constraint violation instead of overwriting.
     /// <summary>
-    /// How many restore staging files exist in the system temp directory. Compared as a DELTA so a
-    /// concurrent test cannot make it flaky, and used to assert that a refusal wrote nothing.
+    /// How many restore staging files exist in the GIVEN FACTORY'S OWN instance staging directory
+    /// (<c>BackupPaths.StagingDirectory</c>, resolved from its service provider) — not the
+    /// machine-wide system temp directory this used before (arb-3gd). Compared as a DELTA so a
+    /// concurrent test in the SAME instance cannot make it flaky, and used to assert that a refusal
+    /// wrote nothing. Instance-scoped rather than process-global is what makes it parallel-safe
+    /// across assemblies: another test process's uploads land in a different instance directory
+    /// entirely and can no longer be counted here.
     /// </summary>
-    private static int CountStagedRestoreFiles() =>
-        Directory.EnumerateFiles(Path.GetTempPath(), "arbitarr-upload-*").Count() +
-        Directory.EnumerateFiles(Path.GetTempPath(), "arbitarr-restore-validate-*").Count();
+    private static int CountStagedRestoreFiles(ArbitarrWebApplicationFactory factory)
+    {
+        var stagingDirectory = factory.Services
+            .GetRequiredService<Arbitarr.Data.Backup.BackupPaths>().StagingDirectory;
+
+        if (!Directory.Exists(stagingDirectory))
+        {
+            return 0;
+        }
+
+        return Directory.EnumerateFiles(stagingDirectory, "arbitarr-upload-*").Count() +
+            Directory.EnumerateFiles(stagingDirectory, "arbitarr-restore-validate-*").Count();
+    }
 
     private async Task SeedAdminKeyAsync()
     {
