@@ -113,15 +113,19 @@ redirect is exactly that case, which is why the Sources block shows nothing wron
 Severity `blocking` means the affected function cannot work at all until someone
 acts.
 
-Health items are **process-lifetime**. They live in memory, are **cleared only by
-the specific event that proves the condition is over** — for a refused download,
-an actual successful grab from that same source, never elapsed time, a worker
-cycle, or a successful search — and are **lost on restart**. So
-`observedSinceUtc` means "first observed since this process started", not "when
-the condition began"; a restart resets it while the misconfiguration is unchanged,
-which is why the UI hedges with "observed since" rather than "since". Persisting
-them across restarts is tracked separately (arb-v3w), as is notifying on them
-(arb-apj).
+Health items are **cleared only by the specific event that proves the condition is
+over** — for a refused download, an actual successful grab from that same source,
+never elapsed time, a worker cycle, or a successful search.
+
+Since arb-v3w they are also **persisted** — one row per source in `arbitarr.db`,
+upserted on each refusal, deleted on a successful grab, and rehydrated into the
+in-memory tracker at startup — so they **survive a restart**. `observedSinceUtc`
+therefore means "when the condition began". That is the point of persisting it:
+the misconfiguration behind a refused redirect outlives the process, so a restart
+that dropped the item, or reset the instant to "now", reported a clean system
+while every download still failed. The row count is bounded by the number of
+configured sources, so the table needs no pruning. Notifying on health items is
+tracked separately (arb-apj).
 
 ---
 

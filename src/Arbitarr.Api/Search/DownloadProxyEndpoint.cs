@@ -75,7 +75,11 @@ public static class DownloadProxyEndpoint
             // from this source. Recorded here, after the body is fully read, rather than on the
             // FetchDownloadAsync call — a fetch that starts and then trips the size cap is not a
             // successful grab, and clearing on it would hide a still-broken download path.
-            refusalTracker.RecordSuccessfulGrab(release.SourceName);
+            //
+            // arb-v3w: awaited, because clearing now also deletes the persisted row. A failed store
+            // write is swallowed inside the tracker (it logs at Warning and the item stays cleared in
+            // memory), so this cannot turn a successful download into an error response.
+            await refusalTracker.RecordSuccessfulGrabAsync(release.SourceName, CancellationToken.None).ConfigureAwait(false);
             return Results.Bytes(buffer.ToArray(), "application/octet-stream");
         }
         catch (RequestLimitReachedException)
@@ -128,10 +132,22 @@ public static class DownloadProxyEndpoint
             // reason: /api/status is PublicRead and un-gated, so this string is built from the
             // CONFIGURED source name and the int status code only, never from upstream-supplied
             // text such as the Location header.
-            refusalTracker.RecordRefusal(
+            //
+            // arb-v3w: the item is now PERSISTED, so it survives a restart — the misconfiguration
+            // does, and a fresh process showing a clean dashboard was the original defect. The write
+            // is awaited on this path (like the event above) rather than detached, so ordering is
+            // deterministic; a failed store write is swallowed inside the tracker and never changes
+            // the 502 below. The reason text obeying the rule two comments up is what makes
+            // persisting it safe: nothing upstream-supplied can reach the table or the public
+            // endpoint that reads it.
+            //
+            // CancellationToken.None for the same reason the event uses it: this describes a request
+            // that has already failed and must outlive a client that disconnects mid-write.
+            await refusalTracker.RecordRefusalAsync(
                 release.SourceName,
                 $"Refused HTTP {ex.StatusCode}: the source redirected instead of serving the file.",
-                timeProvider.GetUtcNow());
+                timeProvider.GetUtcNow(),
+                CancellationToken.None).ConfigureAwait(false);
             return Results.StatusCode(StatusCodes.Status502BadGateway);
         }
         catch (DownloadTooLargeException)

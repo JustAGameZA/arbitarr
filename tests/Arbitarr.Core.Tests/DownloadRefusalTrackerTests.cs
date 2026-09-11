@@ -130,11 +130,11 @@ public class DownloadRefusalTrackerTests
     }
 
     [Fact]
-    public void The_null_tracker_records_nothing_and_reports_nothing()
+    public async Task The_null_tracker_records_nothing_and_reports_nothing()
     {
         IDownloadRefusalTracker tracker = NullDownloadRefusalTracker.Instance;
 
-        tracker.RecordRefusal("nzbhydra2", "refused", At);
+        await tracker.RecordRefusalAsync("nzbhydra2", "refused", At);
 
         Assert.Empty(tracker.Snapshot());
     }
