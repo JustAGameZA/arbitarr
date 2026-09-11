@@ -29,6 +29,16 @@ namespace Arbitarr.Architecture.Tests;
 /// <c>Main</c> that blocks on the generated <c>&lt;Main&gt;$</c> body, which cannot be avoided
 /// because the process has no caller to yield to.</para>
 ///
+/// <para><b>Known limitation, pre-existing to this strategy.</b> A blocking call inside an
+/// <c>async</c> lambda's OWN body — <c>async () =&gt; { ... task.Result ... }</c> — is not caught.
+/// The compiler emits that body into a state machine type, and state machines are excluded above
+/// because every real <c>await</c> calls <c>GetResult()</c> on its awaiter. The exclusion cannot
+/// distinguish the author's <c>.Result</c> from the compiler's, so the blocking call rides in on
+/// the exemption. This is not a hole opened by the entry-point rule below; it is inherent to
+/// excluding state machines at all, and closing it would mean telling generated awaiter calls
+/// apart from written ones. Blocking inside a SYNCHRONOUS lambda — the arb-agh shape, and the one
+/// a DI factory delegate actually has — is caught, and <see cref="Bait"/> pins it.</para>
+///
 /// <para><b>The exclusion is verified, not assumed.</b> The DI factory that caused arb-agh lived in
 /// a lambda, which the compiler emits as an ordinary NAMED method on a closure type — no angle
 /// brackets — so the original defect is still caught. <see cref="Bait"/> reproduces that exact
@@ -101,7 +111,15 @@ public class HostBlockingAsyncCallTests
                 // Matched by its EXACT generated names, never by "contains '<'": the looser form
                 // also skips lambda bodies ("<Bait>b__0"), and a factory lambda is precisely where
                 // the arb-agh defect lived. The bait test below fails if this is ever widened.
-                if (method.Name is "<Main>" or "<Main>$" or "Main" && type.Name == "Program")
+                //
+                // The parentheses are READABILITY ONLY and change nothing: `&&` cannot appear
+                // inside a pattern, so the unparenthesised form has exactly one legal parse, which
+                // is this one. A review read it as `is "<Main>" or "<Main>$" or ("Main" && ...)`,
+                // exempting any type with those method names; that parse does not exist, and a
+                // side-by-side evaluation of both forms agreed on every input. Do not "restore" the
+                // looser reading on the strength of the precedence claim — it was checked and it
+                // was wrong.
+                if (method.Name is ("<Main>" or "<Main>$" or "Main") && type.Name == "Program")
                 {
                     continue;
                 }

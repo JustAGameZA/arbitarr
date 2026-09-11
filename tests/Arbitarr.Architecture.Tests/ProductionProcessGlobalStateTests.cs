@@ -26,6 +26,17 @@ namespace Arbitarr.Architecture.Tests;
 /// legitimate reasons to set process environment, and the test-side ban exists because two hosts
 /// starting concurrently in ONE process overwrite each other, which is a test-host problem.</para>
 ///
+/// <para><b>Adjacent, and easy to lose in a rename: the release-GUID secret is redacted by NAME.</b>
+/// <c>Arbitarr:ReleaseGuidSecret</c> (read at <c>Program.cs</c>, allow-listed below as
+/// <c>ReleaseGuid._hmacKey</c>) is scrubbed out of logs and <c>/api/status</c> only because
+/// <c>CredentialPatterns.NamedCredential</c>'s prefix alternation contains the literal
+/// <c>secret</c> — it matches the SETTING NAME, not the value, which is ordinary base64 with no
+/// distinguishing shape. Renaming the setting to anything that does not contain one of that
+/// alternation's words (<c>api_key</c>, <c>apikey</c>, <c>token</c>, <c>passkey</c>,
+/// <c>password</c>, <c>secret</c>) silently drops the coverage: nothing fails, and the secret
+/// begins appearing verbatim in the log store. A rename must either keep a matching word or add an
+/// arm in the same change.</para>
+///
 /// <para><b>The assembly list</b> now lives on <see cref="BuiltAssemblies.ProductionAssemblyNames"/>
 /// (arb-hxa). It is DELIBERATELY INDEPENDENT of build-test.yml's own <c>TEST_ASSEMBLIES</c> token —
 /// that workflow's guards job diffs its own list against this project's reference graph as a
@@ -179,6 +190,40 @@ public class ProductionProcessGlobalStateTests
         // Assigned (rather than left at its default) only to keep CS0649 quiet: the build runs at
         // zero warnings. The initialiser does not make it readonly, which is what the scan looks for.
         internal static int Counter = 1;
+
+        /// <summary>
+        /// The arb-02cc bait: a settable static auto-property, whose
+        /// <c>&lt;Setting&gt;k__BackingField</c> the scan used to skip along with every other
+        /// <c>&lt;</c>-prefixed field. Pinned by
+        /// <see cref="The_mutable_static_scan_detects_a_settable_static_auto_property"/>, which
+        /// fails if that blanket skip ever returns.
+        /// </summary>
+        internal static int Setting { get; set; }
+    }
+
+    /// <summary>
+    /// arb-02cc: a settable static auto-property is process-global mutable state, and the scan must
+    /// see it. It reaches the IL as <c>&lt;Setting&gt;k__BackingField</c>; a blanket skip of
+    /// <c>&lt;</c>-prefixed fields dropped it, so the shape most likely to be reached for by someone
+    /// who believed a property was safer than a field was the one shape the audit could not see.
+    ///
+    /// <para>Asserted under the PROPERTY name, not the backing field's: that is what the author
+    /// wrote, what a failure message has to say to be actionable, and what the allow-list would name.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void The_mutable_static_scan_detects_a_settable_static_auto_property()
+    {
+        var baitAssembly = TestProcessGlobalStateTests.ResolveAssemblyPath("tests", "Arbitarr.Architecture.Tests");
+        Assert.NotNull(baitAssembly);
+
+        var found = FindMutableStatics(baitAssembly!).ToArray();
+
+        Assert.Contains(found, f => f.EndsWith("MutableStaticBait.Setting", StringComparison.Ordinal));
+
+        // The backing field's raw name must not leak into the report: it would send a reader looking
+        // for a field that does not appear in any source file.
+        Assert.DoesNotContain(found, f => f.Contains("k__BackingField", StringComparison.Ordinal));
     }
 
     /// <summary>
@@ -197,9 +242,24 @@ public class ProductionProcessGlobalStateTests
     };
 
     /// <summary>
-    /// Static fields that are neither <c>readonly</c> nor <c>const</c>, excluding compiler-generated
-    /// ones (lambda caches, <c>&lt;&gt;c</c> singletons, backing fields for static auto-properties
-    /// and the like), which are an artefact of the compiler rather than a decision anyone made.
+    /// Static fields that are neither <c>readonly</c> nor <c>const</c>.
+    ///
+    /// <para><b>Auto-property backing fields are IN SCOPE, and that is the point (arb-02cc).</b>
+    /// <c>public static T Name { get; set; }</c> is process-global mutable state exactly as much as
+    /// a bare static field is — the caller cannot tell the two apart, and whoever sets it last still
+    /// wins. The compiler emits it as <c>&lt;Name&gt;k__BackingField</c>, so a blanket "skip every
+    /// field whose name starts with <c>&lt;</c>" made the one shape most likely to be written by
+    /// someone who thought a property was safer than a field completely invisible to this scan.
+    /// Such fields are reported under the PROPERTY name, which is what the author wrote and what the
+    /// allow-list should name.</para>
+    ///
+    /// <para><b>What is still skipped, and why each is not a decision anyone made.</b> Compiler
+    /// caches on the closure types the compiler owns outright: <c>&lt;&gt;c</c> (the cached
+    /// singleton holding lambda delegates) and <c>&lt;&gt;o__</c> (call-site caches). These hold
+    /// delegates and dynamic call sites, never program state; nothing an author can write ends up
+    /// in them, and their mutation is the compiler's own memoisation. The type-level <c>&lt;</c>
+    /// skip is what excludes them, so no name filter on the FIELD is needed beyond recognising the
+    /// backing-field shape.</para>
     /// </summary>
     private static IEnumerable<string> FindMutableStatics(string assemblyPath)
     {
@@ -207,6 +267,8 @@ public class ProductionProcessGlobalStateTests
 
         foreach (var type in module.GetTypes())
         {
+            // Skips the compiler's own closure/call-site types (`<>c`, `<>o__`) wholesale. Their
+            // static fields are delegate and call-site caches, not program state.
             if (type.Name.StartsWith('<') || type.Namespace.StartsWith("System.", StringComparison.Ordinal))
             {
                 continue;
@@ -214,13 +276,42 @@ public class ProductionProcessGlobalStateTests
 
             foreach (var field in type.Fields)
             {
-                if (!field.IsStatic || field.IsInitOnly || field.IsLiteral || field.Name.StartsWith('<'))
+                if (!field.IsStatic || field.IsInitOnly || field.IsLiteral)
                 {
                     continue;
                 }
 
-                yield return $"{type.FullName}.{field.Name}";
+                var name = AsAutoPropertyName(field.Name);
+
+                // Any OTHER `<`-named field on an author-written type — a shape no current compiler
+                // output produces here. Skipped rather than reported under an unreadable name; if a
+                // future shape appears, admitting it is a deliberate edit to AsAutoPropertyName
+                // rather than something this loop guesses at.
+                if (name is null)
+                {
+                    continue;
+                }
+
+                yield return $"{type.FullName}.{name}";
             }
         }
+    }
+
+    /// <summary>
+    /// Maps <c>&lt;Name&gt;k__BackingField</c> to <c>Name</c>, passes an ordinary field name
+    /// through unchanged, and returns <see langword="null"/> for any other compiler-generated name.
+    /// </summary>
+    private static string? AsAutoPropertyName(string fieldName)
+    {
+        const string Suffix = ">k__BackingField";
+
+        if (!fieldName.StartsWith('<'))
+        {
+            return fieldName;
+        }
+
+        return fieldName.EndsWith(Suffix, StringComparison.Ordinal)
+            ? fieldName[1..^Suffix.Length]
+            : null;
     }
 }
