@@ -51,7 +51,8 @@ describe('parseSearchDetail against the shared fixture', () => {
     expect(parsed?.season).toBe(query.season === null ? null : String(query.season));
     expect(parsed?.episode).toBe(query.episode === null ? null : String(query.episode));
     expect(parsed?.abs).toBe(query.abs === null ? null : String(query.abs));
-    expect(parsed?.q).toBe(query.q);
+    // A whitespace-only q renders no "q=" key at all (bare feed spelling), so trim before comparing.
+    expect(parsed?.q).toBe(query.q?.trim() || null);
 
     if (query.season !== null && query.episode !== null) {
       expect(formatSeasonEpisode(parsed!)).toBe(

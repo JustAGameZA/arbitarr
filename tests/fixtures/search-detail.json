@@ -111,5 +111,19 @@
       "q": "bleach"
     },
     "detail": "type=tvsearch;cats=5030,5040;tvdbid=74796;tmdbid=438631;season=2;episode=5;abs=3;q=bleach"
+  },
+  {
+    "name": "bare feed spelling (whitespace-only q)",
+    "query": {
+      "type": "search",
+      "cats": [],
+      "tvdbid": null,
+      "tmdbid": null,
+      "season": null,
+      "episode": null,
+      "abs": null,
+      "q": "   "
+    },
+    "detail": "type=search"
   }
 ]
