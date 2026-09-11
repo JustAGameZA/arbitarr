@@ -135,7 +135,12 @@ public static class SuppressionPrecedenceChain
         }
 
         var key = VerdictCacheKey.Compute(
-            candidate, sourceName, modelIdentity.ModelName, modelIdentity.ModelDigest, modelIdentity.PromptVersion);
+            candidate,
+            sourceName,
+            modelIdentity.ModelName,
+            modelIdentity.ModelDigest,
+            modelIdentity.PromptVersion,
+            modelIdentity.DecodingIdentity);
 
         var cached = verdictCacheReader.TryGet(key);
         if (cached is null)
@@ -153,14 +158,29 @@ public static class SuppressionPrecedenceChain
 }
 
 /// <summary>
-/// The model/prompt identity used to compute and invalidate AI verdict cache keys (R17: a
-/// model-name or prompt-version change invalidates previously cached verdicts, since they key on
-/// this identity).
+/// The model/prompt/decoding identity used to compute and invalidate AI verdict cache keys (R17: a
+/// model-name, prompt-version or decoding change invalidates previously cached verdicts, since they
+/// key on this identity).
 /// </summary>
 /// <param name="ModelName">Ollama model name/tag (e.g. <c>qwen2.5:7b-instruct-q4_K_M</c>).</param>
 /// <param name="ModelDigest">Model content digest, so a same-named model with different weights invalidates too.</param>
-/// <param name="PromptVersion">Version tag of the classification prompt template.</param>
-public sealed record AiModelIdentity(string ModelName, string ModelDigest, string PromptVersion);
+/// <param name="PromptVersion">
+/// Version tag of the classification prompt TEMPLATE — and only the template. A change to how the
+/// model decodes (temperature, seed) belongs in <paramref name="DecodingIdentity"/>, not here:
+/// arb-p4r used a PromptVersion bump as an interim invalidation lever for exactly that, which both
+/// stretched this term and could be defeated by an operator pinning <c>Arbitarr:Ai:PromptVersion</c>.
+/// </param>
+/// <param name="DecodingIdentity">
+/// arb-qg3o: a stable, human-readable token for the sampling constants in force (e.g. <c>t0-s42</c>
+/// for temperature 0, seed 42), built in <c>Arbitarr.Ai</c> from <c>OllamaOptions</c> and passed in
+/// as a plain string. Core stays free of Ollama types (ADR-0001), and a decoding change invalidates
+/// cached verdicts by construction rather than through an operator-overridable setting.
+/// </param>
+public sealed record AiModelIdentity(
+    string ModelName,
+    string ModelDigest,
+    string PromptVersion,
+    string DecodingIdentity);
 
 /// <summary>Which slot of the <see cref="SuppressionPrecedenceChain"/> produced a decision.</summary>
 public enum SuppressionSource

@@ -44,17 +44,40 @@ public sealed record OllamaOptions(Uri BaseUrl, string Model, OllamaKeepAlive Ke
     public const int MaxInFlight = 1;
 
     /// <summary>
-    /// arb-p4r: greedy decoding. Classification verdicts feed a cache keyed on model identity plus
-    /// <c>PromptVersion</c>; a non-zero temperature makes the same title/model/prompt combination
-    /// non-reproducible, so a cache hit or a re-run cannot be trusted to agree with the original call.
+    /// arb-p4r: greedy decoding. Classification verdicts feed a cache keyed on model identity; a
+    /// non-zero temperature makes the same title/model/prompt combination non-reproducible, so a
+    /// cache hit or a re-run cannot be trusted to agree with the original call.
     /// </summary>
     public const double SamplingTemperature = 0;
 
     /// <summary>
     /// arb-p4r: fixed seed, paired with <see cref="SamplingTemperature"/> so a deterministic decode
     /// also has a deterministic starting point. The value itself is arbitrary — it only needs to be
-    /// fixed and never changed casually, since changing it (like the prompt itself) invalidates
-    /// previously cached verdicts and calls for a <c>PromptVersion</c> bump.
+    /// fixed. Changing it does not need a manual invalidation step: since arb-qg3o it feeds
+    /// <see cref="DecodingIdentity"/>, which is folded into the verdict cache key.
     /// </summary>
     public const int SamplingSeed = 42;
+
+    /// <summary>
+    /// arb-qg3o: a stable, human-readable token identifying the decoding constants above, folded
+    /// into the verdict cache key as <c>AiModelIdentity.DecodingIdentity</c> so that changing either
+    /// constant invalidates previously cached verdicts BY CONSTRUCTION.
+    ///
+    /// <para>
+    /// This replaces arb-p4r's interim lever, which was a bump of the default
+    /// <c>Arbitarr:Ai:PromptVersion</c>. That lever had two holes this closes: it could be defeated
+    /// by an operator who pinned <c>Arbitarr:Ai:PromptVersion</c> explicitly, and it overloaded a
+    /// term documented to mean the prompt TEMPLATE version. Nothing here reads configuration, so
+    /// there is no setting that can suppress the invalidation.
+    /// </para>
+    ///
+    /// <para>
+    /// Formatted invariantly, so a machine with a comma decimal separator cannot produce a
+    /// different token — and therefore a different cache key — for identical constants.
+    /// </para>
+    /// </summary>
+    public static string DecodingIdentity =>
+        string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"t{SamplingTemperature}-s{SamplingSeed}");
 }

@@ -391,9 +391,9 @@ public sealed class FilterStageTests : IDisposable
     public async Task ApplyAsync_TitleNormalizationDisabled_TitleIsByteIdentical()
     {
         using var context = CreateContext();
-        var modelIdentity = new AiModelIdentity("test-model", "digest-1", "v1");
+        var modelIdentity = new AiModelIdentity("test-model", "digest-1", "v1", "t0-s42");
         var release = CleanRelease("Some.Movie.2026.1080p.BluRay.x264", "guid-norm-1");
-        var key = VerdictCacheKey.Compute(release.Candidate, release.SourceName, modelIdentity.ModelName, modelIdentity.ModelDigest, modelIdentity.PromptVersion);
+        var key = VerdictCacheKey.Compute(release.Candidate, release.SourceName, modelIdentity.ModelName, modelIdentity.ModelDigest, modelIdentity.PromptVersion, modelIdentity.DecodingIdentity);
         var cacheReader = new StubVerdictCacheReader(new Dictionary<string, CachedVerdict>
         {
             [key] = new CachedVerdict(Verdict.Accept, 0.99, "Some Movie 2026 1080p BluRay x264"),
@@ -423,11 +423,11 @@ public sealed class FilterStageTests : IDisposable
     {
         using var context = CreateContext();
         await SetTitleNormalizationEnabledAsync(context, enabled: true);
-        var modelIdentity = new AiModelIdentity("test-model", "digest-1", "v1");
+        var modelIdentity = new AiModelIdentity("test-model", "digest-1", "v1", "t0-s42");
         const string originalTitle = "Some.Movie.2026.1080p.BluRay.x264";
         const string rewrittenTitle = "Some Movie 2026 1080p BluRay x264";
         var release = CleanRelease(originalTitle, "guid-norm-2");
-        var key = VerdictCacheKey.Compute(release.Candidate, release.SourceName, modelIdentity.ModelName, modelIdentity.ModelDigest, modelIdentity.PromptVersion);
+        var key = VerdictCacheKey.Compute(release.Candidate, release.SourceName, modelIdentity.ModelName, modelIdentity.ModelDigest, modelIdentity.PromptVersion, modelIdentity.DecodingIdentity);
         var cacheReader = new StubVerdictCacheReader(new Dictionary<string, CachedVerdict>
         {
             [key] = new CachedVerdict(Verdict.Accept, 0.99, rewrittenTitle),
@@ -458,7 +458,7 @@ public sealed class FilterStageTests : IDisposable
     {
         using var context = CreateContext();
         await SetTitleNormalizationEnabledAsync(context, enabled: true);
-        var modelIdentity = new AiModelIdentity("test-model", "digest-1", "v1");
+        var modelIdentity = new AiModelIdentity("test-model", "digest-1", "v1", "t0-s42");
         const string originalTitle = "Some.Movie.2026.1080p.BluRay.x264";
         var release = CleanRelease(originalTitle, "guid-norm-3");
         var cacheReader = new StubVerdictCacheReader(new Dictionary<string, CachedVerdict>());

@@ -221,7 +221,8 @@ public sealed class FilterStage
             release.SourceName,
             _modelIdentity.ModelName,
             _modelIdentity.ModelDigest,
-            _modelIdentity.PromptVersion);
+            _modelIdentity.PromptVersion,
+            _modelIdentity.DecodingIdentity);
 
         var cached = _verdictCacheReader.TryGet(key);
         _counters?.RecordVerdictCacheLookup(cached is not null);

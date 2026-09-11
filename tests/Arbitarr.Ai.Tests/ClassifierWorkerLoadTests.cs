@@ -38,14 +38,14 @@ public class ClassifierWorkerLoadTests
         var idleClient = new DelayedFakeOllamaClient(simulatedInferenceMs);
         var idleWorker = new ClassifierWorker(
             new ReleaseClassifier(idleClient), new NullVerdictCacheWriter(),
-            new AiModelIdentity("test-model", "digest-1", "v1"));
+            new AiModelIdentity("test-model", "digest-1", "v1", "t0-s42"));
 
         var idleSample = await TimeSingleCallAsync(idleWorker, Candidate("Idle"));
 
         var loadedClient = new DelayedFakeOllamaClient(simulatedInferenceMs);
         var loadedWorker = new ClassifierWorker(
             new ReleaseClassifier(loadedClient), new NullVerdictCacheWriter(),
-            new AiModelIdentity("test-model", "digest-1", "v1"));
+            new AiModelIdentity("test-model", "digest-1", "v1", "t0-s42"));
 
         const int concurrentRequests = 20;
         var tasks = Enumerable.Range(0, concurrentRequests)
