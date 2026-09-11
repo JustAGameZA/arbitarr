@@ -303,7 +303,7 @@ public sealed class EventRepositoryTests : IDisposable
             LastRepeatedAt = lastRepeatedDaysAgo is { } days
                 ? now - TimeSpan.FromDays(days)
                 : null,
-            RepeatCount = lastRepeatedDaysAgo is null ? 0 : 417,
+            RepeatCount = lastRepeatedDaysAgo is null ? 1 : 417,
             Summary = "Source failed, no longer repeating",
         });
 

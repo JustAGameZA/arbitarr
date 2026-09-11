@@ -386,16 +386,24 @@ public sealed class ClassifierPollingWorker : BackgroundService
 
         var suppressed = Math.Max(0, failuresByType.Values.Sum() - detailedFailures);
 
+        // arb-kwtn: the suppressed clause is rendered into ONE parameter rather than spliced into a
+        // second template, so both the "some were suppressed" and the "none were" cases still go
+        // through a single message template. A cycle at or under the cap suppressed nothing, and
+        // "and 0 more at Debug" told the operator to go looking for rows that do not exist.
+        var suppressedClause = suppressed == 0
+            ? string.Empty
+            : $" and {suppressed} more at Debug";
+
         _logger.LogWarning(
             "Classifier cycle classified {Classified} of {Attempted} candidates; {Failed} attempt(s) failed, " +
-            "by exception type: {FailuresByType}. {Detailed} logged in full above and {Suppressed} more at Debug. " +
+            "by exception type: {FailuresByType}. {Detailed} logged in full above{SuppressedClause}. " +
             "The classifier fails open, so searches are unaffected and the releases are left unclassified.",
             classified,
             classified + failed,
             failed,
             breakdown,
             detailedFailures,
-            suppressed);
+            suppressedClause);
     }
 
     /// <summary>

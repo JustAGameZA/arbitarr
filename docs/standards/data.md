@@ -26,6 +26,16 @@ unvetted text surface to a file operators carry around widens the blast radius f
 benefit, and logs are not configuration. Exporting the log store is a support-bundle feature and a
 different artefact with different handling — not an extra entry here.
 
+**Two scrubbers exist, and the split is by audience rather than by strength.**
+`SanitizedErrorDescription` guards the publication surface: it strips hosts as well as credentials
+and falls back to a fixed placeholder when a pattern times out with a
+`RegexMatchTimeoutException`, so a pathological input fails closed. `LogMessageCleanser` guards
+`/api/admin/logs`, which is admin-gated, and therefore keeps hosts — a connection failure's
+`host:port` is the diagnosis. Both apply the same
+`CredentialPatterns.MatchTimeoutMilliseconds`, so neither can be starved by a crafted input while
+the other holds. The reasoning for each arm lives in `SanitizedErrorDescription.cs`'s remarks; read
+those rather than a copy here.
+
 ### `Arbitarr:ReleaseGuidSecret` is test support, not an operator setting
 
 **The proxy-guid HMAC secret can be overridden in memory by the configuration key

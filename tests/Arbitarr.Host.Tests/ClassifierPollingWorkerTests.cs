@@ -369,6 +369,15 @@ public sealed class ClassifierPollingWorkerTests
         Assert.Contains($"{nameof(HttpRequestException)}=1", cycleWarning, StringComparison.Ordinal);
         Assert.Contains($"{nameof(InvalidOperationException)}=1", cycleWarning, StringComparison.Ordinal);
 
+        // arb-kwtn: two failures are under MaxDetailedFailuresPerCycle, so nothing was suppressed and
+        // the clause is omitted entirely rather than rendering "and 0 more at Debug" — a pointer to
+        // Debug rows that do not exist.
+        Assert.Contains("2 logged in full above.", cycleWarning, StringComparison.Ordinal);
+        Assert.DoesNotContain("more at Debug", cycleWarning, StringComparison.Ordinal);
+
+        // Both per-call details are Warnings (under the cap) plus the one cycle summary.
+        Assert.Equal(3, harness.Logger.Warnings.Count);
+
         // Types and counts only — never the release or the source.
         Assert.DoesNotContain(NoisyTitle, cycleWarning, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("g1", cycleWarning, StringComparison.OrdinalIgnoreCase);

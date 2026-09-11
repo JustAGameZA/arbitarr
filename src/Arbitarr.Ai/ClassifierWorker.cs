@@ -48,6 +48,14 @@ public sealed class ClassifierWorker
     /// close over a counter that does not exist yet.
     /// </para>
     /// </summary>
+    /// <param name="cancellationToken">
+    /// ALWAYS pass this — positionally or by name — because the optional parameters after it mean a
+    /// caller naming only <paramref name="onFailure"/> or <paramref name="detailAtWarning"/> silently
+    /// drops the token, and this is forwarded straight to
+    /// <see cref="ReleaseClassifier.TryClassifyAsync"/> whose
+    /// <c>when (!cancellationToken.IsCancellationRequested)</c> catch filter is what separates
+    /// propagating a shutdown from failing open as "no verdict".
+    /// </param>
     /// <param name="onFailure">Optional; receives the exception type name of a failed call.</param>
     /// <param name="detailAtWarning">Whether that call's detail line is a Warning or a Debug row.</param>
     public async Task ClassifyAndCacheAsync(
