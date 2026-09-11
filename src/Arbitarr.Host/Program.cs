@@ -314,10 +314,13 @@ builder.Services.AddSingleton(sp =>
     var section = builder.Configuration.GetSection("Arbitarr:Ai:Ollama");
     var baseUrlRaw = section["BaseUrl"] ?? Arbitarr.Data.Settings.OllamaBaseUrlResolver.DefaultBaseUrl;
     var model = section["Model"] ?? Arbitarr.Data.Settings.OllamaModelResolver.DefaultModel;
-    var keepAliveRaw = section["KeepAlive"] ?? "-1";
-    var keepAliveDurationPattern = new System.Text.RegularExpressions.Regex(@"^-?\d+(ns|us|µs|ms|s|m|h)$");
-    var keepAlive = keepAliveRaw;
-    if (!long.TryParse(keepAliveRaw, out _) && !keepAliveDurationPattern.IsMatch(keepAliveRaw))
+    var keepAliveRaw = section["KeepAlive"];
+    // arb-43b: the accepted forms and the wire shape are OllamaKeepAlive's, in Core, so this host
+    // block no longer carries its own copy of the duration pattern. A null/absent value falls
+    // through the same path as a malformed one and lands on the default, but without the warning:
+    // not configuring KeepAlive is normal, whereas configuring it wrongly is what an operator needs
+    // to be told about.
+    if (!Arbitarr.Core.Ai.OllamaKeepAlive.TryParse(keepAliveRaw, out var keepAlive) && keepAliveRaw is not null)
     {
         var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("Arbitarr.Host.Program");
         logger.LogWarning(
@@ -325,7 +328,9 @@ builder.Services.AddSingleton(sp =>
             "(expected a bare integer or a Go duration string with a unit, e.g. \"-1\" or \"30m\") " +
             "and was not used for the startup-fallback client options; the built-in default (\"-1\") " +
             "was used instead.");
-        keepAlive = "-1";
+        // No reassignment: TryParse already yields OllamaKeepAlive.Default on failure, which IS the
+        // "-1" this warning promises. Setting it again here would be a second place for the two to
+        // disagree.
     }
 
     // arb-6u6: this singleton's BaseUrl is only ever the STARTUP FALLBACK (see the comment above

@@ -1,7 +1,7 @@
+using System.Globalization;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Text.RegularExpressions;
 using Arbitarr.Core.Ai;
 using Arbitarr.Core.Releases;
 using Arbitarr.Core.Sources.CircuitBreaker;
@@ -188,42 +188,36 @@ public sealed class OllamaClient : IOllamaClient
         [property: JsonPropertyName("format")] JsonElement Format,
         [property: JsonPropertyName("keep_alive")]
         [property: JsonConverter(typeof(OllamaKeepAliveJsonConverter))]
-        string KeepAlive);
+        OllamaKeepAlive KeepAlive);
 
     /// <summary>
-    /// Serialises <see cref="OllamaOptions.KeepAlive"/> as the wire shape Ollama actually accepts:
-    /// a JSON NUMBER for a bare integer (Ollama treats a string here as a Go duration and rejects a
-    /// unit-less integer string, e.g. <c>"-1"</c>, with 400 <c>time: missing unit in duration
-    /// "-1"</c>), or a JSON STRING verbatim when the value already carries a Go duration unit (e.g.
-    /// <c>"-1m"</c>, <c>"30m"</c>).
+    /// Adapts <see cref="OllamaKeepAlive"/> to System.Text.Json. The wire shape itself — a JSON
+    /// NUMBER for a bare integer, a JSON STRING for a unit-bearing Go duration, and why the two must
+    /// differ — is <see cref="OllamaKeepAlive.WriteTo"/>'s, and is documented on that type. This
+    /// class deliberately holds no rule of its own: arb-43b removed the second copy of that rule
+    /// that used to live here.
     /// </summary>
-    private sealed class OllamaKeepAliveJsonConverter : JsonConverter<string>
+    private sealed class OllamaKeepAliveJsonConverter : JsonConverter<OllamaKeepAlive>
     {
-        private static readonly Regex DurationPattern =
-            new(@"^-?\d+(ns|us|µs|ms|s|m|h)$", RegexOptions.Compiled);
-
-        public override string Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
-            reader.TokenType == JsonTokenType.Number
-                ? reader.GetInt64().ToString()
-                : reader.GetString() ?? string.Empty;
-
-        public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options)
+        public override OllamaKeepAlive Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {
-            if (long.TryParse(value, out var integer))
-            {
-                writer.WriteNumberValue(integer);
-            }
-            else if (DurationPattern.IsMatch(value))
-            {
-                writer.WriteStringValue(value);
-            }
-            else
-            {
-                // Unreachable for validated values (Program.cs validates at startup and falls back
-                // to the default otherwise), but write verbatim rather than throw for an
-                // OllamaOptions constructed directly by a test/caller with an unvalidated value.
-                writer.WriteStringValue(value);
-            }
+            // A number on the wire is the bare-integer form; render it back to its text so the value
+            // round-trips to the same spelling it was written from.
+            var text = reader.TokenType == JsonTokenType.Number
+                ? reader.GetInt64().ToString(CultureInfo.InvariantCulture)
+                : reader.GetString();
+
+            // An unparseable value degrades to the default rather than throwing, matching what the
+            // old converter did with an unrecognised string (it wrote it through verbatim rather
+            // than failing). Nothing in this application deserialises a request body; this exists so
+            // the converter is total.
+            return OllamaKeepAlive.TryParse(text, out var value) ? value : OllamaKeepAlive.Default;
+        }
+
+        public override void Write(Utf8JsonWriter writer, OllamaKeepAlive value, JsonSerializerOptions options)
+        {
+            ArgumentNullException.ThrowIfNull(writer);
+            value.WriteTo(writer);
         }
     }
 

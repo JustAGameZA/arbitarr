@@ -1,3 +1,5 @@
+using Arbitarr.Core.Ai;
+
 namespace Arbitarr.Ai;
 
 /// <summary>
@@ -9,21 +11,23 @@ namespace Arbitarr.Ai;
 /// <param name="BaseUrl">Base URL of the Ollama instance (e.g. <c>http://192.0.2.138:31434</c> in docs — never a real address).</param>
 /// <param name="Model">Model name/tag to request (e.g. <c>qwen2.5:7b-instruct-q4_K_M</c>).</param>
 /// <param name="KeepAlive">
-/// Value sent as Ollama's <c>keep_alive</c> field. A long/indefinite duration keeps the model
-/// resident between calls, matching the "kept permanently loaded" operational fact recorded in
-/// docs/step0-measurements.md (avoids the ~59s cold-load cost recurring per call).
+/// Value sent as Ollama's <c>keep_alive</c> field, already validated.
 ///
 /// <para>
-/// Accepted forms: a bare integer (e.g. <c>"-1"</c>, <c>"300"</c>) — Ollama interprets this as
-/// SECONDS, with <c>-1</c> meaning "keep loaded indefinitely" — or a Go duration string carrying
-/// an explicit unit (e.g. <c>"-1m"</c>, <c>"30m"</c>). Ollama parses any STRING <c>keep_alive</c>
-/// value as a Go duration, so a bare integer sent as a JSON string (<c>"keep_alive":"-1"</c>) is
-/// rejected with 400 <c>time: missing unit in duration "-1"</c> — the integer form must therefore
-/// be serialised as a JSON NUMBER on the wire (<see cref="OllamaClient"/> handles this), while a
-/// unit-bearing value is serialised as a JSON string verbatim.
+/// The accepted forms, and the reason the wire shape is a JSON NUMBER for a bare integer but a JSON
+/// STRING for a unit-bearing duration, live on <see cref="OllamaKeepAlive"/> — the single
+/// implementation of that rule (arb-43b). They are deliberately not restated here: this rule has
+/// already caused one production fault (arb-hho, #189), and a second copy of it is how that happens
+/// again.
+/// </para>
+///
+/// <para>
+/// Defaults to <see langword="default"/>, which reads as <see cref="OllamaKeepAlive.Default"/>
+/// (<c>"-1"</c>, keep the model loaded indefinitely) — a C# default parameter must be a compile-time
+/// constant, so it cannot name the static property directly.
 /// </para>
 /// </param>
-public sealed record OllamaOptions(Uri BaseUrl, string Model, string KeepAlive = "-1")
+public sealed record OllamaOptions(Uri BaseUrl, string Model, OllamaKeepAlive KeepAlive = default)
 {
     /// <summary>
     /// Per-call timeout: 5 seconds. Warm-path calls were observed at 54-177ms; this gives roughly
