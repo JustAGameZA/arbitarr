@@ -282,7 +282,25 @@ public static class SearchEndpoint
                 _ when servedWithoutUpstreamCall => $"Search served from cache ({filtered.Count} results)",
                 _ => $"Search served from a live query ({filtered.Count} results)",
             },
-            reason: $"{SearchQueryDescriptor.Describe(query)}, {stopwatch.Elapsed.TotalMilliseconds:F0}ms",
+            // arb-p1y: THE ELAPSED MS IS DELIBERATELY NOT HERE, and must not be added back to any
+            // field on this row. EventRepository.TryCoalesceAsync identifies an event by all six of
+            // Kind, Summary, Reason, SourceDisplayName, Detail and ShadowMode, so a value that
+            // differs on every occurrence — which a duration does by definition — makes each repeat
+            // a distinct event and defeats coalescing entirely. That is not hypothetical: while the
+            // reason ended with `{ms}ms`, two identical searches never folded, because the same
+            // search served twice from cache is almost never served in the same whole number of
+            // milliseconds. Moving it to Detail does NOT fix this; Detail is in the same identity.
+            //
+            // The result count in the summary above is NOT the same problem: it is a property of
+            // the search, so two identical searches share it, and when it changes the row genuinely
+            // describes a different outcome.
+            //
+            // Nothing is lost by omitting it. The same wall-clock figure is recorded per search on
+            // the RecentSearchLog line above, which serves the un-coalesced /api/searches/recent
+            // dashboard — the surface that is per-search by construction. This row is the durable
+            // COALESCING counterpart, where one duration could not be true for all RepeatCount
+            // occurrences anyway.
+            reason: SearchQueryDescriptor.Describe(query),
             detail: SearchQueryDescriptor.DescribeDetail(query),
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
