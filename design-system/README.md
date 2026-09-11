@@ -70,13 +70,13 @@ stated under *Rules for component styles*: they need alpha, and needing alpha is
 inline a literal.
 
 **The alpha is load-bearing.** On a dark theme a translucent fill *lightens* the ground, so raising
-the alpha costs contrast. At 0.12 the muted, ok and warn text colours all clear WCAG AA (4.5:1)
-composited over `--bg-panel`; at 0.16 muted and ok fall under it. AC-CHROME-5 measures this, so
-raising the alpha fails CI rather than quietly degrading legibility.
+the alpha costs contrast. At 0.12 the muted, ok, warn *and danger* text colours all clear WCAG AA
+(4.5:1) composited over `--bg-panel`; at 0.16 muted and ok fall under it. AC-CHROME-5 measures
+this, so raising the alpha fails CI rather than quietly degrading legibility.
 
-`--danger` is a documented exception held to 3:1, the large/bold-text floor. It is already 3.68:1
-on `--bg-panel` *unfilled*, so it misses AA body text independently of any fill; lightening it is
-tracked as `arb-4uk`.
+`--danger` (`#e48481`) was lightened off the original bootstrap-lineage red (`#d9534f`, 3.68:1 on
+`--bg-panel` unfilled) to clear the same 4.5:1 floor as the others — see `arb-4uk`. It is no
+longer an exception.
 
 ---
 
