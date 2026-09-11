@@ -1613,15 +1613,18 @@ jobs:
           set -euo pipefail
           # The gate logic (arb-6ke/arb-adm/arb-u9i) lives in a sourced script so the
           # positive controls in .github/scripts/test-count-gate-controls.sh run the
-          # SAME text CI runs -- see docs/standards/process.md. The three functions
-          # are ordered, not independent: the set check must pass before the shard
+          # SAME text CI runs -- see docs/standards/process.md. The checks are
+          # ordered, not independent: the set check must pass before the shard
           # records are read, and the ratchet is last because it is the weakest of
           # the three and must not be what reports a fault the others can name.
+          #
+          # That order now lives in run_test_count_gate, inside the script, so a
+          # control EXECUTES it instead of reading this YAML (arb-1da). Call the
+          # entry function only -- do not re-add the three bare calls beside it;
+          # a control asserts they are gone.
           . ./.github/scripts/test-count-gate.sh
 
-          check_trx_set
-          check_shard_records
-          enforce_backend_floor
+          run_test_count_gate
 
       # Two counts and two parsers, deliberately, so neither suite's count can
       # mask a collapse in the other: the backend floor above parses executed="N"

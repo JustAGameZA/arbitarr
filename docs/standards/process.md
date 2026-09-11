@@ -263,6 +263,11 @@ the test-count gate are therefore
 [`test-count-gate-controls.sh`](../../.github/scripts/test-count-gate-controls.sh) — run by the
 `guards` job on every PR — sources too.
 
+The workflow calls **one** name, `run_test_count_gate`, and that function fixes the order its three
+checks run in. Ordering that lives in a workflow step can only be *read* by a control; ordering that
+lives in the sourced script is *executed* by one, so a reorder fails a control that ran the code
+rather than one that parsed the YAML around it.
+
 **Assert per row** where a flag is written per row. "Some row has it" still passes when an
 implementation writes one value to all of them.
 

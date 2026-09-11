@@ -22,10 +22,14 @@
 # that collapsed to a bare namespace, and the zero-tests and empty-classes
 # branches reject a listing that produced nothing.
 #
-# The final section is different in kind: it asserts the SHAPE of the real
+# The last two sections are different in kind. One executes run_test_count_gate
+# with the three checks stubbed, to prove the ORDER and that a failing check
+# stops the ones after it -- that order used to live in the workflow YAML and
+# could only be read, not run (arb-1da). The other asserts the SHAPE of the real
 # .github/workflows/build-test.yml (the gate step sources the script and calls
-# the three functions, bare, in order; the backend job sources shard-filter.sh).
-# Those are workflow-text assertions, not planted faults.
+# the entry function once, with no bare per-check calls left beside it; the
+# backend job sources shard-filter.sh). The shape ones are workflow-text
+# assertions, not planted faults.
 #
 # Run standalone: bash .github/scripts/test-count-gate-controls.sh
 
@@ -477,29 +481,137 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Call-site ordering (arb-2nx). The three gate functions are NOT independent
-# (test-count-gate.sh ~236-243: the sum loop relies on check_trx_set and the
-# .listed checks having already run) -- nothing before this asserted that the
-# workflow still invokes them in that order. This reads the real workflow
-# file, not a copy, so a future edit that drops or reorders a call is caught
-# where it actually lives. Each pattern is anchored to a BARE call on its own
-# line (optional indentation only): a commented-out or quoted mention of the
-# name in the step does not count as a call.
+# The entry function (arb-1da). The three gate functions are NOT independent
+# (test-count-gate.sh: the shard-sum loop relies on check_trx_set and the
+# .listed checks having already run), and until now the only thing asserting
+# that order was an awk read of the workflow YAML. Order now lives in
+# run_test_count_gate, so these controls EXECUTE it.
+#
+# The stubs are defined AFTER sourcing the real script, which is what lets them
+# win: bash resolves a function name at CALL time, so run_test_count_gate --
+# itself untouched, the shipped text -- calls whichever definition is current.
+# Each stub appends its name to a marker file, so the order is read back from
+# what actually ran rather than from the script's text.
+# ---------------------------------------------------------------------------
+
+# $1 marker file, $2 name of the stub that should fail (empty: none fail),
+# $3 how it fails: "exit" (like the real functions) or "return".
+# Returns run_test_count_gate's status; the marker records what ran.
+#
+# Both failure modes are exercised on purpose. The real checks `exit`, which
+# ends the subshell and therefore stops the later calls no matter how
+# run_test_count_gate is written -- so an `exit` stub alone CANNOT distinguish a
+# gate that propagates faults from one whose calls are each `|| true`. A
+# `return`-mode stub can: it is the one shape where swallowing the status (or a
+# future refactor of the checks from `exit` to `return`, which the script's own
+# comment warns against) changes the outcome. This suite had that exact hole
+# until a mutation test found it.
+run_entry_with_stubs() {
+  local marker="$1" failing="$2" mode="${3:-exit}"
+  : > "$marker"
+  (
+    set -euo pipefail
+    # shellcheck source=/dev/null
+    . "$repo_root/.github/scripts/test-count-gate.sh"
+    for f in check_trx_set check_shard_records enforce_backend_floor; do
+      eval "${f}() {
+        echo \"${f}\" >> '${marker}'
+        if [ '${f}' = '${failing}' ]; then
+          echo 'BLOCKED: stubbed ${f} failing' >&2
+          ${mode} 7
+        fi
+      }"
+    done
+    run_test_count_gate
+  ) >/dev/null 2>&1
+}
+
+marker="$tmp_root/order.txt"
+
+# Positive control FIRST: with all three passing, all three ran, in order.
+# Without this the failing-stub control below would be satisfied by a
+# run_test_count_gate that called nothing at all.
+run_entry_with_stubs "$marker" ""
+status=$?
+ran=$(tr '\n' ' ' < "$marker" | sed 's/ *$//')
+if [ "$status" -ne 0 ]; then
+  fail "run_test_count_gate runs all three checks in order" "exited ${status} with every check passing"
+elif [ "$ran" = "check_trx_set check_shard_records enforce_backend_floor" ]; then
+  pass "run_test_count_gate runs all three checks in order"
+else
+  fail "run_test_count_gate runs all three checks in order" "ran: ${ran}"
+fi
+
+# The order, proven by what did NOT run. check_shard_records fails, so
+# enforce_backend_floor must never be reached -- the property the workflow's
+# `set -euo pipefail` used to provide and that this function now owns.
+run_entry_with_stubs "$marker" "check_shard_records"
+status=$?
+ran=$(tr '\n' ' ' < "$marker" | sed 's/ *$//')
+if [ "$ran" = "check_trx_set check_shard_records" ]; then
+  pass "a failing check_shard_records stops the gate before enforce_backend_floor"
+else
+  fail "a failing check_shard_records stops the gate before enforce_backend_floor" "ran: ${ran}"
+fi
+
+# The exit status propagates out of the entry function rather than being
+# swallowed: a gate that blocked but exited 0 is a gate that does not gate.
+if [ "$status" -eq 7 ]; then
+  pass "run_test_count_gate propagates a failing check's exit status"
+else
+  fail "run_test_count_gate propagates a failing check's exit status" "expected 7, got ${status}"
+fi
+
+# The first check failing stops the other two.
+run_entry_with_stubs "$marker" "check_trx_set"
+status=$?
+ran=$(tr '\n' ' ' < "$marker" | sed 's/ *$//')
+if [ "$ran" = "check_trx_set" ] && [ "$status" -eq 7 ]; then
+  pass "a failing check_trx_set stops the gate before the later two"
+else
+  fail "a failing check_trx_set stops the gate before the later two" "ran: ${ran}, status ${status}"
+fi
+
+# The same two properties again with a stub that RETURNS non-zero instead of
+# exiting. This is the control that bites when the fault is swallowed rather
+# than when the order is wrong: with `check_trx_set || true` in the entry
+# function, an exit-mode stub still takes the subshell down (so every control
+# above stays green) while this one sees the gate carry on to the later checks
+# and finish 0. Verified by mutation -- `|| true` on each call fails only here.
+run_entry_with_stubs "$marker" "check_trx_set" "return"
+status=$?
+ran=$(tr '\n' ' ' < "$marker" | sed 's/ *$//')
+if [ "$ran" = "check_trx_set" ] && [ "$status" -ne 0 ]; then
+  pass "a check returning non-zero is not swallowed: the gate stops and fails"
+else
+  fail "a check returning non-zero is not swallowed: the gate stops and fails" \
+    "ran: ${ran}, status ${status}"
+fi
+
+# ---------------------------------------------------------------------------
+# Call-site shape (arb-2nx, shrunk by arb-1da). The workflow must call the ONE
+# entry function, and the three bare calls must be GONE from it -- otherwise
+# someone re-adds them beside the entry function and the checks run twice, with
+# the order back in the YAML where nothing executes it. Anchored to a BARE call
+# on its own line (optional indentation only), so a commented-out or quoted
+# mention of a name does not count as a call.
 # ---------------------------------------------------------------------------
 
 workflow_file="$repo_root/.github/workflows/build-test.yml"
 gate_step_awk='
   /Enforce test-count floor/ { in_step = 1 }
   in_step && /\. \.\/\.github\/scripts\/test-count-gate\.sh/ { sourced = 1; next }
+  sourced && /^[[:space:]]*run_test_count_gate[[:space:]]*$/ { print "run_test_count_gate"; next }
   sourced && /^[[:space:]]*check_trx_set[[:space:]]*$/ { print "check_trx_set"; next }
   sourced && /^[[:space:]]*check_shard_records[[:space:]]*$/ { print "check_shard_records"; next }
-  sourced && /^[[:space:]]*enforce_backend_floor[[:space:]]*$/ { print "enforce_backend_floor"; in_step = 0; sourced = 0; next }
+  sourced && /^[[:space:]]*enforce_backend_floor[[:space:]]*$/ { print "enforce_backend_floor"; next }
+  sourced && /^[[:space:]]*- name:/ { in_step = 0; sourced = 0 }
 '
 call_order=$(awk "$gate_step_awk" "$workflow_file")
-if [ "$call_order" = "$(printf 'check_trx_set\ncheck_shard_records\nenforce_backend_floor')" ]; then
-  pass "the gate step invokes check_trx_set, check_shard_records, enforce_backend_floor in order"
+if [ "$call_order" = "run_test_count_gate" ]; then
+  pass "the gate step calls run_test_count_gate once and nothing else"
 else
-  fail "the gate step invokes the three gate functions in order" \
+  fail "the gate step calls run_test_count_gate once and nothing else" \
     "found: $(printf '%s' "$call_order" | tr '\n' ' ')"
 fi
 
