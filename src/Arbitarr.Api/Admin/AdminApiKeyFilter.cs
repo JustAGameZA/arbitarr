@@ -91,17 +91,20 @@ public sealed class AdminApiKeyFilter : IEndpointFilter
     private readonly ICredentialResolver _resolver;
     private readonly ISessionAuthenticator _sessionAuthenticator;
     private readonly IApiKeyLastUsedRecorder _lastUsedRecorder;
+    private readonly LanPassthroughOptions _lanPassthrough;
     private readonly ILogger<AdminApiKeyFilter> _logger;
 
     public AdminApiKeyFilter(
         ICredentialResolver resolver,
         ISessionAuthenticator sessionAuthenticator,
         IApiKeyLastUsedRecorder lastUsedRecorder,
+        LanPassthroughOptions lanPassthrough,
         ILogger<AdminApiKeyFilter> logger)
     {
         _resolver = resolver;
         _sessionAuthenticator = sessionAuthenticator;
         _lastUsedRecorder = lastUsedRecorder;
+        _lanPassthrough = lanPassthrough;
         _logger = logger;
     }
 
@@ -143,6 +146,40 @@ public sealed class AdminApiKeyFilter : IEndpointFilter
             {
                 resolution = sessionResolution;
             }
+        }
+
+        // arb-lan-passthrough (operator request, owner-reviewed; ADR 0012): admit any trusted
+        // socket peer as a full-scope operator WITHOUT a session or a key, default on.
+        //
+        // THIS IS A DELIBERATE REVERSAL of the owner ruling documented in TrustedNetwork and
+        // ISessionAuthenticator ("the LAN bypass skips the API key only, never the login"). It is
+        // NOT the #43 bootstrap bypass: #43 admits an unkeyed caller only while NO credential
+        // exists and closes permanently once a key is set. This branch admits a local caller even
+        // when a key AND an account exist, so on a plain-HTTP LAN deployment the human login and
+        // the admin key both become optional for anyone who can open a socket from an RFC1918
+        // address. Behind a reverse proxy the socket peer is the proxy, so unless ForwardedHeaders
+        // is configured this either trusts everyone the proxy forwards or no one — it never reads
+        // X-Forwarded-For (TrustedNetwork ignores all headers by design).
+        //
+        // Runs only after the key and the session have both declined, so a CORRECT key or cookie is
+        // still judged first and attributed normally. A presented-but-wrong credential from a
+        // trusted peer is still admitted: the peer would be admitted with no credential at all, so a
+        // wrong one cannot leave it worse off. That includes a live named key of insufficient scope
+        // — on the LAN, passthrough's Admin admission supersedes the key's narrower scope. Remote
+        // callers are unaffected in every case and still get the 401/403 below.
+        if (_lanPassthrough.Enabled
+            && resolution.Outcome is not CredentialResolutionOutcome.Authorized
+            && IsTrustedNetwork(context.HttpContext.Connection.RemoteIpAddress))
+        {
+            _logger.LogWarning(
+                "LAN passthrough admitted {Method} {Path} from local-network address {RemoteAddress} " +
+                "with no session and no API key. This bypasses the operator login; disable it by " +
+                "setting the LAN-passthrough option off if the network is not trusted.",
+                context.HttpContext.Request.Method,
+                context.HttpContext.Request.Path,
+                context.HttpContext.Connection.RemoteIpAddress);
+
+            return await next(context);
         }
 
         switch (resolution.Outcome)

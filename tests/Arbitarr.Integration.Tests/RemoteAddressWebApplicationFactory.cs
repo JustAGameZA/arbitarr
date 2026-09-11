@@ -36,9 +36,17 @@ public sealed class RemoteAddressWebApplicationFactory : WebApplicationFactory<P
 
     private readonly IPAddress _remoteAddress;
 
-    public RemoteAddressWebApplicationFactory(IPAddress remoteAddress)
+    /// <summary>
+    /// Defaults OFF in tests: nearly every test on this factory asserts the login/key semantics that
+    /// LAN passthrough would override for a local peer, so an on-by-default here would silently flip
+    /// their meaning. <see cref="LanPassthroughTests"/> switches it on per case.
+    /// </summary>
+    private readonly bool _lanPassthrough;
+
+    public RemoteAddressWebApplicationFactory(IPAddress remoteAddress, bool lanPassthrough = false)
     {
         _remoteAddress = remoteAddress;
+        _lanPassthrough = lanPassthrough;
     }
 
     /// <summary>The per-instance <c>/config</c> directory this host was given.</summary>
@@ -54,7 +62,13 @@ public sealed class RemoteAddressWebApplicationFactory : WebApplicationFactory<P
         builder.UseSetting("Arbitarr:ConfigDir", _configDirectory);
 
         builder.ConfigureServices(services =>
-            services.AddSingleton<IStartupFilter>(new RemoteAddressStartupFilter(_remoteAddress)));
+        {
+            services.AddSingleton<IStartupFilter>(new RemoteAddressStartupFilter(_remoteAddress));
+
+            // Registered after Program.cs so it wins; per-host, never via the environment variable
+            // (process-wide, races other hosts in the process — same reason as ConfigDir above).
+            services.AddSingleton(new Arbitarr.Api.Security.LanPassthroughOptions { Enabled = _lanPassthrough });
+        });
     }
 
     /// <summary>Runs <paramref name="seed"/> against a fresh scoped <see cref="ArbitarrDbContext"/> and saves changes.</summary>
