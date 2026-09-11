@@ -149,18 +149,21 @@ export default function Login() {
           </form>
 
           {/*
-            THE RECOVERY STORY, STATED WHERE IT IS NEEDED. There is no password
-            reset in Arbitarr, by design (see UserEntry) -- a homelab appliance
-            has no mail transport to send one, and a LAN-reachable reset would be
-            a second authentication path weaker than the first. An operator meets
-            that fact here, at the moment it becomes relevant, rather than
-            discovering it only in the README after locking themselves out.
+            arb-hhb: the runbook itself (stop container, edit arbitarr.db,
+            start) moved to the README's "Signing in, and what to do when you
+            cannot" section -- that is operator documentation, not something a
+            locked-out browser tab should be reciting. What stays here is the
+            pointer: an operator who fails to sign in still needs to learn,
+            at this exact moment, that a way back exists at all.
           */}
           <p className={local.help}>
-            There is no password reset. If you are locked out, restore the
-            configuration database from a backup, or remove the rows from the
-            users table in <code>arbitarr.db</code> via the config bind mount and
-            set the account up again.
+            <a
+              href="https://github.com/JustAGameZA/arbitarr#signing-in-and-what-to-do-when-you-cannot"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Locked out?
+            </a>
           </p>
         </div>
       </main>
