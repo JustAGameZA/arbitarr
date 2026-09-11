@@ -438,6 +438,43 @@ public sealed class AdminAiEndpointsTests : IClassFixture<ArbitarrWebApplication
     }
 
     /// <summary>
+    /// arb-1rr: the chat-probe reason reaches the wire in its OWN field, present-and-empty rather
+    /// than absent when there was no chat failure — the same contract
+    /// <c>OllamaTestResponse.Models</c> holds, and for the same reason: an absent field makes
+    /// "no rejection" ambiguous with "the field is gone".
+    ///
+    /// <para>Asserted on the raw JSON rather than only on the deserialised record, because the
+    /// property could be renamed or dropped from the payload while the C# type still compiles —
+    /// which is exactly the change the UI would break on (CLAUDE.md §4: assert wire data).</para>
+    /// </summary>
+    [Fact]
+    public async Task The_probe_response_carries_the_chat_error_field_on_the_wire()
+    {
+        const string unreachable = "http://192.0.2.97:11434";
+        await SeedAdminKeyAsync();
+        await SetBaseUrlAsync(unreachable);
+        using var client = _factory.CreateClient();
+
+        using var response = await SendAsync(client, HttpMethod.Post, OllamaTestRoute);
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var json = System.Text.Json.JsonDocument.Parse(body);
+        Assert.True(
+            json.RootElement.TryGetProperty("chatError", out var chatError),
+            $"Expected a chatError property on the probe response, got: {body}");
+        // Unreachable: the chat half never ran, so there is no reason to report.
+        Assert.Equal(string.Empty, chatError.GetString());
+
+        // And the address still does not appear anywhere in the payload — the new field must not
+        // have become a second route for it. Detectability control first.
+        var wouldLeak = $"{{\"chatError\":\"connect to {unreachable} failed\"}}";
+        Assert.Contains("192.0.2.97", wouldLeak, StringComparison.Ordinal);
+        Assert.DoesNotContain("192.0.2.97", body, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// The model, like the base URL, stays OFF the settings catalog — so the generic settings
     /// surface neither writes it nor lists it, and the AI section's picker is the only way in.
     /// </summary>

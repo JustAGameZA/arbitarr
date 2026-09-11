@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Security.Authentication;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Arbitarr.Core.Ai;
 
@@ -17,11 +18,29 @@ namespace Arbitarr.Core.Ai;
 /// report: pointing this setting at the wrong service is the most likely way to misconfigure it,
 /// and a probe that cannot detect that teaches the operator to distrust the button.</para>
 ///
-/// <para><b>Not <c>/api/chat</c>.</b> Classification's own endpoint would be the most faithful test,
-/// but it loads the model — up to a ~59s cold start (docs/step0-measurements.md) — which cannot fit
-/// a probe an operator waits on, and it would answer 404 for a healthy instance that simply has not
-/// pulled the configured model yet. That is a model problem, not a connectivity one, and reporting
-/// it here would send the operator to fix the address.</para>
+/// <para><b>And then <c>/api/chat</c> — arb-1rr.</b> This class originally probed <c>/api/tags</c>
+/// ALONE, reasoning that classification's own endpoint loads the model (up to a ~59s cold start,
+/// docs/step0-measurements.md) and that a 404 for an unpulled model is a model problem rather than a
+/// connectivity one. That reasoning was sound about cost and wrong about what the button promises.
+/// A <c>keep_alive</c> serialisation bug had <c>/api/tags</c> answering perfectly while EVERY
+/// classification failed 400, so the operator was told "Connected successfully" by the only
+/// affordance offered for checking — and the class of fault survives that specific bug: any 400 from
+/// <c>/api/chat</c> (a rejected option, an unknown model, a schema refused) is invisible to a probe
+/// that never posts one.</para>
+///
+/// <para>So a successful tags probe is now FOLLOWED by one minimal <c>/api/chat</c> request built
+/// the way <c>OllamaClient</c> builds a real one — same <see cref="VerdictSchema"/> <c>format</c>
+/// (shared, not copied, which is why that constant lives in Core), <c>stream:false</c>, the selected
+/// model. The model-load cost is not an objection here the way it was for an automatic check: this
+/// probe runs only when an operator presses Test, and loading the model is precisely the thing they
+/// are asking to have verified. It runs AFTER tags rather than instead of it so the two failures
+/// stay distinguishable — a wrong address still reports as a wrong address, and
+/// <see cref="OllamaProbeOutcome.ChatRejected"/> means the address was right and the request was
+/// not.</para>
+///
+/// <para>With NO model configured there is nothing to post, so the chat half is skipped and the
+/// result says so (<see cref="OllamaProbeOutcome.OkNoModelConfigured"/>) rather than claiming a
+/// success it did not test.</para>
 ///
 /// <para><b>Short timeout.</b> <see cref="DefaultTimeout"/> is imposed here through a linked
 /// cancellation token rather than via <see cref="HttpClient.Timeout"/> — the caller's client is
@@ -33,7 +52,14 @@ namespace Arbitarr.Core.Ai;
 /// <para><b>Nothing from the wire reaches the OPERATOR-FACING WORDING.</b> The outcome is a closed
 /// enum with no string member, so no branch can put the upstream body, an exception message, or the
 /// probed URL into the sentence the endpoint composes. Cancellation the CALLER requested is rethrown
-/// rather than classified, so an aborted request is never misreported as a backend failure.</para>
+/// rather than classified, so an aborted request is never misreported as a backend failure.
+///
+/// <para>arb-1rr qualifies this in one place and no more: <see cref="OllamaProbeResult.ChatError"/>
+/// carries upstream text, BESIDE the enum in its own field, exactly as <c>Models</c> already did.
+/// The sentence is still composed from the enum alone. That text is passed through
+/// <see cref="Arbitarr.Core.Diagnostics.SanitizedErrorDescription"/> before it is stored, so it
+/// holds no host, address or credential — this method never assigns a raw response body to
+/// it.</para></para>
 ///
 /// <para><b>#112: the model NAMES do come back, in their own field.</b> <c>/api/tags</c> is the
 /// model list and the probe was already reading it to classify — discarding its contents is what
@@ -68,7 +94,19 @@ public sealed class OllamaConnectivityProber
     /// surfaces the response body or the address. On <see cref="OllamaProbeOutcome.Ok"/> the
     /// result also carries the model names the instance reported (#112).
     /// </summary>
-    public async Task<OllamaProbeResult> ProbeAsync(string baseUrl, CancellationToken cancellationToken = default)
+    /// <param name="baseUrl">The address to probe.</param>
+    /// <param name="model">
+    /// arb-1rr: the model to send the <c>/api/chat</c> half of the probe with. When null, empty or
+    /// whitespace the chat probe is SKIPPED and a successful tags probe reports
+    /// <see cref="OllamaProbeOutcome.OkNoModelConfigured"/> — there is nothing to post, and claiming
+    /// <see cref="OllamaProbeOutcome.Ok"/> would assert a classification path that was not tested.
+    /// Defaulted so the existing single-argument call shape keeps its old tags-only meaning.
+    /// </param>
+    /// <param name="cancellationToken">Cancels the probe.</param>
+    public async Task<OllamaProbeResult> ProbeAsync(
+        string baseUrl,
+        string? model = null,
+        CancellationToken cancellationToken = default)
     {
         if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var parsed)
             || (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps))
@@ -101,9 +139,22 @@ public sealed class OllamaConnectivityProber
             }
 
             var body = await response.Content.ReadAsStringAsync(timeoutSource.Token).ConfigureAwait(false);
-            return TryReadTagsResponse(body, out var models)
-                ? new OllamaProbeResult(OllamaProbeOutcome.Ok, models)
-                : OllamaProbeResult.From(OllamaProbeOutcome.UnexpectedResponse);
+            if (!TryReadTagsResponse(body, out var models))
+            {
+                return OllamaProbeResult.From(OllamaProbeOutcome.UnexpectedResponse);
+            }
+
+            // arb-1rr: the tags probe has confirmed the ADDRESS. Whether the thing the address
+            // points at will actually classify is a separate question, and the one an operator is
+            // really asking. Only reached on a tags success, so a wrong address never pays the
+            // model-load cost and never reports a chat outcome.
+            if (string.IsNullOrWhiteSpace(model))
+            {
+                return new OllamaProbeResult(OllamaProbeOutcome.OkNoModelConfigured, models);
+            }
+
+            return await ProbeChatAsync(parsed, model, models, timeoutSource.Token, cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -114,6 +165,86 @@ public sealed class OllamaConnectivityProber
         catch (OperationCanceledException)
         {
             // Our own timeout fired: the backend never answered in time.
+            return OllamaProbeResult.From(OllamaProbeOutcome.Unreachable);
+        }
+        catch (HttpRequestException ex)
+        {
+            return OllamaProbeResult.From(Classify(ex));
+        }
+    }
+
+    /// <summary>
+    /// arb-1rr: posts ONE minimal classification-shaped request to <c>/api/chat</c> and reports
+    /// whether Ollama accepted it.
+    ///
+    /// <para><b>The request must be shaped like a real classification, or it proves nothing.</b>
+    /// Same <see cref="VerdictSchema"/> <c>format</c> (the shared constant, so the two cannot
+    /// drift), <c>stream:false</c>, the selected model — those are the fields Ollama validates and
+    /// rejects. The prompt itself is a single throwaway user message rather than the real
+    /// <c>ClassificationPrompt</c>: its CONTENT is the one part Ollama does not validate, and
+    /// building it here would drag the whole prompt layer into Core for no added signal.</para>
+    ///
+    /// <para>No <c>keep_alive</c> is sent, and the request record is local to this class — see
+    /// <see cref="ProbeChatRequest"/> for both reasons.</para>
+    ///
+    /// <para>A non-2xx is <see cref="OllamaProbeOutcome.ChatRejected"/> carrying the SCRUBBED
+    /// reason. A transport failure at this stage is classified exactly as one against
+    /// <c>/api/tags</c> would be: the address answered a moment ago, so a connection that now fails
+    /// is a real transport fault and reporting it as a rejected request would misdirect the
+    /// operator.</para>
+    /// </summary>
+    private async Task<OllamaProbeResult> ProbeChatAsync(
+        Uri baseUri,
+        string model,
+        IReadOnlyList<string> models,
+        CancellationToken timeoutToken,
+        CancellationToken callerToken)
+    {
+        var chatUri = BuildChatUri(baseUri);
+
+        var payload = new ProbeChatRequest(
+            model,
+            [new ProbeChatMessage("user", "ping")],
+            Stream: false,
+            Format: JsonSerializer.Deserialize<JsonElement>(VerdictSchema.Object));
+
+        try
+        {
+            using var content = new StringContent(
+                JsonSerializer.Serialize(payload),
+                System.Text.Encoding.UTF8,
+                "application/json");
+
+            using var response = await _httpClient
+                .PostAsync(chatUri, content, timeoutToken)
+                .ConfigureAwait(false);
+
+            if (response.IsSuccessStatusCode)
+            {
+                return new OllamaProbeResult(OllamaProbeOutcome.Ok, models);
+            }
+
+            // The body is read and scrubbed through the SAME path the classifier's failures take,
+            // so what an operator sees here and what lands on the dashboard cannot disagree.
+            var failure = await OllamaRequestException
+                .FromResponseAsync(response, timeoutToken)
+                .ConfigureAwait(false);
+
+            return new OllamaProbeResult(
+                OllamaProbeOutcome.ChatRejected,
+                models,
+                Diagnostics.SanitizedErrorDescription.Describe(failure));
+        }
+        catch (OperationCanceledException) when (callerToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            // Our own timeout. A cold model load can legitimately outrun the probe's short budget,
+            // so this is reported as unreachable (the honest "no answer in time") rather than as a
+            // rejection — nothing was rejected, and telling an operator their model is broken
+            // because it was slow to load would be worse than telling them nothing.
             return OllamaProbeResult.From(OllamaProbeOutcome.Unreachable);
         }
         catch (HttpRequestException ex)
@@ -224,6 +355,50 @@ public sealed class OllamaConnectivityProber
         var builder = new UriBuilder(baseUri)
         {
             Path = baseUri.AbsolutePath.TrimEnd('/') + "/api/tags",
+            Query = string.Empty,
+        };
+
+        return builder.Uri;
+    }
+
+    /// <summary>
+    /// arb-1rr: the probe's own <c>/api/chat</c> request shape, deliberately LOCAL to this class
+    /// rather than shared with <c>OllamaClient</c>'s record.
+    ///
+    /// <para><b>Why it is not shared.</b> That record lives in Arbitarr.Ai, which Arbitarr.Core does
+    /// not reference (AC6, <c>CoreIsolationTests</c>). The shared thing that matters is the one the
+    /// backend VALIDATES — <see cref="VerdictSchema"/>, which moved to Core so both send one
+    /// constant — and the envelope around it is four field names Ollama's API fixes anyway.</para>
+    ///
+    /// <para><b>There is deliberately no <c>keep_alive</c>.</b> Getting that field's wire shape right
+    /// is subtle (a bare integer must be a JSON number, not a string) and the converter that knows
+    /// the rule is private to <c>OllamaClient</c>. Re-implementing it here would put a second copy of
+    /// a rule that has already caused one production fault in a second assembly. Omitting the field
+    /// lets Ollama apply its own default, which is right for a one-shot probe that is not trying to
+    /// keep a model resident. The honest tradeoff: this probe would not itself have caught a
+    /// keep_alive-only fault. A shared Core-level helper is tracked as arb-43b.</para>
+    /// </summary>
+    private sealed record ProbeChatRequest(
+        [property: JsonPropertyName("model")] string Model,
+        [property: JsonPropertyName("messages")] IReadOnlyList<ProbeChatMessage> Messages,
+        [property: JsonPropertyName("stream")] bool Stream,
+        [property: JsonPropertyName("format")] JsonElement Format);
+
+    private sealed record ProbeChatMessage(
+        [property: JsonPropertyName("role")] string Role,
+        [property: JsonPropertyName("content")] string Content);
+
+    /// <summary>
+    /// arb-1rr: the <c>/api/chat</c> URI, built exactly as <see cref="BuildTagsUri"/> builds its
+    /// own and for the same reason — a base path must be preserved, so an Ollama mounted at
+    /// <c>/ollama</c> is probed at <c>/ollama/api/chat</c>. Matches <c>OllamaClient.BuildChatUri</c>,
+    /// so the probe and the classifier cannot disagree about which address they are testing.
+    /// </summary>
+    private static Uri BuildChatUri(Uri baseUri)
+    {
+        var builder = new UriBuilder(baseUri)
+        {
+            Path = baseUri.AbsolutePath.TrimEnd('/') + "/api/chat",
             Query = string.Empty,
         };
 

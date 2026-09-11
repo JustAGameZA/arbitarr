@@ -22,8 +22,18 @@ function probe(
   outcome: string,
   message: string,
   models: string[] = [],
-): { success: boolean; outcome: string; message: string; models: string[] } {
-  return { success: outcome === 'Ok', outcome, message, models };
+  chatError = '',
+): {
+  success: boolean;
+  outcome: string;
+  message: string;
+  models: string[];
+  chatError: string;
+} {
+  // `success` is true for Ok ALONE, matching the server after arb-1rr: the probe
+  // now also posts /api/chat, so OkNoModelConfigured (address fine, nothing tested)
+  // and ChatRejected (address fine, request refused) are both not-success.
+  return { success: outcome === 'Ok', outcome, message, models, chatError };
 }
 
 /** The body of the last PUT the page sent, parsed. */
@@ -181,8 +191,17 @@ describe('AI backend section', () => {
    * match, whereas counting the distinct labels makes the collapse itself the
    * failure.
    */
-  it('renders four distinct labels, one per outcome', async () => {
-    const outcomes = ['Ok', 'Unreachable', 'TlsFailure', 'UnexpectedResponse'];
+  it('renders a distinct label for every outcome', async () => {
+    // arb-1rr added the last two. Listing them here is what makes the count
+    // assertion below cover them — a new outcome sharing another's label fails.
+    const outcomes = [
+      'Ok',
+      'Unreachable',
+      'TlsFailure',
+      'UnexpectedResponse',
+      'ChatRejected',
+      'OkNoModelConfigured',
+    ];
     const labels: string[] = [];
 
     for (const outcome of outcomes) {
@@ -421,6 +440,114 @@ describe('AI backend section', () => {
     // And it is absent from the server's wording, which is rendered as-is.
     const message = screen.getByText(/answered with its model list/);
     expect(message.textContent).not.toContain(distinctive);
+  });
+
+  /**
+   * arb-1rr: a rejected classification request shows Ollama's own reason, and shows
+   * it SEPARATELY from the server's fixed wording.
+   *
+   * POSITIVE CONTROL for the separation: the same search is first shown to find the
+   * reason where it genuinely is, so its absence from the message paragraph is a
+   * property rather than a search that could never have matched.
+   */
+  it('renders the upstream reason for a rejected chat request, beside the wording', async () => {
+    const reason = 'HttpRequestException (400 BadRequest): {"error":"time: missing unit in duration"}';
+    mockApi({
+      [ROUTE]: { body: CONFIGURED },
+      [TEST_ROUTE]: {
+        body: probe(
+          'ChatRejected',
+          'Ollama is reachable but rejected the test classification request.',
+          ['qwen2.5:7b-instruct-q4_K_M'],
+          reason,
+        ),
+      },
+    });
+    renderSurface(<AiSection />);
+
+    await screen.findByLabelText('Ollama base URL');
+    await userEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+
+    // Existence + detectability: the reason really is on the page.
+    expect(await screen.findByText(reason)).toBeInTheDocument();
+
+    // And it is NOT spliced into the server's own wording — two elements, so the
+    // distinction between "our sentence" and "what Ollama said" survives on screen.
+    const message = screen.getByText(/rejected the test classification request/);
+    expect(message.textContent).not.toContain('missing unit in duration');
+  });
+
+  /**
+   * A rejected chat request still reached /api/tags, so the model list IS available
+   * — and the picker must still appear, because choosing a different model is the
+   * likeliest fix for the rejection. This is the regression the `success` gate would
+   * have caused when `success` narrowed to mean "both halves passed".
+   */
+  it('still offers the picker when the chat probe was rejected', async () => {
+    mockApi({
+      [ROUTE]: { body: CONFIGURED },
+      [TEST_ROUTE]: {
+        body: probe('ChatRejected', 'Ollama rejected the request.', ['llama3.1:8b', 'phi4:14b'], 'why'),
+      },
+    });
+    renderSurface(<AiSection />);
+
+    await screen.findByLabelText('Ollama base URL');
+    await userEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+
+    const select = await screen.findByRole('combobox', { name: 'Ollama model' });
+    expect(select.textContent).toContain('llama3.1:8b');
+    expect(select.textContent).toContain('phi4:14b');
+  });
+
+  /**
+   * With no model configured the address is confirmed and classification is NOT —
+   * so the page must not claim a plain success, and must still offer the picker,
+   * which is how the operator supplies the missing model.
+   */
+  it('does not claim success when no model was configured, but still offers the picker', async () => {
+    mockApi({
+      [ROUTE]: { body: CONFIGURED },
+      [TEST_ROUTE]: {
+        body: probe(
+          'OkNoModelConfigured',
+          'Connected, but no model is configured so the classification request was not tested.',
+          ['llama3.1:8b'],
+        ),
+      },
+    });
+    renderSurface(<AiSection />);
+
+    await screen.findByLabelText('Ollama base URL');
+    await userEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+
+    expect(await screen.findByText('Connected, model untested')).toBeInTheDocument();
+    // Not the plain "Connected" badge, which would overclaim.
+    expect(screen.queryByText('Connected')).not.toBeInTheDocument();
+
+    const select = await screen.findByRole('combobox', { name: 'Ollama model' });
+    expect(select.textContent).toContain('llama3.1:8b');
+  });
+
+  /**
+   * No reason, no element. An empty `chatError` must not render an empty paragraph
+   * — a blank line under the wording reads as a rendering defect.
+   */
+  it('renders no reason element when there is no chat error', async () => {
+    mockApi({
+      [ROUTE]: { body: CONFIGURED },
+      [TEST_ROUTE]: { body: probe('Ok', 'Connected successfully.', ['llama3.1:8b']) },
+    });
+    const view = renderSurface(<AiSection />);
+
+    await screen.findByLabelText('Ollama base URL');
+    await userEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+    await screen.findByText('Connected successfully.');
+
+    // Detectability control: this selector DOES find the element when a reason is
+    // present (the ChatRejected tests above render one), so its absence here is a
+    // property rather than a selector that never matches.
+    expect(view.container.querySelector('[class*="chatError"]')).toBeNull();
   });
 
   it('attaches the admin key to its reads', async () => {

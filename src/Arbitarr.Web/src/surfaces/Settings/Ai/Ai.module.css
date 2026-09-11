@@ -88,6 +88,19 @@
   max-width: 90ch;
 }
 
+/* arb-1rr: Ollama's own words for why it refused the test classification.
+   Monospaced and muted to mark it as QUOTED UPSTREAM TEXT rather than Arbitarr's
+   own wording — the line above it is ours and says what to do, this one is the
+   backend's and says what happened, and an operator pasting it into an issue
+   should be able to tell which is which. */
+.chatError {
+  margin-top: 4px;
+  font-family: ui-monospace, 'Cascadia Mono', 'Consolas', monospace;
+  font-size: 12px;
+  color: var(--fg-muted);
+  overflow-wrap: anywhere;
+}
+
 .testHead {
   display: flex;
   flex-wrap: wrap;

@@ -49,6 +49,27 @@ public enum OllamaProbeOutcome
     /// the base URL points at a different service or at a reverse proxy in front of one.
     /// </summary>
     UnexpectedResponse,
+
+    /// <summary>
+    /// arb-1rr: the address is right and Ollama answered the model list, but it REJECTED the
+    /// classification request itself — a non-2xx from <c>/api/chat</c>. The connectivity half is
+    /// healthy and the working half is not, which is precisely the state that used to report a
+    /// green "Connected successfully" while every classification failed.
+    ///
+    /// <para>Distinct from <see cref="UnexpectedResponse"/> because the fix is different: nothing
+    /// is wrong with the address, so sending the operator to check it wastes their time. The reason
+    /// lives in <see cref="OllamaProbeResult.ChatError"/>, which is why this outcome — unlike the
+    /// four above — is reported beside a message rather than alone.</para>
+    /// </summary>
+    ChatRejected,
+
+    /// <summary>
+    /// arb-1rr: <c>/api/tags</c> answered, but no model is configured, so the <c>/api/chat</c> half
+    /// of the probe was not attempted. Reported as its own outcome rather than folded into
+    /// <see cref="Ok"/> so the button cannot claim more than it tested: the address is confirmed,
+    /// classification is not.
+    /// </summary>
+    OkNoModelConfigured,
 }
 
 /// <summary>
@@ -72,7 +93,26 @@ public enum OllamaProbeOutcome
 /// The <c>name</c> of each entry in <c>/api/tags</c>, in the order Ollama listed them. Empty for
 /// every outcome other than <see cref="OllamaProbeOutcome.Ok"/>, and possibly empty for that one.
 /// </param>
-public sealed record OllamaProbeResult(OllamaProbeOutcome Outcome, IReadOnlyList<string> Models)
+/// <param name="ChatError">
+/// arb-1rr: on <see cref="OllamaProbeOutcome.ChatRejected"/>, the SCRUBBED reason Ollama gave for
+/// rejecting the classification request; empty for every other outcome.
+///
+/// <para><b>This is upstream text, and it is the deliberate exception to the rule above.</b> The
+/// design note on <see cref="OllamaProbeResult"/> says no free text derived from the upstream body
+/// reaches the operator — that rule still holds for the WORDING, which is still derived from the
+/// closed enum alone. This field is the same concession <c>Models</c> made and for the same reason:
+/// it travels BESIDE the enum, never inside it, and is rendered as its own detail line rather than
+/// interpolated into the sentence. It is admitted because "Ollama rejected the request" without the
+/// reason is the exact non-answer this bead was filed about.</para>
+///
+/// <para>Already passed through <c>SanitizedErrorDescription</c> before it is stored here, so it
+/// carries no host, address or credential — it must be, because this value reaches an operator-facing
+/// response. The prober is the only writer, and it never assigns a raw body.</para>
+/// </param>
+public sealed record OllamaProbeResult(
+    OllamaProbeOutcome Outcome,
+    IReadOnlyList<string> Models,
+    string ChatError = "")
 {
     /// <summary>An outcome with no model list — every failure, and the shape callers build for one.</summary>
     public static OllamaProbeResult From(OllamaProbeOutcome outcome) => new(outcome, []);

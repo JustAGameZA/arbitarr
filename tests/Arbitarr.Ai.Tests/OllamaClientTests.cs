@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Arbitarr.Core.Ai;
 using Arbitarr.Core.Releases;
 using Arbitarr.Core.Sources.CircuitBreaker;
 
@@ -190,6 +191,74 @@ public class OllamaClientTests
         var (client, _, _) = CreateClient(response);
 
         await Assert.ThrowsAsync<HttpRequestException>(() => client.ClassifyAsync(Candidate()));
+    }
+
+    // -------------------------------------------------------------------------------------------
+    // arb-1rr: the response body of a FAILED call is captured rather than discarded. Ollama reports
+    // why it rejected a request only in that body, and EnsureSuccessStatusCode threw it away — so
+    // every distinct 400 reached the dashboard as one indistinguishable
+    // "HttpRequestException (400 BadRequest)".
+    // -------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// A non-2xx throws <see cref="OllamaRequestException"/> carrying BOTH the status and the
+    /// upstream reason. Deriving from <see cref="HttpRequestException"/> is asserted too: every
+    /// existing catch site matches on that type, so losing the inheritance would silently change
+    /// which failures the circuit breaker records.
+    /// </summary>
+    [Fact]
+    public async Task ClassifyAsync_NonSuccessResponse_ThrowsWithTheStatusAndTheBodyExcerpt()
+    {
+        const string body = """{"error":"time: missing unit in duration \"-1\""}""";
+        var response = new HttpResponseMessage(HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent(body),
+        };
+        var (client, _, _) = CreateClient(response);
+
+        var ex = await Assert.ThrowsAsync<OllamaRequestException>(() => client.ClassifyAsync(Candidate()));
+
+        Assert.IsAssignableFrom<HttpRequestException>(ex);
+        Assert.Equal(HttpStatusCode.BadRequest, ex.StatusCode);
+        Assert.Contains("missing unit in duration", ex.BodyExcerpt, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The excerpt is CAPPED. This value is persisted per source and served on a dashboard, so a
+    /// misbehaving endpoint must not be able to push an arbitrarily long string into either. The
+    /// assertion is on the exact cap rather than "shorter than the body", which a truncation to any
+    /// length would satisfy.
+    /// </summary>
+    [Fact]
+    public async Task ClassifyAsync_NonSuccessResponse_TruncatesALongBodyToTheCap()
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent(new string('x', 1024)),
+        };
+        var (client, _, _) = CreateClient(response);
+
+        var ex = await Assert.ThrowsAsync<OllamaRequestException>(() => client.ClassifyAsync(Candidate()));
+
+        Assert.Equal(OllamaRequestException.MaxExcerptLength, ex.BodyExcerpt.Length);
+    }
+
+    /// <summary>
+    /// The failure still reaches the circuit breaker. Changing WHAT is thrown must not change
+    /// WHETHER the breaker trips — that is the behaviour every fail-open path downstream depends on.
+    /// </summary>
+    [Fact]
+    public async Task ClassifyAsync_NonSuccessResponse_StillRecordsACircuitBreakerFailure()
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent("""{"error":"nope"}"""),
+        };
+        var (client, _, breaker) = CreateClient(response);
+
+        await Assert.ThrowsAsync<OllamaRequestException>(() => client.ClassifyAsync(Candidate()));
+
+        Assert.True(breaker.FailureRecorded);
     }
 
     [Fact]

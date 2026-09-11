@@ -38,6 +38,11 @@ const OUTCOME_LABELS: Record<string, string> = {
   Unreachable: 'Unreachable',
   TlsFailure: 'TLS failure',
   UnexpectedResponse: 'Not Ollama',
+  // arb-1rr. Both mean the ADDRESS is fine, which is why neither says "unreachable":
+  // sending an operator to re-check a correct base URL is the specific waste these
+  // two exist to prevent.
+  ChatRejected: 'Model rejected the request',
+  OkNoModelConfigured: 'Connected, model untested',
 };
 
 /**
@@ -113,8 +118,19 @@ function OllamaForm({
     from, and turning it into a one-option select would produce exactly the
     misleading control this avoids.
   */
+  /*
+    arb-1rr: gated on the MODEL LIST having arrived, not on `success`.
+
+    `success` narrowed when the probe grew its /api/chat half — it is now true only
+    when the classification request was accepted too. Leaving this on `success`
+    would have hidden the picker on exactly the two outcomes where an operator most
+    needs it: `ChatRejected` (the model is wrong and choosing another is the fix)
+    and `OkNoModelConfigured` (no model is set yet). Both reached /api/tags, so both
+    carry a real list. Every other outcome carries an empty one, so the
+    `length > 0` check still keeps the picker away from a failed probe.
+  */
   const offered =
-    test.isSuccess && test.data.success && test.data.models.length > 0 ? test.data.models : null;
+    test.isSuccess && test.data.models.length > 0 ? test.data.models : null;
   // The stored model stays selectable even when the probe did not list it — a
   // model pulled and then removed, or a name seeded from configuration. Dropping
   // it would silently change what is saved the moment the operator touches Save.
@@ -267,6 +283,23 @@ function OllamaForm({
               >
                 {test.data.message}
               </p>
+              {/*
+                arb-1rr: the reason Ollama itself gave for refusing the test
+                classification request, when there is one.
+
+                RENDERED SEPARATELY FROM `message`, never concatenated into it.
+                `message` is the server's fixed wording chosen from the closed
+                outcome; this is upstream text. Keeping them as two elements is
+                what preserves that distinction on screen as well as on the wire.
+
+                Already scrubbed server-side of any host, address or credential,
+                so it is safe to show — and it is shown verbatim rather than
+                parsed, because the whole value of it is that it is what Ollama
+                actually said.
+              */}
+              {test.data.chatError && (
+                <p className={local.chatError}>{test.data.chatError}</p>
+              )}
             </>
           )}
 
