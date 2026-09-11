@@ -146,6 +146,100 @@ describe('Activity', () => {
   });
 
   /**
+   * arb-2b6: the parsed descriptor and the ×N badge share one row.
+   *
+   * Asserted together and PER ROW on purpose. The two features touch different cells of the
+   * same <tr> (#205's badge in the summary cell, this line in the reason cell), and a repeated
+   * search is the case where an operator most needs both at once — "this exact search ran 71
+   * times" is the whole point of folding. Asserting them on separate rows, or anywhere on the
+   * page, would pass on an implementation that rendered each only when the other was absent.
+   */
+  it('renders the parsed search descriptor and the repeat badge on the same row', async () => {
+    mockApi({
+      '/api/activity': {
+        body: {
+          events: [
+            {
+              ...page.events[0],
+              summary: 'Search served from cache (14 results)',
+              // The exact shape SearchQueryDescriptor.DescribeDetail emits (#204).
+              detail: 'type=tvsearch;cats=5030,5040;tvdbid=74796;season=2;episode=5',
+              repeatCount: 71,
+              lastRepeatedAt: '2026-09-07T12:35:00+00:00',
+            },
+          ],
+          nextCursor: null,
+        },
+      },
+    });
+    renderSurface(<ActivityPage />);
+
+    const row = (await screen.findByText('Search served from cache (14 results)')).closest('tr');
+    expect(row).not.toBeNull();
+
+    expect(within(row!).getByText('×71')).toBeInTheDocument();
+    expect(within(row!).getByText('tvsearch')).toBeInTheDocument();
+    expect(within(row!).getByText('tvdb=74796')).toBeInTheDocument();
+    expect(within(row!).getByText('S02E05')).toBeInTheDocument();
+    // The category COUNT, not the ids: the full list stays in the raw-detail title.
+    expect(within(row!).getByText('2 categories')).toBeInTheDocument();
+  });
+
+  /**
+   * The other half of the assertion above: a SearchServed row whose detail is null renders
+   * exactly as it did before arb-2b6. Without this, "the fields appear when a detail is
+   * present" would also pass on an implementation that rendered something for every row —
+   * and every row predating #204 has a null detail.
+   */
+  it('leaves a SearchServed row with no detail exactly as it was', async () => {
+    mockApi({
+      '/api/activity': {
+        body: {
+          events: [{ ...page.events[0], summary: 'Search served live (3 results)', detail: null }],
+          nextCursor: null,
+        },
+      },
+    });
+    renderSurface(<ActivityPage />);
+
+    const row = (await screen.findByText('Search served live (3 results)')).closest('tr');
+    expect(row).not.toBeNull();
+    // The reason is still there, alone: no chip, no fields, no empty container.
+    expect(within(row!).getByText("Query 'the.expanse.s01' (tvsearch), 8ms")).toBeInTheDocument();
+    expect(within(row!).queryByText('tvsearch')).toBeNull();
+    expect(within(row!).queryByText(/^tvdb=/)).toBeNull();
+  });
+
+  /**
+   * A non-search row is untouched even when its detail happens to be non-null. `detail` is
+   * free-form per kind (IEventSink), so this is a real input rather than a hypothetical: a
+   * parser keyed on anything looser than "starts with type=" would render a mangled line here.
+   */
+  it('renders nothing parsed on a row that is not a search', async () => {
+    mockApi({
+      '/api/activity': {
+        body: {
+          events: [
+            {
+              ...page.events[1],
+              summary: 'Source failed to respond',
+              detail: 'classified 12 releases, 1 failed',
+            },
+          ],
+          nextCursor: null,
+        },
+      },
+    });
+    renderSurface(<ActivityPage />);
+
+    const row = (await screen.findByText('Source failed to respond')).closest('tr');
+    expect(row).not.toBeNull();
+    expect(within(row!).getByText('The upstream request timed out.')).toBeInTheDocument();
+    // The free-form detail is not rendered as fields, and not rendered at all in the cell.
+    expect(within(row!).queryByText('classified 12 releases, 1 failed')).toBeNull();
+  });
+
+  /**
    * AC3: cache-served and live-query-served searches are distinguishable. The
    * server decides the wording; this asserts the surface renders it verbatim
    * rather than collapsing both to a generic "search served".

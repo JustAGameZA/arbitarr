@@ -13,6 +13,7 @@ import type { ActivityEntry, ActivityKind } from '../../api/types';
 import styles from '../surface.module.css';
 import local from './Activity.module.css';
 import { useActivityQuery, type ActivityFilters, type TimeWindow } from './queries';
+import { formatSeasonEpisode, parseSearchDetail } from './searchDetail';
 
 /**
  * The kind filter's options, and the human label for each.
@@ -173,6 +174,7 @@ function ActivityTable({ entries }: { entries: ActivityEntry[] }) {
                   differently from "the reason failed to load". */}
               <td className={entry.reason === null ? styles.muted : undefined}>
                 {entry.reason ?? '—'}
+                <SearchDetailLine entry={entry} />
               </td>
               <td className={entry.sourceDisplayName === null ? styles.muted : undefined}>
                 {entry.sourceDisplayName ?? '—'}
@@ -182,6 +184,79 @@ function ActivityTable({ entries }: { entries: ActivityEntry[] }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+/**
+ * The parsed search descriptor, as a secondary line under the reason (arb-2b6).
+ *
+ * Renders nothing at all unless the row is a SearchServed event whose detail parses. Both guards
+ * are needed and neither implies the other: another kind may legitimately put free-form text in
+ * `detail` (IEventSink: "Free-form kind-specific detail"), and a SearchServed row from before
+ * #204 has a detail this format cannot read. Returning null in either case leaves every other
+ * row byte-identical to what it rendered before this change.
+ *
+ * SECOND LINE, NOT A SIXTH COLUMN. The table already carries five columns and must stay usable at
+ * phone width; a column that is empty on every non-search row would cost a horizontal scroll on
+ * every row to show one. It goes under the reason specifically because the reason IS the
+ * human-readable spelling of this same query (SearchQueryDescriptor.Describe vs DescribeDetail) —
+ * the two belong in one cell, and putting the structured form anywhere else would separate a value
+ * from its own summary.
+ *
+ * THE RAW STRING STAYS REACHABLE via `title` rather than an expandable row. An expander is a
+ * second interactive control in a dense table, needs its own open/closed state per row, and has to
+ * be operable by keyboard to be worth having; a title attribute costs one attribute and no state,
+ * and the raw string is a debugging aid, not something an operator reads routinely. If it ever
+ * becomes routine, that is the moment for the expander — not before.
+ */
+function SearchDetailLine({ entry }: { entry: ActivityEntry }) {
+  if (entry.kind !== 'searchServed') {
+    return null;
+  }
+
+  const detail = parseSearchDetail(entry.detail);
+  if (detail === null) {
+    return null;
+  }
+
+  const seasonEpisode = formatSeasonEpisode(detail);
+
+  return (
+    <div className={`${local.detail} ${styles.muted}`} title={entry.detail ?? undefined}>
+      {/* The declared t= mode, as a chip: it is the one field every parsed detail has, so it
+          anchors the line and tells a tvsearch from a movie search at a glance. */}
+      <span className={styles.badge}>{detail.type}</span>
+      {detail.tvdbId !== null && <Field label="tvdb" value={detail.tvdbId} />}
+      {detail.tmdbId !== null && <Field label="tmdb" value={detail.tmdbId} />}
+      {seasonEpisode !== null && <span className={local.detailField}>{seasonEpisode}</span>}
+      {/* abs=0 is a real value distinct from absent (arb-u1c), so this tests for null rather
+          than falsiness — a truthiness check would hide exactly the search it identifies. */}
+      {detail.abs !== null && <Field label="abs" value={detail.abs} />}
+      {/* The COUNT, not the ids: the list can be long and an operator scanning the feed wants to
+          know a request was category-scoped, not which 14 categories. The full list is in the
+          title attribute with the rest of the raw string. */}
+      {detail.cats.length > 0 && (
+        <span className={local.detailField}>
+          {detail.cats.length} {detail.cats.length === 1 ? 'category' : 'categories'}
+        </span>
+      )}
+      {/* Unknown keys are rendered rather than dropped, so a backend that adds a field shows up
+          here as an unstyled extra instead of silently not appearing. */}
+      {Object.entries(detail.rest).map(([key, value]) => (
+        <Field key={key} label={key} value={value} />
+      ))}
+      {/* Last, mirroring the wire order, and the only part allowed to wrap. Quoted so an empty
+          -looking or whitespace-only term is still visibly a term. */}
+      {detail.q !== null && <span className={local.detailQuery}>“{detail.q}”</span>}
+    </div>
+  );
+}
+
+function Field({ label, value }: { label: string; value: string }) {
+  return (
+    <span className={local.detailField}>
+      {label}={value}
+    </span>
   );
 }
 
