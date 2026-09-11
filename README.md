@@ -138,6 +138,16 @@ To prevent rate limiting and ensure consistent metadata arbitration, point Sonar
 See [docs/standards/data.md](docs/standards/data.md#backup-restore-and-the-staging-directory) for
 what governs these locations.
 
+#### After upgrading: one-time classifier cache miss
+
+Starting with the release that folds the classifier's decoding identity into the verdict cache key,
+every entry cached under the old key is missed exactly once on first use after the upgrade and is
+re-classified on demand — this is expected and self-resolving, not a sign of a corrupted cache. It
+is bounded by the existing `AiVerdictCacheTtl` (default 30 days) and `AiVerdictCacheRowCeiling`
+(default 250,000 rows) settings, and shows up as a temporary dip in **Verdict cache hit rate** on
+the System page. See [ADR 0001](docs/adr/0001-separate-ai-and-media.md#consequences)'s dated
+Consequences note for the mechanism.
+
 Three distinct keys exist, deliberately: the **NZBHydra2 key** (Arbitarr calling out), the
 **client key(s)** (*arr apps calling in), and the **admin key** (below, gating mutating admin
 endpoints only).
