@@ -533,7 +533,7 @@ public sealed class AdminApiKeyFilterTrustedNetworkTests
     /// matching one is authorised or refused on scope.
     ///
     /// <para>The single configured value is deliberately modelled as the LEGACY shared key when
-    /// <paramref name="namedKeyScope"/> is null: that is what these tests always meant by
+    /// <c>namedKeyScope</c> is null: that is what these tests always meant by
     /// "configuredKey", and it is what keeps the pre-#58 assertions below assertions about the same
     /// behaviour they were written for. Supplying a scope instead models a NAMED key, which is how
     /// the bypass-closing and scope-refusal cases are exercised.</para>

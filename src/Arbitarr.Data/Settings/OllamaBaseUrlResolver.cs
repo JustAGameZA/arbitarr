@@ -20,7 +20,7 @@ namespace Arbitarr.Data.Settings;
 /// Data-side half, and it goes through the same <c>Settings</c> table every other setting uses
 /// rather than a store of its own.</para>
 ///
-/// <para><b>A missing or unusable row falls back to <paramref name="fallbackBaseUrl"/></b> (the
+/// <para><b>A missing or unusable row falls back to <c>fallbackBaseUrl</c></b> (the
 /// seed default) rather than throwing, which is what <c>SettingsReader</c> does for every other
 /// setting and for the same reason: a bad row must not fault the classification path. Note the
 /// fallback here is the compiled-in default, NOT the environment value — after the first start the

@@ -7,7 +7,7 @@ namespace Arbitarr.Core.Caching;
 ///
 /// This class owns band classification and the stamping/write-back rules only. Actually invoking
 /// an upstream source and merging/serializing results is orchestration performed by the caller
-/// (the endpoint layer); this class is handed a <paramref name="refreshTrigger"/> delegate to
+/// (the endpoint layer); this class is handed a <c>refreshTrigger</c> delegate to
 /// invoke a secondary live attempt/refresh without depending on <c>IUpstreamSource</c> or the
 /// circuit breaker directly, keeping it independently unit-testable against fakes.
 /// </summary>
