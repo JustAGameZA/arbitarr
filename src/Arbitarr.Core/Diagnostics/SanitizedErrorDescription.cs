@@ -160,13 +160,37 @@ public static partial class SanitizedErrorDescription
     private static partial Regex PercentEncodedUrl();
 
     /// <summary>
-    /// An IPv6 literal, bracketed with an optional port (<c>[2001:db8::1]:11434</c> — the shape Go's
-    /// <c>net</c> package prints, and Ollama is Go) or bare (<c>2001:db8::1</c>). Requires at least
-    /// two colon-separated groups in the bare form so an ordinary <c>key:value</c> or a model tag
-    /// ("phi4:14b") is not mistaken for an address.
+    /// An IPv6 literal: bracketed with an optional port (<c>[2001:db8::1]:11434</c> — the shape Go's
+    /// <c>net</c> package prints, and Ollama is Go), or bare, in either the compressed
+    /// (<c>fe80::1</c>) or full (<c>2001:db8:1234::42</c>) form, each with an optional
+    /// <c>%zone</c> and an optional port.
+    ///
+    /// <para><b>Three details here are load-bearing, each from a real leak found reviewing this
+    /// file's first version.</b></para>
+    ///
+    /// <para>1. The compressed alternative (<c>(?:hex:){1,7}:</c>) exists because requiring two
+    /// <c>hex:</c> groups misses every two-group address — <c>fe80::1</c>, <c>fd00::42</c>,
+    /// including the very ULA this file's own comments cite.</para>
+    ///
+    /// <para>2. <c>%zone</c> is matched on BOTH the bracketed and bare forms. It is outside the
+    /// bracketed character class, so without it <c>[fe80::1%eth0]:11434</c> matched nothing and the
+    /// whole address published.</para>
+    ///
+    /// <para>3. The trailing <c>\d*</c> after the optional port is not redundant. A hex group is
+    /// capped at four characters, so in <c>fd00::42:11434</c> the engine reads <c>:1143</c> as a
+    /// final group and leaves a bare <c>4</c> behind; the <c>\d*</c> absorbs whatever digits that
+    /// cap stranded, so no fragment of a port survives beside the redaction token.</para>
+    ///
+    /// <para><b>Deliberately over-scrubbed:</b> a bare colon-separated run of hex-like groups is
+    /// indistinguishable from a MAC address or a timestamp, so <c>aa:bb:cc</c> and <c>12:34:56</c>
+    /// are redacted too. That is this file's stated trade — over-scrubbing beats publishing
+    /// topology — and the negative theory in the tests pins what must NOT be eaten: a model tag
+    /// ("llama3.1:8b", "phi4:14b") keeps its non-hex characters and survives, as does "HTTP 400".</para>
     /// </summary>
     [GeneratedRegex(
-        @"\[[0-9a-f:.]+\](?::\d{1,5})?|\b(?:[0-9a-f]{1,4}:){2,7}[0-9a-f:]{1,4}\b",
+        @"\[[0-9a-f:.]+(?:%[a-z0-9._-]+)?\](?::\d{1,5})?" +
+        @"|\b(?:[0-9a-f]{1,4}:){1,7}:(?:[0-9a-f]{1,4}(?::[0-9a-f]{1,4})*)?(?:%[a-z0-9._-]+)?(?::\d{1,5})?\d*" +
+        @"|\b(?:[0-9a-f]{1,4}:){2,7}[0-9a-f]{1,4}(?:%[a-z0-9._-]+)?(?::\d{1,5})?\d*",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex IpV6Address();
 
