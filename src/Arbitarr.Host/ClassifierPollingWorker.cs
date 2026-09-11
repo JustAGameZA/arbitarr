@@ -296,7 +296,51 @@ public sealed class ClassifierPollingWorker : BackgroundService
             }
         }
 
+        WarnOnFailures(classified, failed);
+
         await RecordCycleAsync(deps, classified, failed, rewritten, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// One Warning per cycle that had failures, and none for a clean cycle (arb-1of).
+    ///
+    /// <para>
+    /// The WorkerCycle event added by arb-itw already records the same counts, but only onto the
+    /// Activity surface. An operator diagnosing "the classifier is doing nothing" reads the Logs
+    /// tab and docker logs, where a fail-open classifier is otherwise completely silent — it caches
+    /// nothing, throws nothing, and the search keeps serving. This is the line that makes a total
+    /// model outage visible there. The event text is left exactly as arb-itw wrote it.
+    /// </para>
+    ///
+    /// <para>
+    /// COUNTS ONLY, and NOT the failing error. That is a deliberate limit, not an oversight: no
+    /// exception reaches this layer to report. <c>ReleaseClassifier.TryClassifyAsync</c> catches
+    /// and discards it, <c>ClassifierWorker.ClassifyAndCacheAsync</c> returns void, and the
+    /// <c>failed</c> counter above is incremented from a null cache RE-READ rather than from any
+    /// error. Carrying the last error's type and message would mean changing that fail-open
+    /// contract across Arbitarr.Ai, which is bead arb-p94g's, not this one's. Until it lands, the
+    /// counts are the whole of what this layer honestly knows.
+    /// </para>
+    ///
+    /// <para>
+    /// The same no-identity rule as the event applies: never a title, GUID, source name, prompt or
+    /// URL. The counts cannot carry any of them, which is the other reason not to reach for the
+    /// error text here — an exception message from an HTTP client is exactly the shape that would.
+    /// </para>
+    /// </summary>
+    private void WarnOnFailures(int classified, int failed)
+    {
+        if (failed == 0)
+        {
+            return;
+        }
+
+        _logger.LogWarning(
+            "Classifier cycle classified {Classified} of {Attempted} candidates; {Failed} attempt(s) failed. " +
+            "The classifier fails open, so searches are unaffected and the releases are left unclassified.",
+            classified,
+            classified + failed,
+            failed);
     }
 
     /// <summary>

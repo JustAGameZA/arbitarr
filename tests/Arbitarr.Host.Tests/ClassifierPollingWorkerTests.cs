@@ -5,6 +5,7 @@ using Arbitarr.Api.Search;
 using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Filtering;
 using Arbitarr.Core.Releases;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace Arbitarr.Host.Tests;
@@ -305,6 +306,60 @@ public sealed class ClassifierPollingWorkerTests
     }
 
     /// <summary>
+    /// arb-1of: a cycle with failures writes exactly ONE Warning carrying the counts. The
+    /// WorkerCycle event records the same numbers, but only onto the Activity surface — an operator
+    /// diagnosing "the classifier is doing nothing" reads the Logs tab and docker logs, where a
+    /// fail-open classifier is otherwise entirely silent.
+    ///
+    /// <para>ONE line per cycle, not one per failure: this asserts <c>Single</c> rather than
+    /// <c>NotEmpty</c>, because a per-candidate Warning would turn a total model outage into a log
+    /// flood at exactly the moment the log is being read.</para>
+    /// </summary>
+    [Fact]
+    public async Task RunCycle_ClassifierFailsOpen_LogsOneWarningCarryingTheFailureCount()
+    {
+        var harness = new Harness(normalizationEnabled: false, clientThrows: true);
+        harness.Lookup.Record(Release(NoisyTitle, "g1"));
+        harness.Lookup.Record(Release("Another Movie 2024 1080p RARBG", "g2"));
+
+        await harness.Worker.RunCycleAsync();
+
+        // Positive control: both candidates really were attempted, so "2" below is the worker
+        // counting two failures rather than a coincidence of some other number.
+        Assert.Equal(2, harness.Client.Calls);
+
+        var warning = Assert.Single(harness.Logger.Warnings);
+        Assert.Contains("2", warning, StringComparison.Ordinal);
+
+        // No release identity in the line, the same constraint the WorkerCycle event works under.
+        Assert.DoesNotContain(NoisyTitle, warning, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("g1", warning, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(SourceName, warning, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// POSITIVE CONTROL for the Warning above (CLAUDE.md §4). "No warning was logged" is vacuous
+    /// unless a warning WOULD have been captured had one been written — the test above proves the
+    /// recorder catches it, and this proves a clean cycle produces none. Together they show the
+    /// line tracks the failure count rather than always or never firing.
+    /// </summary>
+    [Fact]
+    public async Task RunCycle_WithNoFailures_LogsNoWarning()
+    {
+        var harness = new Harness(normalizationEnabled: false);
+        harness.Lookup.Record(Release(NoisyTitle, "g1"));
+
+        await harness.Worker.RunCycleAsync();
+
+        // Positive control: the cycle did real work, so the absence below is a clean cycle staying
+        // quiet rather than a cycle that never ran.
+        Assert.Equal(1, harness.Client.Calls);
+        Assert.NotNull(harness.Cache.TryGet(KeyFor(NoisyTitle, "g1")));
+
+        Assert.Empty(harness.Logger.Warnings);
+    }
+
+    /// <summary>
     /// A worker constructed without a sink still classifies. Recording is a diagnostic, never a
     /// precondition for the work: a missing registration must not stop releases being classified.
     /// </summary>
@@ -389,7 +444,7 @@ public sealed class ClassifierPollingWorkerTests
                 },
                 TimeProvider.System,
                 titleNormalizer: null,
-                logger: null,
+                logger: Logger,
                 eventSink: withSink ? Sink : null);
         }
 
@@ -397,8 +452,40 @@ public sealed class ClassifierPollingWorkerTests
         public InMemoryVerdictCache Cache { get; } = new();
         public CountingOllamaClient Client { get; }
         public RecordingEventSink Sink { get; } = new();
+        public RecordingLogger Logger { get; } = new();
         public ClassifierPollingWorker Worker { get; }
         public int NormalizationReads { get; private set; }
+    }
+
+    /// <summary>
+    /// Captures Warning-and-above lines so a test can assert what the operator was told (arb-1of).
+    /// Records the RENDERED text, because that is what reaches the Logs tab and docker logs.
+    /// </summary>
+    private sealed class RecordingLogger : ILogger
+    {
+        private readonly ConcurrentQueue<string> _warnings = new();
+
+        public IReadOnlyList<string> Warnings => _warnings.ToList();
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Warning;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (!IsEnabled(logLevel))
+            {
+                return;
+            }
+
+            ArgumentNullException.ThrowIfNull(formatter);
+            _warnings.Enqueue(formatter(state, exception));
+        }
     }
 
     /// <summary>
