@@ -64,6 +64,13 @@ public sealed class ArbitarrDbContext : DbContext
     public DbSet<VerdictCacheEntry> VerdictCacheEntries => Set<VerdictCacheEntry>();
 
     /// <summary>
+    /// arb-tps: the durable tier of the release lookup, so <c>/download/{proxyGuid}</c> resolves
+    /// after a restart and past the in-memory tier's 30-minute TTL. See
+    /// <see cref="ReleaseLookupEntry"/> for why the payload carries the candidate only.
+    /// </summary>
+    public DbSet<ReleaseLookupEntry> ReleaseLookupEntries => Set<ReleaseLookupEntry>();
+
+    /// <summary>
     /// The shared event store (#55 step 1 / #54's decision store — plan §2). Nothing writes to or
     /// reads from this set outside of <see cref="Events.EventRepository"/> and its tests yet.
     /// </summary>
@@ -231,6 +238,25 @@ public sealed class ArbitarrDbContext : DbContext
             // M5 R17: rewritten title cached alongside the verdict. The bound is advisory on SQLite; it is
             // enforced in code by VerdictCacheLimits (producer + writer), which this must match.
             entity.Property(e => e.RewrittenTitle).HasMaxLength(VerdictCacheLimits.MaxRewrittenTitleLength);
+        });
+
+        modelBuilder.Entity<ReleaseLookupEntry>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            // UNIQUE IS LOAD-BEARING. ProxyGuid is the resolution key for
+            // /download/{proxyGuid}; two rows answering one guid would make "which release is
+            // this?" unanswerable, and the store's upsert depends on this index to turn a
+            // re-recorded release into a refresh rather than a duplicate.
+            entity.HasIndex(e => e.ProxyGuid).IsUnique();
+            // Pruned by expiry on the maintenance pass.
+            entity.HasIndex(e => e.ExpiresAt);
+            // ProxyGuid is a fixed-length hex digest from ReleaseGuid.Compute; SourceName matches
+            // Source.DisplayName's bound above. No bound on PayloadJson: a serialized candidate has
+            // no natural length ceiling worth guessing at, and it is produced by this application
+            // from an upstream response the merge stage has already accepted, not by a caller.
+            entity.Property(e => e.ProxyGuid).IsRequired().HasMaxLength(128);
+            entity.Property(e => e.SourceName).IsRequired().HasMaxLength(256);
+            entity.Property(e => e.PayloadJson).IsRequired();
         });
 
         modelBuilder.Entity<EventEntry>(entity =>

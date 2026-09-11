@@ -91,4 +91,38 @@ public class PrunePredicatesTests
         var retention = TimeSpan.FromDays(30);
         Assert.True(PrunePredicates.IsSuppressionAuditEntryPrunable(retention + TimeSpan.FromSeconds(1), retention));
     }
+
+    /// <summary>
+    /// arb-tps: a row one tick BEFORE its expiry still resolves, so it must not be pruned. The
+    /// three tests around this boundary are what pin the predicate to
+    /// <c>ReleaseLookupStore.FindAsync</c>: the two must agree exactly on which side of
+    /// <c>ExpiresAt</c> a row is alive, or there is an instant where a link resolves but has been
+    /// deleted, or is kept but no longer resolves.
+    /// </summary>
+    [Fact]
+    public void ReleaseLookup_NotPrunable_OneTickBeforeExpiry()
+    {
+        var now = new DateTimeOffset(2026, 9, 11, 12, 0, 0, TimeSpan.Zero);
+        Assert.False(PrunePredicates.IsReleaseLookupEntryPrunable(now + TimeSpan.FromTicks(1), now));
+    }
+
+    /// <summary>
+    /// arb-tps: the boundary is INCLUSIVE — a row exactly AT its expiry is prunable, matching
+    /// <c>ReleaseLookupStore.FindAsync</c>'s <c>ExpiresAt &lt;= now</c>, which stops resolving it at
+    /// that same instant.
+    /// </summary>
+    [Fact]
+    public void ReleaseLookup_Prunable_ExactlyAtExpiry()
+    {
+        var now = new DateTimeOffset(2026, 9, 11, 12, 0, 0, TimeSpan.Zero);
+        Assert.True(PrunePredicates.IsReleaseLookupEntryPrunable(now, now));
+    }
+
+    /// <summary>arb-tps: and comfortably past it, for the ordinary case.</summary>
+    [Fact]
+    public void ReleaseLookup_Prunable_PastExpiry()
+    {
+        var now = new DateTimeOffset(2026, 9, 11, 12, 0, 0, TimeSpan.Zero);
+        Assert.True(PrunePredicates.IsReleaseLookupEntryPrunable(now - TimeSpan.FromDays(1), now));
+    }
 }

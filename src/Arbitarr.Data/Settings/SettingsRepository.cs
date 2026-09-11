@@ -178,6 +178,9 @@ public sealed class SettingsRepository
             case SettingKey.ClassifierPollInterval:
                 SettingsValidator.ValidateClassifierPollInterval(ParseTimeSpan(key, proposed));
                 break;
+            case SettingKey.ReleaseLookupTtl:
+                SettingsValidator.ValidateReleaseLookupTtl(ParseTimeSpan(key, proposed));
+                break;
             case SettingKey.SessionIdleTimeout:
             {
                 // #44. Both arms validate the CROSS-FIELD pair, not just the value being set, so

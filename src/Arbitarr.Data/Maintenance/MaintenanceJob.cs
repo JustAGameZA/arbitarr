@@ -112,6 +112,8 @@ public sealed class MaintenanceJob
                 now, settings.SessionIdleTimeout, cancellationToken)
             .ConfigureAwait(false);
 
+        var releaseLookupPruned = await PruneReleaseLookupAsync(now, cancellationToken).ConfigureAwait(false);
+
         await RunIncrementalVacuumAsync(cancellationToken).ConfigureAwait(false);
 
         return new MaintenanceJobResult(
@@ -121,6 +123,7 @@ public sealed class MaintenanceJob
             AiVerdictCacheRowsPruned: aiVerdictCachePruned,
             EventRowsPruned: eventsPruned,
             ExpiredSessionRowsPruned: expiredSessionsPruned,
+            ReleaseLookupRowsPruned: releaseLookupPruned,
             VacuumRan: true);
     }
 
@@ -293,6 +296,41 @@ public sealed class MaintenanceJob
             .ToList();
 
         _dbContext.Sessions.RemoveRange(prunable);
+        await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return prunable.Count;
+    }
+
+    /// <summary>
+    /// arb-tps: drops release lookup rows that can no longer resolve a download.
+    ///
+    /// <para>This is the EIGHTH accumulating table, and it earns its place in the list above on the
+    /// same rule: it takes one row per rendered release on every search, which on a box fielding
+    /// *arr RSS syncs is thousands a day. Without this the 14-day TTL would be decorative and the
+    /// table would grow for the life of the deployment.</para>
+    ///
+    /// <para><b>STORAGE HYGIENE, NEVER THE RESOLUTION BOUNDARY</b> — the same separation
+    /// <see cref="PruneExpiredSessionsAsync"/> draws. <c>ReleaseLookupStore.FindAsync</c> evaluates
+    /// <c>ExpiresAt</c> on every read, so an expired row stops resolving the instant it expires
+    /// whether or not this job has run. That is what makes it safe to prune on a timer.</para>
+    ///
+    /// <para>Unlike its siblings the predicate reads the row's OWN <c>ExpiresAt</c> rather than
+    /// measuring an age against a live setting, so it needs no argument from the snapshot. That is
+    /// deliberate: a link already handed to Sonarr was promised a lifetime, and lowering the setting
+    /// should shorten the NEXT link rather than retroactively break one already in flight.</para>
+    /// </summary>
+    private async Task<int> PruneReleaseLookupAsync(DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        // Client-side for the same reason as every prune above: SQLite's EF Core provider cannot
+        // reliably translate DateTimeOffset comparisons server-side.
+        var candidates = await _dbContext.ReleaseLookupEntries
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var prunable = candidates
+            .Where(e => PrunePredicates.IsReleaseLookupEntryPrunable(e.ExpiresAt, now))
+            .ToList();
+
+        _dbContext.ReleaseLookupEntries.RemoveRange(prunable);
         await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return prunable.Count;
     }

@@ -7,9 +7,18 @@ namespace Arbitarr.Api.Search;
 /// Process-lifetime, in-memory <see cref="IReleaseLookup"/>: <see cref="SearchEndpoint"/> records
 /// every <see cref="RenderedRelease"/> it renders (keyed by <see cref="RenderedRelease.ProxyGuid"/>)
 /// so <see cref="DownloadProxyEndpoint"/> can resolve it back to an upstream source/link without a
-/// database round trip. This is an interim Pass-A implementation; the pagination-snapshot cache
-/// (M1 step 3) is expected to become the production-grade, TTL-bounded implementation, at which
-/// point this type may be retired or kept only as an in-process fast path.
+/// database round trip.
+///
+/// arb-tps: this is no longer the whole lookup — it is the FAST TIER of
+/// <see cref="PersistentReleaseLookup"/>, which falls back to a durable
+/// <see cref="Arbitarr.Core.Releases.IReleaseLookupStore"/> row when this dictionary misses, and
+/// repopulates this tier from a store hit. It is deliberately still bounded by
+/// <see cref="MaxEntries"/> and <see cref="EntryTtl"/>: those bounds are what keep a long-running
+/// process's memory finite, and the durable tier is what makes them survivable rather than a source
+/// of 404s on every link after a restart or after 30 minutes. DO NOT widen this type to consult the
+/// database — the two-tier split is the design, and the classifier polling worker depends on
+/// <see cref="Snapshot"/> meaning "what this process has recently rendered", not "every release ever
+/// persisted".
 ///
 /// SEC-M3: without a bound, this dictionary grows without limit for the lifetime of the process —
 /// every distinct release ever rendered across every search stays resident forever, which is an
@@ -42,16 +51,37 @@ public sealed class InMemoryReleaseLookup : IReleaseLookup
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
     }
 
+    /// <summary>
+    /// Tracks <paramref name="release"/> under its own <see cref="RenderedRelease.ProxyGuid"/> —
+    /// the search path's entry point, where the guid was just derived from this very release.
+    /// </summary>
     public void Record(RenderedRelease release)
     {
         ArgumentNullException.ThrowIfNull(release);
+        RecordAs(release.ProxyGuid, release);
+    }
 
-        var isNewKey = !_releases.ContainsKey(release.ProxyGuid);
-        _releases[release.ProxyGuid] = new Entry(release, _timeProvider.GetUtcNow());
+    /// <summary>
+    /// Tracks <paramref name="release"/> under an explicitly supplied <paramref name="proxyGuid"/>.
+    ///
+    /// <para>arb-tps: exists for <see cref="PersistentReleaseLookup"/>'s repopulation path, which
+    /// holds the guid a durable row was STORED under and must file the entry under that rather than
+    /// re-deriving one. The two agree while the release-guid secret is unchanged, but a rotation
+    /// makes a re-derived guid differ from the one the caller is asking for — and an entry filed
+    /// under a key nothing looks up is a fast path that silently never hits. Prefer
+    /// <see cref="Record"/> wherever the release is the source of its own guid.</para>
+    /// </summary>
+    public void RecordAs(string proxyGuid, RenderedRelease release)
+    {
+        ArgumentNullException.ThrowIfNull(proxyGuid);
+        ArgumentNullException.ThrowIfNull(release);
+
+        var isNewKey = !_releases.ContainsKey(proxyGuid);
+        _releases[proxyGuid] = new Entry(release, _timeProvider.GetUtcNow());
 
         if (isNewKey)
         {
-            _insertionOrder.Enqueue(release.ProxyGuid);
+            _insertionOrder.Enqueue(proxyGuid);
             EvictWhileOverCapacity();
         }
     }

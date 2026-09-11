@@ -51,4 +51,18 @@ public static class PrunePredicates
     /// </summary>
     public static bool IsSuppressionAuditEntryPrunable(TimeSpan age, TimeSpan retention)
         => age > retention;
+
+    /// <summary>
+    /// arb-tps: release lookup prune-eligibility predicate. Unlike its siblings above this takes an
+    /// absolute expiry rather than an age, because the row carries its own <c>ExpiresAt</c> stamped
+    /// at write time from the then-current TTL setting.
+    ///
+    /// <para>The boundary is INCLUSIVE — a row exactly at its expiry is prunable — and it must match
+    /// <c>ReleaseLookupStore.FindAsync</c>'s read-time check exactly. If the two disagreed by a tick
+    /// there would be an instant where a row still resolves but has already been deleted, or is kept
+    /// but no longer resolves; the read side is the one that decides whether a download works, so
+    /// this follows it rather than the other way round.</para>
+    /// </summary>
+    public static bool IsReleaseLookupEntryPrunable(DateTimeOffset expiresAt, DateTimeOffset now)
+        => expiresAt <= now;
 }
