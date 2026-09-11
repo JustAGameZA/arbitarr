@@ -72,6 +72,15 @@ export function RequireSession({ children }: RequireSessionProps) {
   // mount/unmount loop, not merely a flicker. Cleared on `data` so a session
   // that recovers from the hiccup still gets a real authenticated/redirect
   // decision rather than staying latched open forever.
+  //
+  // Evaluated (2026-09-12, arb-87co): `refetchOnMount: false` does NOT retire
+  // this latch. react-query v5's `shouldFetchOnMount` only consults
+  // `refetchOnMount` when `data !== undefined`, and the errored session query
+  // here has no data, so that option is inert in exactly this case.
+  // `retryOnMount: false` would suppress the mount fetch instead, but was
+  // rejected: it applies to every observer of the session query, not just
+  // this guard, and leaves an errored query with no self-healing remount path
+  // short of a window focus.
   const failedOpenOnce = useRef(false);
   if (isError) {
     failedOpenOnce.current = true;
