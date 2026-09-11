@@ -4,8 +4,8 @@ import { screen, waitFor } from '@testing-library/react';
 
 import { renderApp } from '../../test/renderApp';
 import { useAdminKeyStore } from '../../state/adminKeyStore';
-import { mockApi, signedIn, signedOut } from '../../test/mockApi';
-import { ROUTES, LOGIN_TITLE } from '../../routes.titles';
+import { mockApi, signedIn, signedOut, setupRequired } from '../../test/mockApi';
+import { ROUTES, LOGIN_TITLE, SETUP_TITLE } from '../../routes.titles';
 
 /**
  * Distinct from pageTitle.test.tsx (AC2b, which asserts the in-page <h1>).
@@ -58,5 +58,17 @@ describe('document title per route', () => {
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Sign in to Arbitarr' })).toBeInTheDocument();
     expect(document.title).toBe(LOGIN_TITLE);
+  });
+
+  it('sets the setup title, not the requested route\'s, for a fresh-install deep link (arb-xwbl)', async () => {
+    mockApi({ ...setupRequired() });
+    // the stale title the bug left behind; without it this assertion is
+    // vacuous in isolation
+    document.title = 'System — Arbitarr';
+
+    renderApp('/system');
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Set up Arbitarr' })).toBeInTheDocument();
+    expect(document.title).toBe(SETUP_TITLE);
   });
 });

@@ -1,8 +1,9 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Navigate } from 'react-router-dom';
 
 import { errorMessage } from '../QueryState';
 import { useSessionQuery, useSetupMutation } from '../../state/sessionQueries';
+import { SETUP_TITLE } from '../../routes.titles';
 import styles from '../surface.module.css';
 import local from './Login.module.css';
 
@@ -24,6 +25,15 @@ export default function Setup() {
   const setup = useSetupMutation();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+
+  // arb-xwbl: /setup sits outside AppShell (see the class comment above), so
+  // it does not get AppShell's per-route document-title effect for free.
+  // Without this, a fresh-install deep link here left the tab reading the
+  // PREVIOUS route's title. Set unconditionally, before the early returns
+  // below, so it still fires on the redirect-away renders.
+  useEffect(() => {
+    document.title = SETUP_TITLE;
+  }, []);
 
   // The instance is already claimed -- there is nothing to set up, so send them
   // to the form that can actually succeed. `replace` keeps /setup out of history
