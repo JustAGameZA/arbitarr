@@ -1,3 +1,6 @@
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Arbitarr.Core.Diagnostics;
 using Xunit;
 
@@ -219,6 +222,47 @@ public class NotifyingDownloadRefusalTrackerTests
 
         tracker.RecordSuccessfulGrab("nzbhydra2");
         Assert.Empty(tracker.Snapshot());
+    }
+
+    [Fact]
+    public async Task Parallel_refusals_and_grabs_for_the_same_source_raise_exactly_one_edge_each_way()
+    {
+        // arb-apj fix-up: the decorator's read-mutate-read triple is now serialised by a private
+        // gate, so two concurrent RecordRefusal calls for the same source cannot both observe
+        // wasPresent == false. Without that gate this would intermittently count 2 (or more)
+        // Appeared/Cleared raises instead of exactly 1 — that is the failure this test would show
+        // if the lock were removed; it is not committed here (CLAUDE.md's mutation-testing rule
+        // keeps a broken variant out of the repo), but the exact-count assertions below are what
+        // would catch it.
+        var appeared = 0;
+        var cleared = 0;
+        var tracker = new NotifyingDownloadRefusalTracker(
+            new DownloadRefusalTracker(),
+            (_, transition) =>
+            {
+                if (transition == DownloadRefusalTransition.Appeared)
+                {
+                    Interlocked.Increment(ref appeared);
+                }
+                else
+                {
+                    Interlocked.Increment(ref cleared);
+                }
+            });
+
+        var refusalTasks = Enumerable.Range(0, 32)
+            .Select(_ => Task.Run(() => tracker.RecordRefusal("nzbhydra2", Reason, At)));
+        await Task.WhenAll(refusalTasks);
+
+        Assert.Equal(1, appeared);
+        Assert.Equal(0, cleared);
+
+        var grabTasks = Enumerable.Range(0, 32)
+            .Select(_ => Task.Run(() => tracker.RecordSuccessfulGrab("nzbhydra2")));
+        await Task.WhenAll(grabTasks);
+
+        Assert.Equal(1, appeared);
+        Assert.Equal(1, cleared);
     }
 
     [Fact]

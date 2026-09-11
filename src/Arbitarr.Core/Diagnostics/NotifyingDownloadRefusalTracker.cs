@@ -48,6 +48,15 @@ public sealed class NotifyingDownloadRefusalTracker : IDownloadRefusalTracker
     private readonly IDownloadRefusalTracker _inner;
     private readonly Action<string, DownloadRefusalTransition> _onTransition;
 
+    /// <summary>
+    /// Serialises each method's read-mutate-read triple so two concurrent calls for the same source
+    /// (Sonarr retrying a refused `/download` in parallel) cannot both observe the pre-mutation state
+    /// and either double-raise an edge or drop one. The inner tracker's own lock is always taken
+    /// INSIDE this one (via <see cref="IsRefused"/> and the inner call), never the reverse, so there
+    /// is no lock-order inversion.
+    /// </summary>
+    private readonly object _gate = new();
+
     /// <param name="inner">The tracker that actually holds the state.</param>
     /// <param name="onTransition">
     /// Invoked with the CONFIGURED source name and which edge was crossed, once per edge. Never
@@ -65,10 +74,15 @@ public sealed class NotifyingDownloadRefusalTracker : IDownloadRefusalTracker
     {
         ArgumentNullException.ThrowIfNull(sourceName);
 
-        var wasPresent = IsRefused(sourceName);
-        _inner.RecordRefusal(sourceName, reason, at);
+        bool appeared;
+        lock (_gate)
+        {
+            var wasPresent = IsRefused(sourceName);
+            _inner.RecordRefusal(sourceName, reason, at);
+            appeared = !wasPresent && IsRefused(sourceName);
+        }
 
-        if (!wasPresent && IsRefused(sourceName))
+        if (appeared)
         {
             Raise(sourceName, DownloadRefusalTransition.Appeared);
         }
@@ -78,10 +92,15 @@ public sealed class NotifyingDownloadRefusalTracker : IDownloadRefusalTracker
     {
         ArgumentNullException.ThrowIfNull(sourceName);
 
-        var wasPresent = IsRefused(sourceName);
-        _inner.RecordSuccessfulGrab(sourceName);
+        bool cleared;
+        lock (_gate)
+        {
+            var wasPresent = IsRefused(sourceName);
+            _inner.RecordSuccessfulGrab(sourceName);
+            cleared = wasPresent && !IsRefused(sourceName);
+        }
 
-        if (wasPresent && !IsRefused(sourceName))
+        if (cleared)
         {
             Raise(sourceName, DownloadRefusalTransition.Cleared);
         }
