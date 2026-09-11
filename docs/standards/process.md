@@ -81,6 +81,16 @@ Two counts and two parsers, deliberately, so neither suite's count can mask a co
 other. The frontend parses *passed*, not *total*, so a skipped or `todo` test cannot hold the floor
 up without running. Both are ratcheted from the same master run, so the pair moves together.
 
+A failing run also uploads evidence the counts alone cannot reconstruct. `Upload failed attempt
+evidence (group <group>)` and `Upload failed attempt evidence (frontend)` run `if: failure()`, are
+named `failed-attempt-<run_attempt>-<group>` / `-frontend` so each attempt keeps its own copy, and
+hold 14 days — long enough that a flake found on a Friday is still investigable (#198, arb-e2x).
+The gate never reads them: it downloads `pattern: trx-*`, and these names cannot match, which is
+the point rather than a detail — a matching name would be summed into `executed=` a second time
+and surface as a floor breach. The frontend count reaches the gate through a job output, not an
+artifact, so nothing uploaded here can move it either. A green run never exercises the
+`if: failure()` path; bead `arb-5fs` proposes a dispatch-only input to prove it on demand.
+
 **Recorded blind spot** (#182 architectural review): a `TEST_FILTER` change that narrows discovery
 and execution *consistently* to a nonzero count passes every per-assembly check — the shards agree,
 and the sum equals what discovery recorded — so it is caught only by the whole-run ratchet floor,
