@@ -30,7 +30,18 @@ Three properties of the implementation are load-bearing:
 
 **Pruning follows the read side, and is hygiene only.** `MaintenanceJob.PruneReleaseLookupAsync` deletes expired rows on the maintenance pass via `PrunePredicates.IsReleaseLookupEntryPrunable`, whose boundary is inclusive to match `FindAsync` exactly. The two must agree: a disagreement by a tick would leave an instant where a row still resolves but has been deleted, or is kept but no longer resolves. Because the read side decides, the prune job running late — or not at all — cannot resurrect a dead link.
 
-**Follow-up in flight (arb-zwk).** Three gaps from #190's reviews are being closed separately: `SearchEndpoint` awaits `UpsertRangeAsync` inline with no `try`/`catch`, so a store outage turns a *search* into a 500 while the download path degrades to a miss — the postures should match; the TTL is read with `GetAwaiter().GetResult()` on every scope creation, blocking a thread-pool thread, and should be read asynchronously or cached; and an architecture test should ban blocking calls on async APIs in `Arbitarr.Host`.
+**Degradation contract.** Both sides of the two-tier lookup degrade rather than fail the caller, and log at the same level for the same reason — an operator should be able to tell "the store is unhealthy" from `/api/admin/logs` without a search or a download ever failing outright:
+
+| Side | Trigger | Behaviour | Log level | Why that level | What the operator sees |
+|---|---|---|---|---|---|
+| Write (`SearchEndpoint.ExecuteAsync`, the upsert guard around `IReleaseLookupStore.UpsertRangeAsync`) | The durable upsert throws anything but `OperationCanceledException` | Exception is caught, count and exception logged, search still answers with the in-memory tier already populated | Warning | Not fatal to the caller — the search still succeeds and the fast tier still resolves the links for its 30-minute window — but real degradation the operator should be able to see | A normal search response; a Warning line naming the release count and exception, never the releases or their links |
+| Read (`PersistentReleaseLookup.FindAsync`, the store fallback) | `_findInStore` throws anything but `OperationCanceledException` | Exception is caught, proxy guid and exception logged, method returns `null` (a miss) | Warning | Matches the write side's posture and the pre-arb-tps behaviour: a store failure must never be worse than a 404 | A 404 from the download proxy, indistinguishable from a genuine miss except for the Warning line naming the proxy guid |
+
+A cancellation (`OperationCanceledException`) is rethrown on both sides — that is the caller giving up, not the store failing, so it is not part of this contract.
+
+**Known limitation: unbounded log volume.** Neither Warning is rate-limited or deduplicated. A sustained store outage logs one Warning per search (write side) and one per download-proxy miss (read side) into `arbitarr-logs.db`, the persistent log store described in CLAUDE.md §1 and `docs/standards/data.md` — there is no cap on how fast that table grows while the outage lasts. A deduped/rate-limited warning, or a `SourceFailed`-style event raised only after N consecutive failures, was considered as a follow-up and is **not done**.
+
+**Amended 2026-09-11.** The paragraph above replaces an earlier "Follow-up in flight (arb-zwk)" note. Of the three gaps it listed, the search-side degradation guard and the asynchronous TTL read landed in #201 (`37a7097`); only paging `MaintenanceJob.PruneReleaseLookupAsync` (see the Consequences section) remains open.
 
 ## Alternatives rejected
 
@@ -56,6 +67,6 @@ None to record. The pull request carries no review comments and no review bodies
 
 **Rotating the release-GUID secret no longer costs the fast path.** Because repopulation keys on the stored GUID, links issued before a rotation continue to resolve through the store and continue to populate memory. A restore that brings back a different `release-guid-secret.key` (ADR 0007) therefore degrades throughput for already-issued links, not correctness.
 
-**A store failure is invisible.** The degrade-to-miss contract means an outage in the store is indistinguishable from a genuine miss at the call site, and nothing is logged there today. That gap is what made arb-agh expensive to diagnose — an intermittent `NotFound` from the store fallback with no trace of why — and closing it is the first item of arb-zwk (log the fallback at Warning).
+**A store failure is logged but not rate-limited.** The degrade-to-miss contract means an outage in the store is still indistinguishable from a genuine miss *at the call site* — but since #201 it is no longer silent: both sides log at Warning (see "Degradation contract" above). That closed what made arb-agh expensive to diagnose — an intermittent `NotFound` from the store fallback with no trace of why. The gap now is volume, not visibility: the Warning is unbounded, so a sustained outage floods `arbitarr-logs.db` at one row per search or per miss, as recorded above.
 
 **Prune paging is deferred.** `PruneReleaseLookupAsync` materialises candidate rows client-side, because SQLite's EF Core provider cannot reliably translate `DateTimeOffset` comparisons server-side. On a very large table that is a large read in one pass. It is recorded against arb-zwk and deliberately not addressed here: the maintenance job runs on an interval, off the request path, and the table is bounded by a TTL that defaults to 14 days.

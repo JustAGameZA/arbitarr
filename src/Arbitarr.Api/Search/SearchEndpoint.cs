@@ -211,6 +211,7 @@ public static class SearchEndpoint
                     ex,
                     "Release lookup store write failed for {ReleaseCount} releases; the search still answered and the in-memory tier still resolves these links.",
                     filtered.Count);
+                // See docs/adr/0015-persist-release-lookup.md's "Degradation contract" table (write side).
             }
         }
 

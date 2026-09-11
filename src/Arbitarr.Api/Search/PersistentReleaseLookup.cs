@@ -90,6 +90,7 @@ public sealed class PersistentReleaseLookup : IReleaseLookup
                 ex,
                 "Release lookup store failed for proxy guid {ProxyGuid}; answering as a miss.",
                 proxyGuid);
+            // See docs/adr/0015-persist-release-lookup.md's "Degradation contract" table (read side).
             return null;
         }
 
