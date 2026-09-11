@@ -12,7 +12,7 @@ namespace Arbitarr.Core.Tests;
 /// distinguish its four failure modes, because unreachable / TLS / auth / unexpected-shape have
 /// entirely different fixes and a single red "failed" makes the button decorative.
 ///
-/// Each of the four outcomes is pinned here separately — that is the point of the class. The
+/// Each of the five outcomes is pinned here separately — that is the point of the class. The
 /// address used throughout is 192.0.2.x (RFC 5737 documentation range), never a real host.
 /// </summary>
 public class SourceConnectivityProberTests
