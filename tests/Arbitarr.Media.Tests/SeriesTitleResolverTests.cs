@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Text;
 using Arbitarr.Core.Identity;
+using Arbitarr.Core.Media;
 using Arbitarr.Core.Sources.CircuitBreaker;
 using Arbitarr.Data;
 using Arbitarr.Data.Media;
@@ -77,12 +78,14 @@ public sealed class SeriesTitleResolverTests : IDisposable
         ArbitarrDbContext context,
         HttpMessageHandler handler,
         IMemoryCache? memo = null,
-        TimeSpan? lookupBudget = null) =>
+        TimeSpan? lookupBudget = null,
+        IArrInstanceEpoch? epoch = null) =>
         new(
             new SonarrCredentialProvider(new ArrInstanceRepository(context)),
             new StubHttpClientFactory(new HttpClient(handler)),
             new StubCircuitBreaker(),
             memo ?? NewMemo(),
+            epoch ?? new ArrInstanceEpoch(),
             lookupBudget);
 
     private static IdentityResolutionHints Hints(int? tvdbId = TvdbId) => new(tvdbId, TmdbId: null, Year: null);
@@ -278,6 +281,54 @@ public sealed class SeriesTitleResolverTests : IDisposable
         Assert.Equal(1, handler.RequestCount);
         Assert.Equal("One Piece", first?.PrimaryTitle);
         Assert.Equal("One Piece", second?.PrimaryTitle);
+    }
+
+    /// <summary>
+    /// arb-iiy: a memoised title is only true OF THE INSTANCE THAT ANSWERED IT. Repointing Sonarr at
+    /// a different server must not keep serving the previous one's answer for the rest of
+    /// <see cref="SeriesTitleResolver.MemoTtl"/>.
+    /// </summary>
+    /// <remarks>
+    /// The two Sonarrs answer DIFFERENT titles for the same tvdbid, which is what makes the
+    /// assertion bite: a resolver still keyed on the tvdbid alone returns instance A's title here,
+    /// and the per-host request counts say why — B was never asked. Both counts are asserted, so
+    /// this cannot pass by nothing having happened: A's count proves the memo was really populated
+    /// from A before the repoint, and B's proves the second resolve reached B rather than the memo.
+    /// No clock is moved, so the entry from A is still WELL WITHIN its TTL when B is asked.
+    /// </remarks>
+    [Fact]
+    public async Task Asks_the_new_sonarr_after_a_repoint_within_the_memo_ttl()
+    {
+        await using var context = CreateContext();
+        var epoch = new ArrInstanceEpoch();
+        var repository = new ArrInstanceRepository(context, timeProvider: null, epoch);
+
+        const string InstanceA = "http://192.0.2.21:8989/";
+        const string InstanceB = "http://192.0.2.22:8989/";
+
+        var handler = new PerHostHandler(
+            ("192.0.2.21", EpisodeFeed("One Piece")),
+            ("192.0.2.22", EpisodeFeed("Bleach")));
+
+        // One memo and one resolver across the repoint, exactly as the singleton cache and a
+        // re-resolved scoped resolver behave in production.
+        var memo = NewMemo();
+
+        await repository.SetAsync(InstanceA, ApiKey, CancellationToken.None);
+        var fromA = await BuildWithHandler(context, handler, memo, epoch: epoch)
+            .ResolveAsync("92", Hints(), CancellationToken.None);
+
+        await repository.SetAsync(InstanceB, ApiKey, CancellationToken.None);
+        var fromB = await BuildWithHandler(context, handler, memo, epoch: epoch)
+            .ResolveAsync("92", Hints(), CancellationToken.None);
+
+        Assert.Equal("One Piece", fromA?.PrimaryTitle);
+        Assert.Equal("Bleach", fromB?.PrimaryTitle);
+
+        // The positive control on both sides: each instance was asked exactly once. Without the
+        // epoch in the memo key, B's count is 0 and fromB reads "One Piece".
+        Assert.Equal(1, handler.CountFor("192.0.2.21"));
+        Assert.Equal(1, handler.CountFor("192.0.2.22"));
     }
 
     /// <summary>
@@ -562,6 +613,36 @@ public sealed class SeriesTitleResolverTests : IDisposable
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(_bodies.Dequeue(), Encoding.UTF8, "application/json"),
+            });
+        }
+    }
+
+    /// <summary>
+    /// arb-iiy: answers according to WHICH Sonarr was asked, and counts the requests per host — so a
+    /// repoint test can say both what came back and which server produced it.
+    /// </summary>
+    private sealed class PerHostHandler : HttpMessageHandler
+    {
+        private readonly Dictionary<string, string> _bodiesByHost;
+        private readonly Dictionary<string, int> _countsByHost = new(StringComparer.OrdinalIgnoreCase);
+
+        public PerHostHandler(params (string Host, string Body)[] hosts) =>
+            _bodiesByHost = hosts.ToDictionary(h => h.Host, h => h.Body, StringComparer.OrdinalIgnoreCase);
+
+        public int CountFor(string host) => _countsByHost.TryGetValue(host, out var count) ? count : 0;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var host = request.RequestUri!.Host;
+            _countsByHost[host] = CountFor(host) + 1;
+
+            // An unexpected host is a FAILED assertion rather than an empty feed: a silent 200 with
+            // no episodes would degrade to "no title", which reads like the memo behaving correctly.
+            Assert.True(_bodiesByHost.ContainsKey(host), $"Unexpected Sonarr host asked: {host}");
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(_bodiesByHost[host], Encoding.UTF8, "application/json"),
             });
         }
     }

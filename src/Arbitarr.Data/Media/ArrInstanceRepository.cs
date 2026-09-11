@@ -1,3 +1,4 @@
+using Arbitarr.Core.Media;
 using Arbitarr.Data.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -66,11 +67,24 @@ public sealed class ArrInstanceRepository
 
     private readonly ArbitarrDbContext _dbContext;
     private readonly TimeProvider _timeProvider;
+    private readonly IArrInstanceEpoch _epoch;
 
-    public ArrInstanceRepository(ArbitarrDbContext dbContext, TimeProvider? timeProvider = null)
+    /// <summary>
+    /// arb-iiy: <paramref name="epoch"/> is bumped after a successful <see cref="SetAsync"/> so
+    /// caches keyed on the resolved instance (<c>SeriesTitleResolver</c>'s tvdbid-to-title memo)
+    /// stop serving the previous server's answers. It defaults to a FRESH INSTANCE rather than to a
+    /// shared one, so a test that constructs this repository directly and never repoints gets a
+    /// private counter instead of process-wide state; production passes the DI singleton, which is
+    /// the only instance the resolver also sees.
+    /// </summary>
+    public ArrInstanceRepository(
+        ArbitarrDbContext dbContext,
+        TimeProvider? timeProvider = null,
+        IArrInstanceEpoch? epoch = null)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _epoch = epoch ?? new ArrInstanceEpoch();
     }
 
     /// <summary>
@@ -115,6 +129,16 @@ public sealed class ArrInstanceRepository
     /// the field from an edit must not clear it. <see cref="ClearAsync"/> is the one way to
     /// un-configure a key, kept explicit rather than folded in here, where conflating the two would
     /// make an ordinary edit that omits the field silently destroy the operator's configuration.</para>
+    ///
+    /// <para><b>arb-iiy: THE EPOCH IS BUMPED AFTER THE WRITE SUCCEEDS, and only then.</b> Caches
+    /// keyed on the resolved instance — <c>SeriesTitleResolver</c>'s tvdbid-to-title memo — fold
+    /// <see cref="IArrInstanceEpoch.Current"/> into their keys, so repointing Sonarr at a different
+    /// server makes the previous server's answers unreachable instead of serving them for the rest
+    /// of the memo TTL. Placing the bump after <c>SaveChangesAsync</c> is what keeps a REJECTED
+    /// input (a bad URL, a blank key) from discarding a cache that is still correct: nothing was
+    /// written, so nothing has gone stale. The bump lives here rather than at the admin endpoint
+    /// because this is the single write path for the instance, and a second write site added later
+    /// would otherwise have to remember to invalidate.</para>
     /// </summary>
     public async Task SetAsync(string baseUrl, string? apiKey, CancellationToken cancellationToken)
     {
@@ -132,6 +156,11 @@ public sealed class ArrInstanceRepository
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+
+        // arb-iiy: after the write, never before — see this method's doc. A rejected input threw
+        // above and never reaches here, so a bump is evidence that the stored instance really did
+        // change.
+        _epoch.Bump();
     }
 
     /// <summary>
