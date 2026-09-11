@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using Arbitarr.Core.Ai;
 using Arbitarr.Core.Releases;
 using Arbitarr.Core.Sources.CircuitBreaker;
 
@@ -120,7 +121,21 @@ public sealed class OllamaClient : IOllamaClient
                 using var response = await _httpClient
                     .PostAsJsonAsync(chatUri, request, JsonOptions, timeoutCts.Token)
                     .ConfigureAwait(false);
-                response.EnsureSuccessStatusCode();
+
+                // arb-1rr: NOT EnsureSuccessStatusCode(). That throws with the body already
+                // discarded, so a 400 reached the circuit breaker as a bare
+                // "HttpRequestException (400 BadRequest)" and the operator never saw WHICH of the
+                // many 400s Ollama serves it was (a rejected option, an unknown model, a schema it
+                // would not accept). Ollama puts that reason in the response body and nowhere else,
+                // so it is read here, while the response is still open, and carried on the
+                // exception. SanitizedErrorDescription decides what of it may reach an
+                // unauthenticated surface; this layer's job is only to stop throwing it away.
+                if (!response.IsSuccessStatusCode)
+                {
+                    throw await OllamaRequestException
+                        .FromResponseAsync(response, timeoutCts.Token)
+                        .ConfigureAwait(false);
+                }
 
                 var payload = await response.Content
                     .ReadFromJsonAsync<OllamaChatResponse>(JsonOptions, timeoutCts.Token)

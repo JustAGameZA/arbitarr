@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Authentication;
+using System.Text.Json;
 using Arbitarr.Core.Ai;
 using Xunit;
 
@@ -34,6 +35,12 @@ public sealed class OllamaConnectivityProberTests
     /// <summary>The body a healthy Ollama returns from <c>GET /api/tags</c>.</summary>
     private const string TagsBody = """{"models":[{"name":"qwen2.5:7b-instruct-q4_K_M","size":4700000000}]}""";
 
+    /// <summary>
+    /// arb-1rr: the model the helpers send the <c>/api/chat</c> half of the probe with. A public tag
+    /// name, not a secret.
+    /// </summary>
+    private const string ProbeModel = "qwen2.5:7b-instruct-q4_K_M";
+
     [Fact]
     public async Task A_model_list_response_is_reported_as_ok()
     {
@@ -58,10 +65,12 @@ public sealed class OllamaConnectivityProberTests
     [Fact]
     public async Task The_probe_asks_for_the_tags_endpoint()
     {
+        // arb-1rr: the FIRST request. A successful probe now also posts to /api/chat, and this
+        // assertion is about the tags request specifically.
         Uri? requested = null;
         await ProbeAsync(request =>
         {
-            requested = request.RequestUri;
+            requested ??= request.RequestUri;
             return Json(HttpStatusCode.OK, TagsBody);
         });
 
@@ -80,11 +89,13 @@ public sealed class OllamaConnectivityProberTests
     [Fact]
     public async Task A_base_path_is_preserved_rather_than_replaced()
     {
+        // arb-1rr: the FIRST request, not the last — a successful probe now makes a second one to
+        // /api/chat, and capturing unconditionally would assert against that instead.
         Uri? requested = null;
         await ProbeAsync(
             request =>
             {
-                requested = request.RequestUri;
+                requested ??= request.RequestUri;
                 return Json(HttpStatusCode.OK, TagsBody);
             },
             baseUrl: "http://proxy.example.com/ollama");
@@ -215,7 +226,7 @@ public sealed class OllamaConnectivityProberTests
         var prober = new OllamaConnectivityProber(client, TimeSpan.FromSeconds(30));
 
         using var caller = new CancellationTokenSource();
-        var probing = prober.ProbeAsync(BaseUrl, caller.Token);
+        var probing = prober.ProbeAsync(BaseUrl, cancellationToken: caller.Token);
         await caller.CancelAsync();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => probing);
@@ -239,6 +250,13 @@ public sealed class OllamaConnectivityProberTests
             await ProbeAsync(_ => throw new HttpRequestException(
                 "handshake", new AuthenticationException("bad certificate"))),
             await ProbeAsync(_ => Json(HttpStatusCode.OK, "<html>login</html>")),
+
+            // arb-1rr's two. Tags succeeds in both; what differs is whether there was a model to
+            // post and whether Ollama accepted it.
+            await ProbeAsync(RespondPerEndpoint(
+                tags: Json(HttpStatusCode.OK, TagsBody),
+                chat: () => Json(HttpStatusCode.BadRequest, ChatErrorBody))),
+            await ProbeAsync(_ => Json(HttpStatusCode.OK, TagsBody), model: null),
         };
 
         Assert.Equal(outcomes.Count, outcomes.Distinct().Count());
@@ -376,6 +394,238 @@ public sealed class OllamaConnectivityProberTests
         Assert.Contains(result.Outcome, Enum.GetValues<OllamaProbeOutcome>());
     }
 
+    // ---------------------------------------------------------------------------------------
+    // arb-1rr: the /api/chat half. The tags probe confirms the ADDRESS; these pin that the probe
+    // also confirms the thing at that address will actually classify — the gap that let the button
+    // report "Connected successfully" while every real call failed 400.
+    // ---------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// The chat probe runs only AFTER tags succeeds, and it is the real <c>/api/chat</c> endpoint
+    /// that is posted to — not a second tags call.
+    /// </summary>
+    [Fact]
+    public async Task A_successful_tags_probe_is_followed_by_a_post_to_the_chat_endpoint()
+    {
+        var seen = new List<(string Method, string Path)>();
+        await ProbeForResultAsync(request =>
+        {
+            seen.Add((request.Method.Method, request.RequestUri!.AbsolutePath));
+            return request.RequestUri!.AbsolutePath.EndsWith("/api/chat", StringComparison.Ordinal)
+                ? Json(HttpStatusCode.OK, ChatOkBody)
+                : Json(HttpStatusCode.OK, TagsBody);
+        });
+
+        Assert.Equal(
+            new[] { ("GET", "/api/tags"), ("POST", "/api/chat") },
+            seen);
+    }
+
+    /// <summary>
+    /// The chat URI preserves a base path exactly as the tags URI does — an Ollama behind a reverse
+    /// proxy at <c>/ollama</c> must be probed at <c>/ollama/api/chat</c>. A <c>new Uri(base,
+    /// "/api/chat")</c> would silently root-anchor and drop the prefix, and the probe would report a
+    /// rejection from an address it was never asked about.
+    /// </summary>
+    [Fact]
+    public async Task The_chat_request_preserves_a_base_path()
+    {
+        var paths = new List<string>();
+        await ProbeForResultAsync(
+            request =>
+            {
+                paths.Add(request.RequestUri!.AbsolutePath);
+                return request.RequestUri!.AbsolutePath.EndsWith("/api/chat", StringComparison.Ordinal)
+                    ? Json(HttpStatusCode.OK, ChatOkBody)
+                    : Json(HttpStatusCode.OK, TagsBody);
+            },
+            baseUrl: "http://proxy.example.com/ollama");
+
+        Assert.Equal(new[] { "/ollama/api/tags", "/ollama/api/chat" }, paths);
+    }
+
+    /// <summary>
+    /// <b>A FAILED TAGS PROBE MUST NOT POST.</b> The address is already known to be wrong, so paying
+    /// for a model load against it would be pure cost, and a chat outcome from an address that does
+    /// not answer would misdirect the operator. Asserted by COUNTING requests: "the outcome was
+    /// Unreachable" would still pass if the chat request had been sent and then ignored.
+    /// </summary>
+    [Fact]
+    public async Task A_failed_tags_probe_sends_no_chat_request()
+    {
+        var requests = 0;
+        var result = await ProbeForResultAsync(_ =>
+        {
+            requests++;
+            return Json(HttpStatusCode.OK, "<html>login</html>");
+        });
+
+        Assert.Equal(OllamaProbeOutcome.UnexpectedResponse, result.Outcome);
+        Assert.Equal(1, requests);
+    }
+
+    /// <summary>
+    /// With no model configured there is nothing to post, so the chat half is skipped — and the
+    /// result says so rather than claiming an Ok it did not earn. Counted, for the same reason as
+    /// above.
+    /// </summary>
+    [Fact]
+    public async Task No_configured_model_reports_the_tags_only_outcome_and_sends_no_chat_request()
+    {
+        var requests = 0;
+        var result = await ProbeForResultAsync(
+            _ =>
+            {
+                requests++;
+                return Json(HttpStatusCode.OK, TagsBody);
+            },
+            model: null);
+
+        Assert.Equal(OllamaProbeOutcome.OkNoModelConfigured, result.Outcome);
+        Assert.Equal(1, requests);
+        // The model list still comes back: the address WAS confirmed, and the picker is how the
+        // operator fixes the missing model.
+        Assert.Equal(new[] { "qwen2.5:7b-instruct-q4_K_M" }, result.Models);
+    }
+
+    /// <summary>
+    /// The request is shaped like a real classification — the selected model, <c>stream:false</c>,
+    /// and the shared <see cref="VerdictSchema"/> <c>format</c>. Those are the fields Ollama
+    /// validates, so a probe missing any of them could pass where a real call fails.
+    /// </summary>
+    [Fact]
+    public async Task The_chat_request_carries_the_model_stream_false_and_the_verdict_schema()
+    {
+        string? body = null;
+        await ProbeForResultAsync(request =>
+        {
+            if (request.RequestUri!.AbsolutePath.EndsWith("/api/chat", StringComparison.Ordinal))
+            {
+                body = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+                return Json(HttpStatusCode.OK, ChatOkBody);
+            }
+
+            return Json(HttpStatusCode.OK, TagsBody);
+        });
+
+        Assert.NotNull(body);
+        using var sent = JsonDocument.Parse(body!);
+        var root = sent.RootElement;
+
+        Assert.Equal(ProbeModel, root.GetProperty("model").GetString());
+        Assert.False(root.GetProperty("stream").GetBoolean());
+
+        // The format is the SHARED constant, not a copy: comparing against the parsed schema is what
+        // fails if the prober ever grows its own divergent version.
+        using var expected = JsonDocument.Parse(VerdictSchema.Object);
+        Assert.Equal(
+            JsonSerializer.Serialize(expected.RootElement),
+            JsonSerializer.Serialize(root.GetProperty("format")));
+    }
+
+    /// <summary>
+    /// <b>THE BEAD'S CENTRAL CASE.</b> Tags answers healthily and the chat request is rejected 400 —
+    /// the exact shape that reported "Connected successfully" before arb-1rr. It must now be its own
+    /// outcome, and it must carry the reason Ollama actually gave.
+    /// </summary>
+    [Fact]
+    public async Task A_rejected_chat_request_is_reported_with_the_upstream_reason()
+    {
+        var result = await ProbeForResultAsync(RespondPerEndpoint(
+            tags: Json(HttpStatusCode.OK, TagsBody),
+            chat: () => Json(HttpStatusCode.BadRequest, ChatErrorBody)));
+
+        Assert.Equal(OllamaProbeOutcome.ChatRejected, result.Outcome);
+        Assert.Contains("400", result.ChatError, StringComparison.Ordinal);
+        // The upstream reason itself, which is the whole point: without it the operator learns only
+        // "something was rejected".
+        Assert.Contains("missing unit in duration", result.ChatError, StringComparison.Ordinal);
+        // The model list survives the chat failure — the address was confirmed, and the picker is
+        // how the operator changes the model this reason is complaining about.
+        Assert.Equal(new[] { "qwen2.5:7b-instruct-q4_K_M" }, result.Models);
+    }
+
+    /// <summary>
+    /// <b>THE TOPOLOGY GUARANTEE, at the prober.</b> <see cref="OllamaProbeResult.ChatError"/>
+    /// reaches an operator-facing response, so a host or a credential echoed in Ollama's error body
+    /// must not ride along. Both halves are POSITIVE CONTROLS: each planted value is first shown to
+    /// be findable by the very search that then asserts its absence, so neither assertion can pass
+    /// vacuously against text that never contained it.
+    /// </summary>
+    [Fact]
+    public async Task A_rejected_chat_request_scrubs_a_planted_host_and_key_from_the_reason()
+    {
+        const string plantedHost = "ollama.internal.example";
+        const string plantedKey = "SUPERSECRETVALUE";
+        var planted = $$"""{"error":"upstream {{plantedHost}}:11434 refused apikey={{plantedKey}}"}""";
+
+        // Detectability: these searches genuinely find these strings when they ARE present, so the
+        // absence assertions below are properties rather than searches that cannot see.
+        Assert.Contains(plantedHost, planted, StringComparison.Ordinal);
+        Assert.Contains(plantedKey, planted, StringComparison.Ordinal);
+
+        var result = await ProbeForResultAsync(RespondPerEndpoint(
+            tags: Json(HttpStatusCode.OK, TagsBody),
+            chat: () => Json(HttpStatusCode.BadRequest, planted)));
+
+        Assert.Equal(OllamaProbeOutcome.ChatRejected, result.Outcome);
+        Assert.DoesNotContain(plantedHost, result.ChatError, StringComparison.Ordinal);
+        Assert.DoesNotContain(plantedKey, result.ChatError, StringComparison.Ordinal);
+        // And the scrubbing really ran, rather than the whole excerpt having been dropped: the
+        // redaction token is present, which is what distinguishes "scrubbed" from "never arrived".
+        Assert.Contains(
+            Arbitarr.Core.Diagnostics.SanitizedErrorDescription.Replacement,
+            result.ChatError,
+            StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Every outcome other than <see cref="OllamaProbeOutcome.ChatRejected"/> carries an EMPTY
+    /// reason. Asserted per result, because "none of them collectively" would still pass if one
+    /// carried text and another did not.
+    /// </summary>
+    [Fact]
+    public async Task Only_a_rejected_chat_request_carries_a_reason()
+    {
+        var results = new List<OllamaProbeResult>
+        {
+            await ProbeForResultAsync(_ => Json(HttpStatusCode.OK, TagsBody)),
+            await ProbeForResultAsync(_ => Json(HttpStatusCode.OK, TagsBody), model: null),
+            await ProbeForResultAsync(_ => Json(HttpStatusCode.OK, "<html>login</html>")),
+            await ProbeForResultAsync(_ => throw new HttpRequestException(
+                "refused", new SocketException((int)SocketError.ConnectionRefused))),
+        };
+
+        Assert.All(results, r =>
+        {
+            Assert.NotEqual(OllamaProbeOutcome.ChatRejected, r.Outcome);
+            Assert.Equal(string.Empty, r.ChatError);
+        });
+        Assert.True(results.Select(r => r.Outcome).Distinct().Count() >= 3);
+    }
+
+    /// <summary>The body a healthy Ollama returns from a <c>POST /api/chat</c>.</summary>
+    private const string ChatOkBody =
+        """{"message":{"content":"{\"verdict\":\"accept\",\"confidence\":0.9}"}}""";
+
+    /// <summary>
+    /// The 400 body that motivated this bead — Ollama's real wording when <c>keep_alive</c> reached
+    /// it as a unit-less duration STRING.
+    /// </summary>
+    private const string ChatErrorBody = """{"error":"time: missing unit in duration \"-1\""}""";
+
+    /// <summary>
+    /// Answers <c>/api/chat</c> and <c>/api/tags</c> differently, which is what the two-request
+    /// probe needs to model a healthy address with an unhappy model. The chat response is built per
+    /// call because an <see cref="HttpResponseMessage"/> cannot be served twice.
+    /// </summary>
+    private static Func<HttpRequestMessage, HttpResponseMessage> RespondPerEndpoint(
+        HttpResponseMessage tags,
+        Func<HttpResponseMessage> chat) =>
+        request => request.RequestUri!.AbsolutePath.EndsWith("/api/chat", StringComparison.Ordinal)
+            ? chat()
+            : tags;
+
     private static HttpResponseMessage Json(HttpStatusCode status, string body) =>
         new(status) { Content = new StringContent(body) };
 
@@ -383,20 +633,30 @@ public sealed class OllamaConnectivityProberTests
     private static async Task<OllamaProbeOutcome> ProbeAsync(
         Func<HttpRequestMessage, HttpResponseMessage> respond,
         string baseUrl = BaseUrl,
-        TimeSpan? timeout = null) =>
-        (await ProbeForResultAsync(respond, baseUrl, timeout)).Outcome;
+        TimeSpan? timeout = null,
+        string? model = ProbeModel) =>
+        (await ProbeForResultAsync(respond, baseUrl, timeout, model)).Outcome;
 
-    /// <summary>Drives the prober and returns the whole result, for the #112 model-name tests.</summary>
+    /// <summary>
+    /// Drives the prober and returns the whole result, for the #112 model-name tests.
+    ///
+    /// <para>arb-1rr: <paramref name="model"/> defaults to <see cref="ProbeModel"/> so the helper
+    /// keeps modelling a CONFIGURED instance, which is what every test written before this bead
+    /// assumed. The stub answers both requests (the delegate sees a second call for
+    /// <c>/api/chat</c>), so a test that asserts <see cref="OllamaProbeOutcome.Ok"/> still means
+    /// "both halves passed". Pass null explicitly to model an unconfigured instance.</para>
+    /// </summary>
     private static async Task<OllamaProbeResult> ProbeForResultAsync(
         Func<HttpRequestMessage, HttpResponseMessage> respond,
         string baseUrl = BaseUrl,
-        TimeSpan? timeout = null)
+        TimeSpan? timeout = null,
+        string? model = ProbeModel)
     {
         using var handler = new StubHandler((request, _) => Task.FromResult(respond(request)));
         using var client = new HttpClient(handler);
         var prober = new OllamaConnectivityProber(client, timeout ?? TimeSpan.FromSeconds(5));
 
-        return await prober.ProbeAsync(baseUrl);
+        return await prober.ProbeAsync(baseUrl, model);
     }
 
     /// <summary>

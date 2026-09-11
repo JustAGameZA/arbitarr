@@ -30,20 +30,35 @@ export interface OllamaConfig {
 }
 
 /**
- * The four outcomes of `POST /api/admin/ai/ollama/test`, mirroring the server's
- * closed `OllamaProbeOutcome` enum.
+ * The outcomes of `POST /api/admin/ai/ollama/test`, mirroring the server's closed
+ * `OllamaProbeOutcome` enum.
  *
- * CLOSED ON PURPOSE, on both sides. The server enum has no string field, so no
- * probe result can carry text derived from the response body, an exception
+ * CLOSED ON PURPOSE, on both sides. The server enum has no string field, so the
+ * probe's WORDING can never be text derived from the response body, an exception
  * message, or the configured address; this union is the client half of the same
- * guarantee.
+ * guarantee. (arb-1rr adds one field of upstream text — `chatError` below — but
+ * beside the outcome, never inside it, exactly as `models` already was.)
  *
- * FOUR, NOT FIVE — there is no `AuthenticationFailed` here, and adding one to
- * "match" the source probe would be wrong: Ollama ships with no authentication
- * and Arbitarr sends it no credential, so that outcome could never be produced
- * and offering it would send an operator hunting for a key that does not exist.
+ * NO `AuthenticationFailed` — and adding one to "match" the source probe would be
+ * wrong: Ollama ships with no authentication and Arbitarr sends it no credential,
+ * so that outcome could never be produced and offering it would send an operator
+ * hunting for a key that does not exist.
+ *
+ * arb-1rr added the last two. The probe used to check `GET /api/tags` alone, so it
+ * reported success whenever the ADDRESS was right — which is how it could show
+ * "Connected successfully" while every real classification failed 400. It now also
+ * posts a `/api/chat` request: `ChatRejected` is "the address is right and the
+ * classification request was refused", and `OkNoModelConfigured` is "the address
+ * is right and there was no model to test with", which is deliberately NOT a
+ * success.
  */
-export type OllamaProbeOutcome = 'Ok' | 'Unreachable' | 'TlsFailure' | 'UnexpectedResponse';
+export type OllamaProbeOutcome =
+  | 'Ok'
+  | 'Unreachable'
+  | 'TlsFailure'
+  | 'UnexpectedResponse'
+  | 'ChatRejected'
+  | 'OkNoModelConfigured';
 
 /** AdminAiEndpoints.cs — OllamaTestResponse. */
 export interface OllamaTestResult {
@@ -68,6 +83,21 @@ export interface OllamaTestResult {
    * a picker, never as prose.
    */
   models: string[];
+  /**
+   * arb-1rr: on a `ChatRejected` outcome, the reason Ollama gave for refusing the
+   * test classification request; empty string for every other outcome (present,
+   * never absent, so "no rejection" is not ambiguous with "field missing").
+   *
+   * This is the ONE piece of upstream text on this response, and it is admitted
+   * because "Ollama rejected the request" without the reason is the exact
+   * non-answer that made the old button untrustworthy. It rides in its own field
+   * rather than inside `message` for the same reason `models` does — the wording
+   * stays derived from the closed outcome alone.
+   *
+   * Already scrubbed server-side (`SanitizedErrorDescription`): no host, address
+   * or credential survives into it. Render it as-is; do not parse it.
+   */
+  chatError: string;
 }
 
 /**

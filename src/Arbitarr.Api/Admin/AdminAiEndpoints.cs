@@ -57,7 +57,19 @@ public sealed record UpdateOllamaConfigRequest(string? BaseUrl, string? Model = 
 /// <paramref name="Message"/> on purpose: the wording stays derived from the closed enum alone,
 /// while these names are data the UI renders as choices. Never interpolated into the message.
 /// </param>
-public sealed record OllamaTestResponse(bool Success, string Outcome, string Message, IReadOnlyList<string> Models);
+/// <param name="ChatError">
+/// arb-1rr: on <c>ChatRejected</c>, the scrubbed reason Ollama gave for refusing the classification
+/// request; empty for every other outcome. A SEPARATE FIELD from <paramref name="Message"/> for the
+/// same reason <paramref name="Models"/> is one — the wording stays derived from the closed outcome
+/// alone, while this is upstream detail the UI renders beside it. Already passed through
+/// <c>SanitizedErrorDescription</c>, so it carries no host, address or credential.
+/// </param>
+public sealed record OllamaTestResponse(
+    bool Success,
+    string Outcome,
+    string Message,
+    IReadOnlyList<string> Models,
+    string ChatError = "");
 
 /// <summary>
 /// #89: the admin-gated AI backend surface — read, write and probe the Ollama base URL.
@@ -212,17 +224,29 @@ public static class AdminAiEndpoints
     /// </summary>
     private static async Task<IResult> TestOllamaAsync(
         OllamaBaseUrlResolver resolver,
+        OllamaModelResolver modelResolver,
         OllamaConnectivityProber prober,
         CancellationToken cancellationToken)
     {
         var baseUrl = await resolver.GetAsync(cancellationToken);
-        var result = await prober.ProbeAsync(baseUrl, cancellationToken);
+
+        // arb-1rr: the MODEL is resolved here too, because the probe now posts a real
+        // classification-shaped request and needs the model the classifier would use. Read through
+        // the same resolver OllamaClient reads, so the button cannot test a different model from
+        // the one that would actually run.
+        var model = await modelResolver.GetAsync(cancellationToken);
+
+        var result = await prober.ProbeAsync(baseUrl, model, cancellationToken);
 
         return Results.Ok(new OllamaTestResponse(
+            // Ok ALONE is success. OkNoModelConfigured deliberately is not: the address was
+            // confirmed and classification was not tested, and reporting that as a success is the
+            // exact overclaim arb-1rr was filed about.
             Success: result.Outcome == OllamaProbeOutcome.Ok,
             Outcome: result.Outcome.ToString(),
             Message: DescribeOutcome(result.Outcome),
-            Models: result.Models));
+            Models: result.Models,
+            ChatError: result.ChatError));
     }
 
     /// <summary>
@@ -232,8 +256,14 @@ public static class AdminAiEndpoints
     /// </summary>
     private static string DescribeOutcome(OllamaProbeOutcome outcome) => outcome switch
     {
+        // arb-1rr: this sentence now covers BOTH halves, and says so. It used to claim success on
+        // the model list alone, which is how it could read green while every classification failed.
         OllamaProbeOutcome.Ok =>
-            "Connected successfully and Ollama answered with its model list.",
+            "Connected successfully: Ollama answered with its model list and accepted a test classification request.",
+        OllamaProbeOutcome.OkNoModelConfigured =>
+            "Connected successfully and Ollama answered with its model list, but no model is configured, so the classification request itself was not tested. Choose a model and test again.",
+        OllamaProbeOutcome.ChatRejected =>
+            "Ollama is reachable and answered with its model list, but it rejected the test classification request — so classification is currently failing even though the address is correct. The reason it gave is shown below; check that the configured model is one this instance has pulled.",
         OllamaProbeOutcome.Unreachable =>
             "Could not reach Ollama: no response from that address before the timeout. Check the base URL, the port, and that Ollama is running.",
         OllamaProbeOutcome.TlsFailure =>
