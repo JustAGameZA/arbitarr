@@ -27,7 +27,7 @@ namespace Arbitarr.Core.Diagnostics;
 /// three ways — by TYPE (only this exception; every other one still gets type name and status and
 /// nothing else, so no existing path changes), by LENGTH (capped at capture, see
 /// <see cref="OllamaRequestException.MaxExcerptLength"/>), and by CONTENT
-/// (<see cref="ScrubForPublication"/> below).</para>
+/// (<see cref="ScrubForPublication(string?)"/> below).</para>
 ///
 /// <para><b>The credential arms are ONE implementation, shared with the log cleanser (arb-6vf).</b>
 /// They live in <see cref="CredentialPatterns"/> in this same project, and both this type and
@@ -66,7 +66,7 @@ public static partial class SanitizedErrorDescription
     /// <summary>
     /// arb-hihr: substituted for the WHOLE description when scrubbing could not complete within
     /// <see cref="CredentialPatterns.MatchTimeoutMilliseconds"/>. See the remarks on
-    /// <see cref="ScrubForPublication"/> for why a fixed placeholder — never the unscrubbed excerpt,
+    /// <see cref="ScrubForPublication(string?)"/> for why a fixed placeholder — never the unscrubbed excerpt,
     /// and never a partially-scrubbed one — is the only safe degrade on this unauthenticated path.
     ///
     /// <para><c>public</c>, like <see cref="Replacement"/> above, because call sites and tests
@@ -75,21 +75,31 @@ public static partial class SanitizedErrorDescription
     /// </summary>
     public const string TimeoutPlaceholder = "<redaction timed out>";
 
-    /// <summary>
-    /// arb-hihr: test-only seam forcing <c>RegexMatchTimeoutException</c> deterministically.
-    /// The nine local arms cannot have their compiled <c>matchTimeoutMilliseconds</c> swapped at
-    /// runtime — it is a compile-time <c>GeneratedRegexAttribute</c> argument — so a test cannot
-    /// otherwise force a timeout without relying on an input that happens to exceed 250ms on the
-    /// machine running the test. <c>false</c> (the production default) means scrub normally.
-    ///
-    /// <para><c>public</c> for the same reason as <see cref="TimeoutPlaceholder"/>: no
-    /// <c>InternalsVisibleTo</c> reaches the test assembly. Test-only surface kept as narrow as
-    /// possible — a single boolean, reset in a <c>finally</c> by every test that sets it.</para>
-    /// </summary>
-    public static bool ThrowTimeoutForTesting;
-
     /// <summary>Describes <paramref name="ex"/> without echoing its message text.</summary>
-    public static string Describe(Exception ex) => ex switch
+    public static string Describe(Exception ex) => Describe(ex, timeoutProbe: null);
+
+    /// <summary>
+    /// arb-hihr: test-only overload. <paramref name="timeoutProbe"/>, when supplied, runs BEFORE
+    /// the regex pipeline in <see cref="ScrubForPublicationCore"/> and may throw
+    /// <see cref="RegexMatchTimeoutException"/> to force the fail-closed path deterministically.
+    ///
+    /// <para><b>Why a parameter rather than a mutable static.</b> The nine local arms cannot have
+    /// their compiled <c>matchTimeoutMilliseconds</c> swapped at runtime — it is a compile-time
+    /// <c>GeneratedRegexAttribute</c> argument — so a test cannot otherwise force a timeout without
+    /// relying on an input that happens to exceed 250ms on the machine running the test. A mutable
+    /// static field was tried first and rejected: <c>ProductionProcessGlobalStateTests</c> (arb-0hd0)
+    /// requires every mutable static in a production assembly to be named in an allow-list with a
+    /// reason, and a test-only toggle is exactly the process-global hazard that gate exists to catch
+    /// — flipped by one test, it would affect every concurrent caller of <see cref="Describe(Exception)"/>
+    /// in the same process, including a real request being scrubbed at the same moment. A parameter
+    /// carries no such risk: it is local to one call.</para>
+    ///
+    /// <para><c>public</c>, not <c>internal</c>, because there is no <c>InternalsVisibleTo</c> from
+    /// this project to the test assembly (see <c>CredentialPatternsCrossSinkTests</c>'s remarks on
+    /// why the public surface is used instead). <paramref name="timeoutProbe"/> is <c>null</c> on
+    /// every production call site — <see cref="Describe(Exception)"/> above is what they call.</para>
+    /// </summary>
+    public static string Describe(Exception ex, Func<string, string>? timeoutProbe) => ex switch
     {
         // Must precede the HttpRequestException arm below: OllamaRequestException derives from it,
         // and a switch arm matches the FIRST pattern that fits. Reordering these silently drops the
@@ -97,7 +107,8 @@ public static partial class SanitizedErrorDescription
         OllamaRequestException { StatusCode: { } ollamaStatus } ollama =>
             AppendExcerpt(
                 $"{nameof(System.Net.Http.HttpRequestException)} ({(int)ollamaStatus} {ollamaStatus})",
-                ollama.BodyExcerpt),
+                ollama.BodyExcerpt,
+                timeoutProbe),
         System.Net.Http.HttpRequestException { StatusCode: { } statusCode } =>
             $"{nameof(System.Net.Http.HttpRequestException)} ({(int)statusCode} {statusCode})",
         _ => ex.GetType().Name,
@@ -115,9 +126,9 @@ public static partial class SanitizedErrorDescription
     /// DASHBOARD. Removing this call because "it is already clean" would make the dashboard's
     /// safety depend on a property of a different type in a different file.</para>
     /// </summary>
-    private static string AppendExcerpt(string description, string excerpt)
+    private static string AppendExcerpt(string description, string excerpt, Func<string, string>? timeoutProbe)
     {
-        var scrubbed = ScrubForPublication(excerpt);
+        var scrubbed = ScrubForPublication(excerpt, timeoutProbe);
 
         return string.IsNullOrWhiteSpace(scrubbed)
             ? description
@@ -151,7 +162,14 @@ public static partial class SanitizedErrorDescription
     /// caller's/handler's responsibility, per this type's existing contract that Core never writes to
     /// the logger itself.</para>
     /// </summary>
-    internal static string ScrubForPublication(string? excerpt)
+    internal static string ScrubForPublication(string? excerpt) => ScrubForPublication(excerpt, timeoutProbe: null);
+
+    /// <summary>
+    /// arb-hihr: <paramref name="timeoutProbe"/> is the test seam described on
+    /// <see cref="Describe(Exception, Func{string, string}?)"/> — <c>null</c> in production, where
+    /// this overload behaves exactly as <see cref="ScrubForPublication(string?)"/> always has.
+    /// </summary>
+    internal static string ScrubForPublication(string? excerpt, Func<string, string>? timeoutProbe)
     {
         if (string.IsNullOrWhiteSpace(excerpt))
         {
@@ -160,7 +178,7 @@ public static partial class SanitizedErrorDescription
 
         try
         {
-            return ScrubForPublicationCore(excerpt);
+            return ScrubForPublicationCore(excerpt, timeoutProbe);
         }
         catch (RegexMatchTimeoutException)
         {
@@ -168,14 +186,11 @@ public static partial class SanitizedErrorDescription
         }
     }
 
-    private static string ScrubForPublicationCore(string excerpt)
+    private static string ScrubForPublicationCore(string excerpt, Func<string, string>? timeoutProbe)
     {
-        if (ThrowTimeoutForTesting)
-        {
-            throw new RegexMatchTimeoutException("arb-hihr test seam: forced timeout.");
-        }
-
-        var text = excerpt;
+        // arb-hihr: runs the test-supplied probe first, which may throw RegexMatchTimeoutException
+        // to force the fail-closed path deterministically. Always null in production.
+        var text = timeoutProbe is null ? excerpt : timeoutProbe(excerpt);
 
         text = Url().Replace(text, Replacement);
 

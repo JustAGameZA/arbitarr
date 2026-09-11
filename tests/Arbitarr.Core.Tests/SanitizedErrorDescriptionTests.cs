@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.RegularExpressions;
 using Arbitarr.Core.Ai;
 using Arbitarr.Core.Diagnostics;
 using Xunit;
@@ -599,12 +600,16 @@ public sealed class SanitizedErrorDescriptionTests
     /// publish the unscrubbed (or partially-scrubbed) input when the regex pipeline times out. The
     /// nine local host/URL arms cannot have their compiled <c>matchTimeoutMilliseconds</c> swapped at
     /// runtime — it is baked into each arm's <c>GeneratedRegexAttribute</c> at compile time — so this
-    /// forces <c>RegexMatchTimeoutException</c> deterministically via the test seam
-    /// (<see cref="SanitizedErrorDescription.ThrowTimeoutForTesting"/>) rather than constructing an
-    /// input that happens to exceed 250ms on the machine running the test; the #212 review measured
-    /// only ~4.75ms for HostWithPort at 1596 characters (quadratic growth), and the excerpt this path
-    /// actually receives is capped at <see cref="OllamaRequestException.MaxExcerptLength"/> (200
-    /// chars) before scrubbing ever runs, so 250ms is not reachable through the excerpt cap alone.
+    /// forces <c>RegexMatchTimeoutException</c> deterministically via the <c>timeoutProbe</c>
+    /// parameter on <see cref="SanitizedErrorDescription.Describe(Exception, Func{string, string}?)"/>
+    /// rather than constructing an input that happens to exceed 250ms on the machine running the
+    /// test; the #212 review measured only ~4.75ms for HostWithPort at 1596 characters (quadratic
+    /// growth), and the excerpt this path actually receives is capped at
+    /// <see cref="OllamaRequestException.MaxExcerptLength"/> (200 chars) before scrubbing ever runs,
+    /// so 250ms is not reachable through the excerpt cap alone. A delegate parameter is used instead
+    /// of a mutable static flag because <c>ProductionProcessGlobalStateTests</c> (arb-0hd0) requires
+    /// every mutable static in a production assembly to be allow-listed as a process-global hazard,
+    /// and a test-only toggle affecting every concurrent caller is exactly that hazard.
     /// </summary>
     [Fact]
     public void A_regex_timeout_degrades_to_the_placeholder_never_the_input()
@@ -612,30 +617,24 @@ public sealed class SanitizedErrorDescriptionTests
         const string hostFragment = "ollama.internal.example";
         var body = $"dial tcp {hostFragment}:11434: connection refused";
 
-        SanitizedErrorDescription.ThrowTimeoutForTesting = true;
-        try
-        {
-            var described = SanitizedErrorDescription.Describe(
-                new OllamaRequestException(HttpStatusCode.BadGateway, body));
+        var described = SanitizedErrorDescription.Describe(
+            new OllamaRequestException(HttpStatusCode.BadGateway, body),
+            timeoutProbe: _ => throw new RegexMatchTimeoutException("arb-hihr test: forced timeout."));
 
-            // Detectability: the search below does find the host in the untouched input.
-            Assert.Contains(hostFragment, body, StringComparison.Ordinal);
-            Assert.DoesNotContain(hostFragment, described, StringComparison.Ordinal);
-            Assert.Contains("<redaction timed out>", described, StringComparison.Ordinal);
-        }
-        finally
-        {
-            SanitizedErrorDescription.ThrowTimeoutForTesting = false;
-        }
+        // Detectability: the search below does find the host in the untouched input.
+        Assert.Contains(hostFragment, body, StringComparison.Ordinal);
+        Assert.DoesNotContain(hostFragment, described, StringComparison.Ordinal);
+        Assert.Contains("<redaction timed out>", described, StringComparison.Ordinal);
     }
 
     /// <summary>
-    /// arb-hihr, control: with the test seam off, ordinary scrubbing is unaffected by the added
-    /// timeouts — the same host is still removed and the redaction token still appears, exactly as
-    /// the pre-existing rows in this file assert for other inputs.
+    /// arb-hihr, control: with no <c>timeoutProbe</c> (the production default, <c>null</c>), ordinary
+    /// scrubbing is unaffected by the added timeouts — the same host is still removed and the
+    /// redaction token still appears, exactly as the pre-existing rows in this file assert for other
+    /// inputs.
     /// </summary>
     [Fact]
-    public void A_normal_input_still_scrubs_when_the_timeout_seam_is_off()
+    public void A_normal_input_still_scrubs_with_no_timeout_probe()
     {
         const string hostFragment = "ollama.internal.example";
         var body = $"dial tcp {hostFragment}:11434: connection refused";
