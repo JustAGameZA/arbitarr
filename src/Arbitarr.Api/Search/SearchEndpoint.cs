@@ -7,6 +7,7 @@ using Arbitarr.Core.Identity;
 using Arbitarr.Core.Releases;
 using Arbitarr.Core.Sources;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 
 namespace Arbitarr.Api.Search;
 
@@ -55,9 +56,13 @@ public static class SearchEndpoint
         // arb-tps: optional and last for the same reason identityResolver above is. Null means
         // "memory only" — the pre-arb-tps behaviour — which keeps the rendering/golden tests that
         // construct this call directly compiling and unconcerned with persistence.
-        IReleaseLookupStore? releaseLookupStore = null)
+        IReleaseLookupStore? releaseLookupStore = null,
+        // arb-zwk: optional and last for the same reason the two above are. Null means "no logging",
+        // which is the honest state for the rendering/golden tests that call this directly — a
+        // degraded store write is still degraded, it just goes unrecorded where nothing observes it.
+        ILogger? logger = null)
     {
-        var (result, rateLimited) = await ExecuteAsync(SearchProtocol.Torznab, searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, eventSink, identityResolver, clientName, releaseLookupStore, cancellationToken).ConfigureAwait(false);
+        var (result, rateLimited) = await ExecuteAsync(SearchProtocol.Torznab, searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, eventSink, identityResolver, clientName, releaseLookupStore, logger, cancellationToken).ConfigureAwait(false);
         if (rateLimited)
         {
             var errorXml = TorznabXmlWriter.WriteError(RateLimitErrorCode, "Request limit reached");
@@ -93,9 +98,11 @@ public static class SearchEndpoint
         // the default is the honest one rather than a convenience.
         IIdentityResolver? identityResolver = null,
         // arb-tps: see HandleTorznabAsync's note on this parameter.
-        IReleaseLookupStore? releaseLookupStore = null)
+        IReleaseLookupStore? releaseLookupStore = null,
+        // arb-zwk: see HandleTorznabAsync's note on this parameter.
+        ILogger? logger = null)
     {
-        var (result, rateLimited) = await ExecuteAsync(SearchProtocol.Newznab, searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, eventSink, identityResolver, clientName, releaseLookupStore, cancellationToken).ConfigureAwait(false);
+        var (result, rateLimited) = await ExecuteAsync(SearchProtocol.Newznab, searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, eventSink, identityResolver, clientName, releaseLookupStore, logger, cancellationToken).ConfigureAwait(false);
         if (rateLimited)
         {
             var errorXml = NewznabXmlWriter.WriteError(RateLimitErrorCode, "Request limit reached");
@@ -125,6 +132,7 @@ public static class SearchEndpoint
         IIdentityResolver? identityResolver,
         string? clientName,
         IReleaseLookupStore? releaseLookupStore,
+        ILogger? logger,
         CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
@@ -171,12 +179,39 @@ public static class SearchEndpoint
         //
         // Null when no store was supplied (the rendering/golden tests), which reproduces the old
         // memory-only behaviour rather than failing.
+        //
+        // arb-zwk: the write is still AWAITED — everything above still holds — but a FAILED write is
+        // logged and the search still answers, matching PersistentReleaseLookup's posture on the read
+        // side. Degrading is right here because the failure is not fatal to the caller: the memory
+        // tier still resolves the link for its 30 minutes, and past that the download path already
+        // degrades a store miss to a 404 rather than a 500. Letting the exception escape would turn a
+        // durability problem into a total search outage — an *arr sees no results at all, rather than
+        // results whose links merely stop surviving a restart.
         if (releaseLookupStore is not null && filtered.Count > 0)
         {
-            await releaseLookupStore.UpsertRangeAsync(
-                    filtered.Select(r => new StoredRelease(r.ProxyGuid, r.SourceName, r.Candidate)),
-                    cancellationToken)
-                .ConfigureAwait(false);
+            try
+            {
+                await releaseLookupStore.UpsertRangeAsync(
+                        filtered.Select(r => new StoredRelease(r.ProxyGuid, r.SourceName, r.Candidate)),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // A cancelled request is not a store fault: the caller went away, and swallowing it
+                // here would report success for a search nobody is waiting for.
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // Count and exception only — never the releases or their links. This lands in the
+                // persistent log store served at /api/admin/logs (CLAUDE.md §1), and a release payload
+                // carries the source URL, which is the one thing that must not be written there.
+                logger?.LogWarning(
+                    ex,
+                    "Release lookup store write failed for {ReleaseCount} releases; the search still answered and the in-memory tier still resolves these links.",
+                    filtered.Count);
+            }
         }
 
         stopwatch.Stop();

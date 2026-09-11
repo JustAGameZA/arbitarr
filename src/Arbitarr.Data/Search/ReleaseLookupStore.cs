@@ -28,13 +28,28 @@ public sealed class ReleaseLookupStore : IReleaseLookupStore
 
     private readonly ArbitarrDbContext _dbContext;
     private readonly TimeProvider _timeProvider;
-    private readonly TimeSpan _ttl;
+    private readonly Func<CancellationToken, Task<TimeSpan>> _readTtlAsync;
 
-    public ReleaseLookupStore(ArbitarrDbContext dbContext, TimeSpan ttl, TimeProvider? timeProvider = null)
+    /// <param name="readTtlAsync">
+    /// Reads the configured TTL, awaited at the point of use rather than resolved at construction.
+    ///
+    /// <para><b>arb-zwk: why a delegate and not a TimeSpan.</b> This store is SCOPED, so a
+    /// constructor taking the value made the composition root read the setting on every scope
+    /// creation — and because the setting lives behind an async reader, that read was a
+    /// <c>GetAwaiter().GetResult()</c> on the request path, blocking a thread-pool thread for a
+    /// database round trip on every search. Taking the reader instead keeps the per-use freshness the
+    /// old shape was built for (an operator lowering the TTL still needs no restart) while letting
+    /// the read be awaited, and only <see cref="UpsertRangeAsync"/> pays it — <see cref="FindAsync"/>
+    /// evaluates the stored <c>ExpiresAt</c> and never needs the TTL at all.</para>
+    /// </param>
+    public ReleaseLookupStore(
+        ArbitarrDbContext dbContext,
+        Func<CancellationToken, Task<TimeSpan>> readTtlAsync,
+        TimeProvider? timeProvider = null)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        _readTtlAsync = readTtlAsync ?? throw new ArgumentNullException(nameof(readTtlAsync));
         _timeProvider = timeProvider ?? TimeProvider.System;
-        _ttl = ttl;
     }
 
     public async Task UpsertRangeAsync(IEnumerable<StoredRelease> releases, CancellationToken cancellationToken = default)
@@ -47,8 +62,12 @@ public sealed class ReleaseLookupStore : IReleaseLookupStore
             return;
         }
 
+        // Read AFTER the empty-batch return above, so a no-op upsert costs no settings round trip —
+        // and awaited rather than blocked on, which is the whole point of taking a reader here.
+        var ttl = await _readTtlAsync(cancellationToken).ConfigureAwait(false);
+
         var now = _timeProvider.GetUtcNow();
-        var expiresAt = now + _ttl;
+        var expiresAt = now + ttl;
 
         // One query for the whole batch rather than one per release: a search renders up to a
         // page of results and this runs on every search, so a per-row round trip would be the
