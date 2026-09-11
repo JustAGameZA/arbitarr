@@ -172,4 +172,56 @@ public sealed class ActivityEmissionTests : IClassFixture<WebApplicationFactory<
 
         Assert.Contains(stored.Events, e => e.Reason is not null && e.Reason.Contains("durability-probe", StringComparison.Ordinal));
     }
+
+    /// <summary>
+    /// arb-2b6 (audit F-010): the bead's actual complaint. Two id-based searches carry no query
+    /// text, so the old reason rendered both as <c>Query '' (tvsearch)</c> and an operator could not
+    /// tell a zero-result cache hit from a live query with real results fired in the same second.
+    ///
+    /// <para>Asserted PER ROW (CLAUDE.md §4): each search's own event is located by its own tvdbid
+    /// and checked individually. "Some row mentions 74796" would still pass if one descriptor were
+    /// written to every row.</para>
+    /// </summary>
+    [Fact]
+    public async Task Two_searches_differing_only_by_id_produce_different_reasons_and_details()
+    {
+        using var client = _factory.CreateClient();
+
+        // No q= on either: this is the id-based shape the finding is about.
+        var first = await client.GetAsync(
+            $"/torznab/api?t=tvsearch&tvdbid=74796&apikey={Uri.EscapeDataString(ApiKey)}");
+        first.EnsureSuccessStatusCode();
+
+        var second = await client.GetAsync(
+            $"/torznab/api?t=tvsearch&tvdbid=81797&apikey={Uri.EscapeDataString(ApiKey)}");
+        second.EnsureSuccessStatusCode();
+
+        using var scope = _factory.Services.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<Arbitarr.Data.Events.EventRepository>();
+
+        var stored = await repository.QueryAsync(
+            new Arbitarr.Data.Events.EventQuery(Kind: Arbitarr.Data.Entities.EventKind.SearchServed),
+            CancellationToken.None);
+
+        var firstRow = Assert.Single(
+            stored.Events,
+            e => e.Reason is not null && e.Reason.Contains("tvdbid=74796", StringComparison.Ordinal));
+        var secondRow = Assert.Single(
+            stored.Events,
+            e => e.Reason is not null && e.Reason.Contains("tvdbid=81797", StringComparison.Ordinal));
+
+        // Per row: each carries its OWN id and not the other's.
+        Assert.DoesNotContain("tvdbid=81797", firstRow.Reason!, StringComparison.Ordinal);
+        Assert.DoesNotContain("tvdbid=74796", secondRow.Reason!, StringComparison.Ordinal);
+
+        Assert.NotNull(firstRow.Detail);
+        Assert.NotNull(secondRow.Detail);
+        Assert.Contains("tvdbid=74796", firstRow.Detail!, StringComparison.Ordinal);
+        Assert.Contains("tvdbid=81797", secondRow.Detail!, StringComparison.Ordinal);
+        Assert.NotEqual(firstRow.Detail, secondRow.Detail);
+
+        // The regression itself: neither reason is the old text-only rendering.
+        Assert.DoesNotContain("Query ''", firstRow.Reason!, StringComparison.Ordinal);
+        Assert.DoesNotContain("Query ''", secondRow.Reason!, StringComparison.Ordinal);
+    }
 }
