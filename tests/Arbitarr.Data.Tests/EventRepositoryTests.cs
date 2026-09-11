@@ -219,6 +219,102 @@ public sealed class EventRepositoryTests : IDisposable
         Assert.Equal(2, (await repository.GetAllAsync(CancellationToken.None)).Count);
     }
 
+    /// <summary>
+    /// arb-n1s: a row that is STILL REPEATING survives the prune even though its first sighting is
+    /// outside the retention window.
+    ///
+    /// <para>Since #205 a coalesced row keeps its original <c>OccurredAt</c> and advances only
+    /// <c>LastRepeatedAt</c>. Ageing off OccurredAt therefore deleted a fault in the middle of an
+    /// ongoing storm, the moment its first sighting aged out — and took the accumulated
+    /// <c>RepeatCount</c> with it, which is the very evidence the storm produced.</para>
+    ///
+    /// <para><b>RepeatCount is asserted, not just row survival.</b> "A row is still there" would
+    /// also pass if the prune had deleted this row and left some other; asserting the count pins
+    /// that the surviving row is the accumulating one.</para>
+    ///
+    /// <para>Rows are seeded directly rather than driven through the public record path, matching
+    /// the convention of the two prune tests above. Producing this shape through that path would
+    /// need repeats no more than <c>EventCoalescing.Window</c> (10 minutes) apart spanning more than
+    /// the 7-day operational window — over a thousand record calls to assert one predicate. The
+    /// seeded shape is the one <c>TryCoalesceAsync</c> writes: OccurredAt fixed at the first
+    /// sighting, LastRepeatedAt at the latest, RepeatCount above zero.</para>
+    /// </summary>
+    [Fact]
+    public async Task PruneAsync_keeps_a_row_still_repeating_inside_the_window()
+    {
+        using var context = CreateContext();
+
+        var now = DateTimeOffset.Parse("2026-09-06T12:00:00Z");
+        var timeProvider = new FakeTimeProvider(now);
+        var repository = new EventRepository(context, timeProvider);
+
+        // First seen 30 days ago — far outside the 7-day operational window — but last repeated a
+        // minute ago: a fault that has been recurring since, and is recurring now.
+        context.Events.Add(new EventEntry
+        {
+            Kind = EventKind.SourceFailed,
+            OccurredAt = now - TimeSpan.FromDays(30),
+            LastRepeatedAt = now - TimeSpan.FromMinutes(1),
+            RepeatCount = 417,
+            Summary = "Source failed, still repeating",
+        });
+
+        await context.SaveChangesAsync();
+
+        var prunedByKind = await repository.PruneAsync(CancellationToken.None);
+
+        Assert.Empty(prunedByKind);
+
+        var remaining = await repository.GetAllAsync(CancellationToken.None);
+        var survivor = Assert.Single(remaining);
+        Assert.Equal("Source failed, still repeating", survivor.Summary);
+        Assert.Equal(417, survivor.RepeatCount);
+    }
+
+    /// <summary>
+    /// POSITIVE CONTROL for the test above (CLAUDE.md §4). Identical row, identical clock, identical
+    /// OccurredAt — the ONLY difference is that this one has stopped repeating, so it is pruned.
+    ///
+    /// <para>Without this, the survival assertion above would pass just as happily against a
+    /// <c>PruneAsync</c> that had stopped deleting anything at all. This proves the row is reachable
+    /// by the prune, and that its survival above is caused by the recent repeat rather than by the
+    /// row being immune for some other reason.</para>
+    ///
+    /// <para>Both arms matter: a null LastRepeatedAt must fall back to OccurredAt (the never-folded
+    /// row, which is most rows), and a non-null one that is ITSELF outside the window must still
+    /// prune — otherwise the fix would turn any once-repeated row into an immortal one.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(null)]  // never repeated: falls back to OccurredAt, which is outside the window
+    [InlineData(9)]     // repeated, but the last repeat is ALSO outside the 7-day window
+    public async Task PruneAsync_removes_a_row_whose_last_activity_is_outside_the_window(
+        int? lastRepeatedDaysAgo)
+    {
+        using var context = CreateContext();
+
+        var now = DateTimeOffset.Parse("2026-09-06T12:00:00Z");
+        var timeProvider = new FakeTimeProvider(now);
+        var repository = new EventRepository(context, timeProvider);
+
+        context.Events.Add(new EventEntry
+        {
+            Kind = EventKind.SourceFailed,
+            OccurredAt = now - TimeSpan.FromDays(30),
+            LastRepeatedAt = lastRepeatedDaysAgo is { } days
+                ? now - TimeSpan.FromDays(days)
+                : null,
+            RepeatCount = lastRepeatedDaysAgo is null ? 0 : 417,
+            Summary = "Source failed, no longer repeating",
+        });
+
+        await context.SaveChangesAsync();
+
+        var prunedByKind = await repository.PruneAsync(CancellationToken.None);
+
+        Assert.Equal(1, prunedByKind[EventKind.SourceFailed]);
+        Assert.Empty(await repository.GetAllAsync(CancellationToken.None));
+    }
+
     // ---- QueryAsync: the #55 step 3 read surface --------------------------------------------
     //
     // These exercise the paged/filtered read that the Activity surface and GET /api/activity sit
