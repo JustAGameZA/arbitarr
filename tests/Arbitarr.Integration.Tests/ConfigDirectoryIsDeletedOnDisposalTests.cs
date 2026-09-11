@@ -132,6 +132,20 @@ public sealed class ConfigDirectoryIsDeletedOnDisposalTests
     /// production connection string, not a hand-built one: pools are keyed by the full string, so a
     /// plainer string would name a pool the factory's clear does not touch and the control would be
     /// planting a DIFFERENT defect from the one that shipped.</para>
+    ///
+    /// <para><b>THE DELETION TESTS PIN THE LEAK ONLY ON WINDOWS, AND CI IS LINUX.</b> An open file
+    /// blocks a directory delete on Windows, where the handle carries a share lock; on POSIX it does
+    /// not — unlink removes the name while the handle keeps the inode alive, so the delete SUCCEEDS
+    /// with the leak fully in place. So this control cannot be written once for both: requiring a
+    /// throw everywhere fails on Linux (which is exactly how this test first went red in CI), and
+    /// requiring silence everywhere would make the control vacuous on Windows. Each branch therefore
+    /// asserts the property its own platform actually has, and neither is a skip.</para>
+    ///
+    /// <para>The consequence worth stating plainly: on Linux the three tests above cannot detect an
+    /// ownership regression at all — they would stay green in the broken world. The cross-platform
+    /// guard is <b>arb-1z1l</b>, a Cecil IL scan requiring <c>contextOwnsConnection: true</c> at
+    /// every <c>UseSqlite(DbConnection)</c> call, which holds regardless of filesystem semantics.
+    /// Until it lands, a Linux-only run does not verify the ownership fix.</para>
     /// </summary>
     [Fact]
     public async Task The_deletion_assertion_fails_when_an_open_connection_is_planted()
@@ -156,11 +170,37 @@ public sealed class ConfigDirectoryIsDeletedOnDisposalTests
         {
             await factory.DisposeAsync();
 
-            // THE CONTROL: with a handle held open, the directory must survive and the assertion
-            // the three tests above rely on must reject it. If this ever stops throwing, those
-            // three have stopped proving anything.
-            Assert.ThrowsAny<Xunit.Sdk.XunitException>(
-                () => AssertDirectoryWasDeleted(factory.LastDeleteFailure, configDirectory));
+            if (OperatingSystem.IsWindows())
+            {
+                // THE CONTROL (Windows): with a handle held open, the share lock keeps the directory
+                // alive, so the assertion the three tests above rely on must reject it. If this ever
+                // stops throwing, those three have stopped proving anything.
+                Assert.ThrowsAny<Xunit.Sdk.XunitException>(
+                    () => AssertDirectoryWasDeleted(factory.LastDeleteFailure, configDirectory));
+            }
+            else
+            {
+                // THE CONTROL (POSIX): unlink does not need the file to be unused, so the delete
+                // succeeds with the leak in place — the deletion assertion is, by construction, not
+                // a leak detector here. Rather than skip, assert that BOTH halves of that statement
+                // hold, which is what makes this branch non-vacuous:
+                //
+                //   1. the deletion assertion stays silent (the leak did NOT block the delete), and
+                //   2. the planted handle was genuinely in play while the directory went away.
+                //
+                // (2) is the half that bites. Without it this branch would pass just as happily if
+                // OpenConnection had handed back something already closed, or if the plant had never
+                // touched the database at all — in which case it would be controlling nothing.
+                AssertDirectoryWasDeleted(factory.LastDeleteFailure, configDirectory);
+
+                Assert.Equal(System.Data.ConnectionState.Open, leaked.State);
+
+                using (var command = leaked.CreateCommand())
+                {
+                    command.CommandText = "SELECT 1;";
+                    Assert.Equal(1L, Assert.IsType<long>(command.ExecuteScalar()));
+                }
+            }
         }
         finally
         {
@@ -168,6 +208,10 @@ public sealed class ConfigDirectoryIsDeletedOnDisposalTests
 
             // Clean up what the planted leak left behind, so this control does not itself become a
             // contributor to the ~22,000 leaked directories it exists to prevent.
+            //
+            // ClearPoolsForDirectory only ENUMERATES because the factory's own delete just failed by
+            // design (the Windows branch, where the share lock won); on the POSIX branch the
+            // directory is already gone and it returns early, as does the Directory.Delete below.
             SqlitePoolCleaner.ClearPoolsFor(databasePath);
             Arbitarr.TestSupport.SqlitePools.ClearPoolsForDirectory(configDirectory);
 

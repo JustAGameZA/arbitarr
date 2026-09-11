@@ -36,6 +36,11 @@ and falls back to a fixed placeholder when a pattern times out with a
 the other holds. The reasoning for each arm lives in `SanitizedErrorDescription.cs`'s remarks; read
 those rather than a copy here.
 
+**`LogMessageCleanser.Cleanse` additionally caps input length (arb-mw7)**, so a pathological
+message cannot grow the log unbounded, and degrades a single row's text to a fixed placeholder —
+never the whole batch — on a regex timeout (arb-qafw), so one attacker-influenced log line can
+never take down the writer for every other row alongside it.
+
 ### `Arbitarr:ReleaseGuidSecret` is test support, not an operator setting
 
 **The proxy-guid HMAC secret can be overridden in memory by the configuration key
@@ -101,6 +106,14 @@ the file swap succeeds, the stale pooled handle keeps serving the replaced inode
 carries on reading the old database while the restored one sits on disk looking applied. The log
 store's string is deliberately absent from that set — it names a separate file a restore never
 replaces, and clearing it would be the over-reach described next.
+
+**`ArbitarrDbContextOptionsFactory.Create` passes `contextOwnsConnection: true`, and that argument
+is load-bearing** — the `UseSqlite(DbConnection)` overload's default is the opposite, leaving
+ownership with the caller, so a disposed `ArbitarrDbContext` does not dispose its connection and the
+connection is never *returned* to the pool. **`ClearPool` closes only what a pool holds**, so a
+connection that never came back is not among them: without that argument no pool clearing, however
+complete the inventory of strings, reaches anything at all (arb-dhua, where three attempts at
+widening the inventory failed for exactly this reason).
 
 **`SqliteConnection.ClearAllPools()` is banned.** It is process-global: it force-closes every pooled
 connection in the process, including those of unrelated databases and of whatever test happens to
