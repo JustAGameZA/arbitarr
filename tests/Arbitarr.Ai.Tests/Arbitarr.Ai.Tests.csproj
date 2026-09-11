@@ -23,9 +23,4 @@
     <ProjectReference Include="..\..\src\Arbitarr.Ai\Arbitarr.Ai.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <!-- arb-p4r: golden corpus fixture for OllamaClientDeterminismTests' recorded-verdict assertions. -->
-    <None Include="fixtures\classifier-golden-corpus.json" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
-
 </Project>

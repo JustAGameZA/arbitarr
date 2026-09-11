@@ -397,7 +397,10 @@ builder.Services.AddScoped(sp =>
     // arb-p4r: bumped from "v1" to "v2". Pinning options.temperature/seed on the Ollama request
     // (OllamaClient) changes what a given prompt yields for the same input, so verdicts cached
     // under the old, non-deterministic sampling must not be served as if they came from the new,
-    // deterministic one.
+    // deterministic one. Like ModelName above, an operator-set Arbitarr:Ai:PromptVersion defeats
+    // this bump and keeps serving verdicts cached under non-deterministic sampling; the
+    // by-construction fix (folding sampling into the cache identity itself) is tracked as a
+    // follow-up bead.
     var promptVersion = section["PromptVersion"] ?? "v2";
     return new AiModelIdentity(modelName, modelDigest, promptVersion);
 });

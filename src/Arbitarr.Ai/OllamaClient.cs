@@ -26,29 +26,15 @@ namespace Arbitarr.Ai;
 ///
 /// <para>
 /// arb-p4r: the request also pins <c>options.temperature</c> and <c>options.seed</c> (see
-/// <see cref="SamplingTemperature"/>/<see cref="SamplingSeed"/>) so the same title yields the same
-/// verdict run to run — without this, Ollama samples at its default temperature and the verdict
-/// cache (keyed on model name + digest + <c>PromptVersion</c>) cannot be reproducible.
+/// <see cref="OllamaOptions.SamplingTemperature"/>/<see cref="OllamaOptions.SamplingSeed"/>) so the
+/// same title yields the same verdict run to run — without this, Ollama samples at its default
+/// temperature and the verdict cache (keyed on model name + digest + <c>PromptVersion</c>) cannot
+/// be reproducible.
 /// </para>
 /// </summary>
 public sealed class OllamaClient : IOllamaClient
 {
     private const string SourceName = "Ollama";
-
-    /// <summary>
-    /// arb-p4r: greedy decoding. Classification verdicts feed a cache keyed on model identity plus
-    /// <c>PromptVersion</c>; a non-zero temperature makes the same title/model/prompt combination
-    /// non-reproducible, so a cache hit or a re-run cannot be trusted to agree with the original call.
-    /// </summary>
-    private const double SamplingTemperature = 0;
-
-    /// <summary>
-    /// arb-p4r: fixed seed, paired with <see cref="SamplingTemperature"/> so a deterministic decode
-    /// also has a deterministic starting point. The value itself is arbitrary — it only needs to be
-    /// fixed and never changed casually, since changing it (like the prompt itself) invalidates
-    /// previously cached verdicts and calls for a <c>PromptVersion</c> bump.
-    /// </summary>
-    private const int SamplingSeed = 42;
 
     private readonly OllamaOptions _options;
     private readonly HttpClient _httpClient;
@@ -139,7 +125,7 @@ public sealed class OllamaClient : IOllamaClient
                     Stream: false,
                     Format: JsonDocument.Parse(VerdictSchema.Object).RootElement.Clone(),
                     KeepAlive: _options.KeepAlive,
-                    Options: new OllamaChatRequestOptions(SamplingTemperature, SamplingSeed));
+                    Options: new OllamaChatRequestOptions(OllamaOptions.SamplingTemperature, OllamaOptions.SamplingSeed));
 
                 using var response = await _httpClient
                     .PostAsJsonAsync(chatUri, request, JsonOptions, timeoutCts.Token)
@@ -216,7 +202,8 @@ public sealed class OllamaClient : IOllamaClient
 
     /// <summary>
     /// arb-p4r: the sampling knobs that make classification deterministic. See
-    /// <see cref="SamplingTemperature"/>/<see cref="SamplingSeed"/> for why both are fixed.
+    /// <see cref="OllamaOptions.SamplingTemperature"/>/<see cref="OllamaOptions.SamplingSeed"/> for
+    /// why both are fixed.
     /// </summary>
     private sealed record OllamaChatRequestOptions(
         [property: JsonPropertyName("temperature")] double Temperature,

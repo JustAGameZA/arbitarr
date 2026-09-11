@@ -42,4 +42,19 @@ public sealed record OllamaOptions(Uri BaseUrl, string Model, OllamaKeepAlive Ke
     /// time for every caller (docs/step0-measurements.md §1, concurrency measurement).
     /// </summary>
     public const int MaxInFlight = 1;
+
+    /// <summary>
+    /// arb-p4r: greedy decoding. Classification verdicts feed a cache keyed on model identity plus
+    /// <c>PromptVersion</c>; a non-zero temperature makes the same title/model/prompt combination
+    /// non-reproducible, so a cache hit or a re-run cannot be trusted to agree with the original call.
+    /// </summary>
+    public const double SamplingTemperature = 0;
+
+    /// <summary>
+    /// arb-p4r: fixed seed, paired with <see cref="SamplingTemperature"/> so a deterministic decode
+    /// also has a deterministic starting point. The value itself is arbitrary — it only needs to be
+    /// fixed and never changed casually, since changing it (like the prompt itself) invalidates
+    /// previously cached verdicts and calls for a <c>PromptVersion</c> bump.
+    /// </summary>
+    public const int SamplingSeed = 42;
 }
