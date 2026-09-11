@@ -98,7 +98,7 @@ Arbitarr refuses upstream redirect responses and will not follow them (SEC-M1).
 
 Navigate to **Downloading > NZB access type** and select **"Proxy"** (menu path as of NZBHydra2 v5).
 
-If this setting is left at "Redirect to indexer", every download will fail with `502 Bad Gateway` and the activity log will show "Download refused: NZBHydra2 redirected instead of serving the file". See [ADR 0014](docs/adr/0014-refuse-upstream-download-redirects.md) for the reasoning.
+If this setting is left at "Redirect to indexer", every download will fail with `502 Bad Gateway` and the activity log will show `Download refused: <source name> redirected instead of serving the file` (where the source name is the display name you configured for NZBHydra2). See [ADR 0014](docs/adr/0014-refuse-upstream-download-redirects.md) for the reasoning.
 
 ### What lives in the config directory
 
