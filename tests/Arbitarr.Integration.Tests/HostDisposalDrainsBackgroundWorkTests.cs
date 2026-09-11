@@ -252,8 +252,11 @@ public sealed class HostDisposalDrainsBackgroundWorkTests
     /// <summary>
     /// The observable state of the directory: every file beneath it with its size and write time.
     /// Ordered, so two snapshots of an unchanged directory compare equal regardless of enumeration
-    /// order. A missing directory yields an empty snapshot rather than throwing — the best-effort
-    /// delete may or may not have removed it (arb-dhua), and either outcome is quiescent.
+    /// order. A missing directory yields an empty snapshot rather than throwing: since arb-dhua was
+    /// fixed (#230) the delete now succeeds, so that is the usual outcome here — but this
+    /// deliberately tolerates either, because quiescence and deletion are pinned separately
+    /// (<see cref="ConfigDirectoryIsDeletedOnDisposalTests"/> owns deletion) and this class must
+    /// stay green on the property it actually asserts regardless of what the delete did.
     /// </summary>
     private static string[] Snapshot(string directory)
     {

@@ -58,9 +58,10 @@ public sealed class RemoteAddressWebApplicationFactory : WebApplicationFactory<P
     /// The exception that defeated the final delete attempt, or null when the directory went away.
     ///
     /// <para>KEEP IN STEP WITH <see cref="ArbitarrWebApplicationFactory"/>, which carries the full
-    /// rationale: the failure is TOLERATED (a locked file must not fail a green run) but recorded
-    /// rather than swallowed silently, so the next person to look does not re-derive the leak from
-    /// scratch. Without it this twin discards the same evidence its sibling keeps.</para>
+    /// rationale. Since arb-dhua this is expected to be NULL and is asserted on by
+    /// <see cref="ConfigDirectoryIsDeletedOnDisposalTests"/>; the failure is still tolerated at
+    /// disposal time rather than thrown, because a throw there would fault whichever unrelated test
+    /// is in flight.</para>
     /// </summary>
     public Exception? LastDeleteFailure { get; private set; }
 
@@ -122,17 +123,18 @@ public sealed class RemoteAddressWebApplicationFactory : WebApplicationFactory<P
     }
 
     /// <summary>
-    /// BEST-EFFORT removal of the per-instance config directory, EXPECTED TO FAIL and leave the
-    /// directory behind (arb-dhua). Nothing asserts on its success. Mirrors
+    /// Removes the per-instance config directory. This SUCCEEDS since arb-dhua and is asserted on
+    /// by <see cref="ConfigDirectoryIsDeletedOnDisposalTests"/>. Mirrors
     /// <see cref="ArbitarrWebApplicationFactory"/>, which carries the full reasoning.
     /// </summary>
     private void DeleteConfigDirectory()
     {
-        // Returns what pooled handles it can, which is cheap and worth doing — but it does NOT
-        // release the handle that actually holds the directory, and no widening of it will:
-        // ClearPool closes only idle RETURNED connections, while every ArbitarrDbContext holds one
-        // EF has already CHECKED OUT. Never ClearAllPools (banned from test IL, and it could not
-        // touch a checked-out connection either). See ArbitarrWebApplicationFactory and arb-dhua.
+        // Closes the pooled handles on this instance's databases. This is HALF of what the delete
+        // needs: the other half is that a disposed ArbitarrDbContext actually returns its connection
+        // to the pool, which it did not do until ArbitarrDbContextOptionsFactory.Create was given
+        // ownership of the connection it opens (arb-dhua -- the pool inventory was never the
+        // problem). Never ClearAllPools: banned from test IL, and process-global (arb-cbc/arb-5ba).
+        // See ArbitarrWebApplicationFactory for the full account.
         SqlitePoolCleaner.ClearPoolsFor(new BackupPaths(_configDirectory).DatabasePath);
         SqlitePools.ClearPoolsForDirectory(_configDirectory);
 

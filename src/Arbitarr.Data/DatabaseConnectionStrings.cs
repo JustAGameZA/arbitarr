@@ -32,7 +32,7 @@ public static class DatabaseConnectionStrings
     /// <summary>
     /// The string the running application uses for every one of its own connections:
     /// <see cref="SqliteConnectionFactory"/> opens it, and
-    /// <see cref="ArbitarrDbContextOptionsFactory"/> hands that open connection to EF, so every
+    /// <see cref="ArbitarrDbContextOptionsFactory"/> hands that open connection to EF with ownership, so every
     /// <see cref="ArbitarrDbContext"/> in the process inherits it. Carries
     /// <see cref="SqliteCacheMode.Default"/>, which the builder EMITS rather than eliding — that is
     /// what makes it a different pool from <see cref="Maintenance"/> despite naming the same file.
