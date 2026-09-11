@@ -66,6 +66,15 @@ public static partial class CredentialPatterns
     internal const int MatchTimeoutMilliseconds = 250;
 
     /// <summary>
+    /// arb-mw7: public alias of <see cref="MatchTimeoutMilliseconds"/> for
+    /// <c>Arbitarr.Data.Logging.LogMessageCleanser</c>'s local <c>WebhookUrl</c> arm — Data has no
+    /// <c>InternalsVisibleTo</c> from this project, so the <c>internal</c> constant is not visible
+    /// there. Kept as a second const, not a change to the original's accessibility, so nothing else
+    /// in Core widens.
+    /// </summary>
+    public const int PublicMatchTimeoutMilliseconds = MatchTimeoutMilliseconds;
+
+    /// <summary>
     /// Returns <paramref name="text"/> with every credential-shaped substring replaced by
     /// <see cref="Replacement"/>, preserving the NAME that introduced each one.
     ///

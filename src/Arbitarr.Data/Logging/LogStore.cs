@@ -88,13 +88,32 @@ public sealed class LogStore
     /// database log sink a latency bug on the request path. <see cref="SqliteLoggerProvider"/> is
     /// what accumulates the batch; this method just commits one.
     /// </summary>
-    public async Task WriteAsync(IReadOnlyList<PendingLogEntry> entries, CancellationToken cancellationToken = default)
+    public Task WriteAsync(IReadOnlyList<PendingLogEntry> entries, CancellationToken cancellationToken = default) =>
+        WriteAsync(entries, cleanse: null, cancellationToken);
+
+    /// <summary>
+    /// arb-qafw: test-only overload. <paramref name="cleanse"/>, when supplied, replaces
+    /// <see cref="LogMessageCleanser.Cleanse(string?)"/> for this call — the same test-seam shape as
+    /// <see cref="LogMessageCleanser.Cleanse(string?, Func{string, string}?)"/>'s <c>timeoutProbe</c>,
+    /// used here to prove that one row's cleanse throwing does not abort the other rows' commit
+    /// without relying on a real 250ms regex timeout inside a unit test. <c>null</c> (the default
+    /// overload above) on every production call site.
+    ///
+    /// <para><c>public</c>, not <c>internal</c>: there is no <c>InternalsVisibleTo</c> from this
+    /// project to the test assembly.</para>
+    /// </summary>
+    public async Task WriteAsync(
+        IReadOnlyList<PendingLogEntry> entries,
+        Func<string?, string?>? cleanse,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(entries);
         if (entries.Count == 0)
         {
             return;
         }
+
+        cleanse ??= LogMessageCleanser.Cleanse;
 
         await using var connection = OpenConnection();
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
@@ -119,8 +138,8 @@ public sealed class LogStore
             logger.Value = entry.Logger;
             // Cleansing happens HERE, at the single choke point every row passes through, rather
             // than at each call site — a call site that forgets is exactly the leak this is for.
-            message.Value = LogMessageCleanser.Cleanse(entry.Message) ?? string.Empty;
-            exception.Value = (object?)LogMessageCleanser.Cleanse(entry.Exception) ?? DBNull.Value;
+            message.Value = cleanse(entry.Message) ?? string.Empty;
+            exception.Value = (object?)cleanse(entry.Exception) ?? DBNull.Value;
             exceptionType.Value = (object?)entry.ExceptionType ?? DBNull.Value;
 
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);

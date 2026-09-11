@@ -271,4 +271,48 @@ public sealed class LogStoreTests : IDisposable
     {
         Assert.Equal(0, await _store.TrimAsync(DateTimeOffset.UtcNow));
     }
+
+    [Fact]
+    public async Task A_middle_rows_cleanse_failure_does_not_abort_the_batch()
+    {
+        // arb-qafw: a RegexMatchTimeoutException from one row's cleanse must not discard the other
+        // rows in the batch transaction. Production's LogMessageCleanser.Cleanse already catches
+        // this internally and returns TimeoutPlaceholder for just that text (arb-mw7); this test
+        // drives the WriteAsync(entries, cleanse, ct) test-only overload with a delegate that
+        // reproduces exactly that per-call catch, to prove the COMMIT behaviour at the LogStore
+        // level rather than re-asserting the cleanser's own try/catch.
+        var start = DateTimeOffset.UtcNow.AddMinutes(-5);
+        var entries = new[]
+        {
+            Entry("first", time: start),
+            Entry("second", time: start.AddMinutes(1)),
+            Entry("third", time: start.AddMinutes(2)),
+        };
+
+        string? CleanseWithMiddleRowTimeout(string? text)
+        {
+            try
+            {
+                return text == "second"
+                    ? throw new System.Text.RegularExpressions.RegexMatchTimeoutException()
+                    : text;
+            }
+            catch (System.Text.RegularExpressions.RegexMatchTimeoutException)
+            {
+                return LogMessageCleanser.TimeoutPlaceholder;
+            }
+        }
+
+        await _store.WriteAsync(entries, CleanseWithMiddleRowTimeout);
+
+        var page = await _store.ReadAsync(level: null, logger: null, page: 1, pageSize: 10);
+
+        // Per-row assertions (CLAUDE.md section 4): each row is checked independently, not "some
+        // row has it" — the whole point is the OTHER two rows are untouched by the middle one's
+        // failure.
+        Assert.Equal(3, page.Total);
+        Assert.Equal("first", Assert.Single(page.Entries, e => e.Time == start).Message);
+        Assert.Equal(LogMessageCleanser.TimeoutPlaceholder, Assert.Single(page.Entries, e => e.Time == start.AddMinutes(1)).Message);
+        Assert.Equal("third", Assert.Single(page.Entries, e => e.Time == start.AddMinutes(2)).Message);
+    }
 }

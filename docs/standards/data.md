@@ -36,6 +36,11 @@ and falls back to a fixed placeholder when a pattern times out with a
 the other holds. The reasoning for each arm lives in `SanitizedErrorDescription.cs`'s remarks; read
 those rather than a copy here.
 
+**`LogMessageCleanser.Cleanse` additionally caps input length (arb-mw7)**, so a pathological
+message cannot grow the log unbounded, and degrades a single row's text to a fixed placeholder —
+never the whole batch — on a regex timeout (arb-qafw), so one attacker-influenced log line can
+never take down the writer for every other row alongside it.
+
 ### `Arbitarr:ReleaseGuidSecret` is test support, not an operator setting
 
 **The proxy-guid HMAC secret can be overridden in memory by the configuration key
