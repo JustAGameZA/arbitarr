@@ -105,9 +105,17 @@ public static partial class CredentialPatterns
     /// sk-live-9f8e…". <see cref="NamedCredential"/> requires the separator, so prose forms walked
     /// straight through it. The 12-character floor on the value keeps ordinary prose ("token expired")
     /// intact while still catching anything key-shaped.
+    ///
+    /// <para><b>arb-qj9: the value class includes <c>.</c> and <c>+</c>.</b> Without them a
+    /// dot-or-plus-separated key ("sk.live+PLACEHOLDER.9f8e") was not matched as one run: the
+    /// character class stopped at the first <c>.</c>, leaving the remainder — the high-entropy half —
+    /// published beside a redaction of the first fragment. Both characters appear in real key
+    /// formats (base64url padding aside, vendors use both as segment separators), and admitting them
+    /// cannot widen this arm onto ordinary prose because the credential-shaped NAME and the
+    /// 12-character floor still gate it.</para>
     /// </summary>
     [GeneratedRegex(
-        @"(?<prefix>\b(?:api[_-]?key|apikey|key|token|secret|password|passkey)\s+)(?<value>[A-Za-z0-9_-]{12,})\b",
+        @"(?<prefix>\b(?:api[_-]?key|apikey|key|token|secret|password|passkey)\s+)(?<value>[A-Za-z0-9_.+-]{12,})",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex SpaceSeparatedCredential();
 }

@@ -45,6 +45,11 @@ public class CredentialPatternsTests
         // it is in the shared corpus now precisely because the log cleanser was missing it.
         { "invalid key PLACEHOLDERSPACED3344 supplied", "PLACEHOLDERSPACED3344" },
         { "rejected token PLACEHOLDERSPACED5566 at gateway", "PLACEHOLDERSPACED5566" },
+        // arb-qj9: '.' and '+' in the value class. Before that widening the run stopped at the first
+        // '.', so the HIGH-ENTROPY TAIL stayed published beside a redaction of the first fragment —
+        // which is why the planted token here is that tail, not the whole key.
+        { "invalid key sk.live+PLACEHOLDER.9f8e supplied", "PLACEHOLDER.9f8e" },
+        { "rejected token ey.PLACEHOLDER+payload.0011 at gateway", "PLACEHOLDER+payload.0011" },
     };
 
     [Theory]
