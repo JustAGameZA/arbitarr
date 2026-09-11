@@ -107,7 +107,8 @@ function LogsTable({ entries }: { entries: LogEntryResponse[] }) {
       // the log store is empty.
       <p className={styles.empty}>
         No log entries match these filters. Entries appear here as the service logs at
-        Information and above; widen the level or clear the logger filter to see more.
+        Information and above; widen the level, clear the logger filter, or clear the
+        message filter to see more.
       </p>
     );
   }
@@ -143,7 +144,20 @@ function LogsTable({ entries }: { entries: LogEntryResponse[] }) {
  * way.
  */
 export function LogsTab() {
-  const [filters, setFilters] = useState<LogFilters>({ level: 'all', logger: '' });
+  // Defaults to Warning rather than "All levels": LogStore matches Level as an EXACT,
+  // case-insensitive string (see queries.ts's LOG_LEVELS note) with no minimum-severity
+  // semantic, so a "Warning and above" default is not achievable without a backend
+  // change out of scope for this PR (arb-kz8) -- filed as a follow-up. Exact "Warning" is
+  // the closest useful default: an operator opening the tab lands on the level that
+  // usually needs attention instead of the full firehose, and "All levels" stays one
+  // click away.
+  const [filters, setFilters] = useState<LogFilters>({ level: 'Warning', logger: '' });
+
+  // Client-side only: the endpoint has no message/text query parameter (checked against
+  // LogsEndpoint.cs), so this narrows only the rows already on the current page rather
+  // than searching the whole store. Wiring a server-side search parameter is a follow-up,
+  // noted in the commit body.
+  const [messageFilter, setMessageFilter] = useState('');
 
   // 1-based, matching the server's own page numbering rather than translating at the
   // boundary. Offset paging, unlike Activity's cursor: see LogsResponse's note on why the
@@ -154,6 +168,7 @@ export function LogsTab() {
 
   const levelFilterId = useId();
   const loggerFilterId = useId();
+  const messageFilterId = useId();
 
   // Changing a filter resets to page 1: page 3 of an unfiltered store is a different set
   // of rows from page 3 of a filtered one, and staying there would show an operator a
@@ -171,6 +186,18 @@ export function LogsTab() {
   const pageCount = Math.max(1, Math.ceil(total / servedPageSize));
   const servedPage = logs.data?.page ?? page;
   const loggers = logs.data?.loggers ?? [];
+
+  // Filters only the current page's rows (see messageFilter's declaration above for why
+  // this cannot be a server-side query yet). Case-insensitive substring match against the
+  // message text, mirroring the logger filter's own substring semantics.
+  const trimmedMessageFilter = messageFilter.trim().toLowerCase();
+  const visibleEntries = logs.data
+    ? trimmedMessageFilter === ''
+      ? logs.data.entries
+      : logs.data.entries.filter((entry) =>
+          entry.message.toLowerCase().includes(trimmedMessageFilter),
+        )
+    : [];
 
   return (
     <>
@@ -213,6 +240,18 @@ export function LogsTab() {
                 ))}
               </select>
             </label>
+
+            <label className={styles.field} htmlFor={messageFilterId}>
+              Message
+              <input
+                id={messageFilterId}
+                type="text"
+                className={styles.input}
+                placeholder="Filter messages… (filters this page)"
+                value={messageFilter}
+                onChange={(event) => setMessageFilter(event.target.value)}
+              />
+            </label>
           </div>
         </div>
       </section>
@@ -220,13 +259,26 @@ export function LogsTab() {
       <section className={styles.panel}>
         <h2 className={styles.panelHeading}>Logs</h2>
         <div className={styles.panelBody}>
+          {/* The render prop's own `data` argument is intentionally unused here:
+              `visibleEntries` (declared above, with its own `logs.data ? … : []`
+              fallback) already narrows to the message filter and replaces it. */}
           <QueryState isPending={logs.isPending} error={logs.error} data={logs.data}>
-            {(data) => (
+            {() => (
               <>
-                <LogsTable entries={data.entries} />
+                <LogsTable entries={visibleEntries} />
+
+                {trimmedMessageFilter !== '' && (
+                  <p className={styles.muted}>
+                    Showing {visibleEntries.length} of {logs.data?.entries.length ?? 0} rows on
+                    this page match the message filter.
+                  </p>
+                )}
 
                 {/* Hidden entirely on a single page: a disabled Next under a short table
-                    is noise. Same rule the Activity surface applies. */}
+                    is noise. Same rule the Activity surface applies. total/pageCount are
+                    always derived from the server's unfiltered result set, never from
+                    visibleEntries -- the pager describes what the server served, not what
+                    the message filter narrowed it to. */}
                 {total > servedPageSize && (
                   <div className={local.paging}>
                     <button

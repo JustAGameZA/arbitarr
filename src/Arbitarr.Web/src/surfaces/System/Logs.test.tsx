@@ -317,6 +317,32 @@ describe('System logs filtering', () => {
     vi.unstubAllGlobals();
   });
 
+  it('defaults the first request to the Warning level', async () => {
+    // LogStore matches Level as an exact string with no minimum-severity semantic
+    // (LogsEndpoint.cs), so "Warning and above" is not achievable without a backend
+    // change; exact "Warning" is the closest useful default (arb-kz8).
+    const api = mockApi(allRoutes);
+    const user = userEvent.setup();
+    renderSurface(<SystemPage />);
+    await openLogsTab(user);
+
+    const request = api.callsTo('/api/admin/logs').at(0);
+    expect(request?.url.searchParams.get('level')).toBe('Warning');
+    expect(screen.getByLabelText('Level')).toHaveValue('Warning');
+  });
+
+  it('re-issues without the level filter when All levels is chosen', async () => {
+    const api = mockApi(allRoutes);
+    const user = userEvent.setup();
+    renderSurface(<SystemPage />);
+    await openLogsTab(user);
+
+    await user.selectOptions(screen.getByLabelText('Level'), 'all');
+
+    const request = api.callsTo('/api/admin/logs').at(-1);
+    expect(request?.url.searchParams.has('level')).toBe(false);
+  });
+
   it('asks the server for the chosen level', async () => {
     const api = mockApi(allRoutes);
     const user = userEvent.setup();
@@ -359,6 +385,62 @@ describe('System logs filtering', () => {
     // "all" and would silently return an empty table.
     const request = api.callsTo('/api/admin/logs').at(-1);
     expect(request?.url.searchParams.has('level')).toBe(false);
+  });
+});
+
+describe('System logs message filter', () => {
+  beforeEach(() => {
+    useAdminKeyStore.setState({ key: 'test-key', serverKeyUnset: false });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('hides rows not matching the message filter and keeps matching ones', async () => {
+    mockApi(allRoutes);
+    const user = userEvent.setup();
+    renderSurface(<SystemPage />);
+    const table = await openLogsTab(user);
+
+    // Positive control: the row is present before filtering, so its later absence is
+    // evidence the filter did something rather than evidence the row was never there.
+    expect(within(table).getByText('Refresh cycle completed.')).toBeInTheDocument();
+    expect(within(table).getByText('Source probe failed for source 4.')).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Message'), 'probe');
+
+    expect(screen.queryByText('Refresh cycle completed.')).not.toBeInTheDocument();
+    expect(screen.getByText('Source probe failed for source 4.')).toBeInTheDocument();
+
+    // The footer line describes the client-filtered subset against the server's
+    // unfiltered page (3 entries), not against total/pageCount.
+    expect(screen.getByText('Showing 1 of 3 rows on this page match the message filter.')).toBeInTheDocument();
+  });
+
+  it('restores all rows when the message filter is cleared', async () => {
+    mockApi(allRoutes);
+    const user = userEvent.setup();
+    renderSurface(<SystemPage />);
+    await openLogsTab(user);
+
+    const input = screen.getByLabelText('Message');
+    await user.type(input, 'probe');
+    expect(screen.queryByText('Refresh cycle completed.')).not.toBeInTheDocument();
+
+    // Positive control: the line is present while filtered, so its absence after
+    // clearing is evidence the filter state changed rather than the line never
+    // rendering at all.
+    expect(
+      screen.getByText('Showing 1 of 3 rows on this page match the message filter.'),
+    ).toBeInTheDocument();
+
+    await user.clear(input);
+    expect(screen.getByText('Refresh cycle completed.')).toBeInTheDocument();
+    expect(screen.getByText('Source probe failed for source 4.')).toBeInTheDocument();
+    expect(
+      screen.queryByText(/rows on this page match the message filter/),
+    ).not.toBeInTheDocument();
   });
 });
 
