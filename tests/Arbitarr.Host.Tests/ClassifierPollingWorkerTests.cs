@@ -328,13 +328,88 @@ public sealed class ClassifierPollingWorkerTests
         // counting two failures rather than a coincidence of some other number.
         Assert.Equal(2, harness.Client.Calls);
 
-        var warning = Assert.Single(harness.Logger.Warnings);
+        // arb-s4lg: still exactly ONE *cycle* line. The per-call detail rows alongside it are the
+        // rate-capped diagnostics, which is why this filters by the cycle line's text rather than
+        // asserting Single over every Warning — the flood this guards against is a cycle line per
+        // candidate, and that assertion is unchanged in strength.
+        var warning = Assert.Single(harness.Logger.Warnings, w => w.Contains("Classifier cycle", StringComparison.Ordinal));
         Assert.Contains("2", warning, StringComparison.Ordinal);
 
         // No release identity in the line, the same constraint the WorkerCycle event works under.
         Assert.DoesNotContain(NoisyTitle, warning, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("g1", warning, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(SourceName, warning, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// arb-s4lg: the cycle Warning now names the exception TYPES and their counts, so an operator
+    /// reading one line knows what broke as well as how much. Two distinct types in one cycle to
+    /// prove the breakdown is a real aggregation rather than the single type echoed back.
+    /// </summary>
+    [Fact]
+    public async Task RunCycle_FailuresOfTwoTypes_LogsOneCycleWarningNamingBothTypesAndCounts()
+    {
+        var harness = new Harness(
+            normalizationEnabled: false,
+            failureTypes: new Func<Exception>[]
+            {
+                () => new HttpRequestException("simulated model failure"),
+                () => new InvalidOperationException("malformed verdict"),
+            });
+        harness.Lookup.Record(Release(NoisyTitle, "g1"));
+        harness.Lookup.Record(Release("Another Movie 2024 1080p RARBG", "g2"));
+
+        await harness.Worker.RunCycleAsync();
+
+        // Positive control: both candidates were attempted, so the counts below are the worker
+        // aggregating two real failures.
+        Assert.Equal(2, harness.Client.Calls);
+
+        var cycleWarning = Assert.Single(harness.Logger.Warnings, w => w.Contains("Classifier cycle", StringComparison.Ordinal));
+        Assert.Contains($"{nameof(HttpRequestException)}=1", cycleWarning, StringComparison.Ordinal);
+        Assert.Contains($"{nameof(InvalidOperationException)}=1", cycleWarning, StringComparison.Ordinal);
+
+        // Types and counts only — never the release or the source.
+        Assert.DoesNotContain(NoisyTitle, cycleWarning, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("g1", cycleWarning, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(SourceName, cycleWarning, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// The rate cap itself: five failures in one cycle produce exactly THREE per-call Warnings
+    /// (<c>MaxDetailedFailuresPerCycle</c>) plus the one cycle summary, with the remaining two
+    /// demoted to Debug and counted as suppressed. Without the cap this cycle would write six
+    /// Warnings, and a real outage would write one per candidate indefinitely.
+    /// </summary>
+    [Fact]
+    public async Task RunCycle_MoreFailuresThanTheCap_DetailsOnlyTheFirstThreeAtWarning()
+    {
+        var harness = new Harness(normalizationEnabled: false, clientThrows: true);
+        for (var i = 1; i <= 5; i++)
+        {
+            harness.Lookup.Record(Release($"Movie {i} 2024 1080p", $"g{i}"));
+        }
+
+        await harness.Worker.RunCycleAsync();
+
+        // Positive control: all five really were attempted, so the split below is the cap acting
+        // rather than candidates never being classified.
+        Assert.Equal(5, harness.Client.Calls);
+
+        var detail = harness.Logger.Warnings
+            .Where(w => w.Contains("Classification failed", StringComparison.Ordinal))
+            .ToList();
+        Assert.Equal(3, detail.Count);
+
+        // The suppressed two are demoted, not dropped.
+        var demoted = harness.Logger.Debugs
+            .Where(d => d.Contains("Classification failed", StringComparison.Ordinal))
+            .ToList();
+        Assert.Equal(2, demoted.Count);
+
+        var cycleWarning = Assert.Single(harness.Logger.Warnings, w => w.Contains("Classifier cycle", StringComparison.Ordinal));
+        Assert.Contains($"{nameof(HttpRequestException)}=5", cycleWarning, StringComparison.Ordinal);
+        Assert.Contains("3 logged in full above and 2 more at Debug", cycleWarning, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -426,10 +501,16 @@ public sealed class ClassifierPollingWorkerTests
             bool normalizationEnabled,
             bool clientThrows = false,
             TimeSpan? pollInterval = null,
-            bool withSink = true)
+            bool withSink = true,
+            IReadOnlyList<Func<Exception>>? failureTypes = null)
         {
-            Client = new CountingOllamaClient(clientThrows);
-            var classifierWorker = new ClassifierWorker(new ReleaseClassifier(Client), Cache, Identity);
+            Client = new CountingOllamaClient(clientThrows, failureTypes);
+            // arb-s4lg: the classifier gets the SAME recorder as the worker, so a test sees the
+            // per-call detail rows and the per-cycle summary in one place — which is the only way
+            // to assert that the cap suppressed the rows it claims to have suppressed. Production
+            // wires both from DI; here one logger stands in for the whole Arbitarr category.
+            var classifierWorker = new ClassifierWorker(
+                new ReleaseClassifier(Client, new TypedRecordingLogger<ReleaseClassifier>(Logger)), Cache, Identity);
             Worker = new ClassifierPollingWorker(
                 classifierWorker,
                 Lookup,
@@ -463,13 +544,20 @@ public sealed class ClassifierPollingWorkerTests
     /// </summary>
     private sealed class RecordingLogger : ILogger
     {
-        private readonly ConcurrentQueue<string> _warnings = new();
+        private readonly ConcurrentQueue<(LogLevel Level, string Message)> _entries = new();
 
-        public IReadOnlyList<string> Warnings => _warnings.ToList();
+        public IReadOnlyList<string> Warnings =>
+            _entries.Where(e => e.Level == LogLevel.Warning).Select(e => e.Message).ToList();
+
+        public IReadOnlyList<string> Debugs =>
+            _entries.Where(e => e.Level == LogLevel.Debug).Select(e => e.Message).ToList();
 
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
-        public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Warning;
+        // arb-s4lg: every level, so the cap's demoted rows are observable. Gating at Warning here
+        // would make "the rest went to Debug" untestable — and an absence assertion over rows the
+        // recorder refused to accept is exactly the vacuous shape CLAUDE.md §4 forbids.
+        public bool IsEnabled(LogLevel logLevel) => true;
 
         public void Log<TState>(
             LogLevel logLevel,
@@ -478,14 +566,32 @@ public sealed class ClassifierPollingWorkerTests
             Exception? exception,
             Func<TState, Exception?, string> formatter)
         {
-            if (!IsEnabled(logLevel))
-            {
-                return;
-            }
-
             ArgumentNullException.ThrowIfNull(formatter);
-            _warnings.Enqueue(formatter(state, exception));
+            _entries.Enqueue((logLevel, formatter(state, exception)));
         }
+    }
+
+    /// <summary>
+    /// Adapts the untyped <see cref="RecordingLogger"/> to the <see cref="ILogger{TCategoryName}"/>
+    /// the classifier wants, so both layers' rows land in one recorder in cycle order.
+    /// </summary>
+    private sealed class TypedRecordingLogger<T> : ILogger<T>
+    {
+        private readonly RecordingLogger _inner;
+
+        public TypedRecordingLogger(RecordingLogger inner) => _inner = inner;
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => _inner.IsEnabled(logLevel);
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            _inner.Log(logLevel, eventId, state, exception, formatter);
     }
 
     /// <summary>
@@ -519,18 +625,27 @@ public sealed class ClassifierPollingWorkerTests
     private sealed class CountingOllamaClient : IOllamaClient
     {
         private readonly bool _throws;
+        private readonly IReadOnlyList<Func<Exception>>? _failureTypes;
         private int _calls;
 
-        public CountingOllamaClient(bool throws) => _throws = throws;
+        public CountingOllamaClient(bool throws, IReadOnlyList<Func<Exception>>? failureTypes = null)
+        {
+            _throws = throws || failureTypes is { Count: > 0 };
+            _failureTypes = failureTypes;
+        }
 
         public int Calls => Volatile.Read(ref _calls);
 
         public Task<OllamaVerdict> ClassifyAsync(ReleaseCandidate candidate, CancellationToken cancellationToken = default)
         {
-            Interlocked.Increment(ref _calls);
+            var call = Interlocked.Increment(ref _calls);
             if (_throws)
             {
-                throw new HttpRequestException("simulated model failure");
+                // arb-s4lg: cycling the supplied factories lets one cycle produce more than one
+                // exception TYPE, which is what the breakdown assertion needs.
+                throw _failureTypes is { Count: > 0 }
+                    ? _failureTypes[(call - 1) % _failureTypes.Count]()
+                    : new HttpRequestException("simulated model failure");
             }
 
             return Task.FromResult(new OllamaVerdict("accept", 0.9));

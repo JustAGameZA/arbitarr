@@ -8,6 +8,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- arb-p94h: declared explicitly rather than relied on transitively. This project uses
+         ILogger<T>/NullLogger<T> directly (ReleaseClassifier, SyncReleaseArbiter), but the
+         abstractions only reach it by way of Core's Microsoft.Extensions.Hosting.Abstractions
+         reference — so a tidy-up of Core's dependencies would break compilation here for reasons
+         invisible in this file. Abstractions ONLY: the AI layer consumes ILogger and must never
+         pull in the logging implementation or configure providers, which is the composition
+         root's job (AC6). Version matches what the graph already resolves. -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.11" />
     <ProjectReference Include="..\Arbitarr.Core\Arbitarr.Core.csproj" />
     <!-- AC6a: Arbitarr.Core.Identity itself references Arbitarr.Core only, never Arbitarr.Media,
          so this reference cannot reopen the "Ai must never reach Media" violation transitively.
