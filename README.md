@@ -90,6 +90,16 @@ configured; the admin UI is served at `http://arbitarr.example.invalid:8080/admi
 | `ARBITARR__CLIENTAPIKEYS__<n>__NAME` / `...__KEY` | Legacy named inbound client keys; remain accepted after upgrading |
 | `ARBITARR_CONFIG_DIR` | Runtime state directory (defaults to `/config`; mount a volume there) — see [What lives in the config directory](#what-lives-in-the-config-directory) |
 
+### NZBHydra2 required setting: Proxy mode
+
+Arbitarr refuses upstream redirect responses and will not follow them (SEC-M1).
+
+**You must configure NZBHydra2 as follows for downloads to work:**
+
+Navigate to **Downloading > NZB access type** and select **"Proxy"** (menu path as of NZBHydra2 v5).
+
+If this setting is left at "Redirect to indexer", every download will fail with `502 Bad Gateway` and the activity log will show `Download refused: <source name> redirected instead of serving the file` (where the source name is the display name you configured for NZBHydra2). See [ADR 0014](docs/adr/0014-refuse-upstream-download-redirects.md) for the reasoning.
+
 ### What lives in the config directory
 
 | Path | Contents |
