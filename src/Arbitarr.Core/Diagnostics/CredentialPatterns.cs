@@ -45,6 +45,22 @@ public static partial class CredentialPatterns
     public const string Replacement = "<redacted>";
 
     /// <summary>
+    /// arb-qj9 (#206 security review): upper bound on a single match, matching the repo's posture
+    /// for regexes that run over untrusted input (<c>FilterRule.MatchTimeout</c>, also 250ms).
+    ///
+    /// <para>The risk here is the inverse of <c>FilterRule</c>'s. There the PATTERN is user-supplied
+    /// and the timeout bounds a hostile regex; these patterns are compile-time constants, but the
+    /// INPUT is an upstream response body an attacker may influence, and several arms carry a
+    /// variable-length value class adjacent to a variable-length prefix — the shape that backtracks.
+    /// A scrubber that hangs is a worse outage than one that throws: an unbounded match on a log
+    /// write stalls the writer, and this runs on the path that serves <c>/api/status</c>.</para>
+    ///
+    /// <para>250ms is enormous for an excerpt this size, so it should never fire on legitimate
+    /// input; it exists as a ceiling, not a tuning knob.</para>
+    /// </summary>
+    private const int MatchTimeoutMilliseconds = 250;
+
+    /// <summary>
     /// Returns <paramref name="text"/> with every credential-shaped substring replaced by
     /// <see cref="Replacement"/>, preserving the NAME that introduced each one.
     ///
@@ -76,7 +92,8 @@ public static partial class CredentialPatterns
     /// </summary>
     [GeneratedRegex(
         @"(?<prefix>[?&](?:api_?key|token|passkey|password)=)(?<value>[^&\s""']+)",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        matchTimeoutMilliseconds: MatchTimeoutMilliseconds)]
     private static partial Regex QueryParameterCredential();
 
     /// <summary>
@@ -86,7 +103,8 @@ public static partial class CredentialPatterns
     /// </summary>
     [GeneratedRegex(
         @"(?<prefix>\b(?:bearer|basic)\s+)(?<value>[A-Za-z0-9+/=._~-]{8,})",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        matchTimeoutMilliseconds: MatchTimeoutMilliseconds)]
     private static partial Regex AuthorizationScheme();
 
     /// <summary>
@@ -97,7 +115,8 @@ public static partial class CredentialPatterns
     /// </summary>
     [GeneratedRegex(
         @"(?<prefix>\b[\w-]*(?:api[_-]?key|apikey|token|passkey|password|secret)[\w-]*""?\s*[:=]\s*""?)(?<value>[^\s,;""'}\]]{4,})",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        matchTimeoutMilliseconds: MatchTimeoutMilliseconds)]
     private static partial Regex NamedCredential();
 
     /// <summary>
@@ -116,6 +135,7 @@ public static partial class CredentialPatterns
     /// </summary>
     [GeneratedRegex(
         @"(?<prefix>\b(?:api[_-]?key|apikey|key|token|secret|password|passkey)\s+)(?<value>[A-Za-z0-9_.+-]{12,})",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        matchTimeoutMilliseconds: MatchTimeoutMilliseconds)]
     private static partial Regex SpaceSeparatedCredential();
 }

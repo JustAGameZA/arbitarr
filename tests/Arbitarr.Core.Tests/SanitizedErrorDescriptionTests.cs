@@ -434,6 +434,7 @@ public sealed class SanitizedErrorDescriptionTests
     // (1) Double-encoded URL. Survived: the stranded first label and the encoded port. The dotted
     // middle was already being eaten, which is precisely why the whole URL is the wrong plant.
     [InlineData("proxy error for http%253A%252F%252Follama.internal.example%253A11434%252Fapi", "%253A11434")]
+    [InlineData("proxy error for http%253A%252F%252Follama.internal.example%253A11434%252Fapi", "%252F%252Follama")]
     // (2) Trigger-word punctuation: colon, quote, and a bare Host header with no port to catch it.
     [InlineData("upstream: ollama-gpu-rig refused", "ollama-gpu-rig")]
     [InlineData("upstream \\\"ollama-gpu-rig\\\" refused", "ollama-gpu-rig")]
@@ -464,6 +465,50 @@ public sealed class SanitizedErrorDescriptionTests
         Assert.DoesNotContain(plantedToken, described, StringComparison.Ordinal);
         // Detectability: something was redacted, so this cannot pass by the excerpt never arriving.
         Assert.Contains(SanitizedErrorDescription.Replacement, described, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// arb-qj9 (#206 review nit): <c>dial tcp HOST</c> redacts the HOST, not the protocol.
+    ///
+    /// <para>The contextual arm consumed "tcp" as its value and stopped, publishing
+    /// <c>dial &lt;redacted&gt; ollama_gpu_rig</c> — the protocol name redacted and the actual host
+    /// left standing, which is the exact inversion of the arm's purpose. This is the portless case:
+    /// with a port, <c>HostWithPort</c> covers the host regardless, so the bug only bites where
+    /// nothing else can catch it. Pinned as its own fact because the theory row above carries a port
+    /// and would still pass with the mis-fire present.</para>
+    /// </summary>
+    [Fact]
+    public void A_dial_error_redacts_the_host_and_keeps_the_protocol()
+    {
+        const string host = "ollama_gpu_rig";
+        var body = $$"""{"error":"dial tcp {{host}}: connect: connection refused"}""";
+
+        Assert.Contains(host, body, StringComparison.Ordinal);
+
+        var described = SanitizedErrorDescription.Describe(
+            new OllamaRequestException(HttpStatusCode.BadRequest, body));
+
+        Assert.DoesNotContain(host, described, StringComparison.Ordinal);
+        // The protocol is diagnostic, not topology: redacting it was the bug.
+        Assert.Contains("tcp", described, StringComparison.Ordinal);
+        Assert.Contains(SanitizedErrorDescription.Replacement, described, StringComparison.Ordinal);
+
+        // IDEMPOTENCE, and the reason this assertion exists rather than being assumed: the first
+        // attempt at the fix made the protocol-skip optional WITHOUT the (?!<) lookahead, which
+        // passed every assertion above and then ate "tcp" on the second pass — the engine discarded
+        // the optional group and fell back onto it once the host slot held "<redacted>". Describe()
+        // scrubs an already-scrubbed body, so that second pass is the real path, and only this
+        // assertion caught it.
+        // Feeding the already-scrubbed EXCERPT back through as a body must scrub to itself. (The
+        // excerpt, not `described` — re-describing would prepend a second exception header and the
+        // comparison would fail for a reason that has nothing to do with the arms.)
+        var excerpt = described[(described.IndexOf(": ", StringComparison.Ordinal) + 2)..];
+
+        Assert.EndsWith(
+            excerpt,
+            SanitizedErrorDescription.Describe(
+                new OllamaRequestException(HttpStatusCode.BadRequest, excerpt)),
+            StringComparison.Ordinal);
     }
 
     /// <summary>

@@ -287,9 +287,29 @@ public static partial class SanitizedErrorDescription
     /// <para><b>arb-qj9: the value class admits <c>_</c>.</b> Docker Compose service names routinely
     /// carry underscores ("ollama_gpu_rig"), and they are hostnames on the container network — the
     /// single most likely single-label host to appear in an error from a containerised Ollama.</para>
+    ///
+    /// <para><b>arb-qj9: <c>tcp</c>/<c>udp</c> are skipped after the trigger, not taken as the
+    /// host.</b> Go's network errors read <c>dial tcp ollama_gpu_rig:11434: refused</c>, and the arm
+    /// as written consumed "tcp" as the value — publishing <c>dial &lt;redacted&gt; ollama_gpu_rig</c>,
+    /// which redacted the protocol name and left the real host standing. That mis-fire PREDATES this
+    /// change (the trigger list already carried <c>dial</c>, and <c>\s+</c> already reached "tcp"); it
+    /// is fixed here because this is the arm being widened and the wrong output is this arm's own.
+    /// The protocol is consumed INTO the prefix, so it survives and the line still reads as a dial
+    /// error. <c>HostWithPort</c> catches the host when a port is present; this makes the portless
+    /// form work too.</para>
+    ///
+    /// <para><b>The <c>(?!&lt;)</c> after the protocol keeps the arm IDEMPOTENT, and it is the whole
+    /// reason that lookahead is there.</b> Without it, a second pass over already-scrubbed
+    /// <c>dial tcp &lt;redacted&gt;</c> finds the optional skip followed by <c>&lt;redacted&gt;</c>,
+    /// which the value class cannot match; the engine then BACKTRACKS, discards the skip, and takes
+    /// "tcp" as the value — re-introducing the very mis-fire this change removes, on the second pass
+    /// instead of the first. The remark above on the replacement token not being re-capturable holds
+    /// only because no arm can reach PAST it; an optional group that may be discarded is exactly how
+    /// an arm reaches past it. <c>Describe</c> scrubs a body that was already scrubbed at
+    /// construction, so the second pass is the normal path here, not a hypothetical.</para>
     /// </summary>
     [GeneratedRegex(
-        @"(?<prefix>\b(?:upstream|host|dial|peer|via|through|connect(?:ing|ed)?\s+to|resolve|resolving|lookup)(?:\s|[""':=\\])+)(?<value>[a-z0-9][a-z0-9_-]{2,62})\b",
+        @"(?<prefix>\b(?:upstream|host|dial|peer|via|through|connect(?:ing|ed)?\s+to|resolve|resolving|lookup)(?:\s|[""':=\\])+(?:(?:tcp|udp)[46]?\s+)?)(?!(?:tcp|udp)[46]?\b)(?<value>[a-z0-9][a-z0-9_-]{2,62})\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ContextualSingleLabelHost();
 
