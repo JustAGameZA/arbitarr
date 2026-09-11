@@ -10,7 +10,7 @@ namespace Arbitarr.Host.Maintenance;
 
 /// <summary>
 /// M7-3a: schedules <see cref="MaintenanceJob"/> to run on the <c>maintenance_job_interval</c>
-/// setting. Per <see cref="SettingsValidator.ValidateMaintenanceJobInterval"/>, this is the one
+/// setting. Per <see cref="Arbitarr.Core.Settings.SettingsValidator.ValidateMaintenanceJobInterval"/>, this is the one
 /// setting explicitly permitted to require a restart to take effect: the interval is read once at
 /// startup (the first loop iteration) and reused for every subsequent delay rather than being
 /// re-resolved every cycle the way <c>RefreshWorker</c>'s tunables are (M7-8b/AC24 does not apply
@@ -191,7 +191,7 @@ public sealed class MaintenanceHostedService(
     }
 
     /// <summary>
-    /// Records a failed automatic-backup pass on <see cref="BackupStateStore"/> so
+    /// Records a failed automatic-backup pass on <see cref="Arbitarr.Data.Backup.BackupStateStore"/> so
     /// <c>GET /api/admin/backup/status</c> can explain a timestamp that stopped advancing.
     ///
     /// Resolved with <c>GetService</c> and silently skipped when absent, for the same reason the

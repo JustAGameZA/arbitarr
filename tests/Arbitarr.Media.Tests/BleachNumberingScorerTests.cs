@@ -25,7 +25,7 @@ public class BleachNumberingScorerTests
     /// <summary>
     /// TYBW arc binding extended (step 3, this pass) with <c>AlternateSceneSeasons: [1]</c> so the
     /// "Sennen Kessen hen" family (scene season 1, Japanese arc-title token) can bind via the new
-    /// scene-season-alias path in <see cref="CandidateNumberingSetBuilder.ResolveBinding"/>, per
+    /// scene-season-alias path in <c>CandidateNumberingSetBuilder.ResolveBinding</c>, per
     /// team-lead's explicit instruction to extend the builder rather than the scorer for this case.
     /// </summary>
     private static ArcSeasonBinding TybwBinding => new(

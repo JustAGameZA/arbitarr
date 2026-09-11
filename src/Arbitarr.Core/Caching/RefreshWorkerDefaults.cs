@@ -4,8 +4,8 @@ namespace Arbitarr.Core.Caching;
 
 /// <summary>
 /// Shared, unconfigured defaults for the two-age cache's fresh/serve-until ages, sourced from
-/// <see cref="SettingsSnapshot.Defaults"/> so the request-path cache stage (<see
-/// cref="Arbitarr.Api.Search.SearchResultCacheStage"/>, referenced here only by doc comment to avoid
+/// <see cref="SettingsSnapshot.Defaults"/> so the request-path cache stage
+/// (<c>Arbitarr.Api.Search.SearchResultCacheStage</c>, referenced here only by doc comment to avoid
 /// a Core→Api reference) and the Host DI-wired <see cref="RefreshWorkerOptions"/> agree on the same
 /// values without duplicating the magic numbers. No settings-store/repository exists yet (M3 scope
 /// per team-lead), so this is a fixed snapshot rather than a live-reloadable value; wiring it to a

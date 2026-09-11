@@ -15,7 +15,7 @@ namespace Arbitarr.Core.Sources;
 /// and giving it one would invite a construction site to route a caps request down the search path.
 /// </para>
 /// <para>
-/// CLAUDE.md §3: <see cref="Parse"/> matches the wire names EXPLICITLY and never uses
+/// CLAUDE.md §3: <see cref="SearchTypeParser.Parse"/> matches the wire names EXPLICITLY and never uses
 /// <c>Enum.TryParse</c>. That helper accepts the numeric form, so a caller sending
 /// <c>t=1</c> would select a mode through an input shape no Newznab client is documented to have.
 /// <c>Enum.IsDefined</c> does not close it either (<c>1</c> IS defined) and neither does trimming

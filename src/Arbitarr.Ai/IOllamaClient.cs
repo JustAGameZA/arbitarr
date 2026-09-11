@@ -18,6 +18,6 @@ public interface IOllamaClient
 }
 
 /// <summary>Result of a single Ollama classification call.</summary>
-/// <param name="Verdict">"accept" or "reject", as constrained by <see cref="VerdictSchema"/>.</param>
+/// <param name="Verdict">"accept" or "reject", as constrained by <see cref="Arbitarr.Core.Ai.VerdictSchema"/>.</param>
 /// <param name="Confidence">Model-reported confidence in [0,1].</param>
 public sealed record OllamaVerdict(string Verdict, double Confidence);

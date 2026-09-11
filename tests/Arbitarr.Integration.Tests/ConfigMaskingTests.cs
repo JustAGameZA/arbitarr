@@ -8,7 +8,7 @@ namespace Arbitarr.Integration.Tests;
 /// <summary>
 /// M2-3: given a persisted configuration that includes an NZBHydra2 API key and a LAN base URL,
 /// <c>/api/config/effective</c>'s response body must contain neither — not masked, not partial:
-/// <see cref="ConfigProjection"/> (src/Arbitarr.Api/Dashboard/ConfigProjection.cs) is a hard
+/// <see cref="Arbitarr.Api.Dashboard.ConfigProjection"/> (src/Arbitarr.Api/Dashboard/ConfigProjection.cs) is a hard
 /// allow-list that never has a property for either field, so this test proves the whole-response
 /// body against the same credential/RFC-1918 regex shapes the repo's pre-commit secret guard
 /// (.githooks/pre-commit) enforces on commits, as an independent runtime check.

@@ -52,7 +52,7 @@ internal static class AuthEndpointTestSupport
     ///
     /// <para><b>THE TOKEN IS CAPTURED FROM <c>Set-Cookie</c>, WHICH IS THE ONLY MOMENT IT EXISTS.</b>
     /// It is never persisted — the row stores only a hash (that is the design) — and
-    /// <see cref="WebApplicationFactory{T}"/>'s client keeps received cookies in its handler's
+    /// <see cref="Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory{TEntryPoint}"/>'s client keeps received cookies in its handler's
     /// private container, which no public API exposes. So a test that needs to REPLAY a token (the
     /// logout and CSRF cases both do) must take it here or not at all.</para>
     ///

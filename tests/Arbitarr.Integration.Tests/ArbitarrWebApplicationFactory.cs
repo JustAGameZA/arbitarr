@@ -11,7 +11,7 @@ namespace Arbitarr.Integration.Tests;
 /// against a fresh, per-instance SQLite file under a temp <c>/config</c> directory, so M2's
 /// dashboard endpoints, migrations-on-startup behaviour, and static file serving are all exercised
 /// exactly as they run in production. Callers seed rows via <see cref="SeedAsync"/> before issuing
-/// requests through <see cref="WebApplicationFactory{TEntryPoint}.CreateClient"/>.
+/// requests through <see cref="WebApplicationFactory{TEntryPoint}.CreateClient()"/>.
 /// </summary>
 public sealed class ArbitarrWebApplicationFactory : WebApplicationFactory<Program>
 {

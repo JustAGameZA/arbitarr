@@ -2,8 +2,8 @@ namespace Arbitarr.Ai.Normalization;
 
 /// <summary>
 /// AC26: asserts that normalization did not remove or alter any allow-listed (identity-relevant)
-/// token between the original and normalized title. <see cref="Arbitarr.Ai"/> cannot depend on
-/// <see cref="Arbitarr.Media"/> (AC6a) to run the real *arr-compatible parser both before and after
+/// token between the original and normalized title. <c>Arbitarr.Ai</c> cannot depend on
+/// <c>Arbitarr.Media</c> (AC6a) to run the real *arr-compatible parser both before and after
 /// normalization, so this guard instead performs a structural check: every allow-listed token
 /// present in the original title must still be present, verbatim, in the normalized title. A
 /// violation means normalization would have silently broken what a downstream parser relies on —

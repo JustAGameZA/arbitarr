@@ -21,7 +21,7 @@ namespace Arbitarr.Sources.NzbHydra;
 /// parameters when the query carries those ids, never folded into <c>q</c>. The one shape that
 /// treats <c>q</c> specially is Sonarr's anime search (<c>tvdbid</c> plus a bare episode number as
 /// <c>q</c>): the number is sent joined to a resolved series title when one is available, and
-/// withheld entirely when one is not — see <see cref="IsIdScopedAbsoluteNumberQuery"/> for why
+/// withheld entirely when one is not — see <see cref="Arbitarr.Core.Sources.SearchQuery.IsIdScopedAbsoluteNumberQuery"/> for why
 /// NZBHydra2 turns a bare number into a feed-wide search for it.
 /// </para>
 ///

@@ -6,7 +6,7 @@ namespace Arbitarr.Api.Rendering;
 
 /// <summary>
 /// Renders an <see cref="XDocument"/> to a string including its XML declaration.
-/// <see cref="XDocument.ToString()"/> deliberately omits the declaration by default, but
+/// <see cref="XNode.ToString()"/> deliberately omits the declaration by default, but
 /// Torznab/Newznab clients (and the golden-XML fixtures) expect the standard
 /// <c>&lt;?xml version="1.0" encoding="UTF-8"?&gt;</c> prolog on every response.
 ///

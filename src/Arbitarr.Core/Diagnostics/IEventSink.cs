@@ -74,7 +74,7 @@ public readonly record struct RecordedEvent(
 /// Why an interface in Core rather than calling the repository directly: the two busiest emission
 /// points are <see cref="Caching.RefreshWorker"/> (Arbitarr.Core) and the search-serving path
 /// (Arbitarr.Api), and Core cannot reference Arbitarr.Data at all — see
-/// <see cref="RecordedEventKind"/>. This is the same shape <see cref="IRefreshWorkerHealth"/>
+/// <see cref="RecordedEventKind"/>. This is the same shape <see cref="Arbitarr.Core.Caching.IRefreshWorkerHealth"/>
 /// already uses for the same reason, so it is the established local pattern rather than a new one.
 ///
 /// IMPLEMENTATIONS MUST NOT THROW. Recording history is strictly less important than serving the

@@ -13,7 +13,7 @@ public sealed class QuerySnapshotCacheEntry
     /// <summary>
     /// Opaque token identifying this paging session. Note: this is purely an internal cache key —
     /// a deterministic hash of the query's identity (search type + query text + categories; see
-    /// <see cref="Arbitarr.Api.Search.PaginationSnapshotService"/>'s <c>ComputeSnapshotToken</c>).
+    /// <c>Arbitarr.Api.Search.PaginationSnapshotService</c>'s <c>ComputeSnapshotToken</c>).
     /// It is never returned to or accepted from Torznab/Newznab clients, unlike some indexer
     /// protocols' client-visible pagination cursors — callers simply repeat <c>offset</c>/<c>limit</c>
     /// against the same <c>t</c>/<c>q</c>/<c>cat</c>, and this service re-derives the same token to

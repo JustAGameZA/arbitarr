@@ -7,14 +7,20 @@
 
     CS1591 and CS1573 are suppressed by choice, not by omission: a missing summary or an
     incomplete <param> list is "missing documentation", the same class CS1591 already covers,
-    not malformed XML, so the gate does not need to see it. CS1574 and CS0419 (an unresolved or
-    ambiguous <see>/<paramref> cref) are suppressed TEMPORARILY, pending the 98 existing hits
-    being fixed under follow-up bead arb-ul4; once that lands, drop CS1574 and CS0419
-    from this list so those become real warnings too. Everything else in the CS157x/CS158x
-    range is a real warning today and fails the build.
+    not malformed XML, so the gate does not need to see it.
+
+    CS1574 and CS0419 (an unresolved or ambiguous <see>/<paramref> cref) are NOT suppressed: they
+    were fixed wholesale under arb-ul4 and are real warnings that fail the build, which is what
+    keeps a cref honest. A cref rots silently when the symbol it names is renamed, made private, or
+    moved into a project this one may not reference (Core may not reference Api or Data, per
+    CoreIsolationTests) — the comment then points at nothing while still reading as a live link.
+    When a referent is genuinely unreachable, or is a concept, a JSON field, a setting-key string or
+    a route rather than a symbol, write it as plain <c>Name</c> code text. Never add a project
+    reference, never widen a member's accessibility, and never delete the doc comment, merely to
+    make a cref resolve.
   -->
   <PropertyGroup>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <NoWarn>$(NoWarn);CS1591;CS1573;CS1574;CS0419</NoWarn>
+    <NoWarn>$(NoWarn);CS1591;CS1573</NoWarn>
   </PropertyGroup>
 </Project>

@@ -112,7 +112,7 @@ public sealed class ArrInstanceRepository
     /// <para><paramref name="apiKey"/> follows the source-API-key contract exactly: null LEAVES THE
     /// STORED VALUE ALONE, a non-empty value REPLACES it. There is deliberately no way to express
     /// "give me back what is stored", because the caller never had it — which is also why omitting
-    /// the field from an edit must not clear it. <see cref="ClearApiKeyAsync"/> is the one way to
+    /// the field from an edit must not clear it. <see cref="ClearAsync"/> is the one way to
     /// un-configure a key, kept explicit rather than folded in here, where conflating the two would
     /// make an ordinary edit that omits the field silently destroy the operator's configuration.</para>
     /// </summary>

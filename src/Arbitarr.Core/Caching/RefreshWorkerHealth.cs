@@ -50,7 +50,7 @@ public interface IRefreshWorkerHealth
 
 /// <summary>
 /// Default <see cref="IRefreshWorkerHealth"/>: a thread-safe singleton snapshot holder. Registered
-/// once per worker instance in the Host and shared with <see cref="Dashboard"/>'s status endpoint via
+/// once per worker instance in the Host and shared with <c>Arbitarr.Api.Dashboard</c>'s status endpoint via
 /// DI; tests construct their own instance directly since it needs no dependencies.
 /// </summary>
 public sealed class RefreshWorkerHealthTracker : IRefreshWorkerHealth

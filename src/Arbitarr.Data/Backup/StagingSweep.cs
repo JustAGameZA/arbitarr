@@ -11,13 +11,13 @@ namespace Arbitarr.Data.Backup;
 /// replaced (arb-3gd), <see cref="BackupPaths.StagingDirectory"/> lives on the config volume, which
 /// is not reliably cleared between runs — so without this sweep an orphan is permanent.
 ///
-/// <para><b>Called once, at startup, by <see cref="StagingSweepService"/>.</b> This type is the
+/// <para><b>Called once, at startup, by <c>StagingSweepService</c>.</b> This type is the
 /// pure logic (so it is testable without spinning up a host); the hosted service is only the
 /// startup-time trigger.</para>
 ///
 /// <para><b>Only files older than process start are touched.</b> A file created by an operation
 /// racing the sweep at startup (unlikely, but not impossible if the host restarts quickly) must
-/// never be deleted out from under it — comparing against <see cref="File.GetLastWriteTimeUtc"/>
+/// never be deleted out from under it — comparing against <see cref="File.GetLastWriteTimeUtc(string)"/>
 /// rather than "everything currently in the directory" is what keeps the sweep from being able to
 /// delete a file its own process is still writing.</para>
 /// </summary>

@@ -216,7 +216,7 @@ public sealed class RestoreService
     /// <para>The WAL and shared-memory sidecars of the OLD database are then deleted alongside it.
     /// Leaving them beside a replaced main file is the one way this operation can corrupt rather
     /// than restore: SQLite would try to recover the previous database's journal onto the new
-    /// file's pages. The restored snapshot came out of <see cref="SqliteConnection.BackupDatabase"/>
+    /// file's pages. The restored snapshot came out of <see cref="SqliteConnection.BackupDatabase(SqliteConnection)"/>
     /// with its WAL already folded in, so it needs no sidecars of its own.</para>
     ///
     /// <para><b>THE TWO REPLACEMENTS ARE NARROWED TO BACK-TO-BACK RENAMES, NOT ELIMINATED.</b> Both

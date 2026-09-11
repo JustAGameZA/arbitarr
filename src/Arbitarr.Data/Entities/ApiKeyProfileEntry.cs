@@ -2,7 +2,7 @@ namespace Arbitarr.Data.Entities;
 
 /// <summary>
 /// Maps a named API key (identity, per A3) to the <see cref="FilterProfileEntry"/> that should
-/// apply to searches authenticated with it. Distinct from <see cref="SettingKey.AdminApiKey"/>
+/// apply to searches authenticated with it. Distinct from <see cref="Arbitarr.Core.Settings.SettingKey.AdminApiKey"/>
 /// (Arbitarr.Core.Settings), which gates mutating admin actions rather than selecting a search
 /// filter profile.
 /// </summary>

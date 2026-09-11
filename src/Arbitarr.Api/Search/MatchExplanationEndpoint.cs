@@ -14,7 +14,7 @@ namespace Arbitarr.Api.Search;
 /// match can see at a glance whether normalization altered what the source sent.
 /// </summary>
 /// <param name="Title">
-/// The title as used for matching — normalized, if <see cref="Arbitarr.Ai"/>'s title normalizer
+/// The title as used for matching — normalized, if <c>Arbitarr.Ai</c>'s title normalizer
 /// ran (M5); otherwise identical to <paramref name="OriginalTitle"/>.
 /// </param>
 /// <param name="OriginalTitle">
