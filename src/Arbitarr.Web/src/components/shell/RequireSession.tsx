@@ -24,15 +24,26 @@ interface RequireSessionProps {
  *    amount of care inside this component would fix it -- the route table is
  *    what prevents it.
  *
- * 2. It redirects only on a DEFINITE "no". If the session query ERRORS, the
- *    children render. A guard that redirected on error would strand the
- *    operator at a login page during any backend hiccup, and -- worse -- would
- *    do it on a login page whose own submit needs the same backend. Failing
- *    open on error is safe because it is not the security boundary: every
- *    gated route is enforced server-side by `AdminApiKeyFilter`, so the worst
- *    case of rendering the shell without a session is surfaces that show their
- *    own 401 states. This component is a convenience, and treating it as the
- *    gate would be the actual mistake.
+ * 2. It redirects only on a DEFINITE "no". The states, enumerated:
+ *      - first load (loading, no data yet): renders nothing (below).
+ *      - loaded (data present): checked against `data.authenticated`.
+ *      - errored: children render via fail-open, below.
+ *      - post-error refetch: children render via the latch, below, until a
+ *        real answer supersedes it.
+ *      - paused/offline query: `data` stays undefined and `isLoading` stays
+ *        true (react-query does not resolve a paused query to an error), so
+ *        this falls into the "first load" / loading-render-nothing case, not
+ *        the errored-or-latched one.
+ *
+ *    If the session query ERRORS, the children render. A guard that
+ *    redirected on error would strand the operator at a login page during
+ *    any backend hiccup, and -- worse -- would do it on a login page whose
+ *    own submit needs the same backend. Failing open on error is safe
+ *    because it is not the security boundary: every gated route is enforced
+ *    server-side by `AdminApiKeyFilter`, so the worst case of rendering the
+ *    shell without a session is surfaces that show their own 401 states.
+ *    This component is a convenience, and treating it as the gate would be
+ *    the actual mistake.
  *
  *    WHILE loading, though, nothing renders (arb-7m7). Rendering `children`
  *    during that window used to mount the protected route -- and its queries,
@@ -70,7 +81,7 @@ export function RequireSession({ children }: RequireSessionProps) {
 
   // Property 2 (error half): no redirect without a definite answer. `data` is
   // undefined on error too, and that renders the children (fail open).
-  if (isError || (failedOpenOnce.current && data === undefined) || (data === undefined && !isLoading)) {
+  if (isError || (failedOpenOnce.current && data === undefined)) {
     return <>{children}</>;
   }
 

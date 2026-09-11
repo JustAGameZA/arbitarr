@@ -1,11 +1,12 @@
 /**
  * The single path -> label mapping for the app's seven surfaces.
  *
- * Two consumers read this table and must never drift apart:
+ * Three consumers read this table and must never drift apart:
  *  - pageTitle.test.tsx, which asserts the in-page <h1> (AC2b: exactly one
  *    page title per view, living in the content pane).
  *  - AppShell's document-title effect (documentTitle.test.tsx), which sets
  *    the browser tab title per route.
+ *  - Login.tsx, which sets `document.title` to `LOGIN_TITLE` on mount.
  *
  * Adding a surface means adding a row here -- nowhere else.
  */

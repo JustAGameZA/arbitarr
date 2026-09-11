@@ -50,6 +50,9 @@ describe('document title per route', () => {
 
   it('sets the login title, not the requested route\'s, for a signed-out deep link (arb-7m7)', async () => {
     mockApi({ ...signedOut() });
+    // the stale title the bug left behind; without it this assertion is
+    // vacuous in isolation
+    document.title = 'System — Arbitarr';
 
     renderApp('/system');
 
