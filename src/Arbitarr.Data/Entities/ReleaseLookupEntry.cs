@@ -18,11 +18,12 @@ namespace Arbitarr.Data.Entities;
 /// resolving a guid can pick the source without deserializing, and so an operator reading the table
 /// can see which source a row came from.</para>
 ///
-/// <para>NO SECRET IS STORED HERE. The candidate's <c>Link</c> is the upstream release URL as the
-/// source reported it; a source API key lives only in the write-only
-/// <c>source:{id}:api_key</c> settings rows and is attached at fetch time by the source's own
-/// client, never persisted on this row. <c>ReleaseLookupPayloadSecretTests</c> holds that line with
-/// a planted-secret positive control.</para>
+/// <para>NO SOURCE API KEY IS STORED HERE. The candidate's <c>Link</c> is the upstream release URL
+/// exactly as the source reported it, and is persisted VERBATIM, re-validated against the pinned
+/// origin at fetch time (see <see cref="PayloadJson"/> above); a source API key lives only in the
+/// write-only <c>source:{id}:api_key</c> settings rows and is attached at fetch time by the
+/// source's own client, never persisted on this row. <c>ReleaseLookupPayloadSecretTests</c> holds
+/// that line with a planted-secret positive control.</para>
 /// </summary>
 public sealed class ReleaseLookupEntry
 {

@@ -77,7 +77,7 @@ export interface OllamaTestResult {
    * perfectly healthy.
    *
    * A SEPARATE FIELD FROM `message`, and that separation is why the outcome union
-   * above is still four members. Carrying the names inside the wording would have
+   * above is still six members. Carrying the names inside the wording would have
    * meant a server message derived from the upstream body, which is exactly the
    * shape the closed enum exists to prevent. These are rendered only as options in
    * a picker, never as prose.
