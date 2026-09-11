@@ -29,14 +29,21 @@ namespace Arbitarr.Core.Diagnostics;
 /// <see cref="OllamaRequestException.MaxExcerptLength"/>), and by CONTENT
 /// (<see cref="ScrubForPublication"/> below).</para>
 ///
-/// <para><b>Why the scrubbing is implemented here rather than calling <c>LogMessageCleanser</c>.</b>
-/// That cleanser lives in Arbitarr.Data, which references Arbitarr.Core; Core referencing it back
-/// would be a reference cycle and would break AC6 (<c>CoreIsolationTests</c> asserts Core references
-/// no other Arbitarr project). The credential patterns below are therefore kept deliberately
-/// EQUIVALENT to that cleanser's, and use the same <c>&lt;redacted&gt;</c> replacement token so a
-/// reader sees one vocabulary across both sinks. If a pattern is added there for a real leak, add it
-/// here too — the two lists are siblings, and <c>SanitizedErrorDescriptionTests</c> pins the shared
-/// token so a divergence in that much at least fails a test.</para>
+/// <para><b>The credential arms are ONE implementation, shared with the log cleanser (arb-6vf).</b>
+/// They live in <see cref="CredentialPatterns"/> in this same project, and both this type and
+/// <c>Arbitarr.Data.Logging.LogMessageCleanser</c> call it. Core is where the shared half has to
+/// live: Data references Core, and Core referencing Data back would be a reference cycle that
+/// breaks AC6 (<c>CoreIsolationTests</c> asserts Core references no other Arbitarr project).
+/// Previously each sink held its own copy, kept equivalent by a comment asking the next contributor
+/// to edit both — and they had already drifted, with the space-separated credential arm reaching
+/// only this file. Add a credential pattern in <see cref="CredentialPatterns"/> and both sinks gain
+/// it.</para>
+///
+/// <para><b>The HOST arms below stay here, and must not be shared.</b> They exist because this
+/// output reaches an UNAUTHENTICATED caller. The log store behind <c>/api/admin/logs</c> is
+/// admin-gated, and an operator diagnosing a connection failure needs the hostname that failed;
+/// stripping it there would cost the diagnosis without protecting anyone who is not already
+/// authenticated. Only credentials are common to both sinks.</para>
 ///
 /// <para><b>Hosts are removed, not redacted in place.</b> Leaking LAN topology is the specific harm
 /// this type was created to prevent, so anything host-shaped in the excerpt — a URL, a bare
@@ -47,10 +54,14 @@ namespace Arbitarr.Core.Diagnostics;
 public static partial class SanitizedErrorDescription
 {
     /// <summary>
-    /// The text substituted for a redacted value. Matches <c>LogMessageCleanser.Replacement</c>
-    /// deliberately — see the note above on why the two are siblings rather than one shared call.
+    /// The text substituted for a redacted value.
+    ///
+    /// <para>arb-6vf: aliases <see cref="CredentialPatterns.Replacement"/>, which
+    /// <c>LogMessageCleanser.Replacement</c> also aliases, so the two sinks cannot drift apart on
+    /// the token. Kept as a public const because call sites and tests reference it by this
+    /// name.</para>
     /// </summary>
-    public const string Replacement = "<redacted>";
+    public const string Replacement = CredentialPatterns.Replacement;
 
     /// <summary>Describes <paramref name="ex"/> without echoing its message text.</summary>
     public static string Describe(Exception ex) => ex switch
@@ -125,10 +136,11 @@ public static partial class SanitizedErrorDescription
             text,
             m => m.Groups["prefix"].Value + Replacement);
 
-        text = QueryParameterCredential().Replace(text, m => m.Groups["prefix"].Value + Replacement);
-        text = AuthorizationScheme().Replace(text, m => m.Groups["prefix"].Value + Replacement);
-        text = NamedCredential().Replace(text, m => m.Groups["prefix"].Value + Replacement);
-        text = SpaceSeparatedCredential().Replace(text, m => m.Groups["prefix"].Value + Replacement);
+        // arb-6vf: the shared credential arms, the same implementation the log cleanser runs.
+        // They run AFTER the host arms for the reason given on this method: a URL carrying a
+        // credential must be removed whole, rather than having its credential redacted in place and
+        // its address left behind.
+        text = CredentialPatterns.RedactCredentials(text);
 
         return text.Trim();
     }
@@ -246,33 +258,4 @@ public static partial class SanitizedErrorDescription
         @"\b(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.){2,}[a-z]{2,}|[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.(?:lan|local|home|internal|intranet|corp|arpa|localdomain|test|invalid|example))\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex DottedHostName();
-
-    /// <summary>A credential carried as a URL query parameter, per <c>LogMessageCleanser</c>.</summary>
-    [GeneratedRegex(
-        @"(?<prefix>[?&](?:api_?key|token|passkey|password)=)(?<value>[^&\s""']+)",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex QueryParameterCredential();
-
-    /// <summary>An <c>Authorization</c>-style scheme-prefixed token, per <c>LogMessageCleanser</c>.</summary>
-    [GeneratedRegex(
-        @"(?<prefix>\b(?:bearer|basic)\s+)(?<value>[A-Za-z0-9+/=._~-]{8,})",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex AuthorizationScheme();
-
-    /// <summary>A named credential assigned inline, per <c>LogMessageCleanser</c>.</summary>
-    [GeneratedRegex(
-        @"(?<prefix>\b[\w-]*(?:api[_-]?key|apikey|token|passkey|password|secret)[\w-]*""?\s*[:=]\s*""?)(?<value>[^\s,;""'}\]]{4,})",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex NamedCredential();
-
-    /// <summary>
-    /// The same named credential written with a SPACE instead of <c>:</c> or <c>=</c> — "invalid key
-    /// sk-live-9f8e...". <see cref="NamedCredential"/> requires the separator, so prose forms walked
-    /// straight through it. The 12-character floor on the value keeps ordinary prose ("token expired")
-    /// intact while still catching anything key-shaped.
-    /// </summary>
-    [GeneratedRegex(
-        @"(?<prefix>\b(?:api[_-]?key|apikey|key|token|secret|password|passkey)\s+)(?<value>[A-Za-z0-9_-]{12,})\b",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex SpaceSeparatedCredential();
 }
