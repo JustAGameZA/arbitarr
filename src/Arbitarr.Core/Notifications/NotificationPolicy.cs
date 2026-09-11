@@ -59,13 +59,39 @@ public enum ObservedEventKind
 /// The last <c>EventEntry.Id</c> folded in. Ordering is by Id, never by OccurredAt, for the reason
 /// <c>EventQuery.Cursor</c> documents at length: OccurredAt is non-unique (a burst shares one
 /// instant) and a cursor on a non-unique key drops or repeats the ties.
+///
+/// <para>That still holds — but it orders the STORE, not the FOLD, and since arb-u8e the two are
+/// no longer the same list. Rows re-read below this cursor because they repeated (see
+/// <see cref="RepeatsSeenAt"/>) are folded in <c>LastRepeatedAt</c> order, not Id order, because a
+/// repeat's place in the sequence is when it repeated and not when its row was first written. This
+/// does not weaken the rule above: Id still decides what has been seen, and still breaks ties.
+/// The ordering is defensive rather than load-bearing — the coalescer cannot presently produce a
+/// repeat later than a newer row — and <c>NotificationDispatcher.ReadAscendingBatchAsync</c>
+/// carries the full reasoning and names the test that would catch that changing.</para>
 /// </param>
 /// <param name="FailingSources">Sources currently notified as failing, with their consecutive-failure counts.</param>
 /// <param name="SuppressionRateHigh">Whether the suppression rate is currently in the notified-high state.</param>
+/// <param name="RepeatsSeenAt">
+/// The high-water mark for REPEATS onto rows the cursor has already passed (arb-u8e), or null
+/// before the first pass.
+///
+/// <para>The Id cursor alone cannot see these. A repeat folds onto the EXISTING row — same Id,
+/// <c>RepeatCount</c> incremented, <c>LastRepeatedAt</c> advanced — so a source that failed once,
+/// was folded in, and then kept failing onto that same row never came back past the cursor and its
+/// later failures never reached this policy. This watermark is the second half of the position:
+/// the cursor says "no row newer than this", and this says "no repeat later than this".</para>
+///
+/// <para>It is ONE value rather than a per-row count deliberately: <c>NotificationRepository</c>
+/// requires its rows be fixed in number so that nothing accumulates and no retention has to be
+/// wired into <c>MaintenanceJob</c>. A per-row map would grow with the number of coalesced rows.
+/// The cost of the single value is stated on <c>NotificationDispatcher.ReadAscendingBatchAsync</c>.
+/// </para>
+/// </param>
 public sealed record NotificationState(
     long? Cursor,
     IReadOnlyDictionary<string, int> FailingSources,
-    bool SuppressionRateHigh)
+    bool SuppressionRateHigh,
+    DateTimeOffset? RepeatsSeenAt = null)
 {
     /// <summary>A notifier that has never run.</summary>
     public static NotificationState Empty { get; } =
@@ -130,11 +156,17 @@ public sealed class NotificationPolicy
     /// <param name="batch">Observations, oldest first.</param>
     /// <param name="cursor">Highest event id folded in, or null to leave the prior cursor.</param>
     /// <param name="now">Current time, for the rate window's lower bound.</param>
+    /// <param name="repeatsSeenAt">
+    /// Latest repeat instant folded in (arb-u8e), or null to leave the prior watermark. Passed by
+    /// the caller for the same reason as <paramref name="cursor"/>: the policy reads no schema, so
+    /// the reader that knows which rows it read is the one that knows how far the position moved.
+    /// </param>
     public NotificationDecision Evaluate(
         NotificationState prior,
         IReadOnlyList<NotificationObservation> batch,
         long? cursor,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        DateTimeOffset? repeatsSeenAt = null)
     {
         ArgumentNullException.ThrowIfNull(prior);
         ArgumentNullException.ThrowIfNull(batch);
@@ -165,7 +197,11 @@ public sealed class NotificationPolicy
         var rateHigh = EvaluateSuppressionRate(prior.SuppressionRateHigh, batch, now, notifications);
 
         return new NotificationDecision(
-            new NotificationState(cursor ?? prior.Cursor, failing, rateHigh),
+            new NotificationState(
+                cursor ?? prior.Cursor,
+                failing,
+                rateHigh,
+                repeatsSeenAt ?? prior.RepeatsSeenAt),
             notifications);
     }
 

@@ -1,3 +1,4 @@
+using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Notifications;
 using Arbitarr.Data;
 using Arbitarr.Data.Entities;
@@ -128,6 +129,198 @@ public sealed class NotificationDispatcherTests : IDisposable
         Assert.Single(handler.Bodies);
     }
 
+    /// <summary>
+    /// arb-u8e, the bug itself: failures that arrive AFTER the notifier has already folded the row
+    /// in must still reach the threshold. Since coalescing a repeat folds onto the EXISTING row —
+    /// same Id, RepeatCount incremented — so an Id-only cursor never saw it again and the source
+    /// could fail forever without being reported down.
+    ///
+    /// The first cycle is deliberately below the threshold and asserted empty: that is what puts the
+    /// row under the cursor, which is the only state in which the bug exists. Against master this
+    /// test fails at the final assertion with zero notifications.
+    ///
+    /// The row count is asserted so the test cannot pass for the wrong reason — if coalescing
+    /// stopped, the later failures would be NEW rows above the cursor and the old read path would
+    /// find them without any of this.
+    /// </summary>
+    [Fact]
+    public async Task Failures_repeating_after_the_cursor_passed_the_row_still_reach_the_threshold()
+    {
+        using var context = CreateContext();
+        var events = new EventRepository(context, _time);
+        var (dispatcher, handler) = await CreateDispatcherAsync(context, Enabled(threshold: 3));
+
+        // One failure, folded in below the threshold: the row is now under the cursor.
+        await RecordFailureAsync(events, "placeholder-source");
+        Assert.Empty(await dispatcher.RunCycleAsync());
+
+        // Two more failures, each its own cycle, each folding onto that same row.
+        for (var i = 0; i < 2; i++)
+        {
+            _time.Advance(TimeSpan.FromSeconds(30));
+            await RecordFailureAsync(events, "placeholder-source");
+
+            var row = Assert.Single(await events.GetAllAsync(CancellationToken.None));
+            Assert.Equal(i + 2, row.RepeatCount);
+
+            if (i == 0)
+            {
+                // Still one short of the threshold, so still nothing — and this proves the
+                // notification below came from the LAST repeat rather than from the first re-read.
+                Assert.Empty(await dispatcher.RunCycleAsync());
+            }
+        }
+
+        var notification = Assert.Single(await dispatcher.RunCycleAsync());
+        Assert.Equal(NotificationTrigger.SourceFailing, notification.Trigger);
+        Assert.Single(handler.Bodies);
+    }
+
+    /// <summary>
+    /// The control for the test above: the same shape, the same number of cycles, but no repeats.
+    /// One failure and then nothing must never reach a threshold of three, or the re-read would be
+    /// manufacturing failures rather than surfacing ones the store already recorded.
+    ///
+    /// This is what makes the re-read falsifiable. Without it, an implementation that re-presented
+    /// every row on every pass would pass the test above and look correct.
+    /// </summary>
+    [Fact]
+    public async Task A_row_that_is_not_repeating_is_never_re_presented()
+    {
+        using var context = CreateContext();
+        var events = new EventRepository(context, _time);
+        var (dispatcher, handler) = await CreateDispatcherAsync(context, Enabled(threshold: 3));
+
+        await RecordFailureAsync(events, "placeholder-source");
+        Assert.Empty(await dispatcher.RunCycleAsync());
+
+        for (var i = 0; i < 4; i++)
+        {
+            _time.Advance(TimeSpan.FromSeconds(30));
+            Assert.Empty(await dispatcher.RunCycleAsync());
+        }
+
+        Assert.Empty(handler.Bodies);
+
+        // Non-vacuous: the row really is there and really is under the cursor — this is the same
+        // state the test above notified from, differing only in that nothing repeated.
+        Assert.Single(await events.GetAllAsync(CancellationToken.None));
+        var state = await new NotificationRepository(context, _time).GetStateAsync(CancellationToken.None);
+        Assert.NotNull(state.Cursor);
+    }
+
+    /// <summary>
+    /// The watermark's own property: a repeat is presented ONCE. A cycle that follows a repeat with
+    /// no further repeats must fold nothing, or the count would climb on every tick and any single
+    /// stale row would eventually trip the threshold on its own.
+    ///
+    /// This is what fails against an implementation re-presenting the row's whole RepeatCount each
+    /// pass: three failures counted as growth are 1 + 1 + 1 = 3, but counted as successive totals
+    /// they are 1 + 2 + 3 = 6, so a threshold of four is crossed that should not be.
+    /// </summary>
+    [Fact]
+    public async Task A_repeat_already_folded_in_is_not_counted_again_on_the_next_cycle()
+    {
+        using var context = CreateContext();
+        var events = new EventRepository(context, _time);
+        var (dispatcher, handler) = await CreateDispatcherAsync(context, Enabled(threshold: 4));
+
+        // Three failures in all, one per cycle, all folding onto one row. Counted as growth that is
+        // 1 + 1 + 1 = 3, one short of the threshold. Counted as the row's TOTAL RepeatCount each
+        // pass it is 1 + 2 + 3 = 6, well past it — so the silence below is the discriminator.
+        await RecordFailureAsync(events, "placeholder-source");
+        Assert.Empty(await dispatcher.RunCycleAsync());
+
+        for (var i = 0; i < 2; i++)
+        {
+            _time.Advance(TimeSpan.FromSeconds(30));
+            await RecordFailureAsync(events, "placeholder-source");
+            Assert.Empty(await dispatcher.RunCycleAsync());
+        }
+
+        // Non-vacuous: it really is one coalesced row, and its total really has climbed to 3 —
+        // so a RepeatCount-as-growth implementation had the material to trip the threshold.
+        var row = Assert.Single(await events.GetAllAsync(CancellationToken.None));
+        Assert.Equal(3, row.RepeatCount);
+
+        // And idle cycles after the repeats add nothing at all: the watermark, not the count.
+        for (var i = 0; i < 3; i++)
+        {
+            _time.Advance(TimeSpan.FromSeconds(30));
+            Assert.Empty(await dispatcher.RunCycleAsync());
+        }
+
+        Assert.Empty(handler.Bodies);
+
+        // The positive control for the whole test: ONE more failure now reaches 4 and notifies.
+        // Without this, the test would pass just as happily against a notifier that had stopped
+        // counting repeats altogether — which is the arb-u8e bug it is meant to sit next to.
+        _time.Advance(TimeSpan.FromSeconds(30));
+        await RecordFailureAsync(events, "placeholder-source");
+        Assert.Equal(NotificationTrigger.SourceFailing, Assert.Single(await dispatcher.RunCycleAsync()).Trigger);
+    }
+
+    /// <summary>
+    /// Why ordering re-read rows by last activity is SAFE, pinned as the property it rests on: a
+    /// repeat can never be later than a newer row for the same source, because the coalescer folds
+    /// only onto the MOST RECENT row.
+    ///
+    /// This is the reordering hazard the design review raised — a repeat on a low-Id row carrying an
+    /// instant later than a higher-Id recovery, which would make Id order and time order disagree
+    /// about whether the source is up. <c>EventRepository.TryCoalesceAsync</c> forecloses it, and
+    /// says so: <i>"ONLY THE MOST RECENT ROW IS CONSIDERED... matching an older row across
+    /// intervening different events would reorder history"</i>. Once the recovery is written, a
+    /// later failure starts a NEW row instead of folding back.
+    ///
+    /// So this test does not exercise the dispatcher's tie-breaking; it pins the upstream invariant
+    /// that lets the dispatcher sort by last activity at all. If coalescing is ever widened to match
+    /// any row in the window, this fails, and the ordering in <c>ReadAscendingBatchAsync</c> has to
+    /// be revisited at the same time — which is exactly the coupling worth catching in CI.
+    /// </summary>
+    [Fact]
+    public async Task A_failure_after_a_recovery_starts_a_new_row_rather_than_folding_backwards()
+    {
+        using var context = CreateContext();
+        var events = new EventRepository(context, _time);
+        var (dispatcher, handler) = await CreateDispatcherAsync(context, Enabled(threshold: 2));
+
+        // Row 1: the source fails. Below the threshold, so it is folded in silently and the row is
+        // now under the cursor — the state in which a re-read could happen at all.
+        await RecordFailureAsync(events, "placeholder-source");
+        Assert.Empty(await dispatcher.RunCycleAsync());
+        Assert.Empty(handler.Bodies);
+
+        // Row 2: the source answers again, at a higher Id.
+        _time.Advance(TimeSpan.FromSeconds(30));
+        await events.AddAsync(
+            EventKind.WorkerCycle, "Worker cycle completed", null, "placeholder-source", null, CancellationToken.None);
+
+        // It fails again, WELL inside the coalescing window — so the window is not what stops this.
+        // Twice, so the new row carries enough occurrences to cross the threshold on its own.
+        _time.Advance(TimeSpan.FromSeconds(30));
+        await RecordFailureAsync(events, "placeholder-source");
+        _time.Advance(TimeSpan.FromSeconds(30));
+        await RecordFailureAsync(events, "placeholder-source");
+
+        // The invariant: three rows, not two. The second failure did NOT fold back onto row 1, so
+        // row 1's last activity cannot postdate row 2 and the two orderings cannot disagree.
+        var rows = (await events.GetAllAsync(CancellationToken.None)).OrderBy(row => row.Id).ToList();
+        Assert.Equal(3, rows.Count);
+        Assert.Equal(EventKind.SourceFailed, rows[0].Kind);
+        Assert.Equal(EventKind.WorkerCycle, rows[1].Kind);
+        Assert.Equal(EventKind.SourceFailed, rows[2].Kind);
+
+        // Non-vacuous: coalescing really is live in this fixture — row 1 folded nothing only because
+        // of the intervening recovery, and the window itself is minutes wide.
+        Assert.Equal(1, rows[0].RepeatCount);
+        Assert.True(rows[2].OccurredAt - rows[0].OccurredAt < EventCoalescing.Window);
+
+        // And the fold still ends where real time does: recovery, then the new failure. The source
+        // is down, and the count reaching 2 reports it down.
+        Assert.Equal(NotificationTrigger.SourceFailing, Assert.Single(await dispatcher.RunCycleAsync()).Trigger);
+        Assert.Single(handler.Bodies);
+    }
+
     [Fact]
     public async Task A_source_crossing_the_threshold_notifies_once_through_the_whole_stack()
     {
@@ -214,6 +407,54 @@ public sealed class NotificationDispatcherTests : IDisposable
 
         var state = await new NotificationRepository(context, _time).GetStateAsync(CancellationToken.None);
         Assert.NotNull(state.Cursor);
+    }
+
+    /// <summary>
+    /// The backlog rule applies to BOTH halves of the position. Since arb-u8e the notifier's place
+    /// is an Id cursor plus a repeat watermark, and skipping the disabled history by advancing only
+    /// the Id would leave every already-repeated row below it looking unseen — so enabling would
+    /// replay the coalesced history through the repeat path instead of the cursor path, which is
+    /// the same backlog arriving by a different door.
+    ///
+    /// Positive control: the failures really did fold and really did repeat, so there IS a backlog
+    /// for an unadvanced watermark to replay. Threshold 1 makes any replay notify immediately.
+    /// </summary>
+    [Fact]
+    public async Task Enabling_after_a_disabled_period_does_not_replay_repeats_either()
+    {
+        using var context = CreateContext();
+        var events = new EventRepository(context, _time);
+        var notifications = new NotificationRepository(context, _time);
+
+        var handler = new CapturingHandler();
+        var dispatcher = new NotificationDispatcher(
+            events, notifications, new WebhookNotificationTransport(new HttpClient(handler)), _time);
+
+        await notifications.SetSettingsAsync(Enabled(threshold: 2) with { Enabled = false }, SecretWebhookUrl, CancellationToken.None);
+
+        for (var i = 0; i < 4; i++)
+        {
+            await RecordFailureAsync(events, "placeholder-source");
+            _time.Advance(TimeSpan.FromSeconds(30));
+        }
+
+        // Non-vacuous: one coalesced row carrying real repeats, which is exactly what would replay.
+        var row = Assert.Single(await events.GetAllAsync(CancellationToken.None));
+        Assert.Equal(4, row.RepeatCount);
+        Assert.NotNull(row.LastRepeatedAt);
+
+        Assert.Empty(await dispatcher.RunCycleAsync());
+
+        var skipped = await notifications.GetStateAsync(CancellationToken.None);
+        Assert.NotNull(skipped.Cursor);
+        Assert.NotNull(skipped.RepeatsSeenAt);
+
+        // Switched on, with nothing new happening since: the history must stay skipped.
+        await notifications.SetSettingsAsync(Enabled(threshold: 2), SecretWebhookUrl, CancellationToken.None);
+        _time.Advance(TimeSpan.FromSeconds(30));
+
+        Assert.Empty(await dispatcher.RunCycleAsync());
+        Assert.Empty(handler.Bodies);
     }
 
     [Fact]

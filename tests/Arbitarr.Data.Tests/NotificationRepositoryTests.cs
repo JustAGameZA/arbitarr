@@ -264,7 +264,12 @@ public sealed class NotificationRepositoryTests : IDisposable
                 ["placeholder-source-one"] = 3,
                 ["placeholder-source-two"] = 11,
             },
-            SuppressionRateHigh: true);
+            SuppressionRateHigh: true,
+            // arb-u8e: the position is a PAIR since repeats began folding onto existing rows, and
+            // both halves have to survive a restart. A sub-second component is deliberate — the
+            // watermark is compared with strict > against LastRepeatedAt, so a format that
+            // truncated it would re-present every repeat in the same second forever.
+            RepeatsSeenAt: new DateTimeOffset(2026, 9, 7, 12, 34, 56, 789, TimeSpan.Zero));
 
         await repository.SetStateAsync(state, CancellationToken.None);
 
@@ -274,6 +279,35 @@ public sealed class NotificationRepositoryTests : IDisposable
         Assert.True(reloaded.SuppressionRateHigh);
         Assert.Equal(3, reloaded.FailingSources["placeholder-source-one"]);
         Assert.Equal(11, reloaded.FailingSources["placeholder-source-two"]);
+        Assert.Equal(state.RepeatsSeenAt, reloaded.RepeatsSeenAt);
+    }
+
+    /// <summary>
+    /// arb-u8e: a notifier that has never seen a repeat reads null, and that must round-trip as
+    /// null rather than as an epoch or a parse artefact. Null means "re-read every repeat still in
+    /// the store", which notifies late; any non-null default would mean "everything before now is
+    /// already seen", which skips repeats silently — the failure this bead exists to remove.
+    /// </summary>
+    [Fact]
+    public async Task A_notifier_that_has_seen_no_repeats_round_trips_a_null_watermark()
+    {
+        using var context = CreateContext();
+        var repository = new NotificationRepository(context);
+
+        // Non-vacuous: written as a real state with the OTHER fields populated, so a null read back
+        // is the watermark's own value and not simply an absent row or an unwritten state.
+        await repository.SetStateAsync(
+            new NotificationState(
+                Cursor: 7,
+                FailingSources: new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
+                SuppressionRateHigh: false,
+                RepeatsSeenAt: null),
+            CancellationToken.None);
+
+        var reloaded = await repository.GetStateAsync(CancellationToken.None);
+
+        Assert.Equal(7, reloaded.Cursor);
+        Assert.Null(reloaded.RepeatsSeenAt);
     }
 
     [Fact]
