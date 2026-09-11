@@ -271,4 +271,58 @@ public sealed class LogStoreTests : IDisposable
     {
         Assert.Equal(0, await _store.TrimAsync(DateTimeOffset.UtcNow));
     }
+
+    [Fact]
+    public async Task A_middle_rows_cleanse_failure_does_not_abort_the_batch()
+    {
+        // arb-qafw: a RegexMatchTimeoutException from one row's cleanse must not discard the other
+        // rows in the batch transaction. Production's LogMessageCleanser.Cleanse already catches
+        // this internally and returns TimeoutPlaceholder for just that text (arb-mw7); this test
+        // drives the WriteAsync(entries, cleanse, ct) test-only overload with a delegate that
+        // reproduces exactly that per-call catch, to prove the COMMIT behaviour at the LogStore
+        // level rather than re-asserting the cleanser's own try/catch.
+        var start = DateTimeOffset.UtcNow.AddMinutes(-5);
+        var entries = new[]
+        {
+            Entry("first", time: start),
+            Entry("second", time: start.AddMinutes(1)),
+            // The Exception column goes through the SAME cleanse delegate as the Message
+            // (LogStore.WriteAsync), so this row's MESSAGE is deliberately inert and its EXCEPTION is
+            // what triggers the timeout. Without it the cleanse(entry.Exception) call site is never
+            // exercised and deleting it would still leave this test green.
+            Entry("third", time: start.AddMinutes(2), exception: "exception boom"),
+        };
+
+        string? CleanseWithMiddleRowTimeout(string? text)
+        {
+            try
+            {
+                return text is "second" or "exception boom"
+                    ? throw new System.Text.RegularExpressions.RegexMatchTimeoutException()
+                    : text;
+            }
+            catch (System.Text.RegularExpressions.RegexMatchTimeoutException)
+            {
+                return LogMessageCleanser.TimeoutPlaceholder;
+            }
+        }
+
+        await _store.WriteAsync(entries, CleanseWithMiddleRowTimeout);
+
+        var page = await _store.ReadAsync(level: null, logger: null, page: 1, pageSize: 10);
+
+        // Per-row assertions (CLAUDE.md section 4): each row is checked independently, not "some
+        // row has it" — the whole point is the OTHER two rows are untouched by the middle one's
+        // failure.
+        Assert.Equal(3, page.Total);
+        Assert.Equal("first", Assert.Single(page.Entries, e => e.Time == start).Message);
+        Assert.Equal(LogMessageCleanser.TimeoutPlaceholder, Assert.Single(page.Entries, e => e.Time == start.AddMinutes(1)).Message);
+
+        // The third row pins the Message and Exception columns INDEPENDENTLY: its exception timed
+        // out and degraded to the placeholder, while its message — which does not trigger — survives
+        // verbatim. Asserting only the message would leave cleanse(entry.Exception) unexercised.
+        var thirdRow = Assert.Single(page.Entries, e => e.Time == start.AddMinutes(2));
+        Assert.Equal("third", thirdRow.Message);
+        Assert.Equal(LogMessageCleanser.TimeoutPlaceholder, thirdRow.Exception);
+    }
 }

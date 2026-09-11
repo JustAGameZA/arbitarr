@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Arbitarr.Core.Ai;
 using Arbitarr.Core.Diagnostics;
 
 namespace Arbitarr.Data.Logging;
@@ -52,6 +53,66 @@ public static partial class LogMessageCleanser
     public const string Replacement = CredentialPatterns.Replacement;
 
     /// <summary>
+    /// arb-mw7: substituted for a single row's text (message or exception, independently) when
+    /// scrubbing that text could not complete within
+    /// <see cref="CredentialPatterns.PublicMatchTimeoutMilliseconds"/>. Aliases
+    /// <see cref="SanitizedErrorDescription.TimeoutPlaceholder"/> rather than minting a second
+    /// literal, the same way <see cref="Replacement"/> above aliases
+    /// <see cref="CredentialPatterns.Replacement"/> — Data already references Core, so there is
+    /// nothing stopping the two placeholders from being the same string.
+    ///
+    /// <para>Unlike the status path (whole-description fail-closed, arb-hihr), the failure unit here
+    /// is one row: <see cref="LogStore.WriteAsync(IReadOnlyList{PendingLogEntry}, CancellationToken)"/>
+    /// writes many rows in one batch transaction, and a
+    /// timeout on one row's text must not discard the other rows in the batch (arb-qafw). Losing this
+    /// one row's message/exception to a fixed marker is an acceptable, bounded cost; losing the whole
+    /// batch is not.</para>
+    /// </summary>
+    public const string TimeoutPlaceholder = SanitizedErrorDescription.TimeoutPlaceholder;
+
+    /// <summary>
+    /// arb-mw7: the fixed marker appended after a cleansed input is cut at
+    /// <see cref="MaxCleanseInputLength"/>. Distinct from <see cref="TimeoutPlaceholder"/>: this
+    /// replaces only the DROPPED TAIL, not the whole text, so an operator reading a long but
+    /// otherwise healthy log line still sees the scrubbed head.
+    /// </summary>
+    public const string TruncationMarker = "…<truncated>";
+
+    /// <summary>
+    /// arb-mw7 (#206 security review): the longest input <see cref="Cleanse(string?)"/> will scrub in full.
+    /// Text beyond this length is DROPPED (not merely left unscrubbed) and replaced with
+    /// <see cref="TruncationMarker"/>, so a credential in the dropped tail can never reach the log
+    /// store regardless of whether it would have matched.
+    ///
+    /// <para>16 KiB comfortably holds a full exception with stack trace — measured against this
+    /// codebase's own failing-request exceptions (a few KB at most, well short of this bound) — while
+    /// still capping the pathological case: an attacker-influenced upstream body pasted wholesale
+    /// into a log message, which is the same growth this bead's #212 sibling (the shared arms'
+    /// <c>MatchTimeoutMilliseconds</c>) bounds on time rather than size.</para>
+    ///
+    /// <para><b>Why no 4x-overscrub margin like <see cref="OllamaRequestException.MaxScrubInputLength"/>
+    /// on the status path.</b> That path truncates a value that is then PUBLISHED, so a credential cut
+    /// exactly at the boundary must still be recognisable to the regex once cut; overscrubbing before
+    /// truncating closes that gap. Here nothing beyond the cut is ever persisted — the tail is
+    /// discarded outright, not merely unscrubbed-and-kept — so the only possible residue is a
+    /// credential's own LEADING fragment that happened to start before the cut and would have matched
+    /// had the rest of it still been present. This implementation closes even that: it scrubs
+    /// <see cref="MaxCleanseInputLength"/> + <see cref="OverscrubMargin"/> characters before cutting at
+    /// <see cref="MaxCleanseInputLength"/>, so a credential straddling the boundary is fully inside the
+    /// scrubbed window and gets redacted before the cut discards its tail. The shortest value class
+    /// among the shared arms is <see cref="CredentialPatterns"/>'s <c>NamedCredential</c>, gated at
+    /// <c>{4,}</c>; a margin larger than that leaves no unscrubbed straddling case at all.</para>
+    /// </summary>
+    public const int MaxCleanseInputLength = 16384;
+
+    /// <summary>
+    /// arb-mw7: extra characters scrubbed past <see cref="MaxCleanseInputLength"/> before the cut, so
+    /// a credential straddling the boundary is redacted (not merely partially matched) before its
+    /// tail is discarded. See the remarks on <see cref="MaxCleanseInputLength"/>.
+    /// </summary>
+    private const int OverscrubMargin = 64;
+
+    /// <summary>
     /// A webhook URL's secret path segment — Discord and Telegram both put the credential in the
     /// PATH, not a query parameter, so the patterns above cannot see it. #57 will store webhook
     /// targets as secrets "in the same sense as a source API key"; this is here ahead of that so
@@ -59,20 +120,84 @@ public static partial class LogMessageCleanser
     /// </summary>
     [GeneratedRegex(
         @"(?<prefix>https?://(?:[\w.-]*discord(?:app)?\.com/api/webhooks/|api\.telegram\.org/bot))(?<value>\S+)",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        matchTimeoutMilliseconds: CredentialPatterns.PublicMatchTimeoutMilliseconds)]
     private static partial Regex WebhookUrl();
 
     /// <summary>
     /// Returns <paramref name="text"/> with any credential-shaped substring replaced by
     /// <see cref="Replacement"/>. Null and empty input pass through unchanged.
+    ///
+    /// <para>arb-mw7: input beyond <see cref="MaxCleanseInputLength"/> (plus a small overscrub
+    /// margin — see that constant's remarks) is scrubbed and then the tail past the limit is dropped
+    /// entirely, never written. A regex timeout on this text is caught here and degrades to
+    /// <see cref="TimeoutPlaceholder"/> for THIS text only (arb-qafw): the caller batches many rows
+    /// per transaction, and one row's pathological text must not abort the others.</para>
     /// </summary>
-    public static string? Cleanse(string? text)
+    public static string? Cleanse(string? text) => Cleanse(text, timeoutProbe: null);
+
+    /// <summary>
+    /// arb-mw7: test-only overload. <paramref name="timeoutProbe"/>, when supplied, runs in place of
+    /// the regex pipeline and may throw <see cref="RegexMatchTimeoutException"/> to force the
+    /// fail-closed path deterministically — the same seam shape as
+    /// <see cref="SanitizedErrorDescription.Describe(Exception, Func{string, string}?)"/>, for the
+    /// same reason: the compiled arms' <c>matchTimeoutMilliseconds</c> cannot be swapped at runtime,
+    /// and a mutable static toggle would be the process-global hazard
+    /// <c>ProductionProcessGlobalStateTests</c> exists to catch. <c>null</c> on every production call
+    /// site.
+    ///
+    /// <para><c>public</c>, not <c>internal</c>, for the same reason as
+    /// <see cref="SanitizedErrorDescription.Describe(Exception, Func{string, string}?)"/>: there is no
+    /// <c>InternalsVisibleTo</c> from this project to the test assembly.</para>
+    /// </summary>
+    public static string? Cleanse(string? text, Func<string, string>? timeoutProbe)
     {
         if (string.IsNullOrEmpty(text))
         {
             return text;
         }
 
+        string truncated;
+        bool wasTruncated;
+        if (text.Length > MaxCleanseInputLength)
+        {
+            var scrubLength = Math.Min(text.Length, MaxCleanseInputLength + OverscrubMargin);
+            truncated = text[..scrubLength];
+            wasTruncated = true;
+        }
+        else
+        {
+            truncated = text;
+            wasTruncated = false;
+        }
+
+        string scrubbed;
+        try
+        {
+            scrubbed = timeoutProbe is not null
+                ? timeoutProbe(truncated)
+                : CleanseCore(truncated);
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            // Per-row fail-closed (arb-qafw): this text becomes a fixed marker, but the caller's
+            // batch transaction still commits the other rows.
+            return TimeoutPlaceholder;
+        }
+
+        if (!wasTruncated)
+        {
+            return scrubbed;
+        }
+
+        // The overscrub margin was only to let a straddling credential match; the actual persisted
+        // text is cut at MaxCleanseInputLength, never the extra margin.
+        var cut = Math.Min(scrubbed.Length, MaxCleanseInputLength);
+        return string.Concat(scrubbed.AsSpan(0, cut), TruncationMarker);
+    }
+
+    private static string CleanseCore(string text)
+    {
         // Webhook URLs run first: their credential lives in the path, and a later pattern could
         // otherwise consume part of the URL and leave the secret segment stranded and unredacted.
         // This arm stays HERE rather than moving to CredentialPatterns: it is Data-only, tied to

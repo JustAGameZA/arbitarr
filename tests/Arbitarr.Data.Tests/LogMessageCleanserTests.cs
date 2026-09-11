@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Arbitarr.Data.Logging;
 using Xunit;
 
@@ -93,5 +94,109 @@ public sealed class LogMessageCleanserTests
     public void Passes_null_and_empty_through(string? input)
     {
         Assert.Equal(input, LogMessageCleanser.Cleanse(input));
+    }
+
+    // arb-mw7: the input-length cap. A credential in the HEAD is redacted and the truncation marker
+    // is appended; a credential entirely in the DROPPED TAIL never reaches the output (positive
+    // control: assert the raw input contains it before asserting the output does not); a credential
+    // straddling the cut leaves at most a few leading characters, because the cap scrubs a small
+    // overscrub margin past the cut before truncating.
+
+    [Fact]
+    public void Input_over_the_cap_is_redacted_in_the_head_and_carries_the_truncation_marker()
+    {
+        var head = $"apikey={SecretValue} " + new string('x', LogMessageCleanser.MaxCleanseInputLength + 500);
+        var cleansed = LogMessageCleanser.Cleanse(head);
+
+        Assert.NotNull(cleansed);
+        Assert.DoesNotContain(SecretValue, cleansed);
+        Assert.Contains(LogMessageCleanser.Replacement, cleansed);
+        Assert.EndsWith(LogMessageCleanser.TruncationMarker, cleansed, StringComparison.Ordinal);
+        Assert.True(cleansed!.Length <= LogMessageCleanser.MaxCleanseInputLength + LogMessageCleanser.TruncationMarker.Length);
+    }
+
+    [Fact]
+    public void A_credential_entirely_in_the_dropped_tail_does_not_appear()
+    {
+        var padding = new string('x', LogMessageCleanser.MaxCleanseInputLength + 500);
+        var input = $"{padding} apikey={SecretValue}";
+
+        // Positive control: the raw input really does carry the secret before Cleanse runs.
+        Assert.Contains(SecretValue, input);
+
+        var cleansed = LogMessageCleanser.Cleanse(input);
+
+        Assert.NotNull(cleansed);
+        Assert.DoesNotContain(SecretValue, cleansed);
+        // Proves the tail was DROPPED, not redacted: a redaction would have left the Replacement
+        // token where the credential was; dropping leaves neither the secret nor a marker for it.
+        Assert.DoesNotContain(LogMessageCleanser.Replacement, cleansed);
+    }
+
+    [Fact]
+    public void A_credential_straddling_the_cut_leaves_at_most_a_few_leading_characters()
+    {
+        // Position the credential so it straddles the boundary: the `apikey=` PREFIX starts
+        // overlap + prefix.Length (= 12) characters before MaxCleanseInputLength, which puts the
+        // start of the VALUE itself `overlap` (= 5) characters before the cap, with the rest of the
+        // value extending well past it. The arithmetic is overlap minus the prefix length, so
+        // changing either constant moves the boundary — keep both in view when editing.
+        const int overlap = 5;
+        var prefix = "apikey=";
+        var startAt = LogMessageCleanser.MaxCleanseInputLength - overlap;
+        var padding = new string('x', startAt - prefix.Length);
+        var input = $"{padding}{prefix}{SecretValue}";
+
+        var cleansed = LogMessageCleanser.Cleanse(input);
+
+        Assert.NotNull(cleansed);
+        // The overscrub margin (64 chars past the cap) fully covers this credential, so it is
+        // redacted before the cut discards the tail — no fragment of the secret should survive.
+        var secretPrefix = SecretValue[..Math.Min(3, SecretValue.Length)];
+        Assert.DoesNotContain(secretPrefix, cleansed, StringComparison.Ordinal);
+        Assert.DoesNotContain(SecretValue, cleansed, StringComparison.Ordinal);
+
+        // Proves REDACTION rather than mere absence, without over-claiming at this position. The
+        // credential IS matched and replaced during the overscrub pass, but the pattern keeps its
+        // `apikey=` prefix and only substitutes the value, so Replacement begins `overlap` (= 5)
+        // characters before the cap — and the cut at MaxCleanseInputLength then bisects the token
+        // itself, leaving "apikey=<reda" here rather than a whole "<redacted>". Asserting the FULL
+        // token would fail for the right reason and is why this asserts the surviving marker prefix:
+        // absence of the value alone would also pass had the tail merely been dropped, which is the
+        // different code path A_credential_entirely_in_the_dropped_tail_does_not_appear covers.
+        var markerPrefix = LogMessageCleanser.Replacement[..Math.Min(5, LogMessageCleanser.Replacement.Length)];
+        Assert.Contains(prefix + markerPrefix, cleansed, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Input_exactly_at_the_limit_is_not_truncated()
+    {
+        var input = new string('x', LogMessageCleanser.MaxCleanseInputLength);
+
+        var cleansed = LogMessageCleanser.Cleanse(input);
+
+        Assert.Equal(input, cleansed);
+        Assert.DoesNotContain(LogMessageCleanser.TruncationMarker, cleansed, StringComparison.Ordinal);
+    }
+
+    // arb-qafw: a regex timeout on one text degrades to a fixed placeholder for THAT text only.
+    // Cleanse cannot be made to time out from outside without an injectable probe (the compiled
+    // arms' matchTimeoutMilliseconds is fixed at compile time), so this drives the test-only
+    // overload the same way SanitizedErrorDescription's timeoutProbe does.
+
+    [Fact]
+    public void A_regex_timeout_degrades_to_the_timeout_placeholder()
+    {
+        var cleansed = LogMessageCleanser.Cleanse("anything", _ => throw new RegexMatchTimeoutException());
+
+        Assert.Equal(LogMessageCleanser.TimeoutPlaceholder, cleansed);
+    }
+
+    [Fact]
+    public void The_timeout_probe_is_not_used_when_null()
+    {
+        var cleansed = LogMessageCleanser.Cleanse("ordinary text", timeoutProbe: null);
+
+        Assert.Equal("ordinary text", cleansed);
     }
 }
