@@ -25,7 +25,7 @@ on:
 # filter" true by construction rather than by strings being kept in step -- and
 # it is what stops the artifact ever recording a filter the run did not use.
 # Splitting the single test step into a matrix made this MORE load-bearing, not
-# less: three jobs now read it, and a per-job copy would let one group drift.
+# less: four jobs now read it, and a per-job copy would let one group drift.
 # Timing/Load/Quarantine are excluded here and run unfiltered nightly
 # (arb-rga.8); see docs/adr/0011 and docs/standards/process.md.
 #
@@ -148,7 +148,7 @@ jobs:
           retention-days: 1
 
   # --------------------------------------------------------------------------
-  # backend: three runners, one per assembly group, all consuming prep's build
+  # backend: four runners, one per assembly group, all consuming prep's build
   # output. Assemblies WITHIN a group run sequentially (a loop), so the group is
   # the unit of parallelism and nothing new races inside a job.
   #
@@ -166,7 +166,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: prep
     env:
-      # 2 GB, uniform across all three groups. arb-rga.6's third comment asked
+      # 2 GB, uniform across all four groups. arb-rga.6's third comment asked
       # this bead to DECIDE this number from a measurement rather than inherit
       # it, and the sampler in the test step below is what produced the answer.
       #
@@ -846,7 +846,7 @@ jobs:
 
           echo "Tree-wide secret/topology guard passed."
 
-      # arb-bj7: nothing else checks that the three backend matrix groups
+      # arb-bj7: nothing else checks that the four backend matrix groups
       # (A1/A2/B/C) together cover EXACTLY the ten assemblies
       # TEST_ASSEMBLIES names. A one-token deletion in a rebase leaves the dll
       # present in the prep artifact (that assertion passes) but simply unrun
@@ -1470,7 +1470,7 @@ jobs:
 
           fail=0
           # `backend` is a matrix job: its aggregated `result` is `success` only
-          # when EVERY group succeeded, so one entry covers all three groups.
+          # when EVERY group succeeded, so one entry covers all four groups.
           for pair in "prep:$PREP_RESULT" "backend:$BACKEND_RESULT" \
                       "frontend:$FRONTEND_RESULT" "guards:$GUARDS_RESULT"; do
             job="${pair%%:*}"

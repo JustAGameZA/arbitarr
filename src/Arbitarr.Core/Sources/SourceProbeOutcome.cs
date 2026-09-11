@@ -4,7 +4,7 @@ namespace Arbitarr.Core.Sources;
 /// The result of a §3.3 connectivity test against a configured source, as a CLOSED set of
 /// outcomes rather than a boolean.
 ///
-/// <para><b>Why four outcomes and not "ok / failed".</b> The plan is explicit that a single red
+/// <para><b>Why five outcomes and not "ok / failed".</b> The plan is explicit that a single red
 /// "failed" makes the test button decorative: unreachable, a TLS failure, a rejected key and a
 /// response that is not the expected API each have an entirely different fix (check the address /
 /// check the certificate or scheme / rotate the key / you are pointed at the wrong service), and
