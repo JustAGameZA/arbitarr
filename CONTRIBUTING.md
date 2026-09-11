@@ -23,8 +23,11 @@ dotnet test
 
 No external services are required for the test suite — upstream responses are captured as redacted fixtures under `docs/fixtures/`.
 
-Parallel runs are supported since the test isolation work (#163, arb-rga). CI still runs the
-suite sequentially with `-m:1`, so that's the reference for measured counts:
+Parallel runs are supported since the test isolation work (#163, arb-rga; see
+[ADR 0011](docs/adr/0011-test-strategy-lanes-isolation-quarantine.md) for the isolation
+background). A local `dotnet test -m:1` is still the simplest way to get one total comparable
+to the count CI's `gate` job ratchets — CI reaches the same number by summing the four matrix
+groups' `.trx` files:
 
 ```bash
 dotnet test -m:1

@@ -116,5 +116,7 @@ arithmetic on a previous constant.
 
 The isolation work referenced above (#163, arb-rga) has landed: the suite was run 20/20 times in
 parallel on master (cc23d94) with 1521/1521 passing every time (Integration lane 364). The local
-`-m:1` requirement described in this ADR's Consequences section is retired accordingly; CI
-continues to run `-m:1`, which remains the reference for measured counts.
+`-m:1` requirement described in this ADR's Consequences section is retired accordingly. A local
+`dotnet test -m:1` is still the simplest way to get one total comparable to the count CI's
+`gate` job ratchets — CI reaches the same number by summing the four matrix groups' `.trx`
+files.
