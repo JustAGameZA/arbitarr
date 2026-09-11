@@ -285,12 +285,12 @@ public static partial class SanitizedErrorDescription
     /// what caught it.</para>
     ///
     /// <para><b>arb-qj9: the value class admits <c>_</c>.</b> Docker Compose service names routinely
-    /// carry underscores ("ollama_gpu_rig"), and they are hostnames on the container network — the
+    /// carry underscores ("gpu_box_example"), and they are hostnames on the container network — the
     /// single most likely single-label host to appear in an error from a containerised Ollama.</para>
     ///
     /// <para><b>arb-qj9: <c>tcp</c>/<c>udp</c> are skipped after the trigger, not taken as the
-    /// host.</b> Go's network errors read <c>dial tcp ollama_gpu_rig:11434: refused</c>, and the arm
-    /// as written consumed "tcp" as the value — publishing <c>dial &lt;redacted&gt; ollama_gpu_rig</c>,
+    /// host.</b> Go's network errors read <c>dial tcp gpu_box_example:11434: refused</c>, and the arm
+    /// as written consumed "tcp" as the value — publishing <c>dial &lt;redacted&gt; gpu_box_example</c>,
     /// which redacted the protocol name and left the real host standing. That mis-fire PREDATES this
     /// change (the trigger list already carried <c>dial</c>, and <c>\s+</c> already reached "tcp"); it
     /// is fixed here because this is the arm being widened and the wrong output is this arm's own.
@@ -318,7 +318,7 @@ public static partial class SanitizedErrorDescription
     /// message uses ("(ollama.internal.example:11434)"), and the reason this type exists.
     ///
     /// <para><b>arb-qj9: labels may contain <c>_</c>.</b> A Docker Compose service name
-    /// ("ollama_gpu_rig:11434") is a hostname on the container network and is the likeliest host to
+    /// ("gpu_box_example:11434") is a hostname on the container network and is the likeliest host to
     /// appear in an error from a containerised Ollama, but underscore is outside the DNS label
     /// character class this pattern started from, so the whole <c>host:port</c> published. Admitting
     /// it here costs nothing — the <c>:port</c> is still required, which is what keeps this arm off

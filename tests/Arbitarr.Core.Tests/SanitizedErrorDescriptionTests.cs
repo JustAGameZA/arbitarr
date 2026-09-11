@@ -440,7 +440,7 @@ public sealed class SanitizedErrorDescriptionTests
     [InlineData("upstream \\\"ollama-gpu-rig\\\" refused", "ollama-gpu-rig")]
     [InlineData("Host: ollama-gpu-rig", "ollama-gpu-rig")]
     // (3) Underscore hostname — a Docker Compose service name.
-    [InlineData("dial tcp ollama_gpu_rig:11434: refused", "ollama_gpu_rig")]
+    [InlineData("dial tcp gpu_box_example:11434: refused", "gpu_box_example")]
     // (4) Two-label names on suffixes outside the old allowlist.
     [InlineData("cannot reach mediabox.box", "mediabox.box")]
     [InlineData("cannot reach nas.localhost", "nas.localhost")]
@@ -471,7 +471,7 @@ public sealed class SanitizedErrorDescriptionTests
     /// arb-qj9 (#206 review nit): <c>dial tcp HOST</c> redacts the HOST, not the protocol.
     ///
     /// <para>The contextual arm consumed "tcp" as its value and stopped, publishing
-    /// <c>dial &lt;redacted&gt; ollama_gpu_rig</c> — the protocol name redacted and the actual host
+    /// <c>dial &lt;redacted&gt; gpu_box_example</c> — the protocol name redacted and the actual host
     /// left standing, which is the exact inversion of the arm's purpose. This is the portless case:
     /// with a port, <c>HostWithPort</c> covers the host regardless, so the bug only bites where
     /// nothing else can catch it. Pinned as its own fact because the theory row above carries a port
@@ -480,7 +480,7 @@ public sealed class SanitizedErrorDescriptionTests
     [Fact]
     public void A_dial_error_redacts_the_host_and_keeps_the_protocol()
     {
-        const string host = "ollama_gpu_rig";
+        const string host = "gpu_box_example";
         var body = $$"""{"error":"dial tcp {{host}}: connect: connection refused"}""";
 
         Assert.Contains(host, body, StringComparison.Ordinal);
