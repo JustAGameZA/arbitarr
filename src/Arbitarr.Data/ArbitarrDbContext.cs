@@ -71,6 +71,13 @@ public sealed class ArbitarrDbContext : DbContext
     public DbSet<ReleaseLookupEntry> ReleaseLookupEntries => Set<ReleaseLookupEntry>();
 
     /// <summary>
+    /// arb-v3w: the durable half of the sticky download-refusal health item, so a restart does not
+    /// hide a misconfiguration that is still in force. One row per source, bounded by the number of
+    /// configured sources — see <see cref="DownloadRefusalEntry"/> for why it needs no prune.
+    /// </summary>
+    public DbSet<DownloadRefusalEntry> DownloadRefusalEntries => Set<DownloadRefusalEntry>();
+
+    /// <summary>
     /// The shared event store (#55 step 1 / #54's decision store — plan §2). Nothing writes to or
     /// reads from this set outside of <see cref="Events.EventRepository"/> and its tests yet.
     /// </summary>
@@ -262,6 +269,21 @@ public sealed class ArbitarrDbContext : DbContext
             entity.Property(e => e.ProxyGuid).IsRequired().HasMaxLength(128);
             entity.Property(e => e.SourceName).IsRequired().HasMaxLength(256);
             entity.Property(e => e.PayloadJson).IsRequired();
+        });
+
+        modelBuilder.Entity<DownloadRefusalEntry>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            // UNIQUE IS LOAD-BEARING. The tracker holds exactly one outstanding refusal per source,
+            // and the store's upsert depends on this index to turn a repeat into a refresh rather
+            // than a second row. It is also what bounds the table: one row per configured source,
+            // deleted on a successful grab, so nothing here can accumulate and no prune is needed.
+            entity.HasIndex(e => e.SourceName).IsUnique();
+            // SourceName matches Source.DisplayName's bound; Reason is a generated sentence built
+            // from that name plus an int status code — never upstream text — so 1024 is comfortable
+            // headroom, matching the SuppressionAuditLogEntry.Reason precedent above.
+            entity.Property(e => e.SourceName).IsRequired().HasMaxLength(256);
+            entity.Property(e => e.Reason).IsRequired().HasMaxLength(1024);
         });
 
         modelBuilder.Entity<EventEntry>(entity =>

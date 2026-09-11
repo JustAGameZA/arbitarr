@@ -354,6 +354,95 @@ public class DownloadProxyTests
         public override DateTimeOffset GetUtcNow() => now;
     }
 
+    /// <summary>
+    /// arb-v3w: an <see cref="IDownloadRefusalStore"/> whose every call fails, so the proxy can be
+    /// driven with a broken durable tier. <see cref="Calls"/> is the positive control — it proves
+    /// the store was genuinely reached, without which "the response was unchanged" would pass just
+    /// as happily on a tracker that never attempted a write.
+    /// </summary>
+    private sealed class FailingRefusalStore : IDownloadRefusalStore
+    {
+        public int Calls { get; private set; }
+
+        public Task UpsertAsync(DownloadRefusal refusal, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Task.FromException(new InvalidOperationException("database is locked"));
+        }
+
+        public Task DeleteAsync(string sourceName, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Task.FromException(new InvalidOperationException("database is locked"));
+        }
+
+        public Task<IReadOnlyList<DownloadRefusal>> LoadAllAsync(CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Task.FromException<IReadOnlyList<DownloadRefusal>>(new InvalidOperationException("database is locked"));
+        }
+    }
+
+    private static PersistentDownloadRefusalTracker PersistingTracker(IDownloadRefusalStore store) =>
+        new(new DownloadRefusalTracker(), async (operation, token) => await operation(store, token));
+
+    /// <summary>
+    /// arb-v3w: persistence is a durability concern, never a correctness one for THIS request. A
+    /// store that cannot be written must not turn the refusal's 502 into a 500 — the proxy's job at
+    /// this point is to report that something else is broken, and failing to record that would hide
+    /// it twice over.
+    /// </summary>
+    [Fact]
+    public async Task A_failed_refusal_store_write_does_not_change_the_proxy_response()
+    {
+        var release = TestReleases.Torrent(sourceName: "eztv", guid: "123");
+        var lookup = new InMemoryReleaseLookup();
+        lookup.Record(release);
+
+        var source = new FakeUpstreamSource("eztv", downloadException: new UpstreamRedirectRefusedException("eztv", 302));
+        var sources = new IUpstreamSource[] { source };
+        var store = new FailingRefusalStore();
+        var tracker = PersistingTracker(store);
+
+        var result = await DownloadProxyEndpoint.HandleAsync(
+            release.ProxyGuid, ValidApiKey, Resolver(), lookup, sources, NullEventSink.Instance, CancellationToken.None,
+            tracker, TimeProvider.System);
+
+        Assert.Equal(StatusCodes.Status502BadGateway, Assert.IsAssignableFrom<IStatusCodeHttpResult>(result).StatusCode);
+
+        // Positive control: the broken store was actually consulted, so the unchanged 502 above is
+        // the swallow working rather than the write path never having run.
+        Assert.Equal(1, store.Calls);
+
+        // And the item is still tracked in memory — the pre-arb-v3w behaviour, which is the correct
+        // degradation: the operator still sees the banner, it just would not survive a restart.
+        Assert.Single(tracker.Snapshot());
+    }
+
+    [Fact]
+    public async Task A_failed_refusal_store_delete_does_not_change_a_successful_download_response()
+    {
+        var release = TestReleases.Torrent(sourceName: "eztv", guid: "123");
+        var lookup = new InMemoryReleaseLookup();
+        lookup.Record(release);
+
+        var source = new FakeUpstreamSource("eztv", downloadFactory: () => new MemoryStream("torrent-bytes"u8.ToArray()));
+        var sources = new IUpstreamSource[] { source };
+        var store = new FailingRefusalStore();
+        var tracker = PersistingTracker(store);
+
+        var result = await DownloadProxyEndpoint.HandleAsync(
+            release.ProxyGuid, ValidApiKey, Resolver(), lookup, sources, NullEventSink.Instance, CancellationToken.None,
+            tracker, TimeProvider.System);
+
+        // The payload still comes back: a bookkeeping failure must never cost the caller the file it
+        // successfully fetched.
+        var bytes = Assert.IsAssignableFrom<IResult>(result);
+        Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.FileContentHttpResult>(bytes);
+        Assert.Equal(1, store.Calls);
+        Assert.Empty(tracker.Snapshot());
+    }
+
     [Fact]
     public async Task Open_circuit_breaker_returns_503_not_an_unhandled_500()
     {

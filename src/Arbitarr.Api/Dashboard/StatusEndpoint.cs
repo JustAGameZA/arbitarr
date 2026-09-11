@@ -43,11 +43,16 @@ public sealed record WorkerHealthResponse(
 /// One outstanding operator-actionable condition, as reported by <c>/api/status</c>'s health block
 /// (arb-ln0).
 ///
-/// Health items are <b>process-lifetime</b>: they live in memory only, are cleared by the specific
-/// event that proves the condition is over (for a refused download, an actual successful grab from
-/// that source), and are lost on restart. <see cref="ObservedSinceUtc"/> therefore means "first
-/// observed since this process started", not "when the condition began" — which is why the payload
-/// carries it rather than a duration the client would have to interpret as absolute.
+/// Health items are cleared by the specific event that proves the condition is over — for a refused
+/// download, an actual successful grab from that source — and by nothing else.
+///
+/// arb-v3w: they are also <b>persisted</b>, and rehydrated at startup, so they now SURVIVE A
+/// RESTART. <see cref="ObservedSinceUtc"/> therefore means "when the condition began", not "first
+/// observed since this process started" — which is why the payload carries an absolute instant
+/// rather than a duration. Persisting it is what makes that instant meaningful: the NZBHydra2
+/// misconfiguration behind a refused redirect outlives the process, so a restart that reset this to
+/// "now" (or dropped the item entirely) reported a fresh, clean system while every download still
+/// failed.
 ///
 /// Nothing secret-shaped belongs here: <c>/api/status</c> is <c>RouteClassification.PublicRead</c>
 /// and un-gated, so <see cref="Summary"/> is built from configured names and status codes only,
@@ -57,7 +62,7 @@ public sealed record WorkerHealthResponse(
 /// <param name="Severity">How bad it is. "blocking" — the only value at present — means the affected function cannot work at all until an operator acts.</param>
 /// <param name="SourceName">The configured source the condition applies to.</param>
 /// <param name="Summary">Human-readable description of the condition, safe for an un-gated surface.</param>
-/// <param name="ObservedSinceUtc">When the condition was first observed, counting from process start.</param>
+/// <param name="ObservedSinceUtc">When the condition was first observed. Persisted, so it survives a restart (arb-v3w).</param>
 /// <param name="LastObservedUtc">When the condition was most recently observed.</param>
 public sealed record HealthItem(
     string Key,
