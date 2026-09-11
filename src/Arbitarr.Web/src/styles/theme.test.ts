@@ -68,7 +68,7 @@ describe('AC-CHROME-1: the pinned palette resolves to exactly the *arr values', 
     ['--accent-hover', '#74b3e0'],
     ['--ok', '#5cb85c'],
     ['--warn', '#e0a030'],
-    ['--danger', '#d9534f'],
+    ['--danger', '#e48481'],
   ];
 
   it.each(PINNED)('%s is %s', (token, expected) => {
@@ -160,29 +160,16 @@ describe('AC-CHROME-5: status badges are filled at low opacity and stay legible'
     expect(parseRgba(readToken(fill)).a).toBeLessThan(0.25);
   });
 
-  // Everything except danger clears the AA body-text floor composited over the
-  // panel. A fill LIGHTENS a dark ground, so these ratios fall as alpha rises:
-  // at alpha 0.16 muted and ok drop to 4.20 and 4.44. theme.css's 0.12 is what
-  // keeps them here, which is why this assertion is what pins that value.
-  it.each(FILLS.filter(([fill]) => fill !== '--danger-fill'))(
-    'text on %s clears WCAG AA body text (4.5:1)',
-    (fill, text) => {
-      const filled = compositeOver(readToken(fill), readToken('--bg-panel'));
-      expect(contrastRatio(readToken(text), filled)).toBeGreaterThan(4.5);
-    },
-  );
-
-  // --danger is the documented exception, held to 3:1 — the WCAG AA floor for
-  // large/bold text (badges are 11px at weight 600). This is NOT a threshold
-  // chosen to make a failing test pass: --danger (#d9534f) is already 3.68:1
-  // on --bg-panel with NO fill at all, so it misses AA body text on master
-  // today, before this change existed, and no fill alpha can lift it over 4.5
-  // because a fill only ever reduces contrast here. Lightening --danger is
-  // tracked as arb-4uk, which must move the token and its AC-CHROME-1 literal
-  // in one commit; when that lands, fold this case back into the 4.5
-  // assertion above and delete this block.
-  it('text on --danger-fill clears the large/bold-text floor (3:1) — see arb-4uk', () => {
-    const filled = compositeOver(readToken('--danger-fill'), readToken('--bg-panel'));
-    expect(contrastRatio(readToken('--danger'), filled)).toBeGreaterThan(3);
+  // All four clear the AA body-text floor composited over the panel. A fill
+  // LIGHTENS a dark ground, so these ratios fall as alpha rises: at alpha
+  // 0.16 muted and ok drop to 4.20 and 4.44. theme.css's 0.12 is what keeps
+  // them here, which is why this assertion is what pins that value. --danger
+  // used to be a documented exception held to the 3:1 large/bold floor
+  // (#d9534f measured 3.26:1 here); arb-4uk lightened it to #e48481
+  // (4.538:1 here), so it now clears the same floor as the others and the
+  // exception is retired.
+  it.each(FILLS)('text on %s clears WCAG AA body text (4.5:1)', (fill, text) => {
+    const filled = compositeOver(readToken(fill), readToken('--bg-panel'));
+    expect(contrastRatio(readToken(text), filled)).toBeGreaterThan(4.5);
   });
 });

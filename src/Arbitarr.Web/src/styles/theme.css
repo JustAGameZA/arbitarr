@@ -58,7 +58,24 @@
   /* The conventional bootstrap-lineage triad *arr itself uses. */
   --ok: #5cb85c;
   --warn: #e0a030;
-  --danger: #d9534f;
+  /*
+   * Lightened off the bootstrap-lineage red (was #d9534f) to clear WCAG AA
+   * (4.5:1) as text on every ground it appears against — see arb-4uk. Same
+   * hue/saturation as the original (H 1.7deg, S 64.5%), lightness raised from
+   * 58% to 70%, the minimum step at this hue that clears 4.5:1 on the
+   * tightest ground below (the fill). Measured (relative luminance, then
+   * contrast ratio against each ground):
+   *
+   *   --danger #e48481          luminance 0.345815
+   *   --bg-app #1a1d21          luminance 0.012081  -> ratio 6.376 : 1
+   *   --bg-panel #252930        luminance 0.021926  -> ratio 5.503 : 1
+   *   --bg-panel-alt #2c313a    luminance 0.030376  -> ratio 4.925 : 1
+   *   --danger-fill(0.12) over --bg-panel composites to #3c343a
+   *                             luminance 0.037221  -> ratio 4.538 : 1
+   *
+   * All four clear 4.5:1; the fill composite is the tightest at 4.538.
+   */
+  --danger: #e48481;
 
   /* --- Status fills (arb-0tu) --------------------------------------------- */
   /*
@@ -79,13 +96,13 @@
    *
    * One step up, 0.14, drops --fg-muted to 4.35 and fails; 0.16 drops --ok to
    * 4.44 as well. Raising this value is therefore a contrast regression, and
-   * AC-CHROME-5 measures exactly that. --danger is the documented exception
-   * (3.26 : 1 here, against a 3 : 1 large/bold floor) -- see arb-4uk.
+   * AC-CHROME-5 measures exactly that. --danger now clears the same 4.5 : 1
+   * floor as the other three (4.538 : 1 here) -- see arb-4uk.
    */
   --badge-fill: rgba(154, 160, 168, 0.12);
   --ok-fill: rgba(92, 184, 92, 0.12);
   --warn-fill: rgba(224, 160, 48, 0.12);
-  --danger-fill: rgba(217, 83, 79, 0.12);
+  --danger-fill: rgba(228, 132, 129, 0.12);
 
   /* --- Layout constants -------------------------------------------------- */
   /*
