@@ -4,6 +4,7 @@ import { Outlet, useLocation } from 'react-router-dom';
 import { SidebarNav } from './SidebarNav';
 import { TopBar } from './TopBar';
 import { resolveDocumentTitle } from '../../routes.titles';
+import { useTableDensityStore } from '../../state/tableDensityStore';
 import styles from './AppShell.module.css';
 
 interface AppShellProps {
@@ -33,6 +34,7 @@ interface AppShellProps {
  */
 export function AppShell({ children }: AppShellProps) {
   const { pathname } = useLocation();
+  const density = useTableDensityStore((state) => state.density);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawerRef = useRef<HTMLElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
@@ -112,7 +114,17 @@ export function AppShell({ children }: AppShellProps) {
         toggleRef={toggleRef}
       />
       <main className={styles.content}>
-        <div className={styles.contentInner}>{children ?? <Outlet />}</div>
+        {/*
+          `data-density` is read by ONE rule in surface.module.css, which drops
+          the vertical padding of every `.table` beneath it (arb-br4). It is
+          written here rather than per-surface because ten surfaces render that
+          table class: one attribute on the always-mounted wrapper means a new
+          table follows the preference by existing inside the shell, with no
+          call site to remember. Row height only -- see the rule's comment.
+        */}
+        <div className={styles.contentInner} data-density={density}>
+          {children ?? <Outlet />}
+        </div>
       </main>
     </div>
   );

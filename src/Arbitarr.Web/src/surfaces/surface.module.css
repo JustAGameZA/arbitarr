@@ -56,6 +56,31 @@
   vertical-align: top;
 }
 
+/*
+ * Compact density (arb-br4, epic decision 6). ROW HEIGHT ONLY: the vertical
+ * padding drops and nothing else moves -- font-size, borders, zebra striping
+ * and the horizontal 12px are all deliberately untouched, so a compact table
+ * is the same table with less air, not a differently-styled one.
+ *
+ * Scoped through an ancestor attribute rather than a class on each table
+ * because ten surfaces render `styles.table` (Activity, Dashboard x2, Rules,
+ * Search, ApiKeys, Sources, DecisionReview, Suppressions, LogsTab). A modifier
+ * class would be ten call sites to edit and one for a future surface to
+ * forget; the attribute is written once on the shell content wrapper, so a new
+ * table inherits the behaviour by existing inside the shell. `:global` is
+ * required because the attribute lives on an element owned by AppShell, not by
+ * this stylesheet's module scope.
+ *
+ * Padding literals are px, matching the PageHeader precedent -- there are no
+ * `--space-*` tokens in theme.css to reach for, and inventing a scale here
+ * would put shared values in a component stylesheet, which is what the palette
+ * rule (AC3) keeps in theme.css.
+ */
+:global([data-density='compact']) .table th,
+:global([data-density='compact']) .table td {
+  padding: 4px 12px;
+}
+
 .table tbody tr:nth-child(even) {
   background: var(--bg-panel-alt);
 }
