@@ -76,4 +76,23 @@ public sealed class VerdictCacheKeyTests
 
         Assert.Equal(keyA, keyB);
     }
+
+    /// <summary>
+    /// arb-2jti: pins <see cref="VerdictCacheKey.Compute"/> for fixed inputs to a known digest, so a
+    /// silent change to the field separator (or any other part of the hashed input) is caught. The
+    /// expected digest below was captured by running this same computation against the UNCHANGED
+    /// implementation (the literal U+001F separator, before it was named as a documented const) —
+    /// it is not recomputed from the current code, so a regression here means the cache key actually
+    /// changed. No <c>InternalsVisibleTo</c> exists from Arbitarr.Core to this test project, so the
+    /// new separator const is kept <c>private</c> and this digest pin is the sole guard.
+    /// </summary>
+    [Fact]
+    public void Compute_FixedInputs_MatchesKnownDigest()
+    {
+        var candidate = MakeCandidate("fixed-guid", "Movie.Title.2024.1080p.BluRay.x264");
+
+        var key = VerdictCacheKey.Compute(candidate, "indexer-1", "gpt-x", "digest-1", "prompt-v1", "t0-s42");
+
+        Assert.Equal("F2203F5F62E5B63953CCF77C2051937214CC3B920739A8CB859C829E79F5AB71", key);
+    }
 }

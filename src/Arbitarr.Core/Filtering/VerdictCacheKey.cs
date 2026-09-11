@@ -15,6 +15,14 @@ namespace Arbitarr.Core.Filtering;
 public static class VerdictCacheKey
 {
     /// <summary>
+    /// arb-2jti: the ASCII unit separator (U+001F), used to join the hashed fields below. Chosen
+    /// because no field value (title, size, source, protocol, model identity) can legitimately
+    /// contain it, so it cannot be confused with real field content. Changing this value silently
+    /// changes every computed cache key, which invalidates the whole verdict cache on next deploy.
+    /// </summary>
+    private const char FieldSeparator = '\u001F';
+
+    /// <summary>
     /// Computes the cache key for <paramref name="candidate"/> under the given model identity.
     /// Two candidates with the same normalized title, size, source, and protocol produce the same
     /// key (even with different <see cref="ReleaseCandidate.Guid"/> values); changing
@@ -56,7 +64,7 @@ public static class VerdictCacheKey
 
         var normalizedTitle = Normalize(candidate.OriginalTitle);
         var input = string.Join(
-            '',
+            FieldSeparator,
             normalizedTitle,
             candidate.Size.ToString(System.Globalization.CultureInfo.InvariantCulture),
             sourceName,
