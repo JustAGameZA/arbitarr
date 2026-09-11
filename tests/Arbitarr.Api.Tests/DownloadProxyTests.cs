@@ -259,6 +259,102 @@ public class DownloadProxyTests
     }
 
     [Fact]
+    public async Task Upstream_302_redirect_raises_a_sticky_refusal_health_item_for_that_source()
+    {
+        // arb-ln0: the activity event above scrolls away while the misconfiguration is still in
+        // force, so the same refusal must also land on the process-lifetime tracker the dashboard
+        // reads. The reason text is built from the configured source name and the status code only
+        // — /api/status is PublicRead, so no upstream-supplied text (a Location header) may reach it.
+        var release = TestReleases.Torrent(sourceName: "eztv", guid: "123");
+        var lookup = new InMemoryReleaseLookup();
+        lookup.Record(release);
+
+        var source = new FakeUpstreamSource("eztv", downloadException: new UpstreamRedirectRefusedException("eztv", 302));
+        var sources = new IUpstreamSource[] { source };
+        var tracker = new DownloadRefusalTracker();
+        var at = new DateTimeOffset(2026, 9, 11, 10, 0, 0, TimeSpan.Zero);
+
+        await DownloadProxyEndpoint.HandleAsync(
+            release.ProxyGuid, ValidApiKey, Resolver(), lookup, sources, NullEventSink.Instance, CancellationToken.None,
+            tracker, new FixedTimeProvider(at));
+
+        var refusal = Assert.Single(tracker.Snapshot());
+        Assert.Equal("eztv", refusal.SourceName);
+        Assert.Contains("302", refusal.Reason);
+        Assert.Equal(at, refusal.ObservedSinceUtc);
+    }
+
+    [Fact]
+    public async Task A_successful_download_clears_that_source_s_refusal_health_item()
+    {
+        var release = TestReleases.Torrent(sourceName: "eztv", guid: "123");
+        var lookup = new InMemoryReleaseLookup();
+        lookup.Record(release);
+
+        var tracker = new DownloadRefusalTracker();
+        tracker.RecordRefusal("eztv", "refused", DateTimeOffset.UnixEpoch);
+
+        var source = new FakeUpstreamSource("eztv", downloadFactory: () => new MemoryStream("torrent-bytes"u8.ToArray()));
+        var sources = new IUpstreamSource[] { source };
+
+        await DownloadProxyEndpoint.HandleAsync(
+            release.ProxyGuid, ValidApiKey, Resolver(), lookup, sources, NullEventSink.Instance, CancellationToken.None,
+            tracker, TimeProvider.System);
+
+        Assert.Empty(tracker.Snapshot());
+    }
+
+    [Fact]
+    public async Task A_download_that_trips_the_size_cap_does_not_clear_the_refusal_health_item()
+    {
+        // The grab is recorded AFTER the body is fully read, not when the fetch starts. A fetch that
+        // begins and then exceeds MaxLengthStream.MaxBytes is not a successful grab, and clearing on
+        // it would retire the banner while the download path is still broken.
+        var release = TestReleases.Torrent(sourceName: "eztv", guid: "123");
+        var lookup = new InMemoryReleaseLookup();
+        lookup.Record(release);
+
+        var tracker = new DownloadRefusalTracker();
+        tracker.RecordRefusal("eztv", "refused", DateTimeOffset.UnixEpoch);
+
+        var source = new FakeUpstreamSource("eztv", downloadFactory: () => new FakeFixedLengthStream(MaxLengthStream.MaxBytes + 1));
+        var sources = new IUpstreamSource[] { source };
+
+        await DownloadProxyEndpoint.HandleAsync(
+            release.ProxyGuid, ValidApiKey, Resolver(), lookup, sources, NullEventSink.Instance, CancellationToken.None,
+            tracker, TimeProvider.System);
+
+        Assert.Single(tracker.Snapshot());
+    }
+
+    [Fact]
+    public async Task A_successful_download_from_one_source_leaves_another_source_s_refusal_standing()
+    {
+        var release = TestReleases.Torrent(sourceName: "eztv", guid: "123");
+        var lookup = new InMemoryReleaseLookup();
+        lookup.Record(release);
+
+        var tracker = new DownloadRefusalTracker();
+        tracker.RecordRefusal("nzbhydra2", "refused", DateTimeOffset.UnixEpoch);
+
+        var source = new FakeUpstreamSource("eztv", downloadFactory: () => new MemoryStream("torrent-bytes"u8.ToArray()));
+        var sources = new IUpstreamSource[] { source };
+
+        await DownloadProxyEndpoint.HandleAsync(
+            release.ProxyGuid, ValidApiKey, Resolver(), lookup, sources, NullEventSink.Instance, CancellationToken.None,
+            tracker, TimeProvider.System);
+
+        var refusal = Assert.Single(tracker.Snapshot());
+        Assert.Equal("nzbhydra2", refusal.SourceName);
+    }
+
+    /// <summary>A TimeProvider pinned to one instant, so a recorded timestamp can be asserted exactly.</summary>
+    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    [Fact]
     public async Task Open_circuit_breaker_returns_503_not_an_unhandled_500()
     {
         // The source refuses to call upstream while its breaker rests. That is a retryable
