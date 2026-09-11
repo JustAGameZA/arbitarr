@@ -140,6 +140,69 @@ public class OllamaClientTests
         Assert.Equal("test-model:latest", body.RootElement.GetProperty("model").GetString());
     }
 
+    /// <summary>
+    /// arb-p4r: <see cref="OllamaClient"/> pins <c>options.temperature</c>/<c>options.seed</c> on the
+    /// chat request so the same title yields the same verdict run to run (F-009) — without this, the
+    /// verdict cache (keyed on model name + digest + <c>PromptVersion</c>) cannot be reproducible.
+    /// The fixed values themselves live on <see cref="OllamaOptions.SamplingTemperature"/>/
+    /// <see cref="OllamaOptions.SamplingSeed"/>, so this test compares against those rather than
+    /// restating the literals.
+    /// </summary>
+    [Fact]
+    public async Task ClassifyAsync_RequestBody_PinsTemperatureAndSeed()
+    {
+        var (client, handler, _) = CreateClient(SuccessResponse());
+
+        await client.ClassifyAsync(Candidate());
+
+        var body = await handler.LastRequestBodyAsync();
+        var options = body.RootElement.GetProperty("options");
+        Assert.Equal(OllamaOptions.SamplingTemperature, options.GetProperty("temperature").GetDouble());
+        Assert.Equal(OllamaOptions.SamplingSeed, options.GetProperty("seed").GetInt32());
+    }
+
+    [Fact]
+    public async Task ClassifyAsync_RequestBody_StillIncludesStreamAndFormat_AlongsideOptions()
+    {
+        var (client, handler, _) = CreateClient(SuccessResponse());
+
+        await client.ClassifyAsync(Candidate());
+
+        var body = await handler.LastRequestBodyAsync();
+        Assert.False(body.RootElement.GetProperty("stream").GetBoolean());
+        Assert.Equal(JsonValueKind.Object, body.RootElement.GetProperty("format").ValueKind);
+        Assert.Equal(JsonValueKind.Object, body.RootElement.GetProperty("options").ValueKind);
+    }
+
+    /// <summary>
+    /// arb-p4r: the theory this replaces stubbed the Ollama response FROM the same fixture row it
+    /// then asserted back — the candidate's title never influenced the result, so it passed even
+    /// with the deterministic <c>options</c> block deleted entirely. What actually needs to hold for
+    /// the verdict cache to be reproducible is that classifying the SAME candidate twice produces a
+    /// byte-identical serialized request body — if sampling (or anything else in the request) ever
+    /// varied between two calls for the same input, the cache could not trust a hit to agree with a
+    /// fresh call. Serializing the request twice and comparing bytes is a stronger assertion than
+    /// re-parsing each side into a model, which would tolerate reordering.
+    /// </summary>
+    [Fact]
+    public async Task ClassifyAsync_SameCandidateClassifiedTwice_ProducesByteIdenticalRequestBody()
+    {
+        // Two independently constructed clients/handlers rather than one reused HttpClient call
+        // twice: HttpClient disposes the response's content after it is read once, so a single
+        // stubbed HttpResponseMessage cannot serve a second request.
+        var (firstClient, firstHandler, _) = CreateClient(SuccessResponse());
+        var (secondClient, secondHandler, _) = CreateClient(SuccessResponse());
+        var candidate = Candidate();
+
+        await firstClient.ClassifyAsync(candidate);
+        var firstBody = await firstHandler.LastRequestBodyStringAsync();
+
+        await secondClient.ClassifyAsync(candidate);
+        var secondBody = await secondHandler.LastRequestBodyStringAsync();
+
+        Assert.Equal(firstBody, secondBody, StringComparer.Ordinal);
+    }
+
     [Fact]
     public async Task ClassifyAsync_ParsesVerdictAndConfidenceFromResponse()
     {
@@ -289,6 +352,9 @@ public class OllamaClientTests
 
         public async Task<JsonDocument> LastRequestBodyAsync() =>
             JsonDocument.Parse(_lastRequestBody ?? throw new InvalidOperationException("No request captured."));
+
+        public Task<string> LastRequestBodyStringAsync() =>
+            Task.FromResult(_lastRequestBody ?? throw new InvalidOperationException("No request captured."));
 
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request, CancellationToken cancellationToken)

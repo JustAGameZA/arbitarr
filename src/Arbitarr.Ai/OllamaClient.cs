@@ -23,6 +23,14 @@ namespace Arbitarr.Ai;
 /// fail-open behavior (falling back to deterministic-only filtering when the breaker is open) is
 /// the caller's responsibility (the AI verdict cache/chain), matching M5-3's fail-open requirement.
 /// </para>
+///
+/// <para>
+/// arb-p4r: the request also pins <c>options.temperature</c> and <c>options.seed</c> (see
+/// <see cref="OllamaOptions.SamplingTemperature"/>/<see cref="OllamaOptions.SamplingSeed"/>) so the
+/// same title yields the same verdict run to run — without this, Ollama samples at its default
+/// temperature and the verdict cache (keyed on model name + digest + <c>PromptVersion</c>) cannot
+/// be reproducible.
+/// </para>
 /// </summary>
 public sealed class OllamaClient : IOllamaClient
 {
@@ -116,7 +124,8 @@ public sealed class OllamaClient : IOllamaClient
                     messages,
                     Stream: false,
                     Format: JsonDocument.Parse(VerdictSchema.Object).RootElement.Clone(),
-                    KeepAlive: _options.KeepAlive);
+                    KeepAlive: _options.KeepAlive,
+                    Options: new OllamaChatRequestOptions(OllamaOptions.SamplingTemperature, OllamaOptions.SamplingSeed));
 
                 using var response = await _httpClient
                     .PostAsJsonAsync(chatUri, request, JsonOptions, timeoutCts.Token)
@@ -188,7 +197,17 @@ public sealed class OllamaClient : IOllamaClient
         [property: JsonPropertyName("format")] JsonElement Format,
         [property: JsonPropertyName("keep_alive")]
         [property: JsonConverter(typeof(OllamaKeepAliveJsonConverter))]
-        OllamaKeepAlive KeepAlive);
+        OllamaKeepAlive KeepAlive,
+        [property: JsonPropertyName("options")] OllamaChatRequestOptions Options);
+
+    /// <summary>
+    /// arb-p4r: the sampling knobs that make classification deterministic. See
+    /// <see cref="OllamaOptions.SamplingTemperature"/>/<see cref="OllamaOptions.SamplingSeed"/> for
+    /// why both are fixed.
+    /// </summary>
+    private sealed record OllamaChatRequestOptions(
+        [property: JsonPropertyName("temperature")] double Temperature,
+        [property: JsonPropertyName("seed")] int Seed);
 
     /// <summary>
     /// Adapts <see cref="OllamaKeepAlive"/> to System.Text.Json. The wire shape itself — a JSON
