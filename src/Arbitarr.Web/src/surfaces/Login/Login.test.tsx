@@ -162,13 +162,22 @@ describe('Login and the route guard (#44)', () => {
     expect(useAdminKeyStore.getState().key).toBe('machine-key');
   });
 
-  it('states the recovery story on the login page', async () => {
-    // AC7: the answer is "there is none", and an undocumented "none" reads as an
-    // oversight. The operator meets it where it becomes relevant.
+  it('points to the recovery runbook instead of reciting it (arb-hhb)', async () => {
+    // The runbook itself (stop container, edit arbitarr.db, start) moved to the
+    // README -- a login screen should not carry operational instructions
+    // permanently. What must stay is the signpost: an operator who fails to
+    // sign in still learns, right here, that a way back exists.
     mockApi({ ...signedOut() });
     renderApp('/login');
 
-    expect(await screen.findByText(/There is no password reset/i)).toBeInTheDocument();
+    expect(screen.queryByText(/users table/i)).toBeNull();
+    expect(screen.queryByText(/There is no password reset/i)).toBeNull();
+
+    const link = await screen.findByRole('link', { name: 'Locked out?' });
+    expect(link).toHaveAttribute(
+      'href',
+      'https://github.com/JustAGameZA/arbitarr#signing-in-and-what-to-do-when-you-cannot',
+    );
   });
 
   it('sends an already-signed-in visitor away from /login', async () => {

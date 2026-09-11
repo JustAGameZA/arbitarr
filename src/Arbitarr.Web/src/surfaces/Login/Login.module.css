@@ -48,10 +48,11 @@
 }
 
 /*
- * The recovery note. Deliberately present on the login surface rather than
- * buried in docs: "there is no password recovery" is a decision (see UserEntry),
- * and an operator discovers it at exactly the moment they need it -- which is
- * here, having failed to sign in. An undocumented "none" reads as an oversight.
+ * arb-hhb: the pointer to the recovery runbook, not the runbook itself (see
+ * the load-bearing comment above the link in Login.tsx). Still present on the
+ * login surface rather than buried in docs with no signpost here at all: an
+ * operator discovers this at exactly the moment they need it -- having failed
+ * to sign in.
  */
 .help {
   margin: 20px 0 0;
@@ -60,4 +61,25 @@
   font-size: 12px;
   line-height: 1.5;
   color: var(--fg-muted);
+}
+
+/*
+ * arb-hhb: below the 768px shell breakpoint (#48, shared with AppShell.module.css
+ * rather than a new number) the shared .form's flex-wrap lets the submit button
+ * sit inline beside the password field with room to spare, which reads as an
+ * uneven label/input/button row on a phone-width viewport. Below that width the
+ * fields and the actions row each take the full card measure and stack, with
+ * the button last so the primary action stays where a thumb expects it.
+ *
+ * Targeted by tag rather than by the shared `styles.field` class: that class
+ * lives in surface.module.css, a different CSS module, so its compiled name is
+ * hashed and unreachable from here -- but `<label className={styles.field}>`
+ * is the only element type Login's form renders a label for, so `.card label`
+ * reaches the same elements without needing a cross-module selector.
+ */
+@media (max-width: 768px) {
+  .card label,
+  .actions {
+    width: 100%;
+  }
 }
