@@ -91,6 +91,27 @@ public sealed class MaintenanceHostedService(
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
+                // arb-rwhb: this arm is what makes a shutdown mid-backup CLEAN rather than an
+                // error. BackupService.WriteArchiveAsync now checks the token immediately before
+                // SqliteConnection.BackupDatabase — a blocking call that cannot be cancelled once
+                // entered — so a stop signalled while this service is between cycles declines the
+                // copy instead of starting one that shutdown would then pull the files out from
+                // under. Declining that way lands HERE, not in the catch below: a backup skipped
+                // because the host is stopping is not a backup FAILURE, so it must neither log an
+                // error nor call RecordBackupFailure and show a broken safety net in the UI.
+                //
+                // The first pass is still deliberately IMMEDIATE (it runs before the first
+                // Task.Delay below): operators rely on a backup being taken at startup, so the fix
+                // for the shutdown race is the token check, never deferring that first pass.
+                //
+                // NOTHING HERE IS DETACHED, and that is load-bearing rather than incidental. Every
+                // pass above is awaited inline on ExecuteAsync's own task — there is no Task.Run and
+                // no async void anywhere in this service or in the backup chain beneath it — so the
+                // task BackgroundService.StopAsync awaits IS the one running the backup, and a stop
+                // therefore waits for an in-flight copy to finish (bounded by the host's shutdown
+                // timeout, the existing contract) instead of abandoning it. Introducing a
+                // fire-and-forget dispatch in this chain would silently reopen arb-rwhb: the copy
+                // would outlive StopAsync and read files the config directory's owner then deletes.
                 break;
             }
             catch (Exception ex)

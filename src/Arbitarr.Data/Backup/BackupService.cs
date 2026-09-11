@@ -60,6 +60,19 @@ public sealed class BackupService
             _paths.EnsureStagingDirectory(),
             StagingFileNames.SnapshotPrefix + Guid.NewGuid().ToString("N") + ".db");
 
+        // arb-rwhb: the LAST point at which this archive can still be declined cheaply.
+        // SnapshotDatabase calls SqliteConnection.BackupDatabase, which is blocking and cannot be
+        // cancelled once entered,
+        // so a token that is already signalled must stop the copy from STARTING rather than try to
+        // abort it midway. Aborting midway would be worse than useless: the copy would be abandoned
+        // half-written, and a torn snapshot is exactly what BackupArchiveValidator exists to reject.
+        //
+        // Without this check a host that is shutting down still began a full database copy, and
+        // whatever owned the config directory then deleted it out from under a live SQLite reader —
+        // observed as "SQLite Error 5898: 'disk I/O error'" from BackupDatabase, and in the test
+        // suite as an unrelated class dying on a disposed provider.
+        cancellationToken.ThrowIfCancellationRequested();
+
         try
         {
             SnapshotDatabase(snapshotPath);

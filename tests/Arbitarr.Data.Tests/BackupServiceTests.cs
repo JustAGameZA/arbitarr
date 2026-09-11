@@ -194,6 +194,74 @@ public sealed class BackupServiceTests : IDisposable
         Assert.Null(BackupService.ReadAppliedMigrationId(_paths.DatabasePath));
     }
 
+    /// <summary>
+    /// arb-rwhb: a backup whose token is ALREADY cancelled must not begin the database copy.
+    ///
+    /// <para><b>Why this is the property, and why it is not "the copy is aborted midway".</b>
+    /// <c>SnapshotDatabase</c> calls <c>SqliteConnection.BackupDatabase</c>, which is blocking and
+    /// cannot be cancelled once entered. So the only honest contract is that a signalled token stops
+    /// the copy from STARTING. Aborting midway would also be worse than useless: the snapshot would
+    /// be abandoned half-written, and a torn snapshot is what <c>BackupArchiveValidator</c> exists
+    /// to reject.</para>
+    ///
+    /// <para><b>What this buys in production.</b> Without it, a host already shutting down still
+    /// began a full copy, and whatever owned the config directory deleted it out from under a live
+    /// SQLite reader — logged as <c>SQLite Error 5898: 'disk I/O error'</c> from
+    /// <c>BackupDatabase</c>. <c>MaintenanceHostedService</c>'s
+    /// <c>catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)</c> arm
+    /// then treats this as a clean stop rather than a backup FAILURE, so it neither logs an error
+    /// nor records a broken safety net in the UI.</para>
+    ///
+    /// <para>NON-VACUITY: the assertions below prove the copy did not merely fail — they prove it
+    /// never ran, by showing neither the archive nor any staging snapshot was left behind. A test
+    /// that only asserted the throw would pass against an implementation that threw AFTER copying.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_cancelled_token_declines_the_backup_before_the_database_copy_starts()
+    {
+        SeedDatabase(rowCount: 5);
+        SeedSecretKey();
+
+        var archivePath = Path.Combine(_configDirectory, "cancelled.zip");
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => new BackupService(_paths).WriteArchiveAsync(archivePath, cancelled.Token));
+
+        // The copy never started: no archive, and nothing left in staging. Under the pre-fix code
+        // the token was accepted and never consulted, so the full BackupDatabase copy ran and this
+        // archive existed.
+        Assert.False(File.Exists(archivePath), "A cancelled backup still wrote its archive.");
+
+        var stagedSnapshots = Directory.Exists(_paths.StagingDirectory)
+            ? Directory.EnumerateFiles(_paths.StagingDirectory, StagingFileNames.SnapshotPrefix + "*.db").ToArray()
+            : [];
+        Assert.True(
+            stagedSnapshots.Length == 0,
+            "A cancelled backup left a staging snapshot behind, so the database copy had already begun: " +
+            string.Join(", ", stagedSnapshots.Select(Path.GetFileName)));
+    }
+
+    /// <summary>
+    /// The other half of the contract, and the control for the test above: an UNCANCELLED token
+    /// still takes the backup. Without this, the cancellation test would pass just as happily
+    /// against an implementation that refused every backup.
+    /// </summary>
+    [Fact]
+    public async Task An_uncancelled_token_still_takes_the_backup()
+    {
+        SeedDatabase(rowCount: 5);
+        SeedSecretKey();
+
+        var archivePath = Path.Combine(_configDirectory, "not-cancelled.zip");
+        using var live = new CancellationTokenSource();
+
+        await new BackupService(_paths).WriteArchiveAsync(archivePath, live.Token);
+
+        Assert.True(File.Exists(archivePath), "An uncancelled backup did not write its archive.");
+    }
+
     [Fact]
     public void Download_file_name_carries_a_sortable_utc_timestamp_and_no_illegal_characters()
     {

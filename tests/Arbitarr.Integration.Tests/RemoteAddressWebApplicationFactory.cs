@@ -1,5 +1,7 @@
 using System.Net;
 using Arbitarr.Data;
+using Arbitarr.Data.Backup;
+using Arbitarr.TestSupport;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -82,22 +84,70 @@ public sealed class RemoteAddressWebApplicationFactory : WebApplicationFactory<P
         await dbContext.SaveChangesAsync();
     }
 
+    /// <summary>
+    /// arb-rwhb: stops and awaits the host BEFORE deleting the config directory, so no background
+    /// work is still reading the files being removed.
+    ///
+    /// <para>KEEP IN STEP WITH <see cref="ArbitarrWebApplicationFactory"/>, which carries the full
+    /// rationale and the identical pair of overrides. This factory hosts the same composition root,
+    /// so it inherits the same immediate startup backup from <c>MaintenanceHostedService</c> and had
+    /// the same race; a fix applied to only one of the two leaves it live in the other.</para>
+    /// </summary>
+    public override async ValueTask DisposeAsync()
+    {
+        await base.DisposeAsync().ConfigureAwait(false);
+
+        DeleteConfigDirectory();
+    }
+
+    /// <inheritdoc cref="DisposeAsync" />
     protected override void Dispose(bool disposing)
     {
         base.Dispose(disposing);
 
         if (disposing)
         {
+            DeleteConfigDirectory();
+        }
+    }
+
+    /// <summary>
+    /// BEST-EFFORT removal of the per-instance config directory, EXPECTED TO FAIL and leave the
+    /// directory behind (arb-dhua). Nothing asserts on its success. Mirrors
+    /// <see cref="ArbitarrWebApplicationFactory"/>, which carries the full reasoning.
+    /// </summary>
+    private void DeleteConfigDirectory()
+    {
+        // Returns what pooled handles it can, which is cheap and worth doing — but it does NOT
+        // release the handle that actually holds the directory, and no widening of it will:
+        // ClearPool closes only idle RETURNED connections, while every ArbitarrDbContext holds one
+        // EF has already CHECKED OUT. Never ClearAllPools (banned from test IL, and it could not
+        // touch a checked-out connection either). See ArbitarrWebApplicationFactory and arb-dhua.
+        SqlitePoolCleaner.ClearPoolsFor(new BackupPaths(_configDirectory).DatabasePath);
+        SqlitePools.ClearPoolsForDirectory(_configDirectory);
+
+        const int attempts = 10;
+
+        for (var attempt = 1; attempt <= attempts; attempt++)
+        {
             try
             {
-                if (Directory.Exists(_configDirectory))
+                if (!Directory.Exists(_configDirectory))
                 {
-                    Directory.Delete(_configDirectory, recursive: true);
+                    return;
                 }
+
+                Directory.Delete(_configDirectory, recursive: true);
+                return;
             }
-            catch (IOException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                // Best-effort cleanup; a locked SQLite file on Windows shouldn't fail the test run.
+                if (attempt == attempts)
+                {
+                    return;
+                }
+
+                Thread.Sleep(100);
             }
         }
     }
