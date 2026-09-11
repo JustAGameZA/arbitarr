@@ -33,6 +33,13 @@ namespace Arbitarr.Data.Maintenance;
 /// counts above this is not measured against a live setting: the expiry was stamped at write time,
 /// so lowering the TTL shortens NEW links rather than retroactively killing issued ones.
 /// </param>
+/// <param name="QuerySnapshotCacheRowsPruned">
+/// arb-dng: rows removed from the query snapshot cache, against each row's own <c>ExpiresAt</c> —
+/// <see cref="Arbitarr.Core.Settings.PrunePredicates.IsQuerySnapshotCacheEntryPrunable"/>. Like
+/// <paramref name="ReleaseLookupRowsPruned"/> and unlike the age-based counts above, the expiry was
+/// stamped at write time from the then-current <c>query_snapshot_ttl</c>, so lowering that setting
+/// shortens NEW snapshots rather than retroactively dropping issued pagination tokens.
+/// </param>
 /// <param name="VacuumRan">True if <c>PRAGMA incremental_vacuum</c> was executed this run.</param>
 ///
 /// <remarks>
@@ -60,4 +67,5 @@ public sealed record MaintenanceJobResult(
     int EventRowsPruned,
     int ExpiredSessionRowsPruned,
     int ReleaseLookupRowsPruned,
+    int QuerySnapshotCacheRowsPruned,
     bool VacuumRan);

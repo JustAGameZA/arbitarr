@@ -114,6 +114,8 @@ public sealed class MaintenanceJob
 
         var releaseLookupPruned = await PruneReleaseLookupAsync(now, cancellationToken).ConfigureAwait(false);
 
+        var querySnapshotCachePruned = await PruneQuerySnapshotCacheAsync(now, cancellationToken).ConfigureAwait(false);
+
         await RunIncrementalVacuumAsync(cancellationToken).ConfigureAwait(false);
 
         return new MaintenanceJobResult(
@@ -124,6 +126,7 @@ public sealed class MaintenanceJob
             EventRowsPruned: eventsPruned,
             ExpiredSessionRowsPruned: expiredSessionsPruned,
             ReleaseLookupRowsPruned: releaseLookupPruned,
+            QuerySnapshotCacheRowsPruned: querySnapshotCachePruned,
             VacuumRan: true);
     }
 
@@ -303,8 +306,8 @@ public sealed class MaintenanceJob
     /// <summary>
     /// arb-tps: drops release lookup rows that can no longer resolve a download.
     ///
-    /// <para>This is the EIGHTH accumulating table, and it earns its place in the list above on the
-    /// same rule: it takes one row per rendered release on every search, which on a box fielding
+    /// <para>It earns its place in the list above on the same rule: it takes one row per rendered
+    /// release on every search, which on a box fielding
     /// *arr RSS syncs is thousands a day. Without this the 14-day TTL would be decorative and the
     /// table would grow for the life of the deployment.</para>
     ///
@@ -331,6 +334,42 @@ public sealed class MaintenanceJob
             .ToList();
 
         _dbContext.ReleaseLookupEntries.RemoveRange(prunable);
+        await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return prunable.Count;
+    }
+
+    /// <summary>
+    /// arb-dng: drops query snapshot cache rows that can no longer serve a pagination token.
+    ///
+    /// <para>It earns its place in the list above on the same rule as every table there: a row is
+    /// written per distinct search whose results are paged, so on a box fielding *arr RSS syncs the
+    /// table grows per request and never shrinks. The schema has carried an <c>ExpiresAt</c> and an
+    /// index on it since InitialCreate, but until this call nothing ever deleted a row — the
+    /// <c>query_snapshot_ttl</c> setting bounded what could be SERVED and nothing at all on disk.</para>
+    ///
+    /// <para><b>STORAGE HYGIENE, NEVER THE RESOLUTION BOUNDARY</b> — the same separation
+    /// <see cref="PruneReleaseLookupAsync"/> and <see cref="PruneExpiredSessionsAsync"/> draw.
+    /// <c>QuerySnapshotStore.GetAsync</c> evaluates <c>ExpiresAt</c> on every read, so an expired
+    /// snapshot stops resolving the instant it expires whether or not this job has run. That is what
+    /// makes it safe to prune on a timer.</para>
+    ///
+    /// <para>Like the release lookup and unlike the age-based siblings, the predicate reads the row's
+    /// OWN <c>ExpiresAt</c> rather than measuring an age against a live setting, so it needs no
+    /// argument from the snapshot: the expiry was stamped at write time from the then-current TTL.</para>
+    /// </summary>
+    private async Task<int> PruneQuerySnapshotCacheAsync(DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        // Client-side for the same reason as every prune above: SQLite's EF Core provider cannot
+        // reliably translate DateTimeOffset comparisons server-side.
+        var candidates = await _dbContext.QuerySnapshotCacheEntries
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var prunable = candidates
+            .Where(e => PrunePredicates.IsQuerySnapshotCacheEntryPrunable(e.ExpiresAt, now))
+            .ToList();
+
+        _dbContext.QuerySnapshotCacheEntries.RemoveRange(prunable);
         await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return prunable.Count;
     }

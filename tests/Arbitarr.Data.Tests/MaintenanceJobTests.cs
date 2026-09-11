@@ -481,6 +481,98 @@ public sealed class MaintenanceJobTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// arb-dng: the query snapshot cache prune deletes the expired row and keeps the live one, in
+    /// ONE pass over a table holding both. Asserted PER ROW rather than by count alone — "one row
+    /// was deleted" still passes when the implementation deleted the wrong one, which for this table
+    /// means breaking the stable ordering of a paging session that was still in flight.
+    /// </summary>
+    [Fact]
+    public async Task RunAsync_PrunesExpiredQuerySnapshotCacheRow_AndKeepsTheLiveOne()
+    {
+        using (var context = CreateContext())
+        {
+            context.Database.Migrate();
+            context.QuerySnapshotCacheEntries.Add(new QuerySnapshotCacheEntry
+            {
+                SnapshotToken = "expired-one-second-ago",
+                PayloadJson = "[]",
+                CreatedAt = Now - TimeSpan.FromMinutes(10),
+                ExpiresAt = Now - TimeSpan.FromSeconds(1),
+            });
+            context.QuerySnapshotCacheEntries.Add(new QuerySnapshotCacheEntry
+            {
+                SnapshotToken = "live-one-second-left",
+                PayloadJson = "[]",
+                CreatedAt = Now - TimeSpan.FromMinutes(10),
+                ExpiresAt = Now + TimeSpan.FromSeconds(1),
+            });
+            context.SaveChanges();
+        }
+
+        using (var context = CreateContext())
+        {
+            var job = new MaintenanceJob(context, _timeProvider);
+            var result = await job.RunAsync(Settings(TimeSpan.FromDays(7)));
+
+            Assert.Equal(1, result.QuerySnapshotCacheRowsPruned);
+
+            // PER ROW: the exact survivor, and the exact casualty.
+            var remaining = context.QuerySnapshotCacheEntries.Select(e => e.SnapshotToken).ToList();
+            Assert.Equal(new[] { "live-one-second-left" }, remaining);
+        }
+    }
+
+    /// <summary>
+    /// arb-dng: a snapshot exactly AT its expiry is pruned, matching
+    /// <c>PrunePredicates.IsQuerySnapshotCacheEntryPrunable</c>'s inclusive boundary and
+    /// <c>QuerySnapshotStore.GetAsync</c>, which stops serving it at that same instant. A row that
+    /// no longer serves but is never deleted would accumulate forever.
+    /// </summary>
+    [Fact]
+    public async Task RunAsync_PrunesQuerySnapshotCacheRow_ExactlyAtExpiry()
+    {
+        using (var context = CreateContext())
+        {
+            context.Database.Migrate();
+            context.QuerySnapshotCacheEntries.Add(new QuerySnapshotCacheEntry
+            {
+                SnapshotToken = "expiring-exactly-now",
+                PayloadJson = "[]",
+                CreatedAt = Now - TimeSpan.FromMinutes(10),
+                ExpiresAt = Now,
+            });
+            context.SaveChanges();
+        }
+
+        using (var context = CreateContext())
+        {
+            var job = new MaintenanceJob(context, _timeProvider);
+            var result = await job.RunAsync(Settings(TimeSpan.FromDays(7)));
+
+            Assert.Equal(1, result.QuerySnapshotCacheRowsPruned);
+            Assert.Empty(context.QuerySnapshotCacheEntries.ToList());
+        }
+    }
+
+    /// <summary>arb-dng: an empty query snapshot cache reports zero rather than miscounting.</summary>
+    [Fact]
+    public async Task RunAsync_ReportsZeroQuerySnapshotCacheRowsPruned_WhenTableIsEmpty()
+    {
+        using (var context = CreateContext())
+        {
+            context.Database.Migrate();
+        }
+
+        using (var context = CreateContext())
+        {
+            var job = new MaintenanceJob(context, _timeProvider);
+            var result = await job.RunAsync(Settings(TimeSpan.FromDays(7)));
+
+            Assert.Equal(0, result.QuerySnapshotCacheRowsPruned);
+        }
+    }
+
     [Fact]
     public async Task RunAsync_DoesNotPruneOperationalEventRow_WithinOperationalRetention()
     {
