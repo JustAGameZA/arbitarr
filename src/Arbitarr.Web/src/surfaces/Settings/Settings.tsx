@@ -12,6 +12,30 @@ import { SonarrSection } from './Sonarr/Sonarr';
 import { ApiKeysSection } from './ApiKeys/ApiKeys';
 import { AccountSection } from './Account/Account';
 import { AiSection } from './Ai/Ai';
+import { SectionNav, slugifyGroup, type SectionNavEntry } from './SectionNav';
+
+/**
+ * The six static sections, in the order the page renders them.
+ *
+ * This array is the SINGLE source for both the rendered sections and the nav
+ * entries below, which is the load-bearing property of arb-5oe: the nav cannot
+ * list a section the page does not render, or miss one it does. The dynamic
+ * catalog groups are appended to it from the same groupSettings() call that
+ * renders them, so a group added to the server's catalog appears in the nav
+ * automatically with no change here (Settings.test.tsx asserts exactly that).
+ *
+ * The ids are hard-coded rather than slugified from the labels: they are anchor
+ * targets that may end up in a bookmark or a linked-to URL, so they should not
+ * silently change if a label is reworded.
+ */
+const STATIC_SECTIONS = [
+  { id: 'account', label: 'Account' },
+  { id: 'sources', label: 'Sources' },
+  { id: 'sonarr', label: 'Sonarr' },
+  { id: 'api-keys', label: 'API keys' },
+  { id: 'notifications', label: 'Notifications' },
+  { id: 'ai', label: 'AI backend' },
+] as const;
 
 /** Groups the flat catalog into its declared groups, preserving server order. */
 export function groupSettings(entries: SettingCatalogEntry[]): [string, SettingCatalogEntry[]][] {
@@ -165,6 +189,29 @@ export default function SettingsPage() {
   const [savedKey, setSavedKey] = useState<string | null>(null);
   const [failedKey, setFailedKey] = useState<string | null>(null);
 
+  /**
+   * The nav's entries: the six static sections, then one per catalog group.
+   *
+   * Derived from the SAME groupSettings() call that renders the dynamic panels
+   * and the SAME STATIC_SECTIONS array the static ones are wrapped with, so a
+   * group added to the server's catalog appears in the nav with no change here.
+   * Building this from a second, hand-written list is the obvious shortcut and
+   * it is exactly what would drift -- Settings.test.tsx pins the automatic
+   * behaviour by adding a group to the mocked catalog and expecting a new link.
+   *
+   * While the query is pending or failed there are no groups yet, so the nav
+   * shows the static entries alone rather than nothing: those sections render
+   * regardless of the catalog request, and a nav that vanished on a failed
+   * request would strand the operator on a page they can still use.
+   */
+  const navEntries: SectionNavEntry[] = [
+    ...STATIC_SECTIONS.map((section) => ({ id: section.id, label: section.label })),
+    ...groupSettings(settings.data ?? []).map(([group]) => ({
+      id: slugifyGroup(group),
+      label: group,
+    })),
+  ];
+
   const save = (key: string, value: string) => {
     setSavedKey(null);
     setFailedKey(null);
@@ -184,57 +231,85 @@ export default function SettingsPage() {
         description="Tunable values, with the bounds and rationale the server enforces."
       />
 
-      {/* The operator's own account before the machines' credentials. */}
-      <AccountSection />
+      <div className={local.layout}>
+        <SectionNav entries={navEntries} />
 
-      <SourcesSection />
+        <div>
+          {/* Each static section is wrapped rather than given an id of its own:
+              the six section components take no props, and threading one
+              through all six would be a six-file diff across files that are
+              CRLF, for an anchor target that a wrapper provides just as well.
+              The wrapper carries the scroll-margin-top that keeps the target
+              clear of the sticky bar. */}
+          {/* The operator's own account before the machines' credentials. */}
+          <div id="account" className={local.section}>
+            <AccountSection />
+          </div>
 
-      {/* Beside Sources rather than in it: Sonarr is the other machine Arbitarr
-          talks to, but it is not a source — it is not searched, and its probe
-          speaks its own API. See SonarrSection for the full distinction. */}
-      <SonarrSection />
+          <div id="sources" className={local.section}>
+            <SourcesSection />
+          </div>
 
-      <ApiKeysSection />
+          {/* Beside Sources rather than in it: Sonarr is the other machine Arbitarr
+              talks to, but it is not a source — it is not searched, and its probe
+              speaks its own API. See SonarrSection for the full distinction. */}
+          <div id="sonarr" className={local.section}>
+            <SonarrSection />
+          </div>
 
-      <NotificationsSection />
+          <div id="api-keys" className={local.section}>
+            <ApiKeysSection />
+          </div>
 
-      <AiSection />
+          <div id="notifications" className={local.section}>
+            <NotificationsSection />
+          </div>
 
-      <QueryState isPending={settings.isPending} error={settings.error} data={settings.data}>
-        {(entries) =>
-          entries.length === 0 ? (
-            <section className={styles.panel}>
-              <div className={styles.panelBody}>
-                <p className={styles.empty}>No editable settings.</p>
-              </div>
-            </section>
-          ) : (
-            <>
-              {groupSettings(entries).map(([group, groupEntries]) => (
-                <section key={group} className={styles.panel}>
-                  <h2 className={styles.panelHeading}>{group}</h2>
+          <div id="ai" className={local.section}>
+            <AiSection />
+          </div>
+
+          <QueryState isPending={settings.isPending} error={settings.error} data={settings.data}>
+            {(entries) =>
+              entries.length === 0 ? (
+                <section className={styles.panel}>
                   <div className={styles.panelBody}>
-                    {groupEntries.map((entry) => (
-                      <SettingRow
-                        // Keyed by key AND value so a successful save, which
-                        // refetches the catalog, reseeds the field from the
-                        // server rather than leaving a stale local edit.
-                        key={`${entry.key}:${entry.value}`}
-                        entry={entry}
-                        onSave={save}
-                        saving={update.isPending}
-                        savedKey={savedKey}
-                        failedKey={failedKey}
-                        failure={update.error}
-                      />
-                    ))}
+                    <p className={styles.empty}>No editable settings.</p>
                   </div>
                 </section>
-              ))}
-            </>
-          )
-        }
-      </QueryState>
+              ) : (
+                <>
+                  {groupSettings(entries).map(([group, groupEntries]) => (
+                    <section
+                      key={group}
+                      id={slugifyGroup(group)}
+                      className={`${styles.panel} ${local.section}`}
+                    >
+                      <h2 className={styles.panelHeading}>{group}</h2>
+                      <div className={styles.panelBody}>
+                        {groupEntries.map((entry) => (
+                          <SettingRow
+                            // Keyed by key AND value so a successful save, which
+                            // refetches the catalog, reseeds the field from the
+                            // server rather than leaving a stale local edit.
+                            key={`${entry.key}:${entry.value}`}
+                            entry={entry}
+                            onSave={save}
+                            saving={update.isPending}
+                            savedKey={savedKey}
+                            failedKey={failedKey}
+                            failure={update.error}
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  ))}
+                </>
+              )
+            }
+          </QueryState>
+        </div>
+      </div>
     </>
   );
 }

@@ -1,0 +1,139 @@
+/*
+ * Sticky section nav (arb-5oe). Colour is var(--token) only (AC3); spacing is
+ * px literals by the PageHeader precedent -- the only pinned layout tokens are
+ * --sidebar-width, --topbar-height and --content-max-width, and a per-component
+ * --section-nav-width would add a fourth that nothing asserts.
+ *
+ * MOBILE-FIRST, and that order is load-bearing rather than stylistic: the wide
+ * layout is the one that needs a media query, so the narrow layout is what
+ * jsdom sees. A desktop-first sheet would leave the two-column rules
+ * unconditional under test.
+ */
+
+/*
+ * Below the wide breakpoint: a horizontal strip under the top bar.
+ *
+ * The strip scrolls sideways INSIDE itself rather than letting the document
+ * scroll -- that is the same failure arb-759 produced on the shell, and at
+ * 390px seven-plus entries cannot fit on one line. `flex-wrap: nowrap` with
+ * `overflow-x: auto` keeps it one swipeable row instead of a block of wrapped
+ * links that would push the first panel below the fold.
+ */
+/*
+ * `top: 0`, NOT the top bar's height.
+ *
+ * The scroll container here is <main> (AppShell.module.css gives .content
+ * `overflow-y: auto`), not the document, and <main> begins exactly below the
+ * fixed top bar. Sticky offsets are measured from the scrollport's own top
+ * edge, so the bar is already excluded and adding --topbar-height would park
+ * the nav 48px lower than intended while the operator scrolls -- measured at
+ * 1280: an 88px gap where 0 was wanted. The obvious "clear the top bar" value
+ * is the wrong one precisely because the pane, not the page, scrolls.
+ */
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  margin-bottom: 16px;
+  padding: 8px 0;
+  /* Opaque: the panels scroll UNDER this strip, so a transparent background
+     would let their text show through it. --bg-app is the page ground the
+     content pane sits on. */
+  background: var(--bg-app);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  /*
+   * Hide the scrollbar track, keep the scrolling. Measured at 390px: a classic
+   * space-taking scrollbar adds 16px to a 50px strip -- a third of its height,
+   * for a control the operator swipes rather than drags. Touch platforms draw
+   * overlay scrollbars and are unaffected either way; this is for the
+   * desktop-narrow case. The strip stays scrollable by wheel, swipe and
+   * keyboard, so nothing becomes unreachable.
+   */
+  scrollbar-width: none;
+}
+
+.nav::-webkit-scrollbar {
+  display: none;
+}
+
+.list {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.link {
+  display: block;
+  /* 32px minimum hit target on touch widths, matching the toolbar. */
+  min-height: 32px;
+  padding: 7px 10px;
+  border-radius: 3px;
+  color: var(--fg-muted);
+  font-size: 13px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.link:hover {
+  background: var(--bg-panel-alt);
+  color: var(--fg-primary);
+}
+
+.linkActive {
+  background: var(--bg-panel-alt);
+  color: var(--fg-primary);
+  font-weight: 600;
+}
+
+/*
+ * 1100px, not the 768px shell breakpoint. The two-column layout costs 180px of
+ * horizontal room, and the panels carry long rationale prose and a 70ch
+ * measure; splitting at 768px leaves them under ~570px, narrower than they are
+ * on a phone in the single-column layout. This is a content-driven breakpoint
+ * and is deliberately its own number rather than a shared one -- the shell
+ * breakpoint answers a different question (when the chrome changes shape).
+ */
+@media (min-width: 1100px) {
+  .nav {
+    position: sticky;
+    /* Same reasoning as the base rule: offsets are relative to <main>, which
+       already starts below the top bar. 20px matches the pane's own padding so
+       the rail does not touch the pane's top edge when stuck. */
+    top: 20px;
+    /*
+     * `align-self: start` is what makes the sticky work in the grid column: a
+     * grid item stretches to the row's full height by default, and an element
+     * already as tall as its scroll container has no room left to stick within
+     * -- it would simply scroll away. This is the single most common way a
+     * sticky sidebar silently does nothing, so it is stated rather than left
+     * to be rediscovered.
+     */
+    align-self: start;
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    border-bottom: none;
+    overflow-x: visible;
+  }
+
+  .list {
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .link {
+    /* The active marker is declared transparent on every row rather than only
+       on the active one, so a row's text does not shift by 2px when it becomes
+       active -- the same reason SidebarNav.module.css states for its own. */
+    border-left: 2px solid transparent;
+    border-radius: 0 3px 3px 0;
+  }
+
+  .linkActive {
+    border-left-color: var(--accent);
+  }
+}

@@ -1,5 +1,51 @@
 /* Settings-local layout. Colour comes from var(--token) only (AC3). */
 
+/*
+ * Section-nav layout (arb-5oe). Single column by default -- the nav is a
+ * sticky strip above the panels -- and a two-column grid from 1100px, where
+ * the nav becomes a sticky left rail. The breakpoint matches SectionNav's own
+ * and the reasoning for that number lives there.
+ *
+ * The grid is declared HERE rather than in SectionNav.module.css because it
+ * governs the nav and the panels together, and the panels are Settings'.
+ */
+.layout {
+  display: grid;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 1100px) {
+  .layout {
+    grid-template-columns: 180px minmax(0, 1fr);
+    /* Column gap only. A row gap would open a space above the panels in the
+       single-column fallback, where the two children stack. */
+    column-gap: 24px;
+    align-items: start;
+  }
+}
+
+/*
+ * Anchor targets land under the sticky section strip without this.
+ *
+ * The offset deliberately does NOT include --topbar-height. The scroll
+ * container is <main>, which already begins below the fixed top bar, and
+ * scroll-margin is resolved against that scrollport -- so counting the bar
+ * here would overshoot every jump by 48px. What must be cleared is the sticky
+ * STRIP (its own height plus the pane's 20px padding), and only below 1100px,
+ * where the strip sits above the panels.
+ */
+.section {
+  scroll-margin-top: 68px;
+}
+
+@media (min-width: 1100px) {
+  /* The nav is a side rail here and covers nothing, so the target only needs
+     to clear the pane's own top padding. */
+  .section {
+    scroll-margin-top: 20px;
+  }
+}
+
 .setting {
   padding: 14px 0;
   border-bottom: 1px solid var(--border);

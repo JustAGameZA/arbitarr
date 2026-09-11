@@ -60,6 +60,104 @@ describe('Settings', () => {
     expect(screen.getByRole('heading', { name: 'Observability' })).toBeInTheDocument();
   });
 
+  /*
+   * Section nav (arb-5oe). jsdom evaluates no media queries and implements no
+   * IntersectionObserver, so neither the sticky layout nor the active-entry
+   * highlight is exercised here -- those are manual/browser checks. What these
+   * assert is the part jsdom CAN see and the part that actually rots: that the
+   * nav and the rendered sections come from one source, so every link has a
+   * real target and no section is missing from the list.
+   */
+  describe('section nav', () => {
+    it('lists every static section and every catalog group, in page order', async () => {
+      mockApi({ '/api/admin/settings': { body: settings } });
+      renderSurface(<SettingsPage />);
+
+      // Awaited: the dynamic entries only exist once the catalog resolves.
+      await screen.findByRole('heading', { name: 'Caching' });
+
+      const nav = screen.getByRole('navigation', { name: 'Settings sections' });
+      const labels = within(nav)
+        .getAllByRole('link')
+        .map((link) => link.textContent);
+
+      expect(labels).toEqual([
+        'Account',
+        'Sources',
+        'Sonarr',
+        'API keys',
+        'Notifications',
+        'AI backend',
+        'Caching',
+        'Observability',
+      ]);
+    });
+
+    it('points every nav link at an element that exists on the page', async () => {
+      mockApi({ '/api/admin/settings': { body: settings } });
+      renderSurface(<SettingsPage />);
+
+      await screen.findByRole('heading', { name: 'Caching' });
+
+      const nav = screen.getByRole('navigation', { name: 'Settings sections' });
+      const links = within(nav).getAllByRole('link');
+
+      // Asserted PER LINK, not "some link resolves": a single dead anchor is
+      // exactly the defect this guards, and a loop that stopped at the first
+      // match would pass with five of eight broken. The count is pinned too,
+      // so an empty list cannot satisfy a per-item assertion vacuously.
+      expect(links).toHaveLength(8);
+      for (const link of links) {
+        const href = link.getAttribute('href');
+        expect(href).toMatch(/^#.+/);
+        const target = document.getElementById((href as string).slice(1));
+        expect(target, `no element with id for ${href}`).not.toBeNull();
+      }
+    });
+
+    it('adds a nav entry automatically when the catalog grows a group', async () => {
+      // The load-bearing property: the nav is derived from the same
+      // groupSettings() call that renders the panels, so a group the server
+      // adds appears here with no frontend change. A hand-written second list
+      // would pass every other test in this file and fail only this one.
+      mockApi({
+        '/api/admin/settings': {
+          body: [
+            ...settings,
+            {
+              ...settings[0],
+              key: 'Ingest.BatchSize',
+              group: 'Ingest pipeline',
+              displayName: 'Batch size',
+            },
+          ],
+        },
+      });
+      renderSurface(<SettingsPage />);
+
+      await screen.findByRole('heading', { name: 'Ingest pipeline' });
+
+      const nav = screen.getByRole('navigation', { name: 'Settings sections' });
+      const link = within(nav).getByRole('link', { name: 'Ingest pipeline' });
+
+      // The slug is derived, so the space becomes a hyphen and the anchor still
+      // resolves -- the case a known-names map would not have covered.
+      expect(link).toHaveAttribute('href', '#ingest-pipeline');
+      expect(document.getElementById('ingest-pipeline')).not.toBeNull();
+    });
+
+    it('still renders exactly one h1', async () => {
+      mockApi({ '/api/admin/settings': { body: settings } });
+      renderSurface(<SettingsPage />);
+
+      await screen.findByRole('heading', { name: 'Caching' });
+
+      // AC2b. The nav is a list of links with an aria-label, never a heading;
+      // captioning it is the easiest way to break this.
+      expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    });
+  });
+
   it('renders bounds, rationale and every explanatory field the DTO carries', async () => {
     mockApi({ '/api/admin/settings': { body: settings } });
     renderSurface(<SettingsPage />);
