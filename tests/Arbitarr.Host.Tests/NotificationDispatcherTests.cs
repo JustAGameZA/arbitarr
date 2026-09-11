@@ -13,7 +13,7 @@ namespace Arbitarr.Host.Tests;
 
 /// <summary>
 /// #57's evaluation cycle: the seam where the shared event store, the policy and the transport
-/// meet. <see cref="Arbitarr.Core.Tests.NotificationPolicyTests"/> pins the policy exhaustively as
+/// meet. <c>Arbitarr.Core.Tests.NotificationPolicyTests</c> pins the policy exhaustively as
 /// a pure function; this file pins the parts only the composition can get wrong — the store's kinds
 /// being translated into the policy's, the cursor advancing so a restart does not re-notify, and
 /// the URL never reaching the class that decides what to send.

@@ -7,7 +7,7 @@ namespace Arbitarr.Core.Diagnostics;
 ///
 /// <c>worst_case_unjudged_age = search_result_cache_band_bound + classifier_queue_latency</c> —
 /// the cache can serve a result up to <see cref="SearchResultCacheBandBound"/> old (the "Fresh"
-/// band; see <see cref="Arbitarr.Data.Entities.SearchResultCacheEntry"/> and
+/// band; see <c>Arbitarr.Data.Entities.SearchResultCacheEntry</c> and
 /// <c>SettingKey.FreshUntil</c>), and once served, a result may sit for up to
 /// <see cref="ClassifierQueueLatency"/> before the AI layer gets to judging it. Both are additive
 /// because they are sequential, not overlapping, delays on the same result.

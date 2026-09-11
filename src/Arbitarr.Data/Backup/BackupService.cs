@@ -13,7 +13,7 @@ namespace Arbitarr.Data.Backup;
 /// <para><b>THE SNAPSHOT IS TAKEN THROUGH SQLITE'S OWN BACKUP API, NEVER BY COPYING THE FILE.</b>
 /// The database runs in WAL mode with a live writer (the classifier writes continuously), so
 /// <c>File.Copy</c> of <c>arbitarr.db</c> captures a torn page image and silently omits everything
-/// still in the <c>-wal</c> sidecar. <see cref="SqliteConnection.BackupDatabase"/> is the mechanism
+/// still in the <c>-wal</c> sidecar. <see cref="SqliteConnection.BackupDatabase(SqliteConnection)"/> is the mechanism
 /// SQLite provides for exactly this: it reads a transactionally consistent view and folds the WAL
 /// into the destination file, without stopping the process. Copying the three files together is
 /// not an equivalent shortcut — it is only correct if nothing writes during the copy, which cannot

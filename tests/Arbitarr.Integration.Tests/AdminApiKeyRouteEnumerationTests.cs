@@ -16,7 +16,7 @@ namespace Arbitarr.Integration.Tests;
 /// <see cref="AdminApiKeyGateTests"/> does not cover — that one only exercises the single
 /// hardcoded <c>/api/admin/ping</c> route by name, so a new endpoint carrying
 /// <see cref="RouteClassification.AdminMutating"/> metadata but wired without
-/// <see cref="AdminEndpointConventions.RequireAdminApiKey"/> (e.g. a raw
+/// <see cref="AdminEndpointConventions.RequireAdminApiKey(Microsoft.AspNetCore.Builder.RouteHandlerBuilder)"/> (e.g. a raw
 /// <c>.WithClassification(AdminMutating)</c> call, bypassing the combined convention) would not be
 /// caught by any existing test.
 ///

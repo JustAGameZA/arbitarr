@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 namespace Arbitarr.Host.Backup;
 
 /// <summary>
-/// arb-fxw: runs <see cref="StagingSweep.Run"/> once, at startup, against THIS instance's own
+/// arb-fxw: runs <see cref="StagingSweep.Run(string, DateTime, ILogger)"/> once, at startup, against THIS instance's own
 /// <see cref="BackupPaths.StagingDirectory"/> — never the system temp dir, never
 /// <see cref="BackupPaths.BackupDirectory"/> or the config directory root. See
 /// <see cref="StagingSweep"/> for why a hard kill mid-restore/backup needs a reclaimer beyond each

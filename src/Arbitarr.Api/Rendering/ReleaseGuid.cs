@@ -13,7 +13,7 @@ namespace Arbitarr.Api.Rendering;
 ///
 /// SEC-L2: the hash is HMAC-SHA256 keyed by a per-instance secret rather than unsalted SHA-256,
 /// so proxy guids cannot be predicted/enumerated by anyone who doesn't know the secret. The
-/// secret defaults to a random value generated at process start (via <see cref="IReleaseGuidSecretProvider"/>
+/// secret defaults to a random value generated at process start (via <c>IReleaseGuidSecretProvider</c>
 /// implementations, e.g. Arbitarr.Host's persisted-under-/config provider) and must be configured
 /// once via <see cref="Configure"/> before any guid computation, so that guids stay stable across
 /// requests within a single running instance (and, when backed by a persisted secret, across

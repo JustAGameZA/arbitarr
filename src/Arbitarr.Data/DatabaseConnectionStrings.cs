@@ -8,7 +8,7 @@ namespace Arbitarr.Data;
 ///
 /// <para><b>Why this type exists at all.</b> Microsoft.Data.Sqlite keys its connection pools by the
 /// FULL connection string, not by the file. Two strings naming one file are two independent pools,
-/// and clearing one leaves the other's handles open. <see cref="RestoreService"/> must drop EVERY
+/// and clearing one leaves the other's handles open. <see cref="Arbitarr.Data.Backup.RestoreService"/> must drop EVERY
 /// handle on the database before it swaps the file, so it needs the complete set — and a set
 /// assembled from strings formatted inline at each call site is only complete until someone adds
 /// another call site. Building them here makes the set closed by construction: a new shape cannot
@@ -20,7 +20,7 @@ namespace Arbitarr.Data;
 /// <c>$"Data Source={path}"</c> at a call site silently creates a pool nothing clears, and the
 /// consequence is platform-specific and silent on Linux: the swap succeeds, the stale pooled handle
 /// keeps serving the REPLACED INODE, and the process carries on reading the old database while the
-/// restored one sits on disk looking applied. See <see cref="RestoreService"/>'s remarks.</para>
+/// restored one sits on disk looking applied. See <see cref="Arbitarr.Data.Backup.RestoreService"/>'s remarks.</para>
 ///
 /// <para>The log store is deliberately absent. It owns a SEPARATE FILE (arbitarr-logs.db, see
 /// <c>LogStore.DatabaseFileName</c>) which a restore does not replace, so its pool must NOT be

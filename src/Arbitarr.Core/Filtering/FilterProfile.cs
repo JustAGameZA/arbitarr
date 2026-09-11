@@ -9,7 +9,7 @@ namespace Arbitarr.Core.Filtering;
 public sealed class FilterProfile
 {
     /// <summary>
-    /// Default upper bound on the total wall-clock time <see cref="RuleEvaluator.Evaluate"/> may
+    /// Default upper bound on the total wall-clock time <see cref="RuleEvaluator.Evaluate(FilterProfile, Arbitarr.Core.Releases.ReleaseCandidate)"/> may
     /// spend evaluating one candidate against this profile's rules (M4 security review, MEDIUM:
     /// unbounded aggregate evaluation time). Each individual rule already bounds itself via
     /// <see cref="FilterRule.MatchTimeout"/> (250ms), but a profile with many rules has no

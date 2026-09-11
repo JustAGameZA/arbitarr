@@ -297,7 +297,7 @@ public sealed class SourceRepository
     /// docker-compose.yml's own placeholder is exactly such a value, and the seed-once ruling means an
     /// unrejected seed of it is authoritative forever). Public because both write paths that can
     /// create or change a source row must hit this same rule: this type's own <see cref="AddAsync"/>
-    /// and <see cref="UpdateAsync"/>, and <see cref="Arbitarr.Host.Sources.SourceSeeder"/>, which
+    /// and <see cref="UpdateAsync"/>, and <c>Arbitarr.Host.Sources.SourceSeeder</c>, which
     /// writes a row directly against the DbContext rather than through this repository.
     /// </summary>
     public static void ValidateBaseUrl(string baseUrl)

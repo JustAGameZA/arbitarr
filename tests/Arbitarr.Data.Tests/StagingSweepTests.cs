@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Arbitarr.Data.Tests;
 
 /// <summary>
-/// arb-fxw: <see cref="StagingSweep.Run"/> deletes orphaned staging files left by a hard kill
+/// arb-fxw: <see cref="StagingSweep.Run(string, DateTime, ILogger)"/> deletes orphaned staging files left by a hard kill
 /// mid-restore/backup, and ONLY those. Every "does not touch X" case here has a positive control
 /// (CLAUDE.md §4): the same run must both delete what it should and, in the same pass, prove it
 /// left everything else alone, so a sweep that deleted the whole directory could not pass silently.

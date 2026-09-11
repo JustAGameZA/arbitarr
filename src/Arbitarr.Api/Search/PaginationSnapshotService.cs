@@ -93,7 +93,7 @@ public sealed class PaginationSnapshotService
 
     /// <summary>
     /// Live-TTL constructor (M7-8c/AC24): reads the snapshot TTL from <paramref name="ttlSource"/>
-    /// on every <see cref="GetAsync"/> call instead of capturing a fixed value at construction, so
+    /// on every <see cref="GetPageAsync"/> call instead of capturing a fixed value at construction, so
     /// a <c>QuerySnapshotTtl</c> setting changed via the admin API takes effect on the very next
     /// request. This is the ctor the Host wires up (see <c>Program.cs</c>); DI resolves
     /// <see cref="ISnapshotTtlSource"/> from the same per-request scope as everything else this
@@ -305,7 +305,7 @@ public sealed record SnapshotPayload(IReadOnlyList<RenderedRelease> Releases, Ti
 /// <summary>
 /// M7-8c/AC24: abstracts how <see cref="PaginationSnapshotService"/> obtains its snapshot TTL, so
 /// the live implementation (over <c>SettingsRepository</c>/<c>SettingKey.QuerySnapshotTtl</c>) can
-/// be read fresh on every <see cref="PaginationSnapshotService.GetAsync"/> call — a setting changed
+/// be read fresh on every <see cref="PaginationSnapshotService.GetPageAsync"/> call — a setting changed
 /// through the admin API takes effect on the very next request, with no restart.
 /// </summary>
 public interface ISnapshotTtlSource

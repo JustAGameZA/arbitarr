@@ -59,7 +59,7 @@ namespace Arbitarr.Host.Ai;
 /// makes the divergence warning actionable. That is only safe because every path that can write the
 /// row rejects userinfo. The one exception is the REJECTION warning below, which deliberately does
 /// NOT echo the value it rejected: the whole reason a value reaches that branch may be that it
-/// carries credentials, and <see cref="SettingsValidationException.Message"/> interpolates the
+/// carries credentials, and <see cref="Exception.Message"/> interpolates the
 /// offending value, so neither the value nor the exception message may be logged there.</para>
 /// </summary>
 public static class OllamaBaseUrlSeeder
@@ -142,7 +142,7 @@ public static class OllamaBaseUrlSeeder
     ///
     /// <para><b>The rejection warning names the setting but NEVER the value, and that asymmetry is
     /// the point.</b> A value can land here precisely because it embeds credentials, and
-    /// <see cref="SettingsValidationException.Message"/> quotes the value it rejected — so logging
+    /// <see cref="Exception.Message"/> quotes the value it rejected — so logging
     /// either the value or <c>ex.Message</c> would write the credential into the persistent log
     /// store served at <c>/api/admin/logs</c>, which is the exact leak the validator exists to
     /// prevent. The operator has the value in their own compose file; they need to be told it was

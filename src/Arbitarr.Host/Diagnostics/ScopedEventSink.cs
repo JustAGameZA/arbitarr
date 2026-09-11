@@ -44,7 +44,7 @@ public static class EventKindMapping
 /// <see cref="EventRepository"/> is scoped because it wraps the scoped <c>ArbitarrDbContext</c>.
 /// Capturing one context in a singleton sink would hold a single <c>DbContext</c> open for the
 /// process lifetime and share it across concurrent writers — <c>DbContext</c> is not thread-safe,
-/// so that is a data race, not merely untidy. <see cref="Caching.RefreshWorker"/> already resolves
+/// so that is a data race, not merely untidy. <see cref="Arbitarr.Core.Caching.RefreshWorker"/> already resolves
 /// its own per-cycle scope for exactly this reason.
 ///
 /// WHY THIS SWALLOWS EVERY FAILURE. Recording that a search happened must never break serving the

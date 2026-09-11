@@ -51,7 +51,7 @@ public static class SourceSeeder
     /// The <see cref="Source.Kind"/> value for an NZBHydra2 source row.
     ///
     /// <para>arb-pn5: forwards to <see cref="SourceRepository.NzbHydraKind"/>, which is now the one
-    /// definition — <see cref="SourceRepository.ValidateKind"/> needs the same value to reject other
+    /// definition — <c>SourceRepository.ValidateKind</c> needs the same value to reject other
     /// casings at write time, and <c>Arbitarr.Api</c> cannot reference this type (<c>Host</c> depends
     /// on <c>Api</c>, never the reverse). Kept here, forwarding rather than removed, so the existing
     /// <c>SourceSeeder.NzbHydraKind</c> call sites in <c>Arbitarr.Host.Tests</c> and

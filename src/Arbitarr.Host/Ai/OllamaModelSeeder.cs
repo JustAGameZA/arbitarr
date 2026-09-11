@@ -128,7 +128,7 @@ public static class OllamaModelSeeder
     /// <see cref="OllamaModelResolver.DefaultModel"/> when it is absent or rejected.
     ///
     /// <para>The rejection warning names the setting but NEVER the value, and neither does it log
-    /// <see cref="SettingsValidationException.Message"/>, which quotes what it rejected. A value
+    /// <see cref="Exception.Message"/>, which quotes what it rejected. A value
     /// reaches this branch precisely because it is malformed — whitespace, a control character, or
     /// absurd length — and writing that into the persistent log store served at
     /// <c>/api/admin/logs</c> is how a control character ends up in a page rendering those logs. The

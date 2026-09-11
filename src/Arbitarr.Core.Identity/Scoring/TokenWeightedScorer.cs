@@ -55,7 +55,7 @@ public sealed record NumberingCandidateScore(NumberingCandidate Candidate, doubl
 /// </para>
 /// <para>
 /// R5 (plan lines 798-830): a bare <c>(Season: 1, ...)</c> <see cref="NumberingScheme.ArcRelative"/>
-/// candidate must never be scored at all, even defensively — <see cref="CandidateNumberingSetBuilder"/>
+/// candidate must never be scored at all, even defensively — <c>CandidateNumberingSetBuilder</c>
 /// (Media) already guarantees one is never generated (AC-M1), but this scorer treats that guarantee
 /// as untrusted input and re-excludes the shape itself rather than relying solely on the upstream
 /// contract. Likewise, a bare <see cref="NumberingScheme.Absolute"/> candidate is never allowed to

@@ -54,14 +54,14 @@ public sealed record LogsResponse(
 ///
 /// Gating the broader, unvetted surface while leaving the narrow, curated one public is the
 /// consistent position; treating them identically because both are "read-only" would be the
-/// inconsistency. The mechanism follows <see cref="ObservabilityEndpoint"/> exactly — the
-/// <c>/api/admin/</c> path prefix plus <see cref="AdminEndpointConventions.RequireAdminApiKey"/> —
+/// inconsistency. The mechanism follows <see cref="Arbitarr.Api.Dashboard.ObservabilityEndpoint"/> exactly — the
+/// <c>/api/admin/</c> path prefix plus <see cref="AdminEndpointConventions.RequireAdminApiKey(Microsoft.AspNetCore.Builder.RouteHandlerBuilder)"/> —
 /// which is also what makes the frontend attach the key, since <c>client.ts</c>'s
 /// <c>needsAdminKey</c> decides by path prefix and never by verb.
 ///
 /// The <c>AdminMutating</c> classification this carries reads, for a GET, as "gated by the admin
 /// key" rather than as a claim that the handler writes anything; it is the same shape
-/// <see cref="ObservabilityEndpoint"/>, <see cref="SuppressionViewEndpoint"/> and the admin search
+/// <see cref="Arbitarr.Api.Dashboard.ObservabilityEndpoint"/>, <see cref="SuppressionViewEndpoint"/> and the admin search
 /// endpoints already use, and <c>AdminApiKeyRouteEnumerationTests</c> asserts that every route so
 /// classified is genuinely gated. Introducing a third classification value for "gated read" would
 /// mean revisiting that sweep's bidirectional contract for no behavioural gain.

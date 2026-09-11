@@ -17,7 +17,7 @@ namespace Arbitarr.Api.Search;
 /// <c>EvaluateBatch</c> — <see cref="ReleaseCandidate.Guid"/> is only unique per upstream source,
 /// so per-release evaluation keyed by list position avoids misattributing a suppression across two
 /// different sources that happen to reuse the same source-provided guid), applies
-/// <see cref="ShadowModeGate"/> per release, persists one <see cref="Entities.SuppressionAuditLogEntry"/>
+/// <see cref="ShadowModeGate"/> per release, persists one <see cref="Arbitarr.Data.Entities.SuppressionAuditLogEntry"/>
 /// per suppression (M4-5: zero suppressions go unrecorded, keyed by <see cref="RenderedRelease.ProxyGuid"/>
 /// for audit identity), and returns the annotated <see cref="RenderedRelease"/> set for rendering.
 ///
