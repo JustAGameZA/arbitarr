@@ -1,59 +1,63 @@
 import { describe, expect, it } from 'vitest';
 
 import { formatSeasonEpisode, parseSearchDetail } from './searchDetail';
+import fixtureCases from '../../../../../tests/fixtures/search-detail.json';
 
 /**
- * The strings in the first block are COPIED VERBATIM from the backend's own pinned expectations in
- * tests/Arbitarr.Api.Tests/SearchQueryDescriptorTests.cs, which is the producer of this format
- * (SearchQueryDescriptor.DescribeDetail). Inventing plausible-looking inputs here would test this
- * parser against a format nothing emits: the two sides would drift and both suites would stay
- * green. If a test in that file changes its expected string, the matching one here must change
- * with it — that coupling is the point.
+ * arb-6jks: these strings are no longer copied by hand. Both this file and the backend's
+ * tests/Arbitarr.Api.Tests/SearchQueryDescriptorTests.cs (DescribeDetailMatchesTheSharedFixture)
+ * read the SAME file, tests/fixtures/search-detail.json — the producer/consumer parity contract.
+ * If the wire format changes: edit the C# producer (SearchQueryDescriptor.DescribeDetail) first,
+ * update its `Assert.Equal` pins, then update the fixture to match, and this test follows with no
+ * changes of its own.
  */
-describe('parseSearchDetail against the backend’s pinned strings', () => {
-  it('parses a text-only search (SearchQueryDescriptorTests: type=search;q=bleach)', () => {
-    const parsed = parseSearchDetail('type=search;q=bleach');
+interface FixtureQuery {
+  type: string;
+  cats: number[];
+  tvdbid: number | null;
+  tmdbid: number | null;
+  season: number | null;
+  episode: number | null;
+  abs: number | null;
+  /** Always the TRIMMED value — the wire format is already trimmed, so `q` is what round-trips. */
+  q: string | null;
+  /** Present only on the "query text needing trim" case; not used here (see the C# fixture DTO). */
+  rawQ?: string;
+}
+
+interface FixtureCase {
+  name: string;
+  query: FixtureQuery;
+  detail: string;
+}
+
+const cases = fixtureCases as FixtureCase[];
+
+describe('parseSearchDetail against the shared fixture', () => {
+  // Guard against a fixture that no suite reads (arb-6jks): an empty or missing file must fail
+  // this test, not silently skip it.
+  it('has at least one fixture case', () => {
+    expect(cases.length).toBeGreaterThan(0);
+  });
+
+  it.each(cases)('parses "$detail" ($name) back into the source query', ({ query, detail }) => {
+    const parsed = parseSearchDetail(detail);
 
     expect(parsed).not.toBeNull();
-    expect(parsed?.type).toBe('search');
-    expect(parsed?.q).toBe('bleach');
-    expect(parsed?.cats).toEqual([]);
-    expect(parsed?.tvdbId).toBeNull();
-  });
+    expect(parsed?.type).toBe(query.type);
+    expect(parsed?.cats).toEqual(query.cats.map(String));
+    expect(parsed?.tvdbId).toBe(query.tvdbid === null ? null : String(query.tvdbid));
+    expect(parsed?.tmdbId).toBe(query.tmdbid === null ? null : String(query.tmdbid));
+    expect(parsed?.season).toBe(query.season === null ? null : String(query.season));
+    expect(parsed?.episode).toBe(query.episode === null ? null : String(query.episode));
+    expect(parsed?.abs).toBe(query.abs === null ? null : String(query.abs));
+    expect(parsed?.q).toBe(query.q);
 
-  it('parses a category-only feed (type=tvsearch;cats=5030,5040)', () => {
-    const parsed = parseSearchDetail('type=tvsearch;cats=5030,5040');
-
-    expect(parsed?.type).toBe('tvsearch');
-    expect(parsed?.cats).toEqual(['5030', '5040']);
-    // The RSS-sync case: no text at all, which is what made 55 events indistinguishable (F-010).
-    expect(parsed?.q).toBeNull();
-  });
-
-  it('parses ids, season and episode (type=tvsearch;cats=5030,5040;tvdbid=74796;season=2;episode=5)', () => {
-    const parsed = parseSearchDetail('type=tvsearch;cats=5030,5040;tvdbid=74796;season=2;episode=5');
-
-    expect(parsed?.tvdbId).toBe('74796');
-    expect(parsed?.season).toBe('2');
-    expect(parsed?.episode).toBe('5');
-    expect(formatSeasonEpisode(parsed!)).toBe('S02E05');
-  });
-
-  it('parses a movie search (type=movie;tmdbid=438631;q=dune)', () => {
-    const parsed = parseSearchDetail('type=movie;tmdbid=438631;q=dune');
-
-    expect(parsed?.type).toBe('movie');
-    expect(parsed?.tmdbId).toBe('438631');
-    expect(parsed?.q).toBe('dune');
-    expect(parsed?.tvdbId).toBeNull();
-  });
-
-  it('parses the bare feed spelling (type=search)', () => {
-    const parsed = parseSearchDetail('type=search');
-
-    expect(parsed?.type).toBe('search');
-    expect(parsed?.q).toBeNull();
-    expect(parsed?.cats).toEqual([]);
+    if (query.season !== null && query.episode !== null) {
+      expect(formatSeasonEpisode(parsed!)).toBe(
+        `S${String(query.season).padStart(2, '0')}E${String(query.episode).padStart(2, '0')}`,
+      );
+    }
   });
 });
 
