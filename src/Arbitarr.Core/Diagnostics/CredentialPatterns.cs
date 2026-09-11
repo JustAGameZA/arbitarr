@@ -57,8 +57,13 @@ public static partial class CredentialPatterns
     ///
     /// <para>250ms is enormous for an excerpt this size, so it should never fire on legitimate
     /// input; it exists as a ceiling, not a tuning knob.</para>
+    ///
+    /// <para>arb-hihr: <c>internal</c> rather than <c>private</c> so <see cref="SanitizedErrorDescription"/>'s
+    /// nine local host/URL arms — which face the same attacker-influenced <c>/api/status</c> input as
+    /// these four shared credential arms, per that file's remarks — reference the SAME value instead
+    /// of drifting to their own copy of the literal.</para>
     /// </summary>
-    private const int MatchTimeoutMilliseconds = 250;
+    internal const int MatchTimeoutMilliseconds = 250;
 
     /// <summary>
     /// Returns <paramref name="text"/> with every credential-shaped substring replaced by

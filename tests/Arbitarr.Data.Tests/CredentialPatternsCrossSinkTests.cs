@@ -33,7 +33,7 @@ public class CredentialPatternsCrossSinkTests
     /// <summary>
     /// Drives the scrubber through its PUBLIC surface, the way <c>GET /api/status</c> does.
     /// <c>ScrubForPublication</c> is internal and there is no <c>InternalsVisibleTo</c>, so calling
-    /// it directly is not an option — and driving <see cref="SanitizedErrorDescription.Describe"/>
+    /// it directly is not an option — and driving <see cref="SanitizedErrorDescription.Describe(Exception)"/>
     /// is the stronger test anyway: it proves the redaction happens on the path that actually
     /// reaches an unauthenticated caller, not merely inside a helper something might stop calling.
     /// </summary>
