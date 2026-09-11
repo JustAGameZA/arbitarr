@@ -107,22 +107,87 @@ public static partial class SanitizedErrorDescription
         var text = excerpt;
 
         text = Url().Replace(text, Replacement);
+        text = PercentEncodedUrl().Replace(text, Replacement);
+
+        // IPv6 MUST precede HostWithPort. "[fd00:1234:5678::42]:11434" contains several substrings
+        // that HostWithPort matches ("1234:5678" reads as host:port), so letting it run first eats a
+        // fragment and leaves the rest of the address published — the exact shape arb-fbx found.
+        text = IpV6Address().Replace(text, Replacement);
+
         text = HostWithPort().Replace(text, Replacement);
         text = IpAddress().Replace(text, Replacement);
         text = DottedHostName().Replace(text, Replacement);
 
+        // Runs after every other host arm on purpose: those leave a <redacted> token behind, which
+        // cannot be re-captured here (the token starts with '<', outside the label character class),
+        // so an already-scrubbed "upstream <redacted>" is not scrubbed twice.
+        text = ContextualSingleLabelHost().Replace(
+            text,
+            m => m.Groups["prefix"].Value + Replacement);
+
         text = QueryParameterCredential().Replace(text, m => m.Groups["prefix"].Value + Replacement);
         text = AuthorizationScheme().Replace(text, m => m.Groups["prefix"].Value + Replacement);
         text = NamedCredential().Replace(text, m => m.Groups["prefix"].Value + Replacement);
+        text = SpaceSeparatedCredential().Replace(text, m => m.Groups["prefix"].Value + Replacement);
 
         return text.Trim();
     }
 
-    /// <summary>Any absolute URL, with whatever credential it carries in its query or path.</summary>
+    /// <summary>
+    /// Any absolute URL, with whatever credential it carries in its query or path.
+    ///
+    /// <para><b>The greedy <c>\S+</c> tail is load-bearing, not stylistic.</b> The excerpt is
+    /// TRUNCATED at capture (<see cref="OllamaRequestException.MaxExcerptLength"/>) and scrubbed
+    /// afterwards, so a URL can arrive cut at an arbitrary offset. Because this pattern consumes
+    /// everything non-whitespace after the scheme, every such prefix is still swallowed whole; a
+    /// pattern anchored on URL structure (an explicit host/port/path grammar) would fail to match a
+    /// truncated tail and republish the host. <c>A_truncated_url_never_leaves_a_host_behind</c> in
+    /// <c>SanitizedErrorDescriptionTests</c> sweeps every cut offset and pins this.</para>
+    /// </summary>
     [GeneratedRegex(
         @"\b[a-z][a-z0-9+.-]*://\S+",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex Url();
+
+    /// <summary>
+    /// The same URL, percent-encoded — <c>http%3A%2F%2Fhost%3A11434%2Fapi%2Fchat</c>. A body that
+    /// echoes back a query parameter re-encodes the URL it carried, which <see cref="Url"/> misses
+    /// because there is no literal <c>://</c> left in it. Same greedy tail, for the same reason.
+    /// </summary>
+    [GeneratedRegex(
+        @"\bhttps?%3A%2F%2F\S+",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex PercentEncodedUrl();
+
+    /// <summary>
+    /// An IPv6 literal, bracketed with an optional port (<c>[2001:db8::1]:11434</c> — the shape Go's
+    /// <c>net</c> package prints, and Ollama is Go) or bare (<c>2001:db8::1</c>). Requires at least
+    /// two colon-separated groups in the bare form so an ordinary <c>key:value</c> or a model tag
+    /// ("phi4:14b") is not mistaken for an address.
+    /// </summary>
+    [GeneratedRegex(
+        @"\[[0-9a-f:.]+\](?::\d{1,5})?|\b(?:[0-9a-f]{1,4}:){2,7}[0-9a-f:]{1,4}\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex IpV6Address();
+
+    /// <summary>
+    /// A single-label host named by the word in front of it — "upstream ollama-gpu-rig",
+    /// "dial mediabox", "connecting to nas". A bare label carries no dot and no port, so no
+    /// structural pattern can tell it from an ordinary noun; the CONTEXT word is the only signal,
+    /// and these are words that are followed by a host or by nothing useful.
+    ///
+    /// <para><b>The false-positive cost is accepted deliberately.</b> "upstream service" would be
+    /// redacted along with "upstream ollama-gpu-rig". That is this file's stated trade: an
+    /// over-scrubbed word is a smaller failure than a published internal hostname, and the operator
+    /// still has the unredacted text in the log. It is why the trigger list stays SHORT and holds
+    /// only connection verbs and the two prepositions that introduce a peer ("refused VIA nas",
+    /// "proxied THROUGH gateway") — "model" and "error" are excluded precisely because the word after
+    /// them is the useful reason, not a host.</para>
+    /// </summary>
+    [GeneratedRegex(
+        @"(?<prefix>\b(?:upstream|host|dial|peer|via|through|connect(?:ing|ed)?\s+to|resolve|resolving|lookup)\s+)(?<value>[a-z0-9][a-z0-9-]{2,62})\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex ContextualSingleLabelHost();
 
     /// <summary>
     /// A bare <c>host:port</c> — the shape an <see cref="System.Net.Http.HttpRequestException"/>
@@ -140,12 +205,21 @@ public static partial class SanitizedErrorDescription
     private static partial Regex IpAddress();
 
     /// <summary>
-    /// A dotted host NAME with no port and no scheme ("ollama.internal.example"). Requires at least
-    /// two dots so an ordinary sentence's "duration." or a decimal number is not mangled, and a
-    /// final label that is alphabetic so a version string ("1.2.3") survives.
+    /// A dotted host NAME with no port and no scheme. The rule has two halves, and BOTH are needed:
+    ///
+    /// <para><b>Half one — three-or-more labels</b> ("ollama.internal.example"). Two dots minimum is
+    /// what keeps an ordinary sentence's "duration." and a decimal number out of it; the alphabetic
+    /// final label (<c>[a-z]{2,}</c>) is what lets a version string "1.2.3" survive.</para>
+    ///
+    /// <para><b>Half two — two labels when the final one is a known private-network suffix</b>
+    /// ("ollama.lan", "nas.local", "box.home"). These are the names a home LAN actually uses, and
+    /// half one alone published every one of them (arb-fbx). The suffix must be enumerated rather
+    /// than "any two labels", because relaxing to two labels unconditionally would eat the model tags
+    /// and file names an operator needs — "qwen2.5", "config.json". The <c>[a-z]{2,}</c> guard still
+    /// applies to both halves.</para>
     /// </summary>
     [GeneratedRegex(
-        @"\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.){2,}[a-z]{2,}\b",
+        @"\b(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.){2,}[a-z]{2,}|[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.(?:lan|local|home|internal|intranet|corp|arpa|localdomain|test|invalid|example))\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex DottedHostName();
 
@@ -166,4 +240,15 @@ public static partial class SanitizedErrorDescription
         @"(?<prefix>\b[\w-]*(?:api[_-]?key|apikey|token|passkey|password|secret)[\w-]*""?\s*[:=]\s*""?)(?<value>[^\s,;""'}\]]{4,})",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex NamedCredential();
+
+    /// <summary>
+    /// The same named credential written with a SPACE instead of <c>:</c> or <c>=</c> — "invalid key
+    /// sk-live-9f8e...". <see cref="NamedCredential"/> requires the separator, so prose forms walked
+    /// straight through it. The 12-character floor on the value keeps ordinary prose ("token expired")
+    /// intact while still catching anything key-shaped.
+    /// </summary>
+    [GeneratedRegex(
+        @"(?<prefix>\b(?:api[_-]?key|apikey|key|token|secret|password|passkey)\s+)(?<value>[A-Za-z0-9_-]{12,})\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex SpaceSeparatedCredential();
 }

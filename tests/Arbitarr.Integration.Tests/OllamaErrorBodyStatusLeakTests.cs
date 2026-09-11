@@ -79,6 +79,15 @@ public sealed partial class OllamaErrorBodyStatusLeakTests : IClassFixture<Arbit
         Assert.Contains("400", body, StringComparison.Ordinal);
         Assert.Contains("missing unit in duration", body, StringComparison.Ordinal);
 
+        // SCRUBBING CONTROL (CLAUDE.md §4, added by arb-fbx): the redaction token is PRESENT, which
+        // is what distinguishes "the planted values reached the scrubber and were replaced" from
+        // "the excerpt never arrived". The non-vacuity assertions above prove the error travelled;
+        // only this one proves the scrub is what removed the secrets from it.
+        Assert.Contains(
+            Arbitarr.Core.Diagnostics.SanitizedErrorDescription.Replacement,
+            body,
+            StringComparison.Ordinal);
+
         // THE PROPERTY: neither the host nor the key survived the trip.
         Assert.DoesNotContain(PlantedHost, body, StringComparison.Ordinal);
         Assert.DoesNotContain(PlantedKey, body, StringComparison.Ordinal);
@@ -89,6 +98,51 @@ public sealed partial class OllamaErrorBodyStatusLeakTests : IClassFixture<Arbit
         Assert.False(
             CredentialLikePattern().IsMatch(body),
             $"Status body matched a credential pattern: {body}");
+    }
+
+    /// <summary>
+    /// <b>arb-fbx: the proven leak body, end to end on the real endpoint.</b> This exact excerpt
+    /// passed the test above unchanged while publishing BOTH of its hostnames to the unauthenticated
+    /// dashboard — a two-label private-suffix name and a single-label one, neither of which any
+    /// pattern in the original scrubber matched. The unit test pins the scrubber; this pins that the
+    /// clean result is what <c>/api/status</c> actually serves.
+    ///
+    /// <para>Positive controls as everywhere here: both names are shown findable in the input, the
+    /// response is shown to carry the real reason, and the redaction token is asserted present.</para>
+    /// </summary>
+    [Fact]
+    public async Task The_reported_two_hostname_leak_body_reaches_status_with_neither_name()
+    {
+        const string dottedHost = "ollama.lan";
+        const string bareHost = "ollama-gpu-rig";
+        const string breakerSourceName = "OllamaTwoHostnameLeak";
+        var leakyBody =
+            $$"""{"error":"upstream {{dottedHost}} refused via {{bareHost}}: time: missing unit in duration \"-1\""}""";
+
+        Assert.Contains(dottedHost, leakyBody, StringComparison.Ordinal);
+        Assert.Contains(bareHost, leakyBody, StringComparison.Ordinal);
+
+        var exception = new OllamaRequestException(System.Net.HttpStatusCode.BadRequest, leakyBody);
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var breaker = scope.ServiceProvider.GetRequiredService<IAsyncCircuitBreaker>();
+            await breaker.RecordFailureAsync(breakerSourceName, exception);
+        }
+
+        using var client = _factory.CreateClient();
+        var body = await client.GetStringAsync("/api/status");
+
+        // NON-VACUITY: the error arrived, and the useful reason survived the scrubbing.
+        Assert.Contains("missing unit in duration", body, StringComparison.Ordinal);
+        Assert.Contains(
+            Arbitarr.Core.Diagnostics.SanitizedErrorDescription.Replacement,
+            body,
+            StringComparison.Ordinal);
+
+        // THE PROPERTY: both hostnames are gone, not just the one a single-shape fix would catch.
+        Assert.DoesNotContain(dottedHost, body, StringComparison.Ordinal);
+        Assert.DoesNotContain(bareHost, body, StringComparison.Ordinal);
     }
 
     /// <summary>
