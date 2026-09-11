@@ -53,6 +53,12 @@ length. A component's own padding, gap and radius stay as literals in its own `*
 `theme.css` and a token nothing asserts is a pinned constant with no mechanism behind it. Only
 colour is forbidden everywhere outside `theme.css`.
 
+**A page-local breakpoint beside the shell's is fine when the reason is stated inline.** The shell
+itself reflows at one breakpoint (`AppShell.module.css`); a component is free to pick its own
+different number when its own content, not the chrome, is what drives the reflow — SectionNav's
+wide-layout query is the precedent, and its own stylesheet states why that number is not the
+shell's.
+
 **Bare element selectors appear only in `theme.css`'s reset.** Component styles are scoped through
 CSS modules.
 
