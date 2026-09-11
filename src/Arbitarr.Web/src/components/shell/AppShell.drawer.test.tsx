@@ -113,6 +113,68 @@ describe('AppShell off-canvas drawer (#48)', () => {
     expect(container.querySelector('[class*="backdrop"]')).toBeNull();
   });
 
+  /*
+   * arb-759 regression cover. The defect was that the <aside> itself carried no
+   * open/closed state at all -- only its child nav did -- so below 768px the
+   * aside stayed a fixed, opaque, full-height panel over the left edge of every
+   * page. jsdom evaluates no media queries and has no layout engine, so these
+   * assert the DOM contract the mobile CSS keys off (`data-open` on the ASIDE,
+   * the element that is position: fixed) rather than the resulting geometry;
+   * the off-screen bounding box itself is manual/Playwright-only, as the note
+   * at the top of this file says.
+   */
+  describe('off-canvas state marker on the aside (arb-759)', () => {
+    function aside(container: HTMLElement) {
+      const element = container.querySelector('aside');
+      expect(element).not.toBeNull();
+      return element as HTMLElement;
+    }
+
+    it('marks the aside closed by default', () => {
+      const { container } = renderApp('/');
+
+      expect(aside(container)).toHaveAttribute('data-open', 'false');
+    });
+
+    it('marks the aside open while the drawer is open, and closed again after', async () => {
+      const user = userEvent.setup();
+      const { container } = renderApp('/');
+
+      await user.click(screen.getByRole('button', { name: 'Open navigation' }));
+      expect(aside(container)).toHaveAttribute('data-open', 'true');
+
+      await user.click(screen.getByRole('button', { name: 'Close navigation' }));
+      expect(aside(container)).toHaveAttribute('data-open', 'false');
+    });
+
+    it('returns the aside to closed on a route change', async () => {
+      const user = userEvent.setup();
+      const { container } = renderApp('/');
+
+      await user.click(screen.getByRole('button', { name: 'Open navigation' }));
+      expect(aside(container)).toHaveAttribute('data-open', 'true');
+
+      await user.click(screen.getByRole('link', { name: 'Rules' }));
+
+      expect(await screen.findByRole('heading', { level: 1, name: 'Rules' })).toBeInTheDocument();
+      expect(aside(container)).toHaveAttribute('data-open', 'false');
+    });
+
+    it('keeps the open/closed marker on the aside and not on the nav', async () => {
+      const user = userEvent.setup();
+      const { container } = renderApp('/');
+
+      await user.click(screen.getByRole('button', { name: 'Open navigation' }));
+
+      // The nav must NOT carry a competing state class: the transform lives on
+      // exactly one element, and two nested transforms is how arb-759 is
+      // recreated. Asserting only the aside's attribute would still pass with
+      // the old .navOpen class present alongside it.
+      expect(screen.getByRole('navigation', { name: 'Main' }).className).not.toMatch(/[Oo]pen/);
+      expect(aside(container)).toHaveAttribute('data-open', 'true');
+    });
+  });
+
   it('auto-closes on navigation', async () => {
     const user = userEvent.setup();
     renderApp('/');

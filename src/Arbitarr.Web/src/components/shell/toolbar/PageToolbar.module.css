@@ -18,10 +18,27 @@
   margin-bottom: 18px;
 }
 
+/*
+ * Sections WRAP; the document never scrolls sideways. The alternative the plan
+ * weighed was `overflow-x: auto` on the row itself, and it loses here for a
+ * reason specific to this component rather than a general preference: the
+ * README's convention is a start section and an END-ALIGNED one, and an
+ * end-aligned section inside a horizontally scrolling row aligns to the
+ * scrollable CONTENT edge, not the viewport edge -- so at 390px the view menus
+ * would sit off-screen right, reachable only by scrolling, which is the same
+ * class of defect as arb-759. Wrapping keeps both sections visible and merely
+ * stacks them.
+ *
+ * `flex-wrap: wrap` on .toolbar handles the sections; this handles their
+ * contents, so a long trigger label breaks the row instead of widening it past
+ * the viewport. `min-width: 0` lets a flex child shrink below its intrinsic
+ * content width, which is what otherwise re-introduces the page-level scroll.
+ */
 .section,
 .sectionEnd {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   min-width: 0;
 }
@@ -62,12 +79,20 @@
   position: relative;
 }
 
+/*
+ * `max-width` clamps the panel to the viewport less the content pane's own
+ * horizontal padding on each side (AppShell.module.css .content, 24px). Without
+ * it `min-width: 180px` wins at 390px for a menu whose trigger sits far along
+ * the row, and the panel's far edge lands off-screen. The clamp is what makes
+ * `min-width` a preference rather than a floor; the two must stay together.
+ */
 .panel,
 .panelEnd {
   position: absolute;
   top: calc(100% + 4px);
   z-index: 10;
   min-width: 180px;
+  max-width: calc(100vw - 48px);
   padding: 4px;
   background: var(--bg-panel);
   border: 1px solid var(--border);
@@ -111,4 +136,27 @@
 .menuItem[aria-checked='true'] {
   color: var(--accent);
   font-weight: 600;
+}
+
+/*
+ * Touch widths get 32px-minimum hit targets. `min-height` rather than extra
+ * padding so the desktop rows above keep their density exactly as they are --
+ * the same 768px shell breakpoint (#48) the drawer uses, not a new number, and
+ * scoped to this query so no desktop measurement changes.
+ */
+@media (max-width: 768px) {
+  .button,
+  .menuItem {
+    min-height: 32px;
+  }
+
+  .button {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .menuItem {
+    display: flex;
+    align-items: center;
+  }
 }
