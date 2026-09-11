@@ -1,6 +1,7 @@
 using Arbitarr.Core.Arbitration;
 using Arbitarr.Core.Releases;
 using Arbitarr.Core.Sources.CircuitBreaker;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace Arbitarr.Ai.Tests;
@@ -104,6 +105,126 @@ public class SyncReleaseArbiterTests
 
         Assert.Equal(3, outcomes.Count);
         Assert.Equal(new[] { "guid-a", "guid-b", "guid-c" }, outcomes.Select(o => o.Guid));
+    }
+
+    // ---- arb-hwqv: the fail-open catch reports itself -----------------------------------------
+    //
+    // A distinctive planted title: its absence from a log line means something, where the absence of
+    // a generic "Movie.WEB" could be coincidence (CLAUDE.md §4).
+    private const string PlantedTitle = "PLANTEDTITLE.Hwq7.Unlikely.To.Appear.By.Chance";
+
+    private static ReleaseCandidate PlantedCandidate(string guid) => new()
+    {
+        Title = PlantedTitle,
+        Guid = guid,
+        PubDate = DateTimeOffset.UtcNow,
+        Link = new Uri("https://example.invalid/r"),
+    };
+
+    [Fact]
+    public async Task ArbitrateAsync_TransportFailure_WritesExactlyOneWarning_CarryingTheExceptionType()
+    {
+        var logger = new RecordingLogger<SyncReleaseArbiter>();
+        var arbiter = new SyncReleaseArbiter(new ThrowingOllamaClient(new HttpRequestException("boom")), logger);
+
+        await arbiter.ArbitrateAsync(new[] { PlantedCandidate("guid-1") }, Context(), CancellationToken.None);
+
+        var warning = Assert.Single(logger.Entries, e => e.Level == LogLevel.Warning);
+        Assert.Contains(nameof(HttpRequestException), warning.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ArbitrateAsync_TransportFailure_LogsNoReleaseIdentity()
+    {
+        var logger = new RecordingLogger<SyncReleaseArbiter>();
+        var arbiter = new SyncReleaseArbiter(new ThrowingOllamaClient(new HttpRequestException("boom")), logger);
+
+        await arbiter.ArbitrateAsync(new[] { PlantedCandidate("guid-planted") }, Context(), CancellationToken.None);
+
+        // Positive control FIRST: prove the lines exist and carry the text they are supposed to,
+        // so the absence assertions below are assertions about a populated set, not a vacuous pass
+        // over an empty one.
+        Assert.NotEmpty(logger.Entries);
+        var warning = Assert.Single(logger.Entries, e => e.Level == LogLevel.Warning);
+        Assert.Contains(nameof(HttpRequestException), warning.Message, StringComparison.Ordinal);
+
+        foreach (var entry in logger.Entries)
+        {
+            Assert.DoesNotContain(PlantedTitle, entry.Message, StringComparison.Ordinal);
+            Assert.DoesNotContain("guid-planted", entry.Message, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public async Task ArbitrateAsync_ExceedingTheBudget_WritesNoWarning()
+    {
+        // A budget overrun is a routine outcome on this request path, not an operator-actionable
+        // fault, so it must stay off the Warning level however many candidates hit it.
+        var logger = new RecordingLogger<SyncReleaseArbiter>();
+        var arbiter = new SyncReleaseArbiter(new NeverCompletingOllamaClient(), logger);
+
+        var outcomes = await arbiter.ArbitrateAsync(
+            new[] { PlantedCandidate("guid-1") }, Context(TimeSpan.FromMilliseconds(50)), CancellationToken.None);
+
+        Assert.Equal(Verdict.Unknown, Assert.Single(outcomes).Verdict);
+        Assert.DoesNotContain(logger.Entries, e => e.Level == LogLevel.Warning);
+    }
+
+    [Fact]
+    public async Task ArbitrateAsync_SuccessfulArbitration_WritesNoWarning()
+    {
+        var logger = new RecordingLogger<SyncReleaseArbiter>();
+        var arbiter = new SyncReleaseArbiter(new StaticOllamaClient(new OllamaVerdict("accept", 0.9)), logger);
+
+        await arbiter.ArbitrateAsync(new[] { PlantedCandidate("guid-1") }, Context(), CancellationToken.None);
+
+        Assert.DoesNotContain(logger.Entries, e => e.Level == LogLevel.Warning);
+    }
+
+    [Fact]
+    public async Task ArbitrateAsync_ManyFailingCandidates_StillWritesExactlyOneWarning()
+    {
+        // The flood-control assertion: N failures in one arbitration produce ONE Warning, not N.
+        var logger = new RecordingLogger<SyncReleaseArbiter>();
+        var arbiter = new SyncReleaseArbiter(new ThrowingOllamaClient(new HttpRequestException("boom")), logger);
+        var candidates = Enumerable.Range(0, 20).Select(i => PlantedCandidate($"guid-{i}")).ToArray();
+
+        var outcomes = await arbiter.ArbitrateAsync(candidates, Context(), CancellationToken.None);
+
+        Assert.Equal(20, outcomes.Count);
+        var warning = Assert.Single(logger.Entries, e => e.Level == LogLevel.Warning);
+        Assert.Contains("20 of 20", warning.Message, StringComparison.Ordinal);
+    }
+
+    private sealed record LogEntry(LogLevel Level, string Message);
+
+    /// <summary>
+    /// Copied into this assembly on purpose: a test helper shared across test assemblies would make
+    /// one assembly's test run depend on another's build.
+    /// </summary>
+    private sealed class RecordingLogger<T> : ILogger<T>
+    {
+        private readonly List<LogEntry> _entries = new();
+
+        public IReadOnlyList<LogEntry> Entries
+        {
+            get { lock (_entries) { return _entries.ToArray(); } }
+        }
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        // Debug must be enabled, or the Debug arm never renders and the absence assertions would
+        // pass over a set the production code was never given the chance to populate.
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            lock (_entries)
+            {
+                _entries.Add(new LogEntry(logLevel, formatter(state, exception)));
+            }
+        }
     }
 
     private sealed class ThrowingOllamaClient : IOllamaClient
