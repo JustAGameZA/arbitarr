@@ -106,24 +106,24 @@ To prevent rate limiting and ensure consistent metadata arbitration, point Sonar
 
 #### In Sonarr
 
-1. Navigate to **Settings → Indexers**.
+1. Navigate to **Settings > Indexers**.
 2. Select **Add Indexer** and choose **Torznab** or **Newznab** (both work; Torznab is preferred).
 3. Fill in the following:
    - **Name**: `Arbitarr` (or another label you prefer)
    - **URL**: `https://arbitarr.example.invalid:8080/torznab/api`
-   - **API Key**: Create a named `ReadOnly` key in Arbitarr's **Settings > API keys** page and copy it here. (See [Admin key setup](#admin-key-setup) to learn how to access the admin UI.)
-4. Select **Test** to verify the connection. If the test fails with an error about missing or incorrect credentials, double-check that the API key is correctly copied — an incorrectly configured or missing key will cause the test to fail. A successful test is confirmed in the Activity feed as a `SearchServed` entry. Note: support for unauthenticated caps queries is under review.
+   - **API Key**: the key from the "What lives in the config directory" section below. (See [Signing in, and what to do when you cannot](#signing-in-and-what-to-do-when-you-cannot) to learn how to access the admin UI.)
+4. Select **Test** to verify the connection. If the Test fails reporting "Incorrect user credentials" (error 100), re-copy the key — an incorrectly configured or missing key will cause this error. The first real search (an RSS sync or an interactive search) appears in Arbitarr's Activity feed as `SearchServed`. Note: support for unauthenticated caps queries is under review.
 5. Disable or remove any direct NZBHydra2 or public Newznab indexers so searches go through Arbitarr instead.
 
 #### In Radarr
 
-1. Navigate to **Settings → Indexers**.
+1. Navigate to **Settings > Indexers**.
 2. Select **Add Indexer** and choose **Torznab** or **Newznab**.
 3. Fill in the same details as Sonarr above.
-4. Select **Test** to verify the connection. Check Activity for a `SearchServed` entry.
+4. Select **Test** to verify the connection. If it fails with error 100, re-copy the API key. The first real search appears in Activity as `SearchServed`.
 5. Disable or remove any direct NZBHydra2 or public Newznab indexers.
 
-> **Note on download clients:** Radarr may also show download-client failures in the activity log. These are unrelated to Arbitarr — verify your download client is configured and reachable in Radarr's **Settings → Download Clients** if needed.
+> **Note on download clients:** Radarr may also show download-client failures in the activity log. These are unrelated to Arbitarr — verify your download client is configured and reachable in Radarr's **Settings > Download Clients** if needed.
 
 ### What lives in the config directory
 
