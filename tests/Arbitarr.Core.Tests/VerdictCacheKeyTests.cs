@@ -85,6 +85,9 @@ public sealed class VerdictCacheKeyTests
     /// it is not recomputed from the current code, so a regression here means the cache key actually
     /// changed. No <c>InternalsVisibleTo</c> exists from Arbitarr.Core to this test project, so the
     /// new separator const is kept <c>private</c> and this digest pin is the sole guard.
+    /// Updating the pinned literal is only correct when the key inputs deliberately changed (as
+    /// #244 did) — never repaste a fresh digest just to make this test green, because a changed
+    /// digest means every cached verdict misses once on deploy.
     /// </summary>
     [Fact]
     public void Compute_FixedInputs_MatchesKnownDigest()
