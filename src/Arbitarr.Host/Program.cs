@@ -281,9 +281,32 @@ builder.Services.AddSingleton<IRefreshWorkerHealth>(sp => sp.GetRequiredService<
 
 // arb-ln0: sticky per-source download-refusal health, singleton for the same reason the worker
 // health above is — the download proxy (writer) and StatusEndpoint (reader) must see one instance
-// for the app's lifetime. In-memory and process-lifetime by design: nothing is persisted (arb-v3w)
-// and nothing is notified (arb-apj), so a restart clears every item.
-builder.Services.AddSingleton<Arbitarr.Core.Diagnostics.IDownloadRefusalTracker, Arbitarr.Core.Diagnostics.DownloadRefusalTracker>();
+// for the app's lifetime. In-memory and process-lifetime by design: nothing is persisted (arb-v3w),
+// so a restart clears every item.
+builder.Services.AddSingleton<Arbitarr.Core.Diagnostics.DownloadRefusalTracker>();
+
+// arb-apj: what the rest of the app resolves is that state holder WRAPPED in a transition observer,
+// so one notification goes out when a source's health item appears and one when it clears — and
+// nothing at all while it merely persists, which is the whole requirement.
+//
+// A decorator rather than a callback inside DownloadRefusalTracker: the tracker stays a plain state
+// holder with no notification concept in it, and arb-v3w (which replaces its backing store) touches
+// no line this feature owns — swapping the inner registration above is all that change needs.
+//
+// DownloadRefusalNotifier holds the scope FACTORY, not a scope: this fires from the download proxy's
+// request path, whose scope is gone by the time the delivery completes. The callback returns
+// immediately and swallows its own failures, because a misconfigured webhook must never turn a
+// refused download's clean 502 into a 500 (§3.4/AC6).
+builder.Services.AddSingleton<Arbitarr.Host.Notifications.DownloadRefusalNotifier>(sp =>
+    new Arbitarr.Host.Notifications.DownloadRefusalNotifier(
+        sp.GetRequiredService<IServiceScopeFactory>(),
+        sp.GetRequiredService<TimeProvider>(),
+        sp.GetRequiredService<ILogger<Arbitarr.Host.Notifications.DownloadRefusalNotifier>>()));
+
+builder.Services.AddSingleton<Arbitarr.Core.Diagnostics.IDownloadRefusalTracker>(sp =>
+    new Arbitarr.Core.Diagnostics.NotifyingDownloadRefusalTracker(
+        sp.GetRequiredService<Arbitarr.Core.Diagnostics.DownloadRefusalTracker>(),
+        sp.GetRequiredService<Arbitarr.Host.Notifications.DownloadRefusalNotifier>().NotifyInBackground));
 
 // M7-8b/AC24: options are re-read from the settings store on every cycle (see
 // SettingsRefreshWorkerOptionsSource), not captured once at startup from RefreshWorkerDefaults.

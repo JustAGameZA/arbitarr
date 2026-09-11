@@ -28,6 +28,29 @@ public enum NotificationTrigger
     /// rule from a fixed one without going and looking, which is the problem this feature removes.
     /// </summary>
     SuppressionRateNormal,
+
+    /// <summary>
+    /// A source began refusing downloads with a redirect (arb-apj), raising the sticky health item
+    /// arb-ln0 added to <c>/api/status</c>.
+    ///
+    /// <para><b>This trigger exists precisely BECAUSE the condition must not reach
+    /// <see cref="SourceFailing"/>.</b> A refused redirect is a configuration answer from a HEALTHY
+    /// upstream that repeats on every download until the operator changes a setting, so folding it
+    /// through <c>NotificationPolicy.FoldSourceFailure</c>'s consecutive-failure counter would
+    /// announce a working source as down after three of Sonarr's retries and then clear it on an
+    /// unrelated worker cycle — the defect <c>DownloadProxyEndpoint</c>'s catch block documents at
+    /// length and deliberately avoids by leaving the event's source name null. A separate trigger
+    /// on a separate transition keeps that avoidance intact while still telling the operator.</para>
+    /// </summary>
+    DownloadRefused,
+
+    /// <summary>
+    /// A source that had been refusing downloads served one successfully again, clearing its health
+    /// item. The closing edge of <see cref="DownloadRefused"/>, for the reason
+    /// <see cref="SuppressionRateNormal"/> states: an operator told a condition started and never
+    /// told it ended has to go and look, which is what the notification exists to save them.
+    /// </summary>
+    DownloadRefusalCleared,
 }
 
 /// <summary>
