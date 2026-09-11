@@ -98,6 +98,14 @@ public sealed class ReleaseClassifier
     /// construction.
     /// </para>
     /// </summary>
+    /// <param name="cancellationToken">
+    /// ALWAYS pass this — positionally or by name. It is defaulted only for source compatibility,
+    /// and the parameters after it are optional, so a caller that supplies <paramref name="onFailure"/>
+    /// or <paramref name="detailAtWarning"/> by name silently drops the token if it omits this one.
+    /// The catch filter below is <c>when (!cancellationToken.IsCancellationRequested)</c>: with a
+    /// live token a shutdown propagates, and with <see cref="CancellationToken.None"/> that same
+    /// shutdown is swallowed as a fail-open "no verdict". The token is what separates the two.
+    /// </param>
     /// <param name="onFailure">
     /// Optional. Invoked with the exception's TYPE NAME (never its message) when a call fails, so a
     /// caller that spans many calls can report them as one summary. Defaulted, so the existing

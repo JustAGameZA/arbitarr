@@ -328,6 +328,15 @@ public sealed class ReleaseGuidSecretSwapDuringRequestTests : IAsyncDisposable
 /// Serialises <see cref="ReleaseGuidSecretSwapDuringRequestTests"/> against the rest of this
 /// assembly. That class writes <c>ReleaseGuid</c>'s process-global secret, so it must not run
 /// beside a class holding a live host — the whole point of arb-0hd0 is what happens when it does.
+///
+/// <para>arb-tl8l: <c>DisableParallelization</c> on a collection definition stops the WHOLE assembly
+/// — every parallel slot, not merely the other tests in this file — and that breadth is the point,
+/// not an oversight to be tightened later. The secret this class swaps is process-global, so any
+/// live host anywhere in the assembly reads the swapped value for the duration. Narrowing this to an
+/// intra-class collection (or to <c>[Collection]</c> on this class alone) would leave the other
+/// slots running against a secret they did not set, which is precisely the failure being tested for
+/// rather than a condition to reproduce accidentally. The cost is that this class blocks the
+/// assembly while it runs; that cost is accepted.</para>
 /// </summary>
 [CollectionDefinition(ReleaseGuidSecretSwapDuringRequestTests.CollectionName, DisableParallelization = true)]
 public class ReleaseGuidSecretIntegrationCollection
