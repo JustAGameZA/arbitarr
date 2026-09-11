@@ -25,10 +25,18 @@ public sealed class ArbitarrWebApplicationFactory : WebApplicationFactory<Progra
 
     /// <summary>
     /// The exception from the FINAL delete attempt during disposal, or null when cleanup succeeded.
-    /// Today this is nearly always non-null — see arb-dhua and <see cref="DisposeAsync"/>; the
-    /// directory is not deletable in-process. Exposed as DIAGNOSTICS, not as a property to assert
-    /// on: it is what lets whoever picks up arb-dhua see which handle held the directory, rather
-    /// than having to re-derive the leak from an empty %TEMP% listing.
+    ///
+    /// <para><b>This is now expected to be NULL, and is ASSERTED ON</b> by
+    /// <see cref="ConfigDirectoryIsDeletedOnDisposalTests"/> (arb-dhua). It was previously
+    /// diagnostics-only because the directory was not deletable in-process at all; that is fixed at
+    /// the mechanism — see <c>ArbitarrDbContextOptionsFactory.Create</c>, which now hands EF
+    /// ownership of the connection it opens, so a disposed context RETURNS it to the pool and the
+    /// clear below can close it.</para>
+    ///
+    /// <para>It stays an exposed property rather than becoming an in-disposal throw: a cleanup
+    /// failure must not fault an otherwise-green run from inside <c>Dispose</c>, where it would
+    /// surface on whichever unrelated test happened to be in flight. The assertion belongs in a
+    /// test that owns its own factory.</para>
     /// </summary>
     public Exception? LastDeleteFailure { get; private set; }
 
@@ -132,24 +140,32 @@ public sealed class ArbitarrWebApplicationFactory : WebApplicationFactory<Progra
     /// same pair of overrides. A fix applied to only one of the two leaves the race live in the
     /// other.</para>
     ///
-    /// <para><b>The delete is BEST-EFFORT and is expected to FAIL — see arb-dhua.</b> The previous
-    /// code caught <see cref="IOException"/> and moved on, which is how this stayed invisible: a
-    /// directory left behind is silent, and the next run's <c>StagingSweepService</c> tidies it.
-    /// Measuring it showed these factories have NEVER deleted their directories — ~12,354 leaked
-    /// under <c>arbitarr-m2-tests</c> and ~9,814 under <c>arbitarr-remote-address-tests</c>, and an
-    /// untouched pre-existing test leaks one while passing green. The <c>arbitarr.db</c> handle is
-    /// held for the TEST-PROCESS lifetime: every <c>ArbitarrDbContext</c> holds a connection EF has
-    /// already CHECKED OUT of the pool, and a pool clear closes only idle RETURNED connections — so
-    /// no pool clear, at any scope, can release it. The retry below therefore cannot win. It is kept
-    /// only so that the case it CAN win is not lost, and the final failure is now recorded rather
-    /// than swallowed.</para>
+    /// <para><b>The delete NOW SUCCEEDS, and that is asserted (arb-dhua).</b> For most of this
+    /// file's life it did not: these factories had NEVER deleted their directories (~12,354 leaked
+    /// under <c>arbitarr-m2-tests</c> and ~9,814 under <c>arbitarr-remote-address-tests</c>), and an
+    /// untouched pre-existing test leaked one while passing green. The old code caught
+    /// <see cref="IOException"/> and moved on, which is how it stayed invisible.</para>
     ///
-    /// <para><b>What this fix does and does not claim.</b> Draining the host before deleting is
-    /// correct and is what stops background work touching the directory — but it is NOT sufficient
-    /// to delete it, and never was. That is why
-    /// <see cref="HostDisposalDrainsBackgroundWorkTests"/> asserts the directory is QUIESCENT after
-    /// disposal rather than GONE: removal is arb-dhua's problem. An assertion on removal would fail
-    /// for a reason this change is not responsible for.</para>
+    /// <para><b>The cause was ownership, not the pool inventory</b> — which is why three attempts at
+    /// widening the set of connection STRINGS all failed. <c>ArbitarrDbContextOptionsFactory</c>
+    /// opens a connection eagerly and handed it to <c>UseSqlite(connection)</c>, whose default
+    /// leaves ownership with the CALLER: disposing the context did not dispose the connection, so it
+    /// was never RETURNED to the pool. <c>ClearPool</c> closes what a pool HOLDS, and a connection
+    /// that never came back is not among them — so no clear at any scope could reach it. That is
+    /// fixed at the mechanism, with <c>contextOwnsConnection: true</c>. Note that ownership alone is
+    /// not sufficient: disposal only returns the handle to the pool, which still holds a share lock
+    /// on Windows, so the clear below is the other half and BOTH are required.</para>
+    ///
+    /// <para><b>Why the retry loop stays.</b> It is no longer load-bearing for the EF connection,
+    /// but a directory can still be momentarily locked by something outside this factory's control
+    /// (a virus scanner, an indexer). The final failure is recorded rather than swallowed so a
+    /// regression is legible instead of silent.</para>
+    ///
+    /// <para><b>Division of labour with <see cref="HostDisposalDrainsBackgroundWorkTests"/>.</b>
+    /// That class asserts the directory is QUIESCENT after disposal — arb-rwhb's property, about
+    /// background work being drained. Deletion is a separate property with its own test
+    /// (<see cref="ConfigDirectoryIsDeletedOnDisposalTests"/>); keeping them apart means a
+    /// regression in either is attributable to the change that caused it.</para>
     /// </summary>
     public override async ValueTask DisposeAsync()
     {
@@ -173,32 +189,35 @@ public sealed class ArbitarrWebApplicationFactory : WebApplicationFactory<Progra
     }
 
     /// <summary>
-    /// BEST-EFFORT removal of the per-instance config directory. This is EXPECTED TO FAIL and
-    /// leave the directory behind — see arb-dhua, and the remarks on <see cref="DisposeAsync"/>.
-    /// Nothing asserts on its success, and nothing should: the attempt is kept so the directory is
-    /// removed in whatever cases it can be, and so the reason it could not is recorded.
+    /// Removes the per-instance config directory. This SUCCEEDS, and
+    /// <see cref="ConfigDirectoryIsDeletedOnDisposalTests"/> asserts it does — see the remarks on
+    /// <see cref="DisposeAsync"/> for the ownership defect that made it impossible until arb-dhua.
     /// </summary>
     private void DeleteConfigDirectory()
     {
-        // WHY THE POOL CLEARS ARE HERE, AND WHY THEY ARE NOT ENOUGH (arb-dhua).
+        // WHY THE POOL CLEARS ARE HERE, AND WHY THEY ARE HALF OF WHAT IS NEEDED (arb-dhua).
         //
-        // Draining the host stops the WORK; it does not release the FILE HANDLES. These two calls
-        // return what they can of the pooled handles, which is worth doing and costs nothing — but
-        // they do NOT release the handle that actually holds the directory, and no variation on
-        // them will:
+        // Draining the host stops the WORK; these two calls close the pooled FILE HANDLES. Both
+        // halves are required, and each is useless without the other:
         //
-        //   ClearPool/ClearAllPools close only IDLE, RETURNED connections. Every ArbitarrDbContext
-        //   holds a connection EF has already CHECKED OUT of the pool, and a checked-out connection
-        //   is not the pool's to close. That is why widening the clear has already failed twice —
-        //   first SqlitePools.ClearPoolsForDirectory, then SqlitePoolCleaner.ClearPoolsFor walking
-        //   DatabaseConnectionStrings.ForDatabase. The problem was never WHICH connection strings
-        //   were enumerated, so do not spend a third attempt widening the inventory: it is complete.
+        //   ClearPool closes only the connections a pool HOLDS. Until arb-dhua every
+        //   ArbitarrDbContext's connection was never returned to the pool at all -- EF was handed
+        //   an already-open connection without being given ownership of it, so disposing the
+        //   context left it open forever. A connection that never came back is not the pool's to
+        //   close, which is why widening the clear failed twice (first
+        //   SqlitePools.ClearPoolsForDirectory, then SqlitePoolCleaner.ClearPoolsFor walking
+        //   DatabaseConnectionStrings.ForDatabase). The inventory was never the problem; ownership
+        //   was. It is fixed in ArbitarrDbContextOptionsFactory.Create.
+        //
+        //   Conversely, ownership alone does not delete the directory either: disposal only RETURNS
+        //   the handle to the pool, and a pooled handle still holds a share lock on Windows. That is
+        //   measured, not assumed -- with ownership transferred but no clear, the delete still
+        //   fails. Hence both.
         //
         // Never SqliteConnection.ClearAllPools() regardless: the process-global form force-closes
         // pooled connections belonging to test classes running in parallel (arb-cbc/arb-5ba) and is
         // banned from test IL with no allow-list by
-        // Arbitarr.Architecture.Tests.TestProcessGlobalStateTests. It would not help here anyway —
-        // it cannot touch a checked-out connection either.
+        // Arbitarr.Architecture.Tests.TestProcessGlobalStateTests.
         //
         // Via BackupPaths rather than a literal "arbitarr.db": that type owns where the database
         // lives, and a second spelling of the name is exactly what CLAUDE.md §1 warns silently
@@ -231,11 +250,11 @@ public sealed class ArbitarrWebApplicationFactory : WebApplicationFactory<Progra
                 // file another handle still has open, and catching only IOException let it escape.
                 if (attempt == attempts)
                 {
-                    // Recorded rather than swallowed silently. Today this arm is the NORMAL path,
-                    // not an anomaly (arb-dhua): the directory survives every run. The failure is
-                    // still TOLERATED — a locked file must not fail a green run — but it is now
-                    // legible, so the next person to look does not re-derive the leak from scratch
-                    // the way this one had to.
+                    // Recorded rather than swallowed. Since arb-dhua this arm is an ANOMALY, not
+                    // the normal path: the delete succeeds. It is still tolerated here -- throwing
+                    // from inside Dispose would fault whichever unrelated test is in flight rather
+                    // than the one that owns this factory -- and ConfigDirectoryIsDeletedOnDisposalTests
+                    // is what turns it into a visible failure.
                     LastDeleteFailure = ex;
                     return;
                 }
