@@ -155,6 +155,26 @@ public static class SettingsValidator
     }
 
     /// <summary>
+    /// arb-tps: validates a proposed <see cref="SettingKey.ReleaseLookupTtl"/> value.
+    ///
+    /// <para>Floor: 1h, and it REJECTS rather than clamps (data.md:170) — a silently raised value
+    /// would leave the operator believing they had set something they had not. The floor is not
+    /// hygiene: the defect this setting exists to fix is that a 30-minute lifetime expired before
+    /// an *arr delay profile got around to grabbing, so anything at or below that window
+    /// reintroduces it. No ceiling — a long lifetime is a disk-space choice, and the table is
+    /// bounded by this TTL and pruned on the maintenance pass.</para>
+    /// </summary>
+    public static void ValidateReleaseLookupTtl(TimeSpan proposed)
+    {
+        var floor = TimeSpan.FromHours(1);
+        if (proposed < floor)
+        {
+            throw new SettingsValidationException(SettingKey.ReleaseLookupTtl,
+                $"release_lookup_ttl must be >= {floor}, got {proposed}.");
+        }
+    }
+
+    /// <summary>
     /// Validates a proposed <see cref="SettingKey.AiVerdictCacheTtl"/> value.
     /// Floor: 24h. No ceiling needed - a long verdict TTL cannot cause silent wrongness
     /// (verdicts are model-version-keyed; the row ceiling bounds size independently).
@@ -459,6 +479,9 @@ public static class SettingsValidator
                 break;
             case SettingKey.AutomaticBackupRetainedCount:
                 ValidateAutomaticBackupRetainedCount((int)proposed);
+                break;
+            case SettingKey.ReleaseLookupTtl:
+                ValidateReleaseLookupTtl((TimeSpan)proposed);
                 break;
 
             case SettingKey.MaintenanceJobInterval:
@@ -775,6 +798,7 @@ public static class SettingsValidator
         // stated in the catalog rationale, since the wire form carries no open/closed flag.
         SettingKey.AiConfidenceThreshold => ((0.0).ToString(CultureInfo.InvariantCulture), (1.0).ToString(CultureInfo.InvariantCulture)),
         SettingKey.ClassifierPollInterval => (TimeSpan.FromSeconds(15).ToString(), null),
+        SettingKey.ReleaseLookupTtl => (TimeSpan.FromHours(1).ToString(), null),
         // #44. Both unbounded above, each with a NoMaximumReason in the catalog (which
         // SettingsCatalogTests asserts is present exactly when the ceiling is null). The absolute
         // timeout's floor is the live idle timeout, so this pair reads from `current` the same way

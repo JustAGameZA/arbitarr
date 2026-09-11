@@ -4,6 +4,7 @@ using Arbitarr.Api.Rendering;
 using Arbitarr.Core.Caching;
 using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Identity;
+using Arbitarr.Core.Releases;
 using Arbitarr.Core.Sources;
 using Microsoft.AspNetCore.Http;
 
@@ -50,9 +51,13 @@ public static class SearchEndpoint
         // tests that construct this call directly) keeps compiling unchanged. Null means "no
         // resolver", which is also the runtime state whenever no Sonarr instance is configured, so
         // the default is the honest one rather than a convenience.
-        IIdentityResolver? identityResolver = null)
+        IIdentityResolver? identityResolver = null,
+        // arb-tps: optional and last for the same reason identityResolver above is. Null means
+        // "memory only" — the pre-arb-tps behaviour — which keeps the rendering/golden tests that
+        // construct this call directly compiling and unconcerned with persistence.
+        IReleaseLookupStore? releaseLookupStore = null)
     {
-        var (result, rateLimited) = await ExecuteAsync(SearchProtocol.Torznab, searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, eventSink, identityResolver, clientName, cancellationToken).ConfigureAwait(false);
+        var (result, rateLimited) = await ExecuteAsync(SearchProtocol.Torznab, searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, eventSink, identityResolver, clientName, releaseLookupStore, cancellationToken).ConfigureAwait(false);
         if (rateLimited)
         {
             var errorXml = TorznabXmlWriter.WriteError(RateLimitErrorCode, "Request limit reached");
@@ -86,9 +91,11 @@ public static class SearchEndpoint
         // tests that construct this call directly) keeps compiling unchanged. Null means "no
         // resolver", which is also the runtime state whenever no Sonarr instance is configured, so
         // the default is the honest one rather than a convenience.
-        IIdentityResolver? identityResolver = null)
+        IIdentityResolver? identityResolver = null,
+        // arb-tps: see HandleTorznabAsync's note on this parameter.
+        IReleaseLookupStore? releaseLookupStore = null)
     {
-        var (result, rateLimited) = await ExecuteAsync(SearchProtocol.Newznab, searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, eventSink, identityResolver, clientName, cancellationToken).ConfigureAwait(false);
+        var (result, rateLimited) = await ExecuteAsync(SearchProtocol.Newznab, searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, eventSink, identityResolver, clientName, releaseLookupStore, cancellationToken).ConfigureAwait(false);
         if (rateLimited)
         {
             var errorXml = NewznabXmlWriter.WriteError(RateLimitErrorCode, "Request limit reached");
@@ -117,6 +124,7 @@ public static class SearchEndpoint
         IEventSink eventSink,
         IIdentityResolver? identityResolver,
         string? clientName,
+        IReleaseLookupStore? releaseLookupStore,
         CancellationToken cancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
@@ -154,6 +162,22 @@ public static class SearchEndpoint
         // Shadow-mode-suppressed releases stay in `filtered` (annotated), so they stay
         // downloadable.
         releaseLookup.RecordRange(filtered);
+
+        // arb-tps: the durable counterpart to the line above, written to the SAME post-filter set
+        // for the same reason — an enforced suppression must not stay resolvable via /download in
+        // either tier. Awaited rather than fired-and-forgotten: a batch insert against a local
+        // SQLite file is cheap, and this is the search path, not the download hot path. A link that
+        // is handed out before its row is committed would be exactly the 404 this exists to fix.
+        //
+        // Null when no store was supplied (the rendering/golden tests), which reproduces the old
+        // memory-only behaviour rather than failing.
+        if (releaseLookupStore is not null && filtered.Count > 0)
+        {
+            await releaseLookupStore.UpsertRangeAsync(
+                    filtered.Select(r => new StoredRelease(r.ProxyGuid, r.SourceName, r.Candidate)),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
 
         stopwatch.Stop();
 

@@ -22,6 +22,17 @@ namespace Arbitarr.Data.Maintenance;
 /// far longer than operational events), so unlike the four counts above this total does not
 /// correspond to one age threshold — see <c>MaintenanceJob.PruneEventsAsync</c>.
 /// </param>
+/// <param name="ExpiredSessionRowsPruned">
+/// #44: session rows that can never authenticate again — past absolute expiry, or idle well beyond
+/// the configured window. See <c>MaintenanceJob.PruneExpiredSessionsAsync</c> on why the idle arm
+/// is deliberately looser than the security boundary.
+/// </param>
+/// <param name="ReleaseLookupRowsPruned">
+/// arb-tps: rows removed from the release lookup, against each row's own <c>ExpiresAt</c> —
+/// <see cref="Arbitarr.Core.Settings.PrunePredicates.IsReleaseLookupEntryPrunable"/>. Unlike the
+/// counts above this is not measured against a live setting: the expiry was stamped at write time,
+/// so lowering the TTL shortens NEW links rather than retroactively killing issued ones.
+/// </param>
 /// <param name="VacuumRan">True if <c>PRAGMA incremental_vacuum</c> was executed this run.</param>
 ///
 /// <remarks>
@@ -48,4 +59,5 @@ public sealed record MaintenanceJobResult(
     int AiVerdictCacheRowsPruned,
     int EventRowsPruned,
     int ExpiredSessionRowsPruned,
+    int ReleaseLookupRowsPruned,
     bool VacuumRan);

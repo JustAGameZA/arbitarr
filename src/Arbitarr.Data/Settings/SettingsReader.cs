@@ -42,6 +42,15 @@ public sealed class SettingsReader
         ReadAsync<TimeSpan>(SettingKey.ClassifierPollInterval, ParseTimeSpan, cancellationToken);
 
     /// <summary>
+    /// arb-tps: resolves <see cref="SettingKey.ReleaseLookupTtl"/>, defaulting to 14 days when no
+    /// row exists. Read here rather than added to <see cref="SettingsSnapshot"/> for the same
+    /// reason <see cref="GetAutomaticBackupRetainedCountAsync"/> is: its bound is not cross-field,
+    /// and the snapshot is the hot per-request settings read that every search takes.
+    /// </summary>
+    public Task<TimeSpan> GetReleaseLookupTtlAsync(CancellationToken cancellationToken = default) =>
+        ReadAsync<TimeSpan>(SettingKey.ReleaseLookupTtl, ParseTimeSpan, cancellationToken);
+
+    /// <summary>
     /// AC14b: resolves <see cref="SettingKey.SyncArbitrationBudget"/>, defaulting to 5s when no row
     /// exists. Consumed by the ad-hoc search endpoint to bound its synchronous-AI opt-in.
     /// </summary>
