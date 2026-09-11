@@ -35,6 +35,19 @@
 }
 
 .content {
+  /*
+   * This is the scroll container -- <main> (AppShell.tsx), not the document --
+   * and it already starts below the fixed top bar (grid-template-rows above).
+   * A page rendered inside it must NOT add --topbar-height to a sticky offset
+   * or a scroll-margin: the pane's own top edge already excludes the bar, so
+   * doing so would park the element further down than intended. Any
+   * IntersectionObserver watching a descendant must likewise use `main` as its
+   * `root`, not the default (the viewport), or every section would register as
+   * intersecting at once. SectionNav.module.css and SectionNav.tsx (issue 199,
+   * arb-5oe, under src/surfaces/Settings/) already rely on both of these and
+   * state the same reasoning against their own rules -- keep this comment
+   * consistent with theirs rather than restating it differently.
+   */
   grid-area: content;
   overflow-y: auto;
   padding: 20px 24px;
