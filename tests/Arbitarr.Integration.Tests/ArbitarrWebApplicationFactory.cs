@@ -31,7 +31,43 @@ public sealed class ArbitarrWebApplicationFactory : WebApplicationFactory<Progra
         // what lets the assembly run its classes in parallel. Program.cs reads Arbitarr:ConfigDir
         // ahead of the env var precisely so this wins.
         builder.UseSetting("Arbitarr:ConfigDir", _configDirectory);
+
+        // arb-0hd0, and a UseSetting for the same reason as the line above: ReleaseGuid's HMAC
+        // secret is a mutable PROCESS-GLOBAL (ReleaseGuid._hmacKey), and Program.cs rewrote it via
+        // ReleaseGuid.Configure on every host build. With classes running in parallel, a second
+        // host starting mid-request changed the secret under the first host, whose search had
+        // already computed a lookup key with the old one -- the issued link then matched neither
+        // the memory tier nor the store, and the download returned 404 with no exception and no
+        // log (arb-agh, four occurrences; the two hosts were 0.5 ms apart in the trace).
+        //
+        // Supplying the secret here makes Program.cs use this value instead of generating one per
+        // config directory, so a host build stops being a rewrite of the global with a NEW value.
+        // Derived from the config directory rather than random so that a factory rebuilding a host
+        // for the same directory reproduces the same secret -- which is what the persisted-secret
+        // file gives production across restarts, and what tests that restart a host depend on.
+        //
+        // This does NOT make the static safe on its own, and must not be mistaken for the fix: two
+        // factories still write different values to the same global. The fix is that
+        // RenderedRelease.ProxyGuid is now computed once per instance, so a request's five
+        // evaluations agree even mid-swap. This just stops tests provoking the swap needlessly.
+        //
+        // Note Program.cs still CREATES the persisted secret file even when this setting is given,
+        // and that is deliberate: BackupService copies release-guid-secret.key into every archive
+        // unconditionally, so a host that skipped creating it answered 500 on the backup download.
+        // Supplying this key overrides the in-memory value only; it must never be turned into a
+        // reason to skip ReleaseGuidSecretFile.LoadOrCreate.
+        builder.UseSetting("Arbitarr:ReleaseGuidSecret", ReleaseGuidSecretForConfigDirectory(_configDirectory));
     }
+
+    /// <summary>
+    /// A stable 32-byte secret for a config directory, base64-encoded as the configuration key
+    /// expects. SHA-256 of the path: deterministic for the same directory, different for different
+    /// ones (so two factories cannot collide on guids), and no weaker than the random secret it
+    /// replaces for a test-only value that never leaves this process.
+    /// </summary>
+    private static string ReleaseGuidSecretForConfigDirectory(string configDirectory) =>
+        Convert.ToBase64String(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(configDirectory)));
 
     /// <summary>Runs <paramref name="seed"/> against a fresh scoped <see cref="ArbitarrDbContext"/> and saves changes.</summary>
     public async Task SeedAsync(Func<ArbitarrDbContext, Task> seed)

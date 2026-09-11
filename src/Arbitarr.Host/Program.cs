@@ -801,7 +801,34 @@ var app = builder.Build();
 // SEC-L2: load (or generate, on first run) the per-instance HMAC secret used to compute proxy
 // guids, persisted under the configured config directory so it survives restarts. Must run before
 // any request is handled, since ReleaseGuid.Compute is called from request handlers.
-ReleaseGuid.Configure(ReleaseGuidSecretFile.LoadOrCreate(configDirectory));
+//
+// arb-0hd0: a configured secret wins over the persisted file, and the ONLY caller that supplies one
+// is the integration test factory. ReleaseGuid's secret is a mutable process-global, so every host
+// build rewrote it; with several hosts starting in one test process, one host's startup could
+// change the secret out from under another host's in-flight request. Letting the test factory pin
+// one secret per config directory means a second host build for the same config dir is a no-op on
+// the static rather than a rewrite, so concurrent hosts stop perturbing each other.
+//
+// The PRODUCTION path is unchanged: with no such configuration key present -- and nothing in the
+// shipped appsettings or the container image sets one -- this is exactly the previous call, a
+// secret persisted under /config and generated on first run. This is deliberately not a way to
+// supply the secret by environment in production; it exists so tests need not mutate a global.
+// Note this narrows the race but does not close it, which is why it is the SECONDARY fix: the
+// primary one is RenderedRelease.ProxyGuid being materialised once per instance, so the five
+// evaluations per request agree by construction no matter what the static does.
+//
+// LoadOrCreate IS STILL CALLED UNCONDITIONALLY, and the override applies only to the value handed
+// to ReleaseGuid. The secret file is not merely this line's input: BackupService copies
+// BackupPaths.SecretKeyPath (release-guid-secret.key) into every archive unconditionally, so a host
+// that skipped creating it answered 500 on the backup download and on every status read that
+// follows one. Short-circuiting the call broke seven AdminBackupEndpointsTests and three
+// BackupSecretExposureTests that way. Creating the file and then overriding the in-memory value
+// keeps the on-disk invariant ("a running instance has a secret file") exactly as it was.
+var persistedReleaseGuidSecret = ReleaseGuidSecretFile.LoadOrCreate(configDirectory);
+var configuredReleaseGuidSecret = builder.Configuration["Arbitarr:ReleaseGuidSecret"];
+ReleaseGuid.Configure(string.IsNullOrWhiteSpace(configuredReleaseGuidSecret)
+    ? persistedReleaseGuidSecret
+    : Convert.FromBase64String(configuredReleaseGuidSecret));
 
 // #56: seed the last-backup timestamp from the automatic archives already on disk, so a restart
 // does not report "never backed up" beside a directory full of them. Deliberately after the secret
