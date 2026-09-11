@@ -40,3 +40,43 @@
   margin-left: 8px;
   white-space: nowrap;
 }
+
+/*
+ * The parsed search descriptor (arb-2b6), on a second line under the reason rather than in a
+ * column of its own: the table already carries five columns and has to stay readable at phone
+ * width, where a sixth would force a horizontal scroll for a field that is empty on every
+ * non-search row.
+ *
+ * Wrapping, unlike .repeat: this line holds the query text, which is arbitrary length and the
+ * one part an operator actually reads. Truncating it would defeat the point of the change (a
+ * search you still cannot identify), so it wraps within the cell instead.
+ */
+.detail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 0.85em;
+}
+
+/*
+ * One parsed field. Colour comes from surface.module.css's .muted (var(--fg-muted)) applied
+ * alongside this class, which is why nothing here declares one (AC3).
+ *
+ * Tabular figures for the same reason the timestamp column has them: ids and season/episode
+ * numbers get compared down a column of rows, and proportional digits defeat that scan.
+ */
+.detailField {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/*
+ * The query text is the exception to the nowrap above — free text, possibly long. Breaking
+ * inside a word beats both a horizontal scroll and a truncation that hides the search term.
+ */
+.detailQuery {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
