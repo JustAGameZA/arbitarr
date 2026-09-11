@@ -90,6 +90,19 @@ public enum SettingKey
     ClassifierPollInterval,
 
     /// <summary>
+    /// arb-tps: how long a rendered release stays resolvable by <c>/download/{proxyGuid}</c>.
+    ///
+    /// <para>Default <b>14 days</b>, and the figure is evidence-driven rather than a round number.
+    /// The in-memory lookup's 30 minutes was the whole lifetime before this setting existed, and it
+    /// was too short twice over: the process restarts many times a day (29 starts in 25 hours on
+    /// the reporting instance, each one wiping the lookup), and Sonarr/Radarr delay profiles
+    /// routinely defer a grab well past half an hour — so a link handed to an *arr app frequently
+    /// stopped resolving before it was ever used. 14 days comfortably outlives both. The operator
+    /// can lower it; the table is bounded by this TTL and pruned on the maintenance pass.</para>
+    /// </summary>
+    ReleaseLookupTtl,
+
+    /// <summary>
     /// AC26b: boolean kill-switch that fully disables the AI layer. Unlike the other settings here,
     /// this is boolean rather than floor/ceiling-bounded — it is a safety escape hatch, not a
     /// preference, so the usual bound-validation convention does not apply.

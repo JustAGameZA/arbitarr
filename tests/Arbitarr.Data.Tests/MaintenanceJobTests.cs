@@ -404,6 +404,83 @@ public sealed class MaintenanceJobTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// arb-tps: the release lookup prune deletes the expired row and keeps the live one, in ONE
+    /// pass over a table holding both. Asserted PER ROW rather than by count alone — "one row was
+    /// deleted" still passes when the implementation deleted the wrong one, which for this table
+    /// means breaking a download link that was still valid.
+    /// </summary>
+    [Fact]
+    public async Task RunAsync_PrunesExpiredReleaseLookupRow_AndKeepsTheLiveOne()
+    {
+        using (var context = CreateContext())
+        {
+            context.Database.Migrate();
+            context.ReleaseLookupEntries.Add(new ReleaseLookupEntry
+            {
+                ProxyGuid = "expired-one-second-ago",
+                SourceName = "hydra",
+                PayloadJson = "{}",
+                RecordedAt = Now - TimeSpan.FromDays(14),
+                ExpiresAt = Now - TimeSpan.FromSeconds(1),
+            });
+            context.ReleaseLookupEntries.Add(new ReleaseLookupEntry
+            {
+                ProxyGuid = "live-one-second-left",
+                SourceName = "hydra",
+                PayloadJson = "{}",
+                RecordedAt = Now - TimeSpan.FromDays(14),
+                ExpiresAt = Now + TimeSpan.FromSeconds(1),
+            });
+            context.SaveChanges();
+        }
+
+        using (var context = CreateContext())
+        {
+            var job = new MaintenanceJob(context, _timeProvider);
+            var result = await job.RunAsync(Settings(TimeSpan.FromDays(7)));
+
+            Assert.Equal(1, result.ReleaseLookupRowsPruned);
+
+            // PER ROW: the exact survivor, and the exact casualty.
+            var remaining = context.ReleaseLookupEntries.Select(e => e.ProxyGuid).ToList();
+            Assert.Equal(new[] { "live-one-second-left" }, remaining);
+        }
+    }
+
+    /// <summary>
+    /// arb-tps: a row exactly AT its expiry is pruned, matching
+    /// <c>PrunePredicates.IsReleaseLookupEntryPrunable</c>'s inclusive boundary and
+    /// <c>ReleaseLookupStore.FindAsync</c>, which stops resolving it at that same instant. A row
+    /// that no longer resolves but is never deleted would accumulate forever.
+    /// </summary>
+    [Fact]
+    public async Task RunAsync_PrunesReleaseLookupRow_ExactlyAtExpiry()
+    {
+        using (var context = CreateContext())
+        {
+            context.Database.Migrate();
+            context.ReleaseLookupEntries.Add(new ReleaseLookupEntry
+            {
+                ProxyGuid = "expiring-exactly-now",
+                SourceName = "hydra",
+                PayloadJson = "{}",
+                RecordedAt = Now - TimeSpan.FromDays(14),
+                ExpiresAt = Now,
+            });
+            context.SaveChanges();
+        }
+
+        using (var context = CreateContext())
+        {
+            var job = new MaintenanceJob(context, _timeProvider);
+            var result = await job.RunAsync(Settings(TimeSpan.FromDays(7)));
+
+            Assert.Equal(1, result.ReleaseLookupRowsPruned);
+            Assert.Empty(context.ReleaseLookupEntries.ToList());
+        }
+    }
+
     [Fact]
     public async Task RunAsync_DoesNotPruneOperationalEventRow_WithinOperationalRetention()
     {

@@ -275,6 +275,23 @@ public static class SettingsCatalog
             NoMaximumReason = "A long interval only delays classification; it cannot cause silent wrongness.",
         },
         new SettingCatalogEntry(
+            SettingKey.ReleaseLookupTtl,
+            SettingGroup.SearchResultCache,
+            "Download link lifetime",
+            "arb-tps: how long a download link handed to Sonarr/Radarr keeps resolving. Default 14 days. " +
+            "Floor 1h — below that the setting reintroduces the defect it exists to fix, because a delay " +
+            "profile routinely defers a grab past the old 30-minute in-memory window. No ceiling: an " +
+            "over-long lifetime is a disk-space choice, visible as this table's row count beside this " +
+            "setting, not a correctness hazard — a stale link fails at the upstream fetch, not silently.",
+            RequiresRestart: false,
+            IsBoolean: false)
+        {
+            NoMaximumReason =
+                "An over-long link lifetime is a disk-space choice, visible as the release lookup table's " +
+                "row count beside this setting; a link whose upstream release is gone fails at fetch time, " +
+                "so a long TTL cannot cause silent wrongness.",
+        },
+        new SettingCatalogEntry(
             SettingKey.SessionIdleTimeout,
             SettingGroup.Sessions,
             "Session idle timeout",
@@ -322,6 +339,11 @@ public static class SettingsCatalog
         SettingKey.AiConfidenceThreshold => 0.9,
         SettingKey.TitleNormalizationEnabled => false,
         SettingKey.ClassifierPollInterval => TimeSpan.FromMinutes(1),
+        // arb-tps. Read through SettingsReader rather than added to SettingsSnapshot, for the same
+        // reason AutomaticBackupRetainedCount is: the snapshot is the hot per-request settings read
+        // that every search takes, and this key's bound is not cross-field. See SettingKey's own doc
+        // for why 14 days rather than a round number.
+        SettingKey.ReleaseLookupTtl => TimeSpan.FromDays(14),
         SettingKey.SyncArbitrationBudget => TimeSpan.FromSeconds(5),
         // #56: seven automatic backups is one week at the default one-hourly maintenance cadence
         // only if the box restarts daily; in practice it is "enough history to walk back past a bad

@@ -82,7 +82,8 @@ public static class AdminSettingsEndpoints
             AiConfidenceThreshold: await reader.GetAiConfidenceThresholdAsync(cancellationToken),
             TitleNormalizationEnabled: await reader.GetTitleNormalizationEnabledAsync(cancellationToken),
             ClassifierPollInterval: await reader.GetClassifierPollIntervalAsync(cancellationToken),
-            AutomaticBackupRetainedCount: await reader.GetAutomaticBackupRetainedCountAsync(cancellationToken));
+            AutomaticBackupRetainedCount: await reader.GetAutomaticBackupRetainedCountAsync(cancellationToken),
+            ReleaseLookupTtl: await reader.GetReleaseLookupTtlAsync(cancellationToken));
         var sizes = await sizeReporter.ReadAsync(cancellationToken);
 
         var entries = SettingsCatalog.Entries.Select(entry =>
@@ -122,6 +123,10 @@ public static class AdminSettingsEndpoints
         SettingKey.MetadataRefreshCadence or SettingKey.MetadataNegativeTtl => sizeReporter.TableNameOf<MetadataCacheEntry>(),
         SettingKey.SuppressionAuditRetention => sizeReporter.TableNameOf<SuppressionAuditLogEntry>(),
         SettingKey.QuerySnapshotTtl => sizeReporter.TableNameOf<QuerySnapshotCacheEntry>(),
+        // arb-tps: this TTL is the only thing bounding the release lookup table, so the operator
+        // sees its row count beside the setting -- which is what the catalog's NoMaximumReason
+        // points at when it says an over-long lifetime is a visible disk-space choice.
+        SettingKey.ReleaseLookupTtl => sizeReporter.TableNameOf<ReleaseLookupEntry>(),
         _ => null,
     };
 
@@ -166,7 +171,10 @@ public static class AdminSettingsEndpoints
         // maintenance pass). It still has to appear HERE, because CurrentValue below throws
         // on any key it has no projection for -- a catalog entry with no case is a 500 on
         // the whole settings page, not merely a missing row.
-        int AutomaticBackupRetainedCount);
+        int AutomaticBackupRetainedCount,
+        // arb-tps. Read through SettingsReader for the same reason as the count above, and it has
+        // to appear HERE for the same reason too -- see that comment.
+        TimeSpan ReleaseLookupTtl);
 
     private static string CurrentValue(SettingKey key, SettingsSnapshot snapshot, LiveValues live) => key switch
     {
@@ -191,6 +199,7 @@ public static class AdminSettingsEndpoints
         SettingKey.ClassifierPollInterval => live.ClassifierPollInterval.ToString(),
         SettingKey.AutomaticBackupRetainedCount =>
             live.AutomaticBackupRetainedCount.ToString(CultureInfo.InvariantCulture),
+        SettingKey.ReleaseLookupTtl => live.ReleaseLookupTtl.ToString(),
         // #44. Read from the SNAPSHOT rather than a live reader, because these two are snapshot
         // fields: the absolute timeout's floor is the current idle timeout, and carrying
         // cross-field dependencies is exactly what SettingsSnapshot is for.

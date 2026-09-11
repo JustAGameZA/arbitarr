@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Identity;
 using Arbitarr.Core.Caching;
 using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Filtering;
+using Arbitarr.Core.Releases;
 using Arbitarr.Core.Security;
 using Arbitarr.Core.Sources;
 using Arbitarr.Core.Sources.CircuitBreaker;
@@ -17,6 +18,7 @@ using Arbitarr.Data.Caching;
 using Arbitarr.Data.CircuitBreaker;
 using Arbitarr.Data.Filtering;
 using Arbitarr.Data.Maintenance;
+using Arbitarr.Data.Search;
 using Arbitarr.Data.Security;
 using Arbitarr.Data.Settings;
 using Arbitarr.Data.Sources;
@@ -451,7 +453,44 @@ builder.Services.AddHostedService(sp => new ClassifierPollingWorker(
     sp.GetRequiredService<InMemoryReleaseLookup>(),
     sp.GetRequiredService<TimeProvider>(),
     logger: sp.GetRequiredService<ILogger<ClassifierPollingWorker>>()));
-builder.Services.AddSingleton<IReleaseLookup>(sp => sp.GetRequiredService<InMemoryReleaseLookup>());
+// arb-tps: the durable tier behind the in-memory one. Scoped, because it holds the scoped
+// ArbitarrDbContext; the search routes are scoped and take it directly, while the singleton
+// IReleaseLookup below reaches it through a scope factory rather than capturing one.
+//
+// The TTL is read per construction from SettingsReader rather than baked in at startup, so an
+// operator lowering it does not need a restart. The connection string is NEVER formatted here — the
+// context's options come from DatabaseConnectionStrings (data.md:59).
+builder.Services.AddScoped<IReleaseLookupStore>(sp =>
+{
+    var ttl = sp.GetRequiredService<SettingsReader>()
+        .GetReleaseLookupTtlAsync()
+        .GetAwaiter()
+        .GetResult();
+    return new ReleaseLookupStore(
+        sp.GetRequiredService<ArbitarrDbContext>(),
+        ttl,
+        sp.GetRequiredService<TimeProvider>());
+});
+
+// arb-tps: IReleaseLookup is now the TWO-TIER lookup — memory first, the store on a miss, memory
+// repopulated from a store hit. This is what makes a download link survive a restart and outlive
+// the in-memory tier's 30-minute TTL; before it, every link did neither.
+//
+// The InMemoryReleaseLookup singleton registration above is KEPT exactly as it was, and so is
+// ClassifierPollingWorker's use of its Snapshot(): that worker classifies what this process has
+// recently rendered, which is an in-memory question, not a database one.
+builder.Services.AddSingleton<IReleaseLookup>(sp => new PersistentReleaseLookup(
+    sp.GetRequiredService<InMemoryReleaseLookup>(),
+    async (proxyGuid, cancellationToken) =>
+    {
+        // A scope per lookup, created and disposed around the query: this singleton outlives every
+        // request scope, so resolving the scoped store once would hand every later download the
+        // first request's DbContext.
+        using var scope = sp.GetRequiredService<IServiceScopeFactory>().CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<IReleaseLookupStore>()
+            .FindAsync(proxyGuid, cancellationToken)
+            .ConfigureAwait(false);
+    }));
 
 // Inbound Torznab/Newznab client apikey (M1-9, security-hardened). Distinct from
 // Arbitarr:Sources:NzbHydra:ApiKey (the upstream NZBHydra2 credential Arbitarr uses to call out)
@@ -893,6 +932,9 @@ app.MapGet("/torznab/api", async (
     // registration below is conditional on nothing, but the resolver itself returns null throughout
     // when the instance rows are absent.
     Arbitarr.Core.Identity.IIdentityResolver? identityResolver,
+    // arb-tps: the durable tier the search writes to, so the links this response carries still
+    // resolve after a restart and past the in-memory tier's 30-minute TTL.
+    IReleaseLookupStore releaseLookupStore,
     IReadOnlyList<IUpstreamSource> sources,
     HttpRequest request,
     CancellationToken cancellationToken) =>
@@ -928,7 +970,8 @@ app.MapGet("/torznab/api", async (
         IdParamClamp.ClampSeason(IdParamClamp.ParseOptional(season)),
         IdParamClamp.ClampEpisode(IdParamClamp.ParseOptional(ep)),
         clientContext?.Name,
-        identityResolver).ConfigureAwait(false);
+        identityResolver,
+        releaseLookupStore).ConfigureAwait(false);
 })
     .WithClassification(RouteClassification.PublicRead);
 
@@ -959,6 +1002,8 @@ app.MapGet("/newznab/api", async (
     // registration below is conditional on nothing, but the resolver itself returns null throughout
     // when the instance rows are absent.
     Arbitarr.Core.Identity.IIdentityResolver? identityResolver,
+    // arb-tps: see the torznab route's note on this parameter.
+    IReleaseLookupStore releaseLookupStore,
     IReadOnlyList<IUpstreamSource> sources,
     HttpRequest request,
     CancellationToken cancellationToken) =>
@@ -994,7 +1039,8 @@ app.MapGet("/newznab/api", async (
         IdParamClamp.ClampSeason(IdParamClamp.ParseOptional(season)),
         IdParamClamp.ClampEpisode(IdParamClamp.ParseOptional(ep)),
         clientContext?.Name,
-        identityResolver).ConfigureAwait(false);
+        identityResolver,
+        releaseLookupStore).ConfigureAwait(false);
 })
     .WithClassification(RouteClassification.PublicRead);
 
