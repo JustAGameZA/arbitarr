@@ -1,5 +1,6 @@
 using Arbitarr.Api.Rendering;
 using Arbitarr.Core.Releases;
+using Microsoft.Extensions.Logging;
 
 namespace Arbitarr.Api.Search;
 
@@ -29,6 +30,7 @@ public sealed class PersistentReleaseLookup : IReleaseLookup
 {
     private readonly InMemoryReleaseLookup _memory;
     private readonly Func<string, CancellationToken, Task<StoredRelease?>> _findInStore;
+    private readonly ILogger? _logger;
 
     /// <param name="memory">The in-process fast path, and the tier a store hit repopulates.</param>
     /// <param name="findInStore">
@@ -41,12 +43,18 @@ public sealed class PersistentReleaseLookup : IReleaseLookup
     /// caller creating and disposing the scope around its own query is the only shape that keeps
     /// both lifetimes correct.
     /// </param>
+    /// <param name="logger">
+    /// arb-zwk: optional and last, so every existing caller compiles unchanged. Null means the
+    /// fallback goes unrecorded, which is the honest state in tests that do not observe logging.
+    /// </param>
     public PersistentReleaseLookup(
         InMemoryReleaseLookup memory,
-        Func<string, CancellationToken, Task<StoredRelease?>> findInStore)
+        Func<string, CancellationToken, Task<StoredRelease?>> findInStore,
+        ILogger? logger = null)
     {
         _memory = memory ?? throw new ArgumentNullException(nameof(memory));
         _findInStore = findInStore ?? throw new ArgumentNullException(nameof(findInStore));
+        _logger = logger;
     }
 
     public async Task<RenderedRelease?> FindAsync(string proxyGuid, CancellationToken cancellationToken = default)
@@ -66,10 +74,22 @@ public sealed class PersistentReleaseLookup : IReleaseLookup
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             // See the type-level remarks: a store that cannot answer leaves the caller exactly where
             // the memory-only implementation left it, rather than turning a 404 into a 500.
+            //
+            // arb-zwk (root cause of the arb-agh flake): the DEGRADE stays, but it is no longer
+            // SILENT. Returning null with nothing logged made a broken store indistinguishable from
+            // an ordinary miss — the download 404s, the dashboard stays green, and the only symptom
+            // is an intermittent failure nobody can attribute. The proxy guid is safe to log (it is
+            // the value the caller just presented, and it appears in the request line already); the
+            // release payload and its source URL are NOT, and must never be added here, because this
+            // lands in the persistent log store served at /api/admin/logs (CLAUDE.md §1).
+            _logger?.LogWarning(
+                ex,
+                "Release lookup store failed for proxy guid {ProxyGuid}; answering as a miss.",
+                proxyGuid);
             return null;
         }
 

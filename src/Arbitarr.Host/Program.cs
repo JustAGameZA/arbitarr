@@ -457,18 +457,19 @@ builder.Services.AddHostedService(sp => new ClassifierPollingWorker(
 // ArbitarrDbContext; the search routes are scoped and take it directly, while the singleton
 // IReleaseLookup below reaches it through a scope factory rather than capturing one.
 //
-// The TTL is read per construction from SettingsReader rather than baked in at startup, so an
-// operator lowering it does not need a restart. The connection string is NEVER formatted here — the
-// context's options come from DatabaseConnectionStrings (data.md:59).
+// The TTL is read per WRITE from SettingsReader rather than baked in at startup, so an operator
+// lowering it still does not need a restart. arb-zwk: it used to be read per CONSTRUCTION, which on
+// a scoped registration meant a blocking GetAwaiter().GetResult() on a thread-pool thread for every
+// scope — i.e. every search — to fetch a value only the upsert path uses. Handing the store the
+// reader keeps the freshness and lets the read be awaited where it is actually needed. The
+// connection string is NEVER formatted here — the context's options come from
+// DatabaseConnectionStrings (data.md:59).
 builder.Services.AddScoped<IReleaseLookupStore>(sp =>
 {
-    var ttl = sp.GetRequiredService<SettingsReader>()
-        .GetReleaseLookupTtlAsync()
-        .GetAwaiter()
-        .GetResult();
+    var settingsReader = sp.GetRequiredService<SettingsReader>();
     return new ReleaseLookupStore(
         sp.GetRequiredService<ArbitarrDbContext>(),
-        ttl,
+        settingsReader.GetReleaseLookupTtlAsync,
         sp.GetRequiredService<TimeProvider>());
 });
 
@@ -490,7 +491,10 @@ builder.Services.AddSingleton<IReleaseLookup>(sp => new PersistentReleaseLookup(
         return await scope.ServiceProvider.GetRequiredService<IReleaseLookupStore>()
             .FindAsync(proxyGuid, cancellationToken)
             .ConfigureAwait(false);
-    }));
+    },
+    // arb-zwk: so a store fault on the download path is attributable instead of silently answering
+    // as a miss — the root cause of the arb-agh flake.
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(PersistentReleaseLookup).FullName!)));
 
 // Inbound Torznab/Newznab client apikey (M1-9, security-hardened). Distinct from
 // Arbitarr:Sources:NzbHydra:ApiKey (the upstream NZBHydra2 credential Arbitarr uses to call out)
@@ -935,6 +939,9 @@ app.MapGet("/torznab/api", async (
     // arb-tps: the durable tier the search writes to, so the links this response carries still
     // resolve after a restart and past the in-memory tier's 30-minute TTL.
     IReleaseLookupStore releaseLookupStore,
+    // arb-zwk: so a failed store write is recorded rather than silent. The endpoint degrades on that
+    // failure and still answers, which without a log would be an invisible loss of durability.
+    ILoggerFactory loggerFactory,
     IReadOnlyList<IUpstreamSource> sources,
     HttpRequest request,
     CancellationToken cancellationToken) =>
@@ -971,7 +978,8 @@ app.MapGet("/torznab/api", async (
         IdParamClamp.ClampEpisode(IdParamClamp.ParseOptional(ep)),
         clientContext?.Name,
         identityResolver,
-        releaseLookupStore).ConfigureAwait(false);
+        releaseLookupStore,
+        loggerFactory.CreateLogger(typeof(SearchEndpoint).FullName!)).ConfigureAwait(false);
 })
     .WithClassification(RouteClassification.PublicRead);
 
@@ -1004,6 +1012,8 @@ app.MapGet("/newznab/api", async (
     Arbitarr.Core.Identity.IIdentityResolver? identityResolver,
     // arb-tps: see the torznab route's note on this parameter.
     IReleaseLookupStore releaseLookupStore,
+    // arb-zwk: see the torznab route's note on this parameter.
+    ILoggerFactory loggerFactory,
     IReadOnlyList<IUpstreamSource> sources,
     HttpRequest request,
     CancellationToken cancellationToken) =>
@@ -1040,7 +1050,8 @@ app.MapGet("/newznab/api", async (
         IdParamClamp.ClampEpisode(IdParamClamp.ParseOptional(ep)),
         clientContext?.Name,
         identityResolver,
-        releaseLookupStore).ConfigureAwait(false);
+        releaseLookupStore,
+        loggerFactory.CreateLogger(typeof(SearchEndpoint).FullName!)).ConfigureAwait(false);
 })
     .WithClassification(RouteClassification.PublicRead);
 

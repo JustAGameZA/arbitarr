@@ -28,8 +28,13 @@ public sealed class ReleaseLookupStoreTests : IDisposable
         return new ArbitarrDbContext(optionsBuilder.Options);
     }
 
+    /// <summary>
+    /// arb-zwk: the store now takes a TTL READER rather than a TimeSpan, so the value is awaited at
+    /// the point of use instead of blocking a thread at construction. Every caller here keeps passing
+    /// a plain TimeSpan and this wraps it, so the existing tests still pin the same behaviour.
+    /// </summary>
     private ReleaseLookupStore CreateStore(ArbitarrDbContext context, TimeSpan? ttl = null) =>
-        new(context, ttl ?? Ttl, _timeProvider);
+        new(context, _ => Task.FromResult(ttl ?? Ttl), _timeProvider);
 
     private static ReleaseCandidate Candidate(string guid, string link = "https://indexer.example.invalid/get/abc") => new()
     {
