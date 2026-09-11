@@ -604,7 +604,9 @@ export type NotificationTrigger =
   | 'SourceFailing'
   | 'SourceRecovered'
   | 'SuppressionRateHigh'
-  | 'SuppressionRateNormal';
+  | 'SuppressionRateNormal'
+  | 'DownloadRefused'
+  | 'DownloadRefusalCleared';
 
 /**
  * NotificationDeliveryOutcome.cs — a CLOSED set, mirrored closed here.

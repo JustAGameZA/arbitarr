@@ -386,6 +386,49 @@ describe('Notifications section', () => {
     expect(
       screen.getByRole('checkbox', { name: /Suppression rate back to normal/ }),
     ).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /Source refusing downloads/ })).not.toBeChecked();
+    expect(
+      screen.getByRole('checkbox', { name: /Download refusal cleared/ }),
+    ).not.toBeChecked();
+  });
+
+  it('sends the redirect-refusal triggers when toggled on', async () => {
+    const user = userEvent.setup();
+    const api = mockApi({ [ROUTE]: { body: unconfigured } });
+    renderSurface(<NotificationsSection />);
+
+    await user.click(await screen.findByRole('checkbox', { name: /Source refusing downloads/ }));
+    await user.click(screen.getByRole('checkbox', { name: /Download refusal cleared/ }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(lastPutBody(api).enabledTriggers).toEqual([
+      'SourceFailing',
+      'SourceRecovered',
+      'DownloadRefused',
+      'DownloadRefusalCleared',
+    ]);
+  });
+
+  it('sends the redirect-refusal triggers as absent once toggled back off', async () => {
+    const user = userEvent.setup();
+    const api = mockApi({
+      [ROUTE]: {
+        body: {
+          ...unconfigured,
+          enabledTriggers: ['SourceFailing', 'SourceRecovered', 'DownloadRefused', 'DownloadRefusalCleared'],
+        },
+      },
+    });
+    renderSurface(<NotificationsSection />);
+
+    expect(await screen.findByRole('checkbox', { name: /Source refusing downloads/ })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /Download refusal cleared/ })).toBeChecked();
+
+    await user.click(screen.getByRole('checkbox', { name: /Source refusing downloads/ }));
+    await user.click(screen.getByRole('checkbox', { name: /Download refusal cleared/ }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(lastPutBody(api).enabledTriggers).toEqual(['SourceFailing', 'SourceRecovered']);
   });
 
   it('sends the trigger set the operator selected', async () => {
