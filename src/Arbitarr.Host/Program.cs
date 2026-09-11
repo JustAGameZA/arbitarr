@@ -824,11 +824,50 @@ var app = builder.Build();
 // follows one. Short-circuiting the call broke seven AdminBackupEndpointsTests and three
 // BackupSecretExposureTests that way. Creating the file and then overriding the in-memory value
 // keeps the on-disk invariant ("a running instance has a secret file") exactly as it was.
+//
+// arb-pujk: a configured value is VALIDATED before it is used. ReleaseGuid.Configure rejects only
+// an empty key, so without this an "AA==" would be accepted as the HMAC-SHA256 key and proxy links
+// would become guessable with no error and no log line -- and a value that is not base64 at all
+// reached Convert.FromBase64String unguarded, failing startup with a bare FormatException that
+// names neither the key nor the requirement. Both are handled here in the same defensive style as
+// Arbitarr:Ai:Ollama:KeepAlive above: a named InvalidOperationException that says which key is
+// wrong and what to do. The message deliberately carries NO key material -- not the value, not a
+// prefix of it, and not its decoded length -- because startup exceptions are logged and this file
+// is exactly the kind of value the log cleanser cannot scrub out of a free-form message.
 var persistedReleaseGuidSecret = ReleaseGuidSecretFile.LoadOrCreate(configDirectory);
 var configuredReleaseGuidSecret = builder.Configuration["Arbitarr:ReleaseGuidSecret"];
-ReleaseGuid.Configure(string.IsNullOrWhiteSpace(configuredReleaseGuidSecret)
-    ? persistedReleaseGuidSecret
-    : Convert.FromBase64String(configuredReleaseGuidSecret));
+byte[] releaseGuidSecret;
+if (string.IsNullOrWhiteSpace(configuredReleaseGuidSecret))
+{
+    releaseGuidSecret = persistedReleaseGuidSecret;
+}
+else
+{
+    if (!Convert.TryFromBase64String(
+            configuredReleaseGuidSecret,
+            new byte[configuredReleaseGuidSecret.Length],
+            out _))
+    {
+        throw new InvalidOperationException(
+            "The Arbitarr:ReleaseGuidSecret configuration key is set to a value that is not valid " +
+            "base64. It must be a base64-encoded secret of at least 32 bytes. Leave the key unset " +
+            "to use the secret persisted under the config directory, which is the supported " +
+            "configuration.");
+    }
+
+    releaseGuidSecret = Convert.FromBase64String(configuredReleaseGuidSecret);
+    if (releaseGuidSecret.Length < 32)
+    {
+        throw new InvalidOperationException(
+            "The Arbitarr:ReleaseGuidSecret configuration key is set to a value that decodes to " +
+            "fewer than 32 bytes. It must be a base64-encoded secret of at least 32 bytes, because " +
+            "it is used as an HMAC-SHA256 key and a shorter one makes proxy links guessable. Leave " +
+            "the key unset to use the secret persisted under the config directory, which is the " +
+            "supported configuration.");
+    }
+}
+
+ReleaseGuid.Configure(releaseGuidSecret);
 
 // #56: seed the last-backup timestamp from the automatic archives already on disk, so a restart
 // does not report "never backed up" beside a directory full of them. Deliberately after the secret

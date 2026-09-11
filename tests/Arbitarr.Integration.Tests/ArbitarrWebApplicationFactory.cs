@@ -62,8 +62,10 @@ public sealed class ArbitarrWebApplicationFactory : WebApplicationFactory<Progra
     /// <summary>
     /// A stable 32-byte secret for a config directory, base64-encoded as the configuration key
     /// expects. SHA-256 of the path: deterministic for the same directory, different for different
-    /// ones (so two factories cannot collide on guids), and no weaker than the random secret it
-    /// replaces for a test-only value that never leaves this process.
+    /// ones (so two factories cannot collide on guids), and adequate because it never leaves the
+    /// test process. Not "no weaker than the random secret it replaces": it is deterministic from a
+    /// knowable input, so it is weaker, and the reason that is fine is the confinement, not the
+    /// derivation.
     /// </summary>
     private static string ReleaseGuidSecretForConfigDirectory(string configDirectory) =>
         Convert.ToBase64String(System.Security.Cryptography.SHA256.HashData(
