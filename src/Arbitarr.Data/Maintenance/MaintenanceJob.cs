@@ -320,22 +320,67 @@ public sealed class MaintenanceJob
     /// measuring an age against a live setting, so it needs no argument from the snapshot. That is
     /// deliberate: a link already handed to Sonarr was promised a lifetime, and lowering the setting
     /// should shorten the NEXT link rather than retroactively break one already in flight.</para>
+    ///
+    /// <para><b>PAGED, UNLIKE ITS SIBLINGS ABOVE.</b> Release lookup is the largest accumulating
+    /// table (one row per rendered release across every *arr RSS sync), so loading it whole on
+    /// every maintenance pass — the pattern every prune above still uses — does not scale the way
+    /// it does for the smaller tables. Each page projects only <c>Id</c> and <c>ExpiresAt</c>
+    /// (<c>AsNoTracking</c>), evaluates the same <see cref="PrunePredicates.IsReleaseLookupEntryPrunable"/>
+    /// client-side for the same SQLite DateTimeOffset reason as every prune above, then deletes the
+    /// matching ids for that page with <c>ExecuteDeleteAsync</c> before advancing. Paging by <c>Id</c>
+    /// (the surrogate primary key) rather than by offset means a page's own deletions cannot shift
+    /// which rows the next page reads, which an OFFSET-based page would be vulnerable to.</para>
     /// </summary>
     private async Task<int> PruneReleaseLookupAsync(DateTimeOffset now, CancellationToken cancellationToken)
     {
-        // Client-side for the same reason as every prune above: SQLite's EF Core provider cannot
-        // reliably translate DateTimeOffset comparisons server-side.
-        var candidates = await _dbContext.ReleaseLookupEntries
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
+        const int pageSize = 500;
+        var pruned = 0;
+        var lastId = 0L;
 
-        var prunable = candidates
-            .Where(e => PrunePredicates.IsReleaseLookupEntryPrunable(e.ExpiresAt, now))
-            .ToList();
+        while (true)
+        {
+            var page = await _dbContext.ReleaseLookupEntries
+                .AsNoTracking()
+                .Where(e => e.Id > lastId)
+                .OrderBy(e => e.Id)
+                .Select(e => new { e.Id, e.ExpiresAt })
+                .Take(pageSize)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
 
-        _dbContext.ReleaseLookupEntries.RemoveRange(prunable);
-        await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        return prunable.Count;
+            if (page.Count == 0)
+            {
+                break;
+            }
+
+            lastId = page[^1].Id;
+
+            // Client-side for the same reason as every prune above: SQLite's EF Core provider
+            // cannot reliably translate DateTimeOffset comparisons server-side.
+            var prunableIds = page
+                .Where(e => PrunePredicates.IsReleaseLookupEntryPrunable(e.ExpiresAt, now))
+                .Select(e => e.Id)
+                .ToList();
+
+            if (prunableIds.Count > 0)
+            {
+                // EF Core 10 emits one parameter per Contains element, padded to fixed sizes, so a
+                // 500-id page becomes ~1000 parameters; bundled SQLite's limit is 32766, so the
+                // effective ceiling for pageSize is ~16000 — do not raise 500 on the assumption it
+                // is "well under 999".
+                pruned += await _dbContext.ReleaseLookupEntries
+                    .Where(e => prunableIds.Contains(e.Id))
+                    .ExecuteDeleteAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            if (page.Count < pageSize)
+            {
+                break;
+            }
+        }
+
+        return pruned;
     }
 
     /// <summary>
