@@ -98,20 +98,96 @@ test('the UI loads and renders its shell', async ({ page }) => {
 });
 
 test('the admin key can be bootstrapped over the local-network bypass', async ({ request }) => {
-  // ADR 0004: while no key is configured, admin-mutating routes are permitted from
-  // loopback and RFC 1918 addresses, decided ONLY from the socket's peer address. compose
-  // publishes the port on 127.0.0.1, so this request lands inside that window. Once this
-  // succeeds the bypass closes and every later admin call must carry the header.
+  // ADR 0004's #43 bootstrap bypass: while no key is configured, admin-mutating routes are
+  // permitted from loopback and RFC 1918 addresses, decided ONLY from the socket's peer
+  // address. compose publishes the port on 127.0.0.1, so this request lands inside that
+  // window regardless of LAN passthrough.
+  //
+  // arb-fvd / ADR 0012 REVERSES what used to be asserted here. Before arb-fvd, the SAME
+  // unauthenticated GET below was asserted NOT 200 once a key existed -- the #44 rule "the
+  // LAN bypass skips the key only, never the login". arb-fvd ships LAN passthrough ON BY
+  // DEFAULT (LanPassthroughOptions, AdminApiKeyFilter's `_lanPassthrough.Enabled` branch),
+  // which admits any trusted socket peer as a full-scope operator with NO key and NO
+  // session, and that branch does not care whether a key has since been set. So the
+  // unauthenticated GET is now 200 on BOTH sides of the PUT: proving that is the new
+  // contract this test exists to prove, not a regression to paper over.
+  const beforeKeyIsSet = await request.get('/api/admin/sources');
+  expect(beforeKeyIsSet.status(), await beforeKeyIsSet.text()).toBe(200);
+
   const response = await request.put('/api/admin/security/admin-key', {
     data: { value: ADMIN_KEY },
   });
   expect(response.status(), await response.text()).toBe(204);
 
-  // The gate is now absolute: the same route without the header must no longer be open.
-  // Without this, "the key was set" is asserted only by a 204 that a permanently-open
-  // bypass would also return.
+  // Unchanged from before the PUT: passthrough admits this trusted-peer request whether or
+  // not a key now exists, because the branch runs before the key/session outcome is even
+  // consulted for a trusted peer (AdminApiKeyFilter.InvokeAsync). A test that only checked
+  // "before" could not tell passthrough's unconditional admission apart from the #43
+  // bootstrap window merely not having closed yet; asserting both sides of the PUT is what
+  // rules that out.
+  const afterKeyIsSet = await request.get('/api/admin/sources');
+  expect(afterKeyIsSet.status(), await afterKeyIsSet.text()).toBe(200);
+});
+
+/**
+ * Positive control for the test above (CLAUDE.md §4): proves the gate is real -- and that
+ * the two 200s above come from passthrough, not from some other path silently leaving admin
+ * routes open -- by showing the SAME unauthenticated GET is refused once passthrough is off.
+ *
+ * WHY A CONTAINER RESTART VIA `up -d`, NOT `restart`: `docker compose restart` recreates
+ * nothing -- it stops and starts the EXISTING container with the environment it was created
+ * with, so a changed `ARBITARR_LAN_PASSTHROUGH` in the shell would never reach it.
+ * `docker compose up -d` re-resolves compose.yml's `${ARBITARR_LAN_PASSTHROUGH:-}`
+ * substitution against the CURRENT shell environment and recreates the container when the
+ * resolved config differs, which is what makes the toggle observable. The stub-upstream
+ * service is untouched (`up -d` only recreates services whose config changed) and its
+ * `service_healthy` dependency is already satisfied, so this does not re-run its healthcheck
+ * from zero.
+ *
+ * This harness CAN do the toggle: tests/e2e/compose.yml reads the var from the runner shell
+ * with an empty (falls through to "on") default, so setting it in this Node process's
+ * `env` and passing that to `execFile` is sufficient -- no compose.yml v2 profile or a
+ * second compose file was needed. See LanPassthroughOptions.FromEnvironment for why an
+ * empty string (the default when the var is absent from the shell) is treated as "on": only
+ * a recognised false-y token turns it off.
+ *
+ * Split into its own test (rather than folded into the one above) because two container
+ * recreations do not reliably fit inside one 30s playwright.config.ts test timeout on top of
+ * the request round-trips already in that test; each recreation gets its own budget here.
+ * The FOLLOWING test restores passthrough to its default (on) before any later test runs,
+ * so ordering matters and this pair must stay adjacent and in this order.
+ *
+ * Full non-vacuity evidence for the gate itself already lives in
+ * tests/Arbitarr.Api.Tests/AdminApiKeyFilterTrustedNetworkTests.cs and
+ * tests/Arbitarr.Integration.Tests/LanPassthroughTests.cs, which exercise both the on and
+ * off branches directly against the filter/host and are the authoritative mutation-tested
+ * coverage (CLAUDE.md §4). This E2E pair additionally proves the toggle reaches the real
+ * container over the real compose wiring, which those two suites cannot -- they never start
+ * this compose stack.
+ */
+test('with LAN passthrough off, the same unauthenticated request is refused', async ({
+  request,
+  baseURL,
+}) => {
+  await restartAppContainerWithEnv(baseURL!, { ARBITARR_LAN_PASSTHROUGH: 'false' });
+
   const unauthenticated = await request.get('/api/admin/sources');
   expect(unauthenticated.status()).not.toBe(200);
+});
+
+/**
+ * Restores the default (passthrough on) so every later test in this file -- which assumes
+ * the arb-rga.7 golden path's normal, shipped configuration -- runs against it, and so the
+ * off-twin above does not leak its override into the rest of the suite.
+ */
+test('LAN passthrough is restored to its default before the rest of the path continues', async ({
+  request,
+  baseURL,
+}) => {
+  await restartAppContainerWithEnv(baseURL!, {});
+
+  const admitted = await request.get('/api/admin/sources');
+  expect(admitted.status(), await admitted.text()).toBe(200);
 });
 
 test('a source pointing at the stub upstream can be added and tested', async ({ request }) => {
@@ -396,7 +472,42 @@ function createSource(request: APIRequestContext, displayName: string, baseUrl: 
  */
 async function restartAppContainer(baseUrl: string): Promise<void> {
   await execFileAsync('docker', ['compose', '-f', COMPOSE_FILE, 'restart', 'arbitarr']);
+  await waitForHealth(baseUrl);
+}
 
+/**
+ * arb-fvd: recreates the app container with `ARBITARR_LAN_PASSTHROUGH` set from `env`
+ * (merged over `process.env`, so the toggle is the only variable that changes) and waits for
+ * it to serve /health again. An empty `env` object restores the default (unset -> on).
+ *
+ * `docker compose up -d`, not `restart`: `restart` reuses the container as already created
+ * and never re-reads compose.yml's `${ARBITARR_LAN_PASSTHROUGH:-}` substitution, so a changed
+ * shell variable would silently have no effect. `up -d` re-resolves that substitution against
+ * the environment passed to `execFile` and recreates the container because the resolved
+ * config differs -- see compose.yml's comment on the variable. `--wait` gates on
+ * stub-upstream's healthcheck exactly as the initial `docker compose up -d --wait` in the
+ * workflow does; stub-upstream itself is untouched since its config did not change.
+ *
+ * Passing `env` explicitly (rather than mutating `process.env`) avoids leaking the override
+ * into any other `execFile`/`fetch` call this process makes.
+ */
+async function restartAppContainerWithEnv(
+  baseUrl: string,
+  env: Record<string, string>,
+): Promise<void> {
+  await execFileAsync('docker', ['compose', '-f', COMPOSE_FILE, 'up', '-d', '--wait'], {
+    env: { ...process.env, ...env },
+  });
+  await waitForHealth(baseUrl);
+}
+
+/**
+ * Polls /health until it answers or the deadline passes. Shared by both restart helpers so
+ * the 25s budget and its rationale (see restartAppContainer's doc comment: deliberately below
+ * playwright.config.ts's 30s per-test timeout, so a hang is reported by name rather than by
+ * the harness's bare timeout) apply identically to a `restart` and to an `up -d` recreation.
+ */
+async function waitForHealth(baseUrl: string): Promise<void> {
   const deadline = Date.now() + 25_000;
 
   for (;;) {

@@ -91,16 +91,19 @@ public sealed class AuthPasswordChangeSemanticsTests
     public async Task Changing_a_password_rejects_a_new_one_below_the_length_floor()
     {
         // MinPasswordLength is REUSED, never redeclared — one floor, one place. The server's own
-        // words reach the caller so the UI can render them verbatim.
+        // words reach the caller so the UI can render them verbatim. arb-lan-passthrough (ADR 0012)
+        // dropped the floor to 1, so the only value below it is the empty string; a below-floor
+        // value is derived from the constant rather than hard-coded so this test tracks the floor.
         await using var factory = LocalFactory();
         var (owner, _) = await CreateAccountAndSignInAsync(factory);
         using var __ = owner;
 
-        using var response = await ChangePasswordAsync(owner, Password, "short");
+        var belowFloor = new string('x', UserRepository.MinPasswordLength - 1);
+        using var response = await ChangePasswordAsync(owner, Password, belowFloor);
         var body = await response.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains($"at least {UserRepository.MinPasswordLength} characters", body, StringComparison.Ordinal);
+        Assert.Contains($"at least {UserRepository.MinPasswordLength} character", body, StringComparison.Ordinal);
     }
 
     [Fact]
