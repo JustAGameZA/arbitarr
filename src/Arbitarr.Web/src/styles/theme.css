@@ -90,14 +90,17 @@
    * The alpha is 0.12 and that number is load-bearing, not a taste call. On a
    * dark theme a translucent fill LIGHTENS the ground, so every increment of
    * alpha costs contrast. 0.12 is the LARGEST alpha (on a 0.02 step) at which
-   * all three of muted/ok/warn still clear WCAG AA composited over --bg-panel:
+   * all four of muted/ok/warn/danger still clear WCAG AA composited over
+   * --bg-panel:
    *
-   *   --fg-muted 4.54 : 1   --ok 4.80 : 1   --warn 5.21 : 1
+   *   --fg-muted 4.54 : 1   --ok 4.80 : 1   --warn 5.21 : 1   --danger 4.54 : 1
    *
-   * One step up, 0.14, drops --fg-muted to 4.35 and fails; 0.16 drops --ok to
-   * 4.44 as well. Raising this value is therefore a contrast regression, and
-   * AC-CHROME-5 measures exactly that. --danger now clears the same 4.5 : 1
-   * floor as the other three (4.538 : 1 here) -- see arb-4uk.
+   * --danger (4.538 : 1) clears the floor by even less margin than --fg-muted
+   * (4.535 : 1) -- see arb-4uk -- so it is now a co-equal binding constraint
+   * on this alpha, not a bystander. One step up, 0.14, drops --fg-muted to
+   * 4.35 and --danger to 4.38, both failing; 0.16 drops --ok to 4.44 as well.
+   * Raising this value is therefore a contrast regression, and AC-CHROME-5
+   * measures exactly that.
    */
   --badge-fill: rgba(154, 160, 168, 0.12);
   --ok-fill: rgba(92, 184, 92, 0.12);
