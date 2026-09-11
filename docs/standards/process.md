@@ -11,7 +11,7 @@ Backend, from the repo root:
 
 ```bash
 dotnet build                 # expect 0 warnings, 0 errors
-dotnet test -m:1             # sequential
+dotnet test -m:1             # sequential; matches CI, use for measured counts
 ```
 
 The root `Directory.Build.props` enables the documentation-file writer solution-wide, so a
@@ -27,8 +27,9 @@ npm test                     # vitest run
 npm run lint                 # eslint --max-warnings=0
 ```
 
-**The suite is not reliably parallel-safe across assemblies** (shared SQLite and port state). A
-parallel run under-counts *and* invents failures. Measure with `-m:1`, as CI does.
+**Parallel runs are supported** since the test isolation work (#163, arb-rga). CI still runs
+`-m:1`, so that remains the reference for measured counts — use it when you need the number CI
+will print.
 
 **The fast local path is `scripts/test-affected.sh`.** It maps the changed paths to the test
 assemblies that can reach them through the project-reference graph and runs only those, under the

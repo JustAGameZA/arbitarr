@@ -23,7 +23,8 @@ dotnet test
 
 No external services are required for the test suite — upstream responses are captured as redacted fixtures under `docs/fixtures/`.
 
-Run the backend suite sequentially. It is not reliably parallel-safe across assemblies (shared SQLite and port state), and a parallel run both under-counts and invents failures:
+Parallel runs are supported since the test isolation work (#163, arb-rga). CI still runs the
+suite sequentially with `-m:1`, so that's the reference for measured counts:
 
 ```bash
 dotnet test -m:1

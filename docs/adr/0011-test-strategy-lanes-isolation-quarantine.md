@@ -111,3 +111,10 @@ arithmetic on a previous constant.
   and the PR's own run are always comparable); and the `measure-filter` dispatch input plus its
   loud-notice fallback, which is what stops a silent floor comparison across incompatible filters
   from ever landing.
+
+## Status update (2026-09-11)
+
+The isolation work referenced above (#163, arb-rga) has landed: the suite was run 20/20 times in
+parallel on master (cc23d94) with 1521/1521 passing every time (Integration lane 364). The local
+`-m:1` requirement described in this ADR's Consequences section is retired accordingly; CI
+continues to run `-m:1`, which remains the reference for measured counts.
