@@ -94,6 +94,17 @@ flags rather than collapsing to a bare `null` or a best-effort match. When a
 mapping is genuinely ambiguous the correct behaviour is to admit *no* match and
 say why.
 
+**Upstream redirect refusal.** A download answered with any 3xx — the whole
+range, 304 included — is refused rather than followed
+(`UpstreamRedirectRefusedException`), because a redirect on that path points at
+the indexer, which is off-origin by definition and would carry the upstream key
+into a second request. It is recorded as a **deliberately unnamed**
+`SourceFailed` event: naming the source would feed
+`NotificationPolicy.FoldSourceFailure`'s consecutive-failure counter and announce
+a healthy source as down after a few *arr retries, when the real fault is an
+upstream set to redirect mode rather than proxy mode. See
+[ADR 0014](docs/adr/0014-refuse-upstream-download-redirects.md).
+
 ---
 
 ## Probe outcome
@@ -122,11 +133,22 @@ different questions.
 
 **Nor with `OllamaProbeOutcome`** (`src/Arbitarr.Core/Ai/OllamaProbeOutcome.cs`),
 the result of `POST /api/admin/ai/ollama/test`. Same closed-enum discipline and
-three of the same member names, but a **different set**: it has FOUR members, not
-five, because there is deliberately no `AuthenticationFailed` — an AI backend
-carries no key, so that outcome could never be produced. Its `UnexpectedResponse`
-means "something answered but it was not Ollama's `/api/tags`", where the source
-enum's means "not the Torznab caps document".
+three of the same member names, but a **different set**: `Ok`, `Unreachable`,
+`TlsFailure`, `UnexpectedResponse`, `ChatRejected` and `OkNoModelConfigured`.
+There is deliberately no `AuthenticationFailed` — an AI backend carries no key,
+so that outcome could never be produced, and offering it would send an operator
+hunting for a key that does not exist. Its `UnexpectedResponse` means "something
+answered but it was not Ollama's `/api/tags`", where the source enum's means
+"not the Torznab caps document".
+
+The last two arrived with arb-1rr, when a probe that only asked `/api/tags`
+turned out to report a green "Connected successfully" while every classification
+failed. **`ChatRejected`** is the address being right and the model list
+answering, but `/api/chat` refusing the classification request itself — the
+connectivity half healthy and the working half not. **`OkNoModelConfigured`** is
+`/api/tags` answering with no model configured, so the `/api/chat` half was never
+attempted; it is its own outcome rather than folded into `Ok` so the button
+cannot claim more than it tested.
 
 ---
 
@@ -145,7 +167,16 @@ an operator could name a model their instance had never pulled, get a green
 "Connected" from a probe that only asks whether the address is Ollama, and have
 every classification fail open with nothing on screen saying why. The names travel
 in their own field and never inside the probe's wording, which is what keeps
-`OllamaProbeOutcome` closed at four members.
+`OllamaProbeOutcome` a closed enum carrying no free text.
+
+The **excerpt** is the one piece of upstream text admitted to that surface, and
+it travels beside the enum rather than inside it. On a `ChatRejected` outcome it
+is the reason Ollama gave for refusing the request, carried in
+`OllamaProbeResult.ChatError` — because "Ollama rejected the request" without the
+reason is a non-answer. It is bounded at `OllamaRequestException.MaxExcerptLength`
+(200 characters, whitespace collapsed) and scrubbed by `SanitizedErrorDescription`
+before it can reach `/api/status`, so it carries no host, address or credential.
+The probe is its only writer and never assigns a raw body.
 
 **It is not a source, and the distinction is load-bearing rather than
 terminological.** A source is *searched* — it is an indexer, it appears in the
@@ -304,6 +335,27 @@ changes retention.
 **Query snapshot.** A stored result set backing one paginated query
 (`IQuerySnapshotStore`), keyed on the query *excluding* `offset`/`limit` so
 paging through it stays consistent instead of re-querying per page.
+
+**Release lookup.** What resolves the **proxy GUID** in a download link back to
+the source and upstream link it stands for (`IReleaseLookup`), so
+`DownloadProxyEndpoint` can fetch the file without the *arr instance ever
+holding the upstream URL or the key in it.
+
+**Two-tier lookup.** The shape that lookup has since arb-tps:
+`PersistentReleaseLookup` reads `InMemoryReleaseLookup` first and, on a miss, a
+`ReleaseLookupEntry` row in `arbitarr.db`, repopulating memory from a store hit.
+The memory tier is bounded (`MaxEntries`, a 30-minute `EntryTtl`) and those
+bounds used to decide how long a link worked — a restart or a delayed grab
+answered 404 on a link this application had issued. The row's lifetime is
+`release_lookup_ttl` (default 14 days), its `ExpiresAt` is evaluated on every
+read, and the maintenance prune follows that same boundary. See
+[ADR 0015](docs/adr/0015-persist-release-lookup.md).
+
+**Not to be confused with the query snapshot above.** Both are persisted
+search-side caches with an `ExpiresAt`, but they answer different questions: a
+query snapshot keeps one *result set* stable while a caller pages through it; a
+release lookup keeps one *rendered release* resolvable long after the search
+that produced it has been forgotten.
 
 ---
 
