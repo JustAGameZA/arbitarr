@@ -22,6 +22,11 @@
 # that collapsed to a bare namespace, and the zero-tests and empty-classes
 # branches reject a listing that produced nothing.
 #
+# The final section is different in kind: it asserts the SHAPE of the real
+# .github/workflows/build-test.yml (the gate step sources the script and calls
+# the three functions, bare, in order; the backend job sources shard-filter.sh).
+# Those are workflow-text assertions, not planted faults.
+#
 # Run standalone: bash .github/scripts/test-count-gate-controls.sh
 
 set -uo pipefail
@@ -253,19 +258,19 @@ expect_block "the same trx basename twice blocks" "$d" check_trx_set \
 # never happened.
 d="$tmp_root/badtrx_run"
 make_good_fixture "$d"
-printf '<TestRun><ResultSummary/></TestRun>
-'   > "$d/TestResults/trx-O/Demo.Other.Tests.trx"
+printf '<TestRun><ResultSummary/></TestRun>\n' \
+  > "$d/TestResults/trx-O/Demo.Other.Tests.trx"
 out=$(run_gate "$d" enforce_backend_floor "${gate_env[@]}")
-if printf '%s' "$out" | grep -qF "carries no parseable executed= figure"   && printf '%s' "$out" | grep -qF "Demo.Other.Tests.trx"; then
+if printf '%s' "$out" | grep -qF "carries no parseable executed= figure" \
+  && printf '%s' "$out" | grep -qF "Demo.Other.Tests.trx"; then
   if printf '%s' "$out" | grep -qF "is below master's last measured count"; then
-    fail "unparseable trx in the whole-run sum blocks by name"       "reported a floor breach, not the file"
+    fail "unparseable trx in the whole-run sum blocks by name" "reported a floor breach, not the file"
   else
     pass "unparseable trx in the whole-run sum blocks by name"
   fi
 else
   fail "unparseable trx in the whole-run sum blocks by name" "did not name the file as the fault"
-  printf '%s
-' "$out" | sed 's/^/        /'
+  printf '%s\n' "$out" | sed 's/^/        /'
 fi
 
 d="$tmp_root/floor"
@@ -366,6 +371,147 @@ fi
 shard_expect_block "zero discovered tests blocks" \
   "discovered no test classes in" \
   ""
+
+# ---------------------------------------------------------------------------
+# Unset-input BLOCKs (arb-2nx). Each of these unsets exactly one of the
+# variables the gate functions read and requires a named BLOCK naming that
+# variable -- and, since these fire before any other output, that no LATER
+# message (a later assertion, the floor line) also appears, which is what
+# distinguishes "blocked here, before anything else ran" from "blocked, but
+# only after limping partway through."
+# ---------------------------------------------------------------------------
+
+# $1 name, $2 fixture dir, $3 function, $4 unset var, $5 later-message needle
+# that must be ABSENT, rest: env assignments (the ones that remain set).
+expect_block_unset() {
+  local name="$1" dir="$2" fn="$3" unset_var="$4" absent_needle="$5"
+  shift 5
+  local out status
+  out=$( (
+    cd "$dir" || exit 99
+    set -euo pipefail
+    # shellcheck source=/dev/null
+    . "$repo_root/.github/scripts/test-count-gate.sh"
+    unset "$unset_var" || true
+    export "$@"
+    "$fn"
+  ) 2>&1 )
+  status=$?
+  if [ "$status" -eq 0 ]; then
+    fail "$name" "expected a BLOCK, but the gate exited 0"
+    return
+  fi
+  if ! printf '%s' "$out" | grep -qF "BLOCKED: ${fn} requires ${unset_var} to be set"; then
+    fail "$name" "blocked, but did not name ${unset_var}"
+    printf '%s\n' "$out" | sed 's/^/        /'
+    return
+  fi
+  if [ -n "$absent_needle" ] && printf '%s' "$out" | grep -qF "$absent_needle"; then
+    fail "$name" "blocked, but a later message also fired: ${absent_needle}"
+    printf '%s\n' "$out" | sed 's/^/        /'
+    return
+  fi
+  pass "$name"
+}
+
+d="$tmp_root/unset"
+make_good_fixture "$d"
+
+expect_block_unset "check_trx_set blocks on unset TEST_ASSEMBLIES" "$d" check_trx_set \
+  "TEST_ASSEMBLIES" "" \
+  "SHARD_ASSEMBLIES=$FIX_SHARDS" "BACKEND_FLOOR=36" "FLOOR_SOURCE=controls" "GITHUB_ENV=/dev/null"
+
+expect_block_unset "check_trx_set blocks on unset SHARD_ASSEMBLIES" "$d" check_trx_set \
+  "SHARD_ASSEMBLIES" "" \
+  "TEST_ASSEMBLIES=$FIX_ASSEMBLIES" "BACKEND_FLOOR=36" "FLOOR_SOURCE=controls" "GITHUB_ENV=/dev/null"
+
+expect_block_unset "check_shard_records blocks on unset SHARD_ASSEMBLIES" "$d" check_shard_records \
+  "SHARD_ASSEMBLIES" "" \
+  "TEST_ASSEMBLIES=$FIX_ASSEMBLIES" "BACKEND_FLOOR=36" "FLOOR_SOURCE=controls" "GITHUB_ENV=/dev/null"
+
+# The contract the two SHARD_ASSEMBLIES controls above lean on: EMPTY is set,
+# not unset (no assembly is sharded) and must pass -- the ${VAR+x} test in the
+# gate is what tells the two apart. Without this, those two blocks could be
+# satisfied by a gate that rejected the empty value as well.
+expect_pass "check_shard_records passes on an empty (set) SHARD_ASSEMBLIES" "$d" check_shard_records \
+  "TEST_ASSEMBLIES=$FIX_ASSEMBLIES" "SHARD_ASSEMBLIES=" "BACKEND_FLOOR=36" "FLOOR_SOURCE=controls" "GITHUB_ENV=/dev/null"
+
+expect_block_unset "enforce_backend_floor blocks on unset BACKEND_FLOOR" "$d" enforce_backend_floor \
+  "BACKEND_FLOOR" "is below master's last measured count" \
+  "TEST_ASSEMBLIES=$FIX_ASSEMBLIES" "SHARD_ASSEMBLIES=$FIX_SHARDS" "FLOOR_SOURCE=controls" "GITHUB_ENV=/dev/null"
+
+expect_block_unset "enforce_backend_floor blocks on unset FLOOR_SOURCE" "$d" enforce_backend_floor \
+  "FLOOR_SOURCE" "is below master's last measured count" \
+  "TEST_ASSEMBLIES=$FIX_ASSEMBLIES" "SHARD_ASSEMBLIES=$FIX_SHARDS" "BACKEND_FLOOR=36" "GITHUB_ENV=/dev/null"
+
+expect_block_unset "enforce_backend_floor blocks on unset GITHUB_ENV" "$d" enforce_backend_floor \
+  "GITHUB_ENV" "Executed test count:" \
+  "TEST_ASSEMBLIES=$FIX_ASSEMBLIES" "SHARD_ASSEMBLIES=$FIX_SHARDS" "BACKEND_FLOOR=36" "FLOOR_SOURCE=controls"
+
+# shard_filter's TEST_FILTER, via the same dotnet-stub harness as the other
+# shard_filter controls above.
+out=$( (
+  d2="$tmp_root/sf-unset"
+  rm -rf "$d2"
+  mkdir -p "$d2/bin" "$d2/TestResults"
+  printf '#!/usr/bin/env bash\ncat "$0.listing"\n' > "$d2/bin/dotnet"
+  printf '    Demo.Sharded.Tests.PlainTests.RunsIt\n' > "$d2/bin/dotnet.listing"
+  chmod +x "$d2/bin/dotnet"
+  cd "$d2" || exit 99
+  PATH="$d2/bin:$PATH"
+  export PATH
+  set -euo pipefail
+  unset TEST_FILTER || true
+  # shellcheck source=/dev/null
+  . "$repo_root/.github/scripts/shard-filter.sh"
+  shard_filter "Demo.Sharded.Tests.dll" 1 2 "Demo.Sharded.Tests"
+) 2>&1 )
+status=$?
+if [ "$status" -eq 0 ]; then
+  fail "shard_filter blocks on unset TEST_FILTER" "expected a BLOCK, but shard_filter exited 0"
+elif ! printf '%s' "$out" | grep -qF "BLOCKED: shard_filter requires TEST_FILTER to be set"; then
+  fail "shard_filter blocks on unset TEST_FILTER" "did not name TEST_FILTER"
+  printf '%s\n' "$out" | sed 's/^/        /'
+else
+  pass "shard_filter blocks on unset TEST_FILTER"
+fi
+
+# ---------------------------------------------------------------------------
+# Call-site ordering (arb-2nx). The three gate functions are NOT independent
+# (test-count-gate.sh ~236-243: the sum loop relies on check_trx_set and the
+# .listed checks having already run) -- nothing before this asserted that the
+# workflow still invokes them in that order. This reads the real workflow
+# file, not a copy, so a future edit that drops or reorders a call is caught
+# where it actually lives. Each pattern is anchored to a BARE call on its own
+# line (optional indentation only): a commented-out or quoted mention of the
+# name in the step does not count as a call.
+# ---------------------------------------------------------------------------
+
+workflow_file="$repo_root/.github/workflows/build-test.yml"
+gate_step_awk='
+  /Enforce test-count floor/ { in_step = 1 }
+  in_step && /\. \.\/\.github\/scripts\/test-count-gate\.sh/ { sourced = 1; next }
+  sourced && /^[[:space:]]*check_trx_set[[:space:]]*$/ { print "check_trx_set"; next }
+  sourced && /^[[:space:]]*check_shard_records[[:space:]]*$/ { print "check_shard_records"; next }
+  sourced && /^[[:space:]]*enforce_backend_floor[[:space:]]*$/ { print "enforce_backend_floor"; in_step = 0; sourced = 0; next }
+'
+call_order=$(awk "$gate_step_awk" "$workflow_file")
+if [ "$call_order" = "$(printf 'check_trx_set\ncheck_shard_records\nenforce_backend_floor')" ]; then
+  pass "the gate step invokes check_trx_set, check_shard_records, enforce_backend_floor in order"
+else
+  fail "the gate step invokes the three gate functions in order" \
+    "found: $(printf '%s' "$call_order" | tr '\n' ' ')"
+fi
+
+backend_job_sources_shard_filter=$(awk '
+  /\. \.\/\.github\/scripts\/shard-filter\.sh/ { found = 1 }
+  END { print found ? "yes" : "no" }
+' "$workflow_file")
+if [ "$backend_job_sources_shard_filter" = "yes" ]; then
+  pass "the backend job sources shard-filter.sh"
+else
+  fail "the backend job sources shard-filter.sh" "no '. ./.github/scripts/shard-filter.sh' line found"
+fi
 
 echo
 echo "controls: ${pass_count} passed, ${fail_count} failed"
