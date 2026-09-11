@@ -124,6 +124,10 @@ lifetime of the tab (`state/tableDensityStore.ts`) — it is a viewer preference
 setting, and deliberately has no `persist` middleware, matching `adminKeyStore` and the CI guard
 that greps for `localStorage`/`sessionStorage`.
 
+**View-menu display preferences are shell-wide and surfaced once, not duplicated per toolbar.**
+`Compact rows` lives in Activity's View menu (#200), but the effect it toggles applies to all ten
+table surfaces — a second surface's toolbar must not grow its own copy of the same toggle.
+
 ---
 
 ## State and storage

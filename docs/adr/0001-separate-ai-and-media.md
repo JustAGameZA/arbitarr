@@ -11,6 +11,11 @@ from its inputs. `Arbitarr.Ai` asks a local LLM to arbitrate the cases the deter
 cannot settle, and its outcomes are not reproducible in that sense: the same input can yield a
 different verdict, and no assertion can pin the answer without pinning the model.
 
+**2026-09-11 note:** arb-p4r pins temperature 0 and a fixed seed, so given a fixed model the
+decoding is now deterministic — the non-reproducibility premise above is weaker than when this
+ADR was written. The boundary now rests on the Decision and Consequences below (CI needs no
+Ollama; shadow mode), not on non-reproducibility.
+
 The pressure to join them is constant and reasonable-sounding. The arbitration prompt wants the
 numbering candidates. The scorer would like a confidence hint from the model. Each individual
 crossing looks small.

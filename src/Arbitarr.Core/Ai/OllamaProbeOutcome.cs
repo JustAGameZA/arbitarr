@@ -11,7 +11,7 @@ namespace Arbitarr.Core.Ai;
 /// at something that is not Ollama), and an operator who cannot tell them apart learns nothing from
 /// a red button.</para>
 ///
-/// <para><b>Why FOUR here and five for a source.</b> There is deliberately no
+/// <para><b>Why SIX here and five for a source.</b> There is deliberately no
 /// <c>AuthenticationFailed</c> member: Ollama ships with no authentication and Arbitarr sends it no
 /// credential, so a "key rejected" outcome could never be produced and offering it would invite an
 /// operator to go hunting for a key that does not exist. The outcome set describes what can
@@ -59,7 +59,7 @@ public enum OllamaProbeOutcome
     /// <para>Distinct from <see cref="UnexpectedResponse"/> because the fix is different: nothing
     /// is wrong with the address, so sending the operator to check it wastes their time. The reason
     /// lives in <see cref="OllamaProbeResult.ChatError"/>, which is why this outcome — unlike the
-    /// four above — is reported beside a message rather than alone.</para>
+    /// five above — is reported beside a message rather than alone.</para>
     /// </summary>
     ChatRejected,
 

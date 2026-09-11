@@ -109,8 +109,8 @@ Arbitarr never silently guesses. Any code path that degrades (source unreachable
 Every PR must pass two required checks before merge:
 
 - **`Build & test`** — a `prep` job restores and builds the whole solution once
-  (`dotnet build -m:1`, sequential to bound memory use) and hands the build output to three
-  backend matrix groups (`Backend (A|B|C)`), which run the test assemblies under the PR filter
+  (`dotnet build -m:1`, sequential to bound memory use) and hands the build output to four
+  backend matrix groups (`Backend (A1|A2|B|C)`), which run the test assemblies under the PR filter
   `Category!=Timing&Category!=Load&Category!=Quarantine`; a `Frontend` job runs typecheck, vitest
   and lint; a `Guards` job re-runs the secret/topology guard over the whole tree; and the `gate`
   job — the one actually named `Build & test` — sums the groups' counts and ratchets both test
