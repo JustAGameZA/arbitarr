@@ -22,6 +22,11 @@
 # that collapsed to a bare namespace, and the zero-tests and empty-classes
 # branches reject a listing that produced nothing.
 #
+# The final section is different in kind: it asserts the SHAPE of the real
+# .github/workflows/build-test.yml (the gate step sources the script and calls
+# the three functions, bare, in order; the backend job sources shard-filter.sh).
+# Those are workflow-text assertions, not planted faults.
+#
 # Run standalone: bash .github/scripts/test-count-gate-controls.sh
 
 set -uo pipefail
@@ -424,6 +429,13 @@ expect_block_unset "check_shard_records blocks on unset SHARD_ASSEMBLIES" "$d" c
   "SHARD_ASSEMBLIES" "" \
   "TEST_ASSEMBLIES=$FIX_ASSEMBLIES" "BACKEND_FLOOR=36" "FLOOR_SOURCE=controls" "GITHUB_ENV=/dev/null"
 
+# The contract the two SHARD_ASSEMBLIES controls above lean on: EMPTY is set,
+# not unset (no assembly is sharded) and must pass -- the ${VAR+x} test in the
+# gate is what tells the two apart. Without this, those two blocks could be
+# satisfied by a gate that rejected the empty value as well.
+expect_pass "check_shard_records passes on an empty (set) SHARD_ASSEMBLIES" "$d" check_shard_records \
+  "TEST_ASSEMBLIES=$FIX_ASSEMBLIES" "SHARD_ASSEMBLIES=" "BACKEND_FLOOR=36" "FLOOR_SOURCE=controls" "GITHUB_ENV=/dev/null"
+
 expect_block_unset "enforce_backend_floor blocks on unset BACKEND_FLOOR" "$d" enforce_backend_floor \
   "BACKEND_FLOOR" "is below master's last measured count" \
   "TEST_ASSEMBLIES=$FIX_ASSEMBLIES" "SHARD_ASSEMBLIES=$FIX_SHARDS" "FLOOR_SOURCE=controls" "GITHUB_ENV=/dev/null"
@@ -470,16 +482,18 @@ fi
 # .listed checks having already run) -- nothing before this asserted that the
 # workflow still invokes them in that order. This reads the real workflow
 # file, not a copy, so a future edit that drops or reorders a call is caught
-# where it actually lives.
+# where it actually lives. Each pattern is anchored to a BARE call on its own
+# line (optional indentation only): a commented-out or quoted mention of the
+# name in the step does not count as a call.
 # ---------------------------------------------------------------------------
 
 workflow_file="$repo_root/.github/workflows/build-test.yml"
 gate_step_awk='
   /Enforce test-count floor/ { in_step = 1 }
   in_step && /\. \.\/\.github\/scripts\/test-count-gate\.sh/ { sourced = 1; next }
-  sourced && /check_trx_set/ { print "check_trx_set"; next }
-  sourced && /check_shard_records/ { print "check_shard_records"; next }
-  sourced && /enforce_backend_floor/ { print "enforce_backend_floor"; in_step = 0; sourced = 0; next }
+  sourced && /^[[:space:]]*check_trx_set[[:space:]]*$/ { print "check_trx_set"; next }
+  sourced && /^[[:space:]]*check_shard_records[[:space:]]*$/ { print "check_shard_records"; next }
+  sourced && /^[[:space:]]*enforce_backend_floor[[:space:]]*$/ { print "enforce_backend_floor"; in_step = 0; sourced = 0; next }
 '
 call_order=$(awk "$gate_step_awk" "$workflow_file")
 if [ "$call_order" = "$(printf 'check_trx_set\ncheck_shard_records\nenforce_backend_floor')" ]; then
