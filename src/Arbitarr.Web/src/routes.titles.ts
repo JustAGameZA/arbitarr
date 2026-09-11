@@ -26,6 +26,17 @@ export const APP_NAME = 'Arbitarr';
 export const NOT_FOUND_TITLE = `Page not found — ${APP_NAME}`;
 
 /**
+ * Title for the sign-in screen (arb-7m7).
+ *
+ * `/login` is deliberately absent from ROUTES above -- see routes.tsx's note on
+ * why it and `/setup` sit outside the guarded shell -- so it cannot pick up a
+ * title through `resolveDocumentTitle`. Kept here rather than as a literal in
+ * Login.tsx so the title mechanism stays in one file, the same reason every
+ * other route's title lives in this table rather than at its call site.
+ */
+export const LOGIN_TITLE = `Sign in — ${APP_NAME}`;
+
+/**
  * Resolves the document title for a given pathname.
  *
  * Every known route -- including the index route ("/"), which is the

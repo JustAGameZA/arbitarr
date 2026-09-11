@@ -1,8 +1,9 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 
 import { errorMessage } from '../QueryState';
 import { useLoginMutation, useSessionQuery } from '../../state/sessionQueries';
+import { LOGIN_TITLE } from '../../routes.titles';
 import styles from '../surface.module.css';
 import local from './Login.module.css';
 
@@ -37,6 +38,16 @@ export default function Login() {
   // Login.test.tsx. This mirrors `createFailure` in Settings/ApiKeys/ApiKeys.tsx,
   // which #93 introduced for the same reason.
   const [failure, setFailure] = useState<string | null>(null);
+
+  // arb-7m7: /login sits outside AppShell (see the class comment above), so it
+  // does not get AppShell's per-route document-title effect for free. Without
+  // this, a signed-out deep link to a guarded route -- e.g. /system -- left the
+  // tab reading the PREVIOUS route's title on the login screen, because nothing
+  // ever set it to this route's own. Set unconditionally, before the early
+  // returns below, so it still fires on the redirect-away renders.
+  useEffect(() => {
+    document.title = LOGIN_TITLE;
+  }, []);
 
   /**
    * Drop the settled login from the MutationCache.

@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 
 import { renderApp } from '../../test/renderApp';
 import { useAdminKeyStore } from '../../state/adminKeyStore';
-import { ROUTES } from '../../routes.titles';
+import { mockApi, signedIn, signedOut } from '../../test/mockApi';
+import { ROUTES, LOGIN_TITLE } from '../../routes.titles';
 
 /**
  * Distinct from pageTitle.test.tsx (AC2b, which asserts the in-page <h1>).
@@ -15,28 +16,44 @@ import { ROUTES } from '../../routes.titles';
 describe('document title per route', () => {
   beforeEach(() => {
     useAdminKeyStore.setState({ key: null, serverKeyUnset: false });
+    // arb-7m7: the shell (and its title effect) only mounts once
+    // RequireSession has a definite answer.
+    mockApi({ ...signedIn() });
   });
 
-  it.each(ROUTES)('%s sets document.title', (path, label) => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it.each(ROUTES)('%s sets document.title', async (path, label) => {
     renderApp(path);
 
-    expect(document.title).toBe(`${label} — Arbitarr`);
+    await waitFor(() => expect(document.title).toBe(`${label} — Arbitarr`));
   });
 
-  it('sets "Page not found — Arbitarr" for an unknown path', () => {
+  it('sets "Page not found — Arbitarr" for an unknown path', async () => {
     renderApp('/does-not-exist');
 
-    expect(document.title).toBe('Page not found — Arbitarr');
+    await waitFor(() => expect(document.title).toBe('Page not found — Arbitarr'));
   });
 
   it('updates the title on navigation without a full reload', async () => {
     const user = userEvent.setup();
     renderApp('/');
 
-    expect(document.title).toBe('Dashboard — Arbitarr');
+    await waitFor(() => expect(document.title).toBe('Dashboard — Arbitarr'));
 
-    await user.click(screen.getByRole('link', { name: /search/i }));
+    await user.click(await screen.findByRole('link', { name: /search/i }));
 
-    expect(document.title).toBe('Search — Arbitarr');
+    await waitFor(() => expect(document.title).toBe('Search — Arbitarr'));
+  });
+
+  it('sets the login title, not the requested route\'s, for a signed-out deep link (arb-7m7)', async () => {
+    mockApi({ ...signedOut() });
+
+    renderApp('/system');
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Sign in to Arbitarr' })).toBeInTheDocument();
+    expect(document.title).toBe(LOGIN_TITLE);
   });
 });

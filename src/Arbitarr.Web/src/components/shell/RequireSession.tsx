@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useRef } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 
 import { useSessionQuery } from '../../state/sessionQueries';
@@ -23,15 +24,23 @@ interface RequireSessionProps {
  *    amount of care inside this component would fix it -- the route table is
  *    what prevents it.
  *
- * 2. It redirects only on a DEFINITE "no". While the session query is
- *    loading, and if it ERRORS, the children render. A guard that redirected on
- *    error would strand the operator at a login page during any backend hiccup,
- *    and -- worse -- would do it on a login page whose own submit needs the same
- *    backend. Failing open here is safe because it is not the security boundary:
- *    every gated route is enforced server-side by `AdminApiKeyFilter`, so the
- *    worst case of rendering the shell without a session is surfaces that show
- *    their own 401 states. This component is a convenience, and treating it as
- *    the gate would be the actual mistake.
+ * 2. It redirects only on a DEFINITE "no". If the session query ERRORS, the
+ *    children render. A guard that redirected on error would strand the
+ *    operator at a login page during any backend hiccup, and -- worse -- would
+ *    do it on a login page whose own submit needs the same backend. Failing
+ *    open on error is safe because it is not the security boundary: every
+ *    gated route is enforced server-side by `AdminApiKeyFilter`, so the worst
+ *    case of rendering the shell without a session is surfaces that show their
+ *    own 401 states. This component is a convenience, and treating it as the
+ *    gate would be the actual mistake.
+ *
+ *    WHILE loading, though, nothing renders (arb-7m7). Rendering `children`
+ *    during that window used to mount the protected route -- and its queries,
+ *    including admin-gated ones -- before the very first answer came back, so
+ *    a signed-out deep link to /system fired GET /api/admin/observability and
+ *    got a 401 in the console a frame before the redirect happened. Unlike an
+ *    error, "loading" always resolves to a real answer, so there is no
+ *    stranding-on-hiccup case to protect here.
  *
  * 3. The two destinations are mutually exclusive and chosen from ONE answer:
  *    `setupRequired` and `authenticated` come from a single response, so the
@@ -41,10 +50,35 @@ export function RequireSession({ children }: RequireSessionProps) {
   const { data, isLoading, isError } = useSessionQuery();
   const location = useLocation();
 
-  // Property 2: no redirect without a definite answer. `data` is undefined while
-  // loading and on error, and both of those render the children.
-  if (isLoading || isError || data === undefined) {
+  // Latches once the guard has failed open on an error, and clears again the
+  // moment a real answer (`data`) arrives. WITHOUT the latch, mounting
+  // `children` (e.g. AppShell's TopBar, which also calls useSessionQuery) adds
+  // a second observer to the same errored query; react-query's default
+  // refetch-on-mount then re-fetches it, which flips `isLoading` back to true
+  // for the window of that refetch. That would hide `children` again, tearing
+  // TopBar back down -- removing the observer that triggered the refetch --
+  // whereupon the settled error reappears and mounts it again: an infinite
+  // mount/unmount loop, not merely a flicker. Cleared on `data` so a session
+  // that recovers from the hiccup still gets a real authenticated/redirect
+  // decision rather than staying latched open forever.
+  const failedOpenOnce = useRef(false);
+  if (isError) {
+    failedOpenOnce.current = true;
+  } else if (data !== undefined) {
+    failedOpenOnce.current = false;
+  }
+
+  // Property 2 (error half): no redirect without a definite answer. `data` is
+  // undefined on error too, and that renders the children (fail open).
+  if (isError || (failedOpenOnce.current && data === undefined) || (data === undefined && !isLoading)) {
     return <>{children}</>;
+  }
+
+  // Property 2 (loading half, arb-7m7): render nothing until the first answer
+  // arrives, so the protected element -- and its queries -- never mount on
+  // the strength of an as-yet-unknown session.
+  if (isLoading || data === undefined) {
+    return null;
   }
 
   if (data.authenticated) {

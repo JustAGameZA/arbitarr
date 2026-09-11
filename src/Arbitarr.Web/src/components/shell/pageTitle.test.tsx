@@ -1,8 +1,9 @@
 import { screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { renderApp } from '../../test/renderApp';
 import { useAdminKeyStore } from '../../state/adminKeyStore';
+import { mockApi, signedIn } from '../../test/mockApi';
 import { ROUTES } from '../../routes.titles';
 
 /**
@@ -15,20 +16,26 @@ import { ROUTES } from '../../routes.titles';
 describe('page title (AC2b)', () => {
   beforeEach(() => {
     useAdminKeyStore.setState({ key: null, serverKeyUnset: false });
+    // arb-7m7: the shell only mounts once RequireSession has a definite answer.
+    mockApi({ ...signedIn() });
   });
 
-  it.each(ROUTES)('%s has exactly one h1 reading %s', (path, title) => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it.each(ROUTES)('%s has exactly one h1 reading %s', async (path, title) => {
     renderApp(path);
 
-    const headings = screen.getAllByRole('heading', { level: 1 });
+    const headings = await screen.findAllByRole('heading', { level: 1 });
     expect(headings).toHaveLength(1);
     expect(headings[0]).toHaveTextContent(title);
   });
 
-  it('places the title inside the content pane, not the top bar', () => {
+  it('places the title inside the content pane, not the top bar', async () => {
     renderApp('/');
 
-    const heading = screen.getByRole('heading', { level: 1 });
+    const heading = await screen.findByRole('heading', { level: 1 });
     expect(screen.getByRole('main')).toContainElement(heading);
     expect(screen.getByRole('banner')).not.toContainElement(heading);
   });

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NAV_ENTRIES } from './components/shell/SidebarNav';
 import { renderApp, renderAppWithBrowserHistory } from './test/renderApp';
 import { useAdminKeyStore } from './state/adminKeyStore';
-import { mockApi, signedIn } from './test/mockApi';
+import { mockApi, signedIn, signedOut } from './test/mockApi';
 
 describe('routing', () => {
   beforeEach(() => {
@@ -44,7 +44,7 @@ describe('routing', () => {
     // the assertions below would pass without the router having navigated.
     renderAppWithBrowserHistory('/');
 
-    await user.click(screen.getByRole('link', { name: 'Search' }));
+    await user.click(await screen.findByRole('link', { name: 'Search' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Search' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: 'System' }));
@@ -97,5 +97,44 @@ describe('routing', () => {
       expect(screen.queryByRole('heading', { level: 1, name: 'Page not found' })).toBeNull();
       unmount();
     }
+  });
+});
+
+describe('the auth guard runs before a protected route mounts (arb-7m7)', () => {
+  beforeEach(() => {
+    useAdminKeyStore.setState({ key: null, serverKeyUnset: false });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // Positive control: the SAME harness, signed in, DOES call the admin route.
+  // Without this half, a broken mock or a route that stopped firing entirely
+  // would let the negative assertion below pass for the wrong reason.
+  it('does call /api/admin/observability for a signed-in operator', async () => {
+    const api = mockApi({
+      ...signedIn(),
+      '/api/system/build': { body: {} },
+      '/api/health/staleness': { body: {} },
+      '/api/admin/observability': { body: {} },
+    });
+
+    renderApp('/system');
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'System' })).toBeInTheDocument();
+    expect(api.callsTo('/api/admin/')).not.toHaveLength(0);
+  });
+
+  it('renders the login form and makes no /api/admin/* request for a signed-out deep link', async () => {
+    const api = mockApi({ ...signedOut() });
+
+    renderApp('/system');
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Sign in to Arbitarr' })).toBeInTheDocument();
+    // The bug: RequireSession used to render the protected element (and let its
+    // queries fire, including the admin-gated one) during the loading window
+    // before the first /api/auth/session answer came back.
+    expect(api.callsTo('/api/admin/')).toHaveLength(0);
   });
 });
