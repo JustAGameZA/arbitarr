@@ -26,6 +26,32 @@ unvetted text surface to a file operators carry around widens the blast radius f
 benefit, and logs are not configuration. Exporting the log store is a support-bundle feature and a
 different artefact with different handling — not an extra entry here.
 
+### `Arbitarr:ReleaseGuidSecret` is test support, not an operator setting
+
+**The proxy-guid HMAC secret can be overridden in memory by the configuration key
+`Arbitarr:ReleaseGuidSecret`, and that key exists for test hosts only.** `ReleaseGuid`'s secret is a
+mutable process-global, so with several hosts alive in one test process every host build rewrote it
+and could change the secret out from under a neighbour's in-flight request. Letting the integration
+test factory pin one value per config directory makes a rebuild a no-op on the global instead of a
+rewrite. Program.cs (search for `Arbitarr:ReleaseGuidSecret`) holds the reading and the validation;
+this is the policy, not a copy of the code.
+
+**It is honoured from the whole configuration chain — including the `Arbitarr__ReleaseGuidSecret`
+environment variable — so "not for production" is intent, not a mechanism.** Nothing in the shipped
+appsettings or the container image sets it, and nothing should. What *is* mechanised is the shape:
+a value that is set must be valid base64 decoding to at least 32 bytes, or the host refuses to start
+with a named `InvalidOperationException`. Without that floor a one-byte value was accepted as an
+HMAC-SHA256 key and every proxy link became guessable, silently. The error message deliberately
+carries no key material.
+
+**A backup taken while the override is set archives the persisted file, not the secret actually in
+use.** `ReleaseGuidSecretFile.LoadOrCreate` still runs unconditionally — the on-disk invariant "a
+running instance has a secret file" is what `BackupService` depends on — but the running host is
+keyed by the override. Restoring such an archive onto an instance without the same override
+therefore yields a different secret, and every link issued before the restore resolves to nothing:
+downloads 404 with no error. That asymmetry is the concrete reason the key is unsupported for
+operators rather than merely discouraged.
+
 ### Backup, restore, and the staging directory
 
 **Every backup and restore location is derived from the one injected config directory.**
