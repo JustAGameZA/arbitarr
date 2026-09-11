@@ -23,13 +23,26 @@ namespace Arbitarr.Api.Dashboard;
 /// <param name="Reason">Why it happened, or null when the summary is the whole answer (AC2).</param>
 /// <param name="SourceDisplayName">The source involved, if any. Never a credential (plan §9).</param>
 /// <param name="Detail">Free-form kind-specific detail, or null.</param>
+/// <param name="RepeatCount">
+/// How many times this identical event occurred, counting the first (arb-itw). 1 on an ordinary
+/// row. Repeats are folded onto one row at WRITE time — see <c>EventCoalescing</c> for why there
+/// rather than here — so this count is a stored fact the surface reports, not something the reader
+/// recomputes by grouping a page it happens to be holding.
+/// </param>
+/// <param name="LastRepeatedAt">
+/// When it most recently repeated, or null while it has occurred only once. Carried with its offset
+/// on the same AC9 footing as <paramref name="OccurredAt"/>, and paired with it: together they say
+/// "started at X, still happening at Y", which one timestamp cannot.
+/// </param>
 public sealed record ActivityEntryResponse(
     DateTimeOffset OccurredAt,
     string Kind,
     string Summary,
     string? Reason,
     string? SourceDisplayName,
-    string? Detail);
+    string? Detail,
+    int RepeatCount,
+    DateTimeOffset? LastRepeatedAt);
 
 /// <summary>
 /// One page of activity (#55 step 3).
@@ -110,7 +123,9 @@ public static class ActivityEndpoint
                 e.Summary,
                 e.Reason,
                 e.SourceDisplayName,
-                e.Detail))
+                e.Detail,
+                e.RepeatCount,
+                e.LastRepeatedAt))
             .ToList();
 
         return Results.Ok(new ActivityPageResponse(entries, page.NextCursor));

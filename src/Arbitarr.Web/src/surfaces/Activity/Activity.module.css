@@ -25,3 +25,18 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+/*
+ * The "×N" repeat badge (arb-itw) sits inline after the summary text, so it needs the gap
+ * the Kind column's badge gets from its own cell. Composition only — the badge's colour,
+ * padding and radius all come from surface.module.css's .badge, which is why nothing here
+ * restates them and no colour appears (AC3).
+ *
+ * `white-space: nowrap` keeps "×71" from wrapping between the multiplication sign and the
+ * count when a long summary pushes the cell narrow; a lone "×" on its own line reads as a
+ * close button rather than a count.
+ */
+.repeat {
+  margin-left: 8px;
+  white-space: nowrap;
+}

@@ -167,4 +167,48 @@ public sealed class ActivityEndpointTests : IClassFixture<ArbitarrWebApplication
                 || occurredAt.LastIndexOf('-') > occurredAt.IndexOf('T'),
             $"Timestamp '{occurredAt}' carries no timezone offset (AC9).");
     }
+
+    /// <summary>
+    /// arb-itw: the repeat count and last-repeat instant reach the wire. The surface renders its
+    /// "×N" badge from these two fields, so a projection that dropped them would leave the badge
+    /// permanently absent while every backend test still passed — the count would be stored
+    /// correctly and simply never served.
+    ///
+    /// The folded and unfolded shapes are asserted together on purpose. Checking only the folded
+    /// row would pass against a projection that hard-coded a count; checking only the single row
+    /// would pass against one that hard-coded 1. The pair pins that the value is read from the row.
+    /// </summary>
+    [Fact]
+    public async Task Serves_the_repeat_count_and_last_repeat_for_a_folded_row()
+    {
+        const string Repeated = "activity-repeat-folded";
+        const string Single = "activity-repeat-single";
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var repository = scope.ServiceProvider.GetRequiredService<EventRepository>();
+
+            // Two identical writes inside the coalescing window fold onto one row; a third,
+            // different, one stays separate and is the unfolded control.
+            await repository.AddAsync(
+                EventKind.SourceFailed, Repeated, "seeded by a test", null, null, CancellationToken.None);
+            await repository.AddAsync(
+                EventKind.SourceFailed, Repeated, "seeded by a test", null, null, CancellationToken.None);
+            await repository.AddAsync(
+                EventKind.SourceFailed, Single, "seeded by a test", null, null, CancellationToken.None);
+        }
+
+        using var client = _factory.CreateClient();
+        var page = await client.GetFromJsonAsync<ActivityPageResponse>(Route);
+
+        Assert.NotNull(page);
+
+        var folded = Assert.Single(page!.Events, e => e.Summary == Repeated);
+        Assert.Equal(2, folded.RepeatCount);
+        Assert.NotNull(folded.LastRepeatedAt);
+
+        var single = Assert.Single(page.Events, e => e.Summary == Single);
+        Assert.Equal(1, single.RepeatCount);
+        Assert.Null(single.LastRepeatedAt);
+    }
 }

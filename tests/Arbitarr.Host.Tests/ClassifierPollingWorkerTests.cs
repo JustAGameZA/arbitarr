@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using Arbitarr.Ai;
 using Arbitarr.Api.Rendering;
 using Arbitarr.Api.Search;
+using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Filtering;
 using Arbitarr.Core.Releases;
 using Xunit;
@@ -223,6 +224,133 @@ public sealed class ClassifierPollingWorkerTests
         Assert.Equal(2, harness.Client.Calls);
     }
 
+    // ---- arb-itw: the cycle records what it DID ------------------------------------------------
+    //
+    // RefreshWorker's rule, applied verbatim: record what the cycle DID, never merely that it
+    // ticked. The bead was written believing this worker recorded nothing at all, which was
+    // correct — RefreshWorker already emitted WorkerCycle, this one did not.
+    //
+    // COUNTS ONLY. No title, query, source host or key may reach the event: EventEntry carries no
+    // credential by construction, and the Activity surface serving these rows is un-gated
+    // (RouteClassification.PublicRead), so a release title leaking here would be publicly
+    // readable. The last test below is the guard on exactly that.
+
+    [Fact]
+    public async Task RunCycle_WithCandidates_RecordsOneWorkerCycleEventCarryingTheCounts()
+    {
+        var harness = new Harness(normalizationEnabled: false);
+        harness.Lookup.Record(Release(NoisyTitle, "g1"));
+        harness.Lookup.Record(new RenderedRelease("NZBHydra2", Release(NoisyTitle, "g1").Candidate));
+
+        await harness.Worker.RunCycleAsync();
+
+        var recorded = Assert.Single(harness.Sink.Events);
+        Assert.Equal(RecordedEventKind.WorkerCycle, recorded.Kind);
+        Assert.Contains("2", recorded.Summary);
+    }
+
+    /// <summary>
+    /// A cycle with nothing to do records NOTHING. This is the half of RefreshWorker's rule that
+    /// actually costs something to get wrong: the worker polls on a timer, so an event per tick
+    /// would write a row every poll interval forever, drown every real event on the Activity feed
+    /// and evict genuine history through the retention window — the very flood arb-itw's
+    /// coalescing exists to stop, manufactured by the surface meant to report it.
+    /// </summary>
+    [Fact]
+    public async Task RunCycle_EmptyLookup_RecordsNothing()
+    {
+        var harness = new Harness(normalizationEnabled: false);
+
+        await harness.Worker.RunCycleAsync();
+
+        Assert.Empty(harness.Sink.Events);
+    }
+
+    /// <summary>
+    /// A cycle where every candidate was already cached did no work either, so it records nothing.
+    /// Distinct from the empty-lookup case above: here the worker DID enumerate candidates and
+    /// found them all cached, which an implementation keyed on "were there candidates?" rather
+    /// than "did anything get classified?" would wrongly report as a cycle worth an event.
+    /// </summary>
+    [Fact]
+    public async Task RunCycle_EverythingAlreadyCached_RecordsNothing()
+    {
+        var harness = new Harness(normalizationEnabled: false);
+        harness.Lookup.Record(Release(NoisyTitle, "g1"));
+        harness.Cache.Seed(KeyFor(NoisyTitle, "g1"), new CachedVerdict(Verdict.Accept, 0.9));
+
+        await harness.Worker.RunCycleAsync();
+
+        Assert.Empty(harness.Sink.Events);
+    }
+
+    /// <summary>
+    /// A cycle where the model failed still records, and says so. The classifier fails OPEN — it
+    /// caches nothing and the search keeps serving — so without this event a total model outage is
+    /// invisible on the Activity surface: no rows, no errors, indistinguishable from an idle
+    /// system. Reporting "classified nothing, 1 of 1 attempts failed" is the whole point.
+    /// </summary>
+    [Fact]
+    public async Task RunCycle_ClassifierFailsOpen_RecordsTheFailureCount()
+    {
+        var harness = new Harness(normalizationEnabled: false, clientThrows: true);
+        harness.Lookup.Record(Release(NoisyTitle, "g1"));
+
+        await harness.Worker.RunCycleAsync();
+
+        var recorded = Assert.Single(harness.Sink.Events);
+        Assert.Equal(RecordedEventKind.WorkerCycle, recorded.Kind);
+        Assert.Contains("failed", recorded.Summary, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("1", recorded.Summary);
+    }
+
+    /// <summary>
+    /// A worker constructed without a sink still classifies. Recording is a diagnostic, never a
+    /// precondition for the work: a missing registration must not stop releases being classified.
+    /// </summary>
+    [Fact]
+    public async Task RunCycle_WithoutAnEventSink_StillClassifies()
+    {
+        var harness = new Harness(normalizationEnabled: false, withSink: false);
+        harness.Lookup.Record(Release(NoisyTitle, "g1"));
+
+        await harness.Worker.RunCycleAsync();
+
+        Assert.Equal(1, harness.Client.Calls);
+        Assert.NotNull(harness.Cache.TryGet(KeyFor(NoisyTitle, "g1")));
+    }
+
+    /// <summary>
+    /// NO RELEASE IDENTITY REACHES THE EVENT — not the title, not the guid, not the source name.
+    /// These rows are served un-gated by GET /api/activity, so anything recorded here is public.
+    ///
+    /// The title used is deliberately distinctive and the assertion sweeps EVERY field of the
+    /// event rather than only the summary, because a "counts only" implementation is most likely
+    /// to slip identity into Reason or Detail while leaving the summary clean.
+    /// </summary>
+    [Fact]
+    public async Task RunCycle_RecordsNoReleaseIdentity()
+    {
+        const string secretish = "Some.Very.Distinctive.Release.Name.2024";
+        var harness = new Harness(normalizationEnabled: true);
+        harness.Lookup.Record(Release(secretish, "guid-abc-123"));
+
+        await harness.Worker.RunCycleAsync();
+
+        var recorded = Assert.Single(harness.Sink.Events);
+
+        // Positive control: the assertions below are only meaningful if the title was actually in
+        // play this cycle. It was — the classifier saw it — so a "does not contain" that passes
+        // here is passing because the worker withheld it, not because it never existed.
+        Assert.Equal(1, harness.Client.Calls);
+
+        var everyField = string.Join(
+            "\n", recorded.Summary, recorded.Reason, recorded.SourceDisplayName, recorded.Detail);
+        Assert.DoesNotContain(secretish, everyField, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("guid-abc-123", everyField, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(SourceName, everyField, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string KeyFor(string title, string guid, string sourceName = SourceName) =>
         VerdictCacheKey.Compute(Release(title, guid).Candidate, sourceName, Identity.ModelName, Identity.ModelDigest, Identity.PromptVersion);
 
@@ -239,7 +367,11 @@ public sealed class ClassifierPollingWorkerTests
 
     private sealed class Harness
     {
-        public Harness(bool normalizationEnabled, bool clientThrows = false, TimeSpan? pollInterval = null)
+        public Harness(
+            bool normalizationEnabled,
+            bool clientThrows = false,
+            TimeSpan? pollInterval = null,
+            bool withSink = true)
         {
             Client = new CountingOllamaClient(clientThrows);
             var classifierWorker = new ClassifierWorker(new ReleaseClassifier(Client), Cache, Identity);
@@ -255,14 +387,46 @@ public sealed class ClassifierPollingWorkerTests
                     NormalizationReads++;
                     return Task.FromResult(normalizationEnabled);
                 },
-                TimeProvider.System);
+                TimeProvider.System,
+                titleNormalizer: null,
+                logger: null,
+                eventSink: withSink ? Sink : null);
         }
 
         public InMemoryReleaseLookup Lookup { get; } = new();
         public InMemoryVerdictCache Cache { get; } = new();
         public CountingOllamaClient Client { get; }
+        public RecordingEventSink Sink { get; } = new();
         public ClassifierPollingWorker Worker { get; }
         public int NormalizationReads { get; private set; }
+    }
+
+    /// <summary>
+    /// Captures what the worker recorded, whole, so a test can assert on EVERY field rather than
+    /// only the summary — which is what the no-identity sweep above needs.
+    /// </summary>
+    private sealed class RecordingEventSink : IEventSink
+    {
+        private readonly ConcurrentQueue<RecordedEvent> _events = new();
+
+        public IReadOnlyList<RecordedEvent> Events => _events.ToList();
+
+        public ValueTask RecordAsync(
+            RecordedEventKind kind,
+            string summary,
+            string? reason = null,
+            string? sourceDisplayName = null,
+            string? detail = null,
+            CancellationToken cancellationToken = default,
+            bool? shadowMode = null)
+        {
+            _events.Enqueue(new RecordedEvent(kind, summary, reason, sourceDisplayName, detail, shadowMode));
+            return ValueTask.CompletedTask;
+        }
+
+        // RecordBatchAsync is left to the interface's default, which fans out to RecordAsync
+        // above: the worker records one event per cycle and never batches, so overriding it here
+        // would add an untested path that no test drives.
     }
 
     private sealed class CountingOllamaClient : IOllamaClient

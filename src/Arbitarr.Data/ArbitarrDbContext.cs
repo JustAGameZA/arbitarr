@@ -275,6 +275,12 @@ public sealed class ArbitarrDbContext : DbContext
             // truncating it, on AC24's reject-never-clamp footing — silently storing a shortened
             // version of an operator's own words is a worse answer than refusing them.
             entity.Property(e => e.ReviewNote).HasMaxLength(1024);
+            // arb-itw: the default is declared on the MODEL, not only in the entity's initialiser,
+            // so the generated migration backfills existing rows with 1 rather than the 0 the
+            // scaffolder emits for an int. Those rows each represent one occurrence; 0 would make
+            // all of existing history read as having happened zero times, and the Activity badge
+            // (shown when the count exceeds 1) would be off by one on every row thereafter.
+            entity.Property(e => e.RepeatCount).HasDefaultValue(1);
         });
 
         modelBuilder.Entity<Source>(entity =>

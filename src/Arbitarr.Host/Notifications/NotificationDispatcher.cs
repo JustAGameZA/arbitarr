@@ -200,8 +200,13 @@ public sealed class NotificationDispatcher
     /// </summary>
     private static NotificationObservation? Observe(EventEntry row) => row.Kind switch
     {
+        // RepeatCount is carried through: since arb-itw a single stored row can stand for N
+        // identical failures, and the consecutive-failure threshold counts FAILURES, not rows.
+        // Dropping it here would mean a source failing in a tight retry loop — the exact case
+        // coalescing folds onto one row — never reaching the threshold and never being reported
+        // as down, which is the notification silently ceasing to work.
         EventKind.SourceFailed => new NotificationObservation(
-            ObservedEventKind.SourceFailure, row.SourceDisplayName, row.OccurredAt),
+            ObservedEventKind.SourceFailure, row.SourceDisplayName, row.OccurredAt, row.RepeatCount),
 
         // A snapshot refresh or a completed worker cycle is the recovery signal: the store has no
         // "source recovered" row and needs none, because a source producing a successful cycle is,

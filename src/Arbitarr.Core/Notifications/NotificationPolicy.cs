@@ -11,10 +11,21 @@ namespace Arbitarr.Core.Notifications;
 /// <param name="Kind">Which of the observed conditions this row represents.</param>
 /// <param name="SourceDisplayName">The source involved, or null.</param>
 /// <param name="OccurredAt">When it happened.</param>
+/// <param name="Occurrences">
+/// How many times this observation actually happened, defaulting to 1 (arb-itw).
+///
+/// This exists because the event store folds repeated identical rows: since coalescing, ONE
+/// SourceFailed row can stand for N failures, and a policy that counted rows would see a source
+/// fail three times in a row as a single failure and never reach its threshold — silently turning
+/// off the "source is down" notification for exactly the repeated-failure case it exists to catch.
+/// The count travels with the observation rather than the policy reading it off a row, because the
+/// policy deliberately knows nothing about the store's schema.
+/// </param>
 public readonly record struct NotificationObservation(
     ObservedEventKind Kind,
     string? SourceDisplayName,
-    DateTimeOffset OccurredAt);
+    DateTimeOffset OccurredAt,
+    int Occurrences = 1);
 
 /// <summary>
 /// The event kinds the notifier actually interprets, which is a strict subset of what the store
@@ -176,12 +187,21 @@ public sealed class NotificationPolicy
             return;
         }
 
-        var count = failing.TryGetValue(source, out var existing) ? existing : 0;
-        count++;
+        var previous = failing.TryGetValue(source, out var existing) ? existing : 0;
+
+        // Advances by the number of failures this row REPRESENTS, not by one. A coalesced row
+        // stands for Occurrences failures (arb-itw), and counting it once would leave a source
+        // that failed repeatedly below the threshold forever.
+        var count = previous + Math.Max(1, observation.Occurrences);
         failing[source] = count;
 
-        // Strictly equal, not >=: this is the edge into the failed state and fires exactly once.
-        if (count != _settings.ConsecutiveFailureThreshold)
+        // The edge INTO the failed state, and it still fires exactly once — but expressed as a
+        // crossing rather than equality. A coalesced row can step the count from below the
+        // threshold to past it in one go (1 -> 4 against a threshold of 3), which `count ==
+        // threshold` would skip entirely; requiring the previous value to have been below it is
+        // what keeps the N+1th failure from re-notifying.
+        if (previous >= _settings.ConsecutiveFailureThreshold
+            || count < _settings.ConsecutiveFailureThreshold)
         {
             return;
         }

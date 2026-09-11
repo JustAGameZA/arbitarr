@@ -17,6 +17,8 @@ const page: ActivityPageResponse = {
       reason: "Query 'the.expanse.s01' (tvsearch), 8ms",
       sourceDisplayName: null,
       detail: null,
+      repeatCount: 1,
+      lastRepeatedAt: null,
     },
     {
       occurredAt: '2026-09-07T12:29:00+00:00',
@@ -25,6 +27,8 @@ const page: ActivityPageResponse = {
       reason: 'The upstream request timed out.',
       sourceDisplayName: 'NZBHydra2',
       detail: null,
+      repeatCount: 1,
+      lastRepeatedAt: null,
     },
   ],
   nextCursor: null,
@@ -67,6 +71,74 @@ describe('Activity', () => {
 
     expect(await screen.findByText("Query 'the.expanse.s01' (tvsearch), 8ms")).toBeInTheDocument();
     expect(screen.getByText('The upstream request timed out.')).toBeInTheDocument();
+  });
+
+  /**
+   * arb-itw: repeats are folded onto one row by the SERVER, and the row reports the
+   * count it was given. The badge appears only above 1 — rendering "×1" on every row
+   * would add a column of noise to say nothing, and it is the departure from 1 that
+   * is the operational signal.
+   *
+   * Asserted PER ROW rather than "the badge is somewhere on the page", because the
+   * implementation most likely to be wrong is one that renders the badge for every
+   * row once any row repeats.
+   */
+  it('badges a repeated row with its count and leaves single occurrences unbadged', async () => {
+    mockApi({
+      '/api/activity': {
+        body: {
+          events: [
+            {
+              ...page.events[1],
+              summary: 'Source failed to respond',
+              repeatCount: 71,
+              lastRepeatedAt: '2026-09-07T12:35:00+00:00',
+            },
+            { ...page.events[0], summary: 'Search served from cache (14 results)' },
+          ],
+          nextCursor: null,
+        },
+      },
+    });
+    renderSurface(<ActivityPage />);
+
+    const repeated = (await screen.findByText('Source failed to respond')).closest('tr');
+    expect(repeated).not.toBeNull();
+    expect(within(repeated!).getByText('×71')).toBeInTheDocument();
+
+    // The single-occurrence row in the SAME table carries no badge, which is what makes
+    // the assertion above about this row rather than about the page.
+    const single = screen.getByText('Search served from cache (14 results)').closest('tr');
+    expect(single).not.toBeNull();
+    expect(within(single!).queryByText(/^×/)).toBeNull();
+  });
+
+  /**
+   * The tooltip pairs the count with the last repeat. "71 times" alone cannot
+   * distinguish a storm that has stopped from one still going, which is the
+   * question an operator is actually asking when they see a large count.
+   */
+  it('explains the repeat count and when it last happened in a tooltip', async () => {
+    mockApi({
+      '/api/activity': {
+        body: {
+          events: [
+            {
+              ...page.events[1],
+              summary: 'Source failed to respond',
+              repeatCount: 71,
+              lastRepeatedAt: '2026-09-07T12:35:00+00:00',
+            },
+          ],
+          nextCursor: null,
+        },
+      },
+    });
+    renderSurface(<ActivityPage />);
+
+    const badge = await screen.findByText('×71');
+    expect(badge).toHaveAttribute('title', expect.stringContaining('repeated 71 times'));
+    expect(badge).toHaveAttribute('title', expect.stringContaining('last at'));
   });
 
   /**

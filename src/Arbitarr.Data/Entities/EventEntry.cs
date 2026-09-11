@@ -20,8 +20,37 @@ public sealed class EventEntry
     /// <summary>Which kind of event this row is. See <see cref="EventKind"/> for the full accounting.</summary>
     public EventKind Kind { get; set; }
 
-    /// <summary>When the event occurred (write time, not read time).</summary>
+    /// <summary>
+    /// When the event occurred (write time, not read time).
+    ///
+    /// On a coalesced row this stays the FIRST occurrence and is never moved forward; the most
+    /// recent repeat is <see cref="LastRepeatedAt"/>. Keeping it fixed is what lets "this started
+    /// happening at X and is still happening at Y" be read off one row, and it keeps the row where
+    /// the reader first saw it instead of having it jump up the Activity feed on every repeat.
+    /// </summary>
     public DateTimeOffset OccurredAt { get; set; }
+
+    /// <summary>
+    /// How many times this identical event has occurred, counting the first (arb-itw / audit F-008).
+    /// 1 on an ordinary row; a row is only ever incremented in place by
+    /// <c>EventRepository.AddAsync</c> when an identical event arrives inside the coalescing window.
+    ///
+    /// The flood this exists for: Sonarr retrying a refused download produced 71 identical
+    /// <see cref="EventKind.SourceFailed"/> rows in six minutes, which buried every other event on
+    /// the Activity surface. Counting repeats on one row states the same fact — including that it
+    /// happened 71 times, which a de-duplicating store would have thrown away.
+    /// </summary>
+    public int RepeatCount { get; set; } = 1;
+
+    /// <summary>
+    /// When this event most recently repeated, or null while it has only happened once.
+    ///
+    /// Null rather than equal to <see cref="OccurredAt"/> on a single-occurrence row, deliberately:
+    /// the two carry different claims ("has not repeated" vs "last repeated at the same instant it
+    /// first occurred"), and a reader deciding whether to show a repeat badge should not have to
+    /// compare two timestamps to learn which it is looking at.
+    /// </summary>
+    public DateTimeOffset? LastRepeatedAt { get; set; }
 
     /// <summary>
     /// One-line statement of what happened (plan AC2: "and why" lives in <see cref="Reason"/>, not
