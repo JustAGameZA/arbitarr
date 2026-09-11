@@ -592,6 +592,16 @@ public sealed class EventRepository
     /// expressed as a SQL WHERE clause, matching <c>MaintenanceJob</c>'s existing precedent for this
     /// codebase's SQLite/EF Core combination (DateTimeOffset comparisons do not reliably translate
     /// server-side) — see e.g. <c>Maintenance.MaintenanceJob.PruneSuppressionAuditLogAsync</c>.
+    ///
+    /// AGE IS MEASURED FROM THE ROW'S LAST ACTIVITY, NOT ITS FIRST. A coalesced row keeps its
+    /// original <see cref="EventEntry.OccurredAt"/> and advances only
+    /// <see cref="EventEntry.LastRepeatedAt"/> (see <c>TryCoalesceAsync</c>), so ageing off
+    /// OccurredAt would delete a fault that is STILL REPEATING the moment its first sighting left
+    /// the window — taking the accumulated <see cref="EventEntry.RepeatCount"/> with it, which is
+    /// precisely the evidence a sustained storm produces. Retention is about how long a fact stays
+    /// interesting, and a fact that recurred a minute ago is interesting regardless of when it
+    /// started. This mirrors the coalescing window, which is measured from last activity for the
+    /// same reason.
     /// </summary>
     public async Task<IReadOnlyDictionary<EventKind, int>> PruneAsync(CancellationToken cancellationToken)
     {
@@ -600,7 +610,7 @@ public sealed class EventRepository
         var candidates = await _dbContext.Events.ToListAsync(cancellationToken);
 
         var prunable = candidates
-            .Where(e => now - e.OccurredAt > EventRetentionPolicy.For(e.Kind))
+            .Where(e => now - (e.LastRepeatedAt ?? e.OccurredAt) > EventRetentionPolicy.For(e.Kind))
             .ToList();
 
         var byKind = prunable
