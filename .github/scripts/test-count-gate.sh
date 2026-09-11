@@ -11,12 +11,41 @@
 # set `set -euo pipefail` themselves; this file declares functions only and runs
 # nothing at source time.
 #
+# The workflow calls ONE name, run_test_count_gate, which fixes the order below
+# in code. The three functions stay public because the controls exercise each
+# one directly with its own planted fault.
+#
 # The three functions run in this order and are NOT independent: check_trx_set
 # proves the trx basename set is exactly right, check_shard_records proves each
 # sharded assembly's shards partitioned one list and executed its sum exactly,
 # and enforce_backend_floor ratchets the whole run. Splitting them into
 # functions is a packaging change only -- each body is the workflow text
 # verbatim.
+
+# THE ENTRY POINT. The workflow's gate step calls this ONE name, so the order
+# the three checks run in is a property of this file rather than of the step
+# that happens to call them (arb-1da, from #187's architecture review).
+#
+# The order is the load-bearing part, not the packaging: check_shard_records'
+# shard-sum loop is only safe because check_trx_set has already proven the trx
+# basename set is exactly right (see the comment at its sum loop, ~line 259),
+# and enforce_backend_floor runs last because it is the weakest of the three --
+# it must not be what reports a fault the other two can name precisely. While
+# that order lived in the workflow, keeping it right depended on a text-shape
+# control noticing a YAML edit. Here a reorder is a code change to a file the
+# controls execute directly.
+#
+# No explicit status plumbing: the three functions `exit` rather than `return`
+# on a fault, so the first one to block ends the shell and the rest never run.
+# That is the behaviour the workflow step already had under `set -euo pipefail`
+# and it is preserved deliberately -- do NOT "improve" these into `return`
+# without also giving this function `|| return $?` on each call, or a failing
+# first check would let the later two run against a tree it just rejected.
+run_test_count_gate() {
+  check_trx_set
+  check_shard_records
+  enforce_backend_floor
+}
 
 # Asserts the set of trx basenames under ./TestResults/*/ is exactly the set
 # TEST_ASSEMBLIES and SHARD_ASSEMBLIES imply, each appearing exactly once.
