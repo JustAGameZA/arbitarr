@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import ActivityPage from './Activity';
 import { useAdminKeyStore } from '../../state/adminKeyStore';
+import { useTableDensityStore } from '../../state/tableDensityStore';
 import { mockApi } from '../../test/mockApi';
 import { renderSurface } from '../../test/renderSurface';
 import type { ActivityPageResponse } from '../../api/types';
@@ -46,6 +47,9 @@ async function chooseFilter(trigger: string, item: string) {
 describe('Activity', () => {
   beforeEach(() => {
     useAdminKeyStore.setState({ key: null, serverKeyUnset: false });
+    // The density store is a module singleton, so a test that leaves it
+    // compact would otherwise decide the next test's outcome by file order.
+    useTableDensityStore.setState({ density: 'expanded' });
   });
 
   afterEach(() => {
@@ -251,5 +255,70 @@ describe('Activity', () => {
 
     const table = await screen.findByRole('table');
     expect(within(table).getByText('NZBHydra2')).toBeInTheDocument();
+  });
+
+  /**
+   * arb-br4. The view menu is addressed by the bare noun "View", unlike the
+   * radio triggers above which carry their active value — see
+   * design-system/README.md on why a checkbox menu is the exception to that
+   * rule. The item is a menuitemcheckbox, so its state travels in aria-checked
+   * rather than in the trigger text.
+   */
+  it('offers compact rows as an unchecked checkbox in the view menu', async () => {
+    mockApi({ '/api/activity': { body: page } });
+    renderSurface(<ActivityPage />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'View' }));
+
+    const item = screen.getByRole('menuitemcheckbox', { name: 'Compact rows' });
+    expect(item).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('checks the item and switches the store to compact when selected', async () => {
+    mockApi({ '/api/activity': { body: page } });
+    renderSurface(<ActivityPage />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'View' }));
+    await userEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Compact rows' }));
+
+    // The store is the thing AppShell reads to write data-density, so it is
+    // asserted alongside the control's own state: a tick that did not reach
+    // the store would change nothing on the page.
+    expect(useTableDensityStore.getState().density).toBe('compact');
+
+    await userEvent.click(screen.getByRole('button', { name: 'View' }));
+    expect(screen.getByRole('menuitemcheckbox', { name: 'Compact rows' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+  });
+
+  it('unchecks and returns the store to expanded when selected again', async () => {
+    mockApi({ '/api/activity': { body: page } });
+    renderSurface(<ActivityPage />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'View' }));
+    await userEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Compact rows' }));
+    await userEvent.click(screen.getByRole('button', { name: 'View' }));
+    await userEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Compact rows' }));
+
+    expect(useTableDensityStore.getState().density).toBe('expanded');
+  });
+
+  /**
+   * The density control must not disturb the filters. Density is a display
+   * preference; if toggling it re-queried or reset the kind/window radios the
+   * operator would lose their place in the list to change how it is drawn.
+   */
+  it('leaves the kind and time filters alone when density changes', async () => {
+    mockApi({ '/api/activity': { body: page } });
+    renderSurface(<ActivityPage />);
+
+    await chooseFilter('Kind: Everything', 'Decisions');
+    await userEvent.click(screen.getByRole('button', { name: 'View' }));
+    await userEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Compact rows' }));
+
+    expect(screen.getByRole('button', { name: 'Kind: Decisions' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Time: Last 24 hours' })).toBeInTheDocument();
   });
 });

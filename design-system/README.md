@@ -98,14 +98,25 @@ asserts the component contributes none.
 panel; items are `PageToolbarMenuItem` with `role="menuitemradio"` for a single-select group and
 `role="menuitemcheckbox"` for an independent toggle, `aria-checked` tracking the active one.
 
-**The trigger label states the active selection** — `Kind: Decisions`, not `Kind`. A `<select>`
-shows its current value without being opened; a button that reads only `Kind` loses that, and the
-operator can no longer see what the list in front of them is filtered by.
+**A radio menu's trigger label states the active selection** — `Kind: Decisions`, not `Kind`. A
+`<select>` shows its current value without being opened; a button that reads only `Kind` loses that,
+and the operator can no longer see what the list in front of them is filtered by. A menu of
+independent checkboxes is the exception: each item carries its own `aria-checked`, so its trigger is
+a plain noun (`View`) that stays stable as options are added to it.
 
 **Do not add a control the API cannot serve.** Activity has no sort menu because the server returns
 most-recent-first and exposes no sort parameter.
 
-Density belongs in the view menu.
+**Density belongs in the view menu.** It holds display preferences — how the page is drawn, never
+what it queries — as `role="menuitemcheckbox"` items rather than a radio group, because each is an
+independent on/off and they do not compete for one slot. `Compact rows` is the first: it drops the
+vertical padding of every `.table` and changes nothing else (row height only — not font size, not
+borders, not the zebra). It is applied shell-wide from ONE rule in `surface.module.css`, keyed off a
+`data-density` attribute that `AppShell` writes on the content wrapper, so all ten table surfaces
+follow it without a per-surface opt-in. The choice lives in an in-memory Zustand store for the
+lifetime of the tab (`state/tableDensityStore.ts`) — it is a viewer preference, never a server
+setting, and deliberately has no `persist` middleware, matching `adminKeyStore` and the CI guard
+that greps for `localStorage`/`sessionStorage`.
 
 ---
 

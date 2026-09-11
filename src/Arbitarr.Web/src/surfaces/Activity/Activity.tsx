@@ -8,6 +8,7 @@ import {
   PageToolbarSection,
 } from '../../components/shell/toolbar';
 import { QueryState } from '../QueryState';
+import { useTableDensityStore } from '../../state/tableDensityStore';
 import type { ActivityEntry, ActivityKind } from '../../api/types';
 import styles from '../surface.module.css';
 import local from './Activity.module.css';
@@ -156,6 +157,8 @@ export default function ActivityPage() {
   const [cursors, setCursors] = useState<Array<number | null>>([null]);
   const cursor = cursors[cursors.length - 1];
   const activity = useActivityQuery(filters, cursor);
+  const density = useTableDensityStore((state) => state.density);
+  const toggleDensity = useTableDensityStore((state) => state.toggleDensity);
 
   // Changing a filter invalidates the whole cursor stack: a cursor is a position
   // within one filtered result set and is meaningless in another.
@@ -204,6 +207,25 @@ export default function ActivityPage() {
                 onSelect={() => applyFilters({ window: value })}
               />
             ))}
+          </PageToolbarMenu>
+
+          {/*
+            The view menu's trigger label is the bare word "View", not the
+            active selection. The "state the active selection" rule applies to
+            the RADIO menus above, where the trigger is the only place the
+            chosen kind or window is visible while the panel is closed. This
+            menu holds an independent checkbox whose own aria-checked already
+            carries its state, so folding it into the trigger would say the
+            same thing twice -- and would stop scaling as soon as a second view
+            option joins it (design-system/README.md, "Page toolbar").
+          */}
+          <PageToolbarMenu label="View" align="end">
+            <PageToolbarMenuItem
+              kind="checkbox"
+              label="Compact rows"
+              checked={density === 'compact'}
+              onSelect={toggleDensity}
+            />
           </PageToolbarMenu>
         </PageToolbarSection>
       </PageToolbar>
