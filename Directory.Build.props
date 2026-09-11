@@ -1,0 +1,20 @@
+<Project>
+  <!--
+    arb-egr: emits an XML doc file for every project so malformed XML on load-bearing
+    comments (CS1570/CS1571/CS1572/CS1580/CS1584/CS1587/CS1589/CS1590/CS1592, etc.) becomes a
+    real build warning and fails the 0-warnings gate in CLAUDE.md section 5, instead of being
+    silently generated-but-unchecked as it was before this file existed.
+
+    CS1591 and CS1573 are suppressed by choice, not by omission: a missing summary or an
+    incomplete <param> list is "missing documentation", the same class CS1591 already covers,
+    not malformed XML, so the gate does not need to see it. CS1574 and CS0419 (an unresolved or
+    ambiguous <see>/<paramref> cref) are suppressed TEMPORARILY, pending the 98 existing hits
+    being fixed under follow-up bead arb-ul4; once that lands, drop CS1574 and CS0419
+    from this list so those become real warnings too. Everything else in the CS157x/CS158x
+    range is a real warning today and fails the build.
+  -->
+  <PropertyGroup>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591;CS1573;CS1574;CS0419</NoWarn>
+  </PropertyGroup>
+</Project>

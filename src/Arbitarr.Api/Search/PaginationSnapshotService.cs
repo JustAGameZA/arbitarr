@@ -50,7 +50,7 @@ public sealed class PaginationSnapshotService
     /// <summary>
     /// Default query-snapshot TTL (300s), matching <c>SettingKey.QuerySnapshotTtl</c>'s documented
     /// default. Used as the fallback inside <see cref="StaticSnapshotTtlSource"/> when a caller
-    /// (tests, or a future non-Host caller) does not supply an explicit <paramref name="ttl"/> nor
+    /// (tests, or a future non-Host caller) does not supply an explicit <c>ttl</c> nor
     /// an <see cref="ISnapshotTtlSource"/> — see the two-ctor split below (M7-8c/AC24).
     /// </summary>
     public static readonly TimeSpan DefaultTtl = TimeSpan.FromSeconds(300);

@@ -14,6 +14,11 @@ dotnet build                 # expect 0 warnings, 0 errors
 dotnet test -m:1             # sequential
 ```
 
+The root `Directory.Build.props` enables the documentation-file writer solution-wide, so a
+malformed XML doc comment (CS157x/CS158x) is a real warning under the "0 warnings" rule above;
+CS1591 (missing summary) and CS1573 (incomplete `<param>` list) are suppressed there as the same
+"missing documentation" class CS1591 already covers, not malformed XML.
+
 Frontend, from `src/Arbitarr.Web`:
 
 ```bash

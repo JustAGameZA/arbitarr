@@ -160,7 +160,7 @@ public sealed class FilterStageTests : IDisposable
     /// <summary>
     /// M4-3 acceptance (A3): a client mapped (via <see cref="ApiKeyProfileEntry"/>) to a non-default
     /// profile gets that profile's rules applied — a release that only the mapped profile's deny
-    /// rule matches is withheld when <paramref name="clientName"/> mapped to it, but survives (no
+    /// rule matches is withheld when <c>clientName</c> mapped to it, but survives (no
     /// matching rule) under the default profile used when no/unmapped client name is supplied.
     /// </summary>
     [Fact]
