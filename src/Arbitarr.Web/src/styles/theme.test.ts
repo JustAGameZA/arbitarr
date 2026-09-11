@@ -102,6 +102,39 @@ describe('AC-CHROME-3: text on the app ground stays legible', () => {
   });
 });
 
+/** Parses `rgba(r, g, b, a)` into its four components, refusing anything else. */
+function parseRgba(value: string): { r: number; g: number; b: number; a: number } {
+  const match = /^rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)$/.exec(value);
+  if (!match) {
+    throw new Error(`Expected an rgba(r, g, b, a) colour, got: ${value}`);
+  }
+  return {
+    r: Number(match[1]),
+    g: Number(match[2]),
+    b: Number(match[3]),
+    a: Number(match[4]),
+  };
+}
+
+/**
+ * Composites a translucent rgba() over an opaque #rrggbb ground and returns the
+ * resulting #rrggbb, so the existing contrastRatio() above can be reused rather
+ * than a second contrast implementation growing beside it.
+ */
+function compositeOver(rgba: string, groundHex: string): string {
+  const { r, g, b, a } = parseRgba(rgba);
+  const match = /^#([0-9a-f]{6})$/i.exec(groundHex);
+  if (!match) {
+    throw new Error(`Expected a #rrggbb ground, got: ${groundHex}`);
+  }
+  const int = Number.parseInt(match[1], 16);
+  const ground = [(int >> 16) & 0xff, (int >> 8) & 0xff, int & 0xff];
+  const blended = [r, g, b].map((channel, i) =>
+    Math.round(channel * a + ground[i] * (1 - a)),
+  );
+  return `#${blended.map((c) => c.toString(16).padStart(2, '0')).join('')}`;
+}
+
 describe('AC-CHROME-4: layout constants come from tokens', () => {
   it.each([
     ['--sidebar-width', '210px'],
@@ -109,5 +142,47 @@ describe('AC-CHROME-4: layout constants come from tokens', () => {
     ['--content-max-width', '1440px'],
   ])('%s is %s', (token, expected) => {
     expect(readToken(token)).toBe(expected);
+  });
+});
+
+describe('AC-CHROME-5: status badges are filled at low opacity and stay legible', () => {
+  // Badges are filled rather than outlined (arb-0tu). The fill has to stay
+  // translucent enough that the panel ground reads through, and the semantic
+  // text colour has to keep clearing WCAG AA once composited over that fill.
+  const FILLS: ReadonlyArray<readonly [string, string]> = [
+    ['--badge-fill', '--fg-muted'],
+    ['--ok-fill', '--ok'],
+    ['--warn-fill', '--warn'],
+    ['--danger-fill', '--danger'],
+  ];
+
+  it.each(FILLS)('%s is a translucent fill below 0.25 alpha', (fill) => {
+    expect(parseRgba(readToken(fill)).a).toBeLessThan(0.25);
+  });
+
+  // Everything except danger clears the AA body-text floor composited over the
+  // panel. A fill LIGHTENS a dark ground, so these ratios fall as alpha rises:
+  // at alpha 0.16 muted and ok drop to 4.20 and 4.44. theme.css's 0.12 is what
+  // keeps them here, which is why this assertion is what pins that value.
+  it.each(FILLS.filter(([fill]) => fill !== '--danger-fill'))(
+    'text on %s clears WCAG AA body text (4.5:1)',
+    (fill, text) => {
+      const filled = compositeOver(readToken(fill), readToken('--bg-panel'));
+      expect(contrastRatio(readToken(text), filled)).toBeGreaterThan(4.5);
+    },
+  );
+
+  // --danger is the documented exception, held to 3:1 — the WCAG AA floor for
+  // large/bold text (badges are 11px at weight 600). This is NOT a threshold
+  // chosen to make a failing test pass: --danger (#d9534f) is already 3.68:1
+  // on --bg-panel with NO fill at all, so it misses AA body text on master
+  // today, before this change existed, and no fill alpha can lift it over 4.5
+  // because a fill only ever reduces contrast here. Lightening --danger is
+  // tracked as arb-4uk, which must move the token and its AC-CHROME-1 literal
+  // in one commit; when that lands, fold this case back into the 4.5
+  // assertion above and delete this block.
+  it('text on --danger-fill clears the large/bold-text floor (3:1) — see arb-4uk', () => {
+    const filled = compositeOver(readToken('--danger-fill'), readToken('--bg-panel'));
+    expect(contrastRatio(readToken('--danger'), filled)).toBeGreaterThan(3);
   });
 });

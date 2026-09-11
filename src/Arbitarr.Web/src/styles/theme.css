@@ -60,6 +60,33 @@
   --warn: #e0a030;
   --danger: #d9534f;
 
+  /* --- Status fills (arb-0tu) --------------------------------------------- */
+  /*
+   * Status badges are filled at low opacity behind the semantic border and
+   * text colour, rather than outlined. The fill must be translucent so the
+   * panel ground it sits on still reads through, and AC3 forbids rgba()
+   * literals in *.module.css -- so, exactly as with --overlay-backdrop above,
+   * the alpha is pinned here instead of inlined at the call site. Each fill is
+   * its matching status colour at the same low alpha; --badge-fill is the
+   * neutral default for an unqualified .badge.
+   *
+   * The alpha is 0.12 and that number is load-bearing, not a taste call. On a
+   * dark theme a translucent fill LIGHTENS the ground, so every increment of
+   * alpha costs contrast. 0.12 is the LARGEST alpha (on a 0.02 step) at which
+   * all three of muted/ok/warn still clear WCAG AA composited over --bg-panel:
+   *
+   *   --fg-muted 4.54 : 1   --ok 4.80 : 1   --warn 5.21 : 1
+   *
+   * One step up, 0.14, drops --fg-muted to 4.35 and fails; 0.16 drops --ok to
+   * 4.44 as well. Raising this value is therefore a contrast regression, and
+   * AC-CHROME-5 measures exactly that. --danger is the documented exception
+   * (3.26 : 1 here, against a 3 : 1 large/bold floor) -- see arb-4uk.
+   */
+  --badge-fill: rgba(154, 160, 168, 0.12);
+  --ok-fill: rgba(92, 184, 92, 0.12);
+  --warn-fill: rgba(224, 160, 48, 0.12);
+  --danger-fill: rgba(217, 83, 79, 0.12);
+
   /* --- Layout constants -------------------------------------------------- */
   /*
    * Pinned so the chrome assertions can test against a number rather than
