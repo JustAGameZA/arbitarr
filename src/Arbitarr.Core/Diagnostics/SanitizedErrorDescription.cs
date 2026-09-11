@@ -63,6 +63,31 @@ public static partial class SanitizedErrorDescription
     /// </summary>
     public const string Replacement = CredentialPatterns.Replacement;
 
+    /// <summary>
+    /// arb-hihr: substituted for the WHOLE description when scrubbing could not complete within
+    /// <see cref="CredentialPatterns.MatchTimeoutMilliseconds"/>. See the remarks on
+    /// <see cref="ScrubForPublication"/> for why a fixed placeholder — never the unscrubbed excerpt,
+    /// and never a partially-scrubbed one — is the only safe degrade on this unauthenticated path.
+    ///
+    /// <para><c>public</c>, like <see cref="Replacement"/> above, because call sites and tests
+    /// reference it by name and there is no <c>InternalsVisibleTo</c> from this project to the test
+    /// assembly (see <c>CredentialPatternsCrossSinkTests</c>'s remarks on why one was not added).</para>
+    /// </summary>
+    public const string TimeoutPlaceholder = "<redaction timed out>";
+
+    /// <summary>
+    /// arb-hihr: test-only seam forcing <c>RegexMatchTimeoutException</c> deterministically.
+    /// The nine local arms cannot have their compiled <c>matchTimeoutMilliseconds</c> swapped at
+    /// runtime — it is a compile-time <c>GeneratedRegexAttribute</c> argument — so a test cannot
+    /// otherwise force a timeout without relying on an input that happens to exceed 250ms on the
+    /// machine running the test. <c>false</c> (the production default) means scrub normally.
+    ///
+    /// <para><c>public</c> for the same reason as <see cref="TimeoutPlaceholder"/>: no
+    /// <c>InternalsVisibleTo</c> reaches the test assembly. Test-only surface kept as narrow as
+    /// possible — a single boolean, reset in a <c>finally</c> by every test that sets it.</para>
+    /// </summary>
+    public static bool ThrowTimeoutForTesting;
+
     /// <summary>Describes <paramref name="ex"/> without echoing its message text.</summary>
     public static string Describe(Exception ex) => ex switch
     {
@@ -107,12 +132,47 @@ public static partial class SanitizedErrorDescription
     /// or path; redacting the credential first would leave the surrounding address behind, and
     /// removing the address first takes the credential with it. Bare host:port and dotted-name
     /// forms run after, to catch what was never part of a URL.</para>
+    ///
+    /// <para><b>arb-hihr: a <c>RegexMatchTimeoutException</c> anywhere in this pipeline
+    /// degrades to <see cref="TimeoutPlaceholder"/> for the WHOLE description, never a
+    /// partially-scrubbed string and never the unscrubbed <paramref name="excerpt"/>.</b> A partial
+    /// result is unsafe here specifically because of this method's own ordering guarantee above: if
+    /// (say) <see cref="HostWithPort"/> is the arm that times out, everything BEFORE it in the
+    /// pipeline is scrubbed but <see cref="IpAddress"/>, <see cref="DottedHostName"/> and the
+    /// credential arms never ran, so a host or credential shaped exactly for one of the later arms
+    /// would publish untouched — worse than the ordinary "arm never even attempted" case this file
+    /// already accepts for other reasons. Failing loud instead (letting the exception propagate) was
+    /// rejected too: <c>Describe</c> is called from <c>SourceCircuitBreaker.DescribeSanitized</c> and
+    /// <c>RefreshWorker</c>, neither of which catches this exception type, so an uncaught timeout
+    /// would surface as an unhandled exception in a breaker/refresh path — turning a scrubbing edge
+    /// case into an availability incident. A fixed placeholder costs the operator one specific
+    /// diagnostic string on the rare pathological input; an unhandled exception costs the whole
+    /// refresh or breaker cycle. Nothing is logged from Core for this — logging remains the
+    /// caller's/handler's responsibility, per this type's existing contract that Core never writes to
+    /// the logger itself.</para>
     /// </summary>
     internal static string ScrubForPublication(string? excerpt)
     {
         if (string.IsNullOrWhiteSpace(excerpt))
         {
             return string.Empty;
+        }
+
+        try
+        {
+            return ScrubForPublicationCore(excerpt);
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return TimeoutPlaceholder;
+        }
+    }
+
+    private static string ScrubForPublicationCore(string excerpt)
+    {
+        if (ThrowTimeoutForTesting)
+        {
+            throw new RegexMatchTimeoutException("arb-hihr test seam: forced timeout.");
         }
 
         var text = excerpt;
@@ -170,7 +230,8 @@ public static partial class SanitizedErrorDescription
     /// </summary>
     [GeneratedRegex(
         @"\b[a-z][a-z0-9+.-]*://\S+",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        matchTimeoutMilliseconds: CredentialPatterns.MatchTimeoutMilliseconds)]
     private static partial Regex Url();
 
     /// <summary>
@@ -180,7 +241,8 @@ public static partial class SanitizedErrorDescription
     /// </summary>
     [GeneratedRegex(
         @"\bhttps?%3A%2F%2F\S+",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        matchTimeoutMilliseconds: CredentialPatterns.MatchTimeoutMilliseconds)]
     private static partial Regex PercentEncodedUrl();
 
     /// <summary>
@@ -200,7 +262,8 @@ public static partial class SanitizedErrorDescription
     /// </summary>
     [GeneratedRegex(
         @"\bhttps?%253A%252F%252F\S+",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        matchTimeoutMilliseconds: CredentialPatterns.MatchTimeoutMilliseconds)]
     private static partial Regex DoubleEncodedUrl();
 
     /// <summary>
@@ -217,7 +280,8 @@ public static partial class SanitizedErrorDescription
     /// </summary>
     [GeneratedRegex(
         @"\\\\[a-z0-9_-]+(?:\\[^\s\\]+)*",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        matchTimeoutMilliseconds: CredentialPatterns.MatchTimeoutMilliseconds)]
     private static partial Regex UncPath();
 
     /// <summary>
@@ -252,7 +316,8 @@ public static partial class SanitizedErrorDescription
         @"\[[0-9a-f:.]+(?:%[a-z0-9._-]+)?\](?::\d{1,5})?" +
         @"|\b(?:[0-9a-f]{1,4}:){1,7}:(?:[0-9a-f]{1,4}(?::[0-9a-f]{1,4})*)?(?:%[a-z0-9._-]+)?(?::\d{1,5})?\d*" +
         @"|\b(?:[0-9a-f]{1,4}:){2,7}[0-9a-f]{1,4}(?:%[a-z0-9._-]+)?(?::\d{1,5})?\d*",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        matchTimeoutMilliseconds: CredentialPatterns.MatchTimeoutMilliseconds)]
     private static partial Regex IpV6Address();
 
     /// <summary>
@@ -298,19 +363,21 @@ public static partial class SanitizedErrorDescription
     /// error. <c>HostWithPort</c> catches the host when a port is present; this makes the portless
     /// form work too.</para>
     ///
-    /// <para><b>The <c>(?!&lt;)</c> after the protocol keeps the arm IDEMPOTENT, and it is the whole
-    /// reason that lookahead is there.</b> Without it, a second pass over already-scrubbed
-    /// <c>dial tcp &lt;redacted&gt;</c> finds the optional skip followed by <c>&lt;redacted&gt;</c>,
-    /// which the value class cannot match; the engine then BACKTRACKS, discards the skip, and takes
-    /// "tcp" as the value — re-introducing the very mis-fire this change removes, on the second pass
-    /// instead of the first. The remark above on the replacement token not being re-capturable holds
-    /// only because no arm can reach PAST it; an optional group that may be discarded is exactly how
-    /// an arm reaches past it. <c>Describe</c> scrubs a body that was already scrubbed at
-    /// construction, so the second pass is the normal path here, not a hypothetical.</para>
+    /// <para><b>The <c>(?!(?:tcp|udp)[46]?\b)</c> after the protocol keeps the arm IDEMPOTENT, and it
+    /// is the whole reason that lookahead is there.</b> Without it, a second pass over
+    /// already-scrubbed <c>dial tcp &lt;redacted&gt;</c> finds the optional skip followed by
+    /// <c>&lt;redacted&gt;</c>, which the value class cannot match; the engine then BACKTRACKS,
+    /// discards the skip, and takes "tcp" as the value — re-introducing the very mis-fire this change
+    /// removes, on the second pass instead of the first. The remark above on the replacement token
+    /// not being re-capturable holds only because no arm can reach PAST it; an optional group that
+    /// may be discarded is exactly how an arm reaches past it. <c>Describe</c> scrubs a body that was
+    /// already scrubbed at construction, so the second pass is the normal path here, not a
+    /// hypothetical.</para>
     /// </summary>
     [GeneratedRegex(
         @"(?<prefix>\b(?:upstream|host|dial|peer|via|through|connect(?:ing|ed)?\s+to|resolve|resolving|lookup)(?:\s|[""':=\\])+(?:(?:tcp|udp)[46]?\s+)?)(?!(?:tcp|udp)[46]?\b)(?<value>[a-z0-9][a-z0-9_-]{2,62})\b",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        matchTimeoutMilliseconds: CredentialPatterns.MatchTimeoutMilliseconds)]
     private static partial Regex ContextualSingleLabelHost();
 
     /// <summary>
@@ -326,13 +393,15 @@ public static partial class SanitizedErrorDescription
     /// </summary>
     [GeneratedRegex(
         @"\b(?:[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?:\d{1,5}\b",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        matchTimeoutMilliseconds: CredentialPatterns.MatchTimeoutMilliseconds)]
     private static partial Regex HostWithPort();
 
     /// <summary>A dotted-quad IPv4 address, with or without a port.</summary>
     [GeneratedRegex(
         @"\b\d{1,3}(?:\.\d{1,3}){3}(?::\d{1,5})?\b",
-        RegexOptions.CultureInvariant)]
+        RegexOptions.CultureInvariant,
+        matchTimeoutMilliseconds: CredentialPatterns.MatchTimeoutMilliseconds)]
     private static partial Regex IpAddress();
 
     /// <summary>
@@ -360,6 +429,7 @@ public static partial class SanitizedErrorDescription
     /// </summary>
     [GeneratedRegex(
         @"\b(?:(?:[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?\.){2,}[a-z]{2,}|[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?\.(?:lan|local|lokal|localhost|home|box|onion|internal|intranet|corp|arpa|localdomain|test|invalid|example))\b",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        matchTimeoutMilliseconds: CredentialPatterns.MatchTimeoutMilliseconds)]
     private static partial Regex DottedHostName();
 }

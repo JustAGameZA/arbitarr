@@ -593,4 +593,58 @@ public sealed class SanitizedErrorDescriptionTests
                 $"Cut at {cut} published the tail fragment '{tailFragment}': '{scrubbed}'");
         }
     }
+
+    /// <summary>
+    /// arb-hihr, positive control: a body that would normally scrub to reveal a host must NEVER
+    /// publish the unscrubbed (or partially-scrubbed) input when the regex pipeline times out. The
+    /// nine local host/URL arms cannot have their compiled <c>matchTimeoutMilliseconds</c> swapped at
+    /// runtime — it is baked into each arm's <c>GeneratedRegexAttribute</c> at compile time — so this
+    /// forces <c>RegexMatchTimeoutException</c> deterministically via the test seam
+    /// (<see cref="SanitizedErrorDescription.ThrowTimeoutForTesting"/>) rather than constructing an
+    /// input that happens to exceed 250ms on the machine running the test; the #212 review measured
+    /// only ~4.75ms for HostWithPort at 1596 characters (quadratic growth), and the excerpt this path
+    /// actually receives is capped at <see cref="OllamaRequestException.MaxExcerptLength"/> (200
+    /// chars) before scrubbing ever runs, so 250ms is not reachable through the excerpt cap alone.
+    /// </summary>
+    [Fact]
+    public void A_regex_timeout_degrades_to_the_placeholder_never_the_input()
+    {
+        const string hostFragment = "ollama.internal.example";
+        var body = $"dial tcp {hostFragment}:11434: connection refused";
+
+        SanitizedErrorDescription.ThrowTimeoutForTesting = true;
+        try
+        {
+            var described = SanitizedErrorDescription.Describe(
+                new OllamaRequestException(HttpStatusCode.BadGateway, body));
+
+            // Detectability: the search below does find the host in the untouched input.
+            Assert.Contains(hostFragment, body, StringComparison.Ordinal);
+            Assert.DoesNotContain(hostFragment, described, StringComparison.Ordinal);
+            Assert.Contains("<redaction timed out>", described, StringComparison.Ordinal);
+        }
+        finally
+        {
+            SanitizedErrorDescription.ThrowTimeoutForTesting = false;
+        }
+    }
+
+    /// <summary>
+    /// arb-hihr, control: with the test seam off, ordinary scrubbing is unaffected by the added
+    /// timeouts — the same host is still removed and the redaction token still appears, exactly as
+    /// the pre-existing rows in this file assert for other inputs.
+    /// </summary>
+    [Fact]
+    public void A_normal_input_still_scrubs_when_the_timeout_seam_is_off()
+    {
+        const string hostFragment = "ollama.internal.example";
+        var body = $"dial tcp {hostFragment}:11434: connection refused";
+
+        var described = SanitizedErrorDescription.Describe(
+            new OllamaRequestException(HttpStatusCode.BadGateway, body));
+
+        Assert.Contains(hostFragment, body, StringComparison.Ordinal);
+        Assert.DoesNotContain(hostFragment, described, StringComparison.Ordinal);
+        Assert.Contains(SanitizedErrorDescription.Replacement, described, StringComparison.Ordinal);
+    }
 }
