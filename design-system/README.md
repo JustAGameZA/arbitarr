@@ -47,6 +47,12 @@ reason. Needing transparency is not a reason to inline a literal.
 are pinned so the chrome assertions can test a number rather than a feeling. A hard-coded length in
 the shell stylesheet is a CI failure.
 
+This means those three *shell* constants — the ones the chrome assertions read back — and not every
+length. A component's own padding, gap and radius stay as literals in its own `*.module.css`
+(`PageHeader.module.css`, `PageToolbar.module.css`), because there is no spacing scale in
+`theme.css` and a token nothing asserts is a pinned constant with no mechanism behind it. Only
+colour is forbidden everywhere outside `theme.css`.
+
 **Bare element selectors appear only in `theme.css`'s reset.** Component styles are scoped through
 CSS modules.
 
@@ -71,6 +77,35 @@ raising the alpha fails CI rather than quietly degrading legibility.
 `--danger` is a documented exception held to 3:1, the large/bold-text floor. It is already 3.68:1
 on `--bg-panel` *unfilled*, so it misses AA body text independently of any fill; lightening it is
 tracked as `arb-4uk`.
+
+---
+
+## Page toolbar
+
+The control strip for a surface: filters, view options, page-level actions.
+
+**One toolbar per surface, directly under `PageHeader`, as its sibling.** Not inside PageHeader's
+`actions` slot — that slot renders inline with the `<h1>`, and these controls belong on their own
+row beneath the title, the way the *arr shell arranges them.
+
+**A toolbar never contains a heading**, at any level. `PageHeader` owns the single `<h1>` per route
+(AC2b); a caption here is the most convenient way to break that rule, so `PageToolbar.test.tsx`
+asserts the component contributes none.
+
+**Left section is context and actions, right section is menus** (`PageToolbarSection align="end"`).
+
+**Menus are disclosure buttons, not native `<select>`s.** `PageToolbarMenu` opens a `role="menu"`
+panel; items are `PageToolbarMenuItem` with `role="menuitemradio"` for a single-select group and
+`role="menuitemcheckbox"` for an independent toggle, `aria-checked` tracking the active one.
+
+**The trigger label states the active selection** — `Kind: Decisions`, not `Kind`. A `<select>`
+shows its current value without being opened; a button that reads only `Kind` loses that, and the
+operator can no longer see what the list in front of them is filtered by.
+
+**Do not add a control the API cannot serve.** Activity has no sort menu because the server returns
+most-recent-first and exposes no sort parameter.
+
+Density belongs in the view menu.
 
 ---
 

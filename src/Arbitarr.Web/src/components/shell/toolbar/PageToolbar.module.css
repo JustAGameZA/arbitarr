@@ -1,0 +1,114 @@
+/*
+ * The page toolbar row.
+ *
+ * Colours are var(--token) only (AC3). Padding, gap and radius are px literals
+ * here by the same precedent PageHeader.module.css sets: theme.css pins the
+ * three SHELL constants (--sidebar-width, --topbar-height, --content-max-width)
+ * because the chrome assertions test those against a number. Per-component
+ * spacing is not one of those, and tokenising a --toolbar-height would add a
+ * pinned constant nothing asserts.
+ */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.section,
+.sectionEnd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sectionEnd {
+  margin-left: auto;
+}
+
+.separator {
+  width: 1px;
+  align-self: stretch;
+  min-height: 20px;
+  background: var(--border);
+}
+
+.button {
+  padding: 5px 12px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--fg-muted);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--bg-panel-alt);
+  color: var(--fg-primary);
+}
+
+.button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.menu {
+  position: relative;
+}
+
+.panel,
+.panelEnd {
+  position: absolute;
+  top: calc(100% + 4px);
+  z-index: 10;
+  min-width: 180px;
+  padding: 4px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.panel {
+  left: 0;
+}
+
+.panelEnd {
+  right: 0;
+}
+
+.groupLabel {
+  padding: 6px 10px 2px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+}
+
+.menuItem {
+  display: block;
+  width: 100%;
+  padding: 5px 10px;
+  background: transparent;
+  border: 0;
+  border-radius: 3px;
+  color: var(--fg-primary);
+  font-size: 13px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menuItem:hover {
+  background: var(--bg-panel-alt);
+}
+
+.menuItem[aria-checked='true'] {
+  color: var(--accent);
+  font-weight: 600;
+}

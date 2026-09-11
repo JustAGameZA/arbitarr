@@ -1,6 +1,12 @@
 import { useState } from 'react';
 
 import { PageHeader } from '../../components/shell/PageHeader';
+import {
+  PageToolbar,
+  PageToolbarMenu,
+  PageToolbarMenuItem,
+  PageToolbarSection,
+} from '../../components/shell/toolbar';
 import { QueryState } from '../QueryState';
 import type { ActivityEntry, ActivityKind } from '../../api/types';
 import styles from '../surface.module.css';
@@ -32,9 +38,23 @@ const WINDOW_OPTIONS: ReadonlyArray<[TimeWindow, string]> = [
   ['all', 'All time'],
 ];
 
+/**
+ * The human label for a filter value, falling back to the raw value.
+ *
+ * The fallback is the point: a menu trigger reading "Kind: workerCycle" is ugly
+ * but honest, where a blank one would read as "no filter applied" while the
+ * query is in fact narrowed.
+ */
+function optionLabel<T extends string>(
+  options: ReadonlyArray<readonly [T, string]>,
+  selected: T,
+): string {
+  return options.find(([value]) => value === selected)?.[1] ?? selected;
+}
+
 /** The badge label for a kind, falling back to the raw value for an unknown one. */
 function kindLabel(kind: ActivityKind): string {
-  return KIND_OPTIONS.find(([value]) => value === kind)?.[1] ?? kind;
+  return optionLabel(KIND_OPTIONS, kind as ActivityKind | 'all');
 }
 
 /**
@@ -154,44 +174,39 @@ export default function ActivityPage() {
         description="What Arbitarr did, most recent first — each entry with the reason it happened."
       />
 
-      <section className={styles.panel}>
-        <h2 className={styles.panelHeading}>Filter</h2>
-        <div className={styles.panelBody}>
-          <div className={styles.form}>
-            <label className={styles.field}>
-              Kind
-              <select
-                className={styles.select}
-                value={filters.kind}
-                onChange={(event) =>
-                  applyFilters({ kind: event.target.value as ActivityKind | 'all' })
-                }
-              >
-                {KIND_OPTIONS.map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
+      {/* The toolbar is a sibling of PageHeader, not its `actions` slot: the
+          filters belong on their own row under the title, the way the *arr
+          shell arranges them. No sort menu, because the server returns
+          most-recent-first and exposes no sort parameter — inventing one the
+          API cannot serve would be a control that silently does nothing. */}
+      <PageToolbar label="Activity filters">
+        <PageToolbarSection align="end">
+          <PageToolbarMenu label={`Kind: ${optionLabel(KIND_OPTIONS, filters.kind)}`} align="end">
+            {KIND_OPTIONS.map(([value, label]) => (
+              <PageToolbarMenuItem
+                key={value}
+                label={label}
+                checked={filters.kind === value}
+                onSelect={() => applyFilters({ kind: value })}
+              />
+            ))}
+          </PageToolbarMenu>
 
-            <label className={styles.field}>
-              Time
-              <select
-                className={styles.select}
-                value={filters.window}
-                onChange={(event) => applyFilters({ window: event.target.value as TimeWindow })}
-              >
-                {WINDOW_OPTIONS.map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-        </div>
-      </section>
+          <PageToolbarMenu
+            label={`Time: ${optionLabel(WINDOW_OPTIONS, filters.window)}`}
+            align="end"
+          >
+            {WINDOW_OPTIONS.map(([value, label]) => (
+              <PageToolbarMenuItem
+                key={value}
+                label={label}
+                checked={filters.window === value}
+                onSelect={() => applyFilters({ window: value })}
+              />
+            ))}
+          </PageToolbarMenu>
+        </PageToolbarSection>
+      </PageToolbar>
 
       <section className={styles.panel}>
         <h2 className={styles.panelHeading}>Events</h2>
