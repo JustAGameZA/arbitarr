@@ -246,7 +246,7 @@ public static class AdminSourceEndpoints
 
     /// <summary>
     /// Fixed operator-facing wording per outcome. Each says what to check next, which is the whole
-    /// reason §3.3 demands four distinct outcomes instead of one red "failed". Sourced only from
+    /// reason §3.3 demands five distinct outcomes instead of one red "failed". Sourced only from
     /// the enum — never from the upstream response or the key.
     /// </summary>
     private static string DescribeOutcome(SourceProbeOutcome outcome) => outcome switch

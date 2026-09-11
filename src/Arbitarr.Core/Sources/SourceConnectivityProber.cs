@@ -7,7 +7,7 @@ namespace Arbitarr.Core.Sources;
 
 /// <summary>
 /// The §3.3 connectivity test: a REAL authenticated request against a configured source, classified
-/// into one of the four <see cref="SourceProbeOutcome"/> failure modes.
+/// into one of the five <see cref="SourceProbeOutcome"/> failure modes.
 ///
 /// <para><b>Real request, not URL validation.</b> The plan rejects a shape check outright — "a test
 /// that passes on a wrong key teaches operators to distrust it". So this issues the source's own
@@ -21,14 +21,14 @@ namespace Arbitarr.Core.Sources;
 /// <c>{base}/torznab/api</c> per request, so "the endpoint NzbHydraSource uses" is no longer a
 /// single address and this probe covers one of the two.
 ///
-/// That is sufficient because of what the four <see cref="SourceProbeOutcome"/> values actually
+/// That is sufficient because of what the five <see cref="SourceProbeOutcome"/> values actually
 /// discriminate, all of which are properties of the SOURCE rather than of an endpoint: DNS,
 /// routing and TCP reachability (<see cref="SourceProbeOutcome.Unreachable"/>), the TLS handshake
 /// (<see cref="SourceProbeOutcome.TlsFailure"/>), whether the stored key is accepted
 /// (<see cref="SourceProbeOutcome.AuthenticationFailed"/>), and whether the address points at an
 /// NZBHydra2 at all rather than some other service or a login page
 /// (<see cref="SourceProbeOutcome.UnexpectedResponse"/>). NZBHydra2 serves both endpoints from one
-/// process, one certificate and one API key, so none of those four can differ between them.
+/// process, one certificate and one API key, so none of those five can differ between them.
 ///
 /// What a single probe does NOT cover is per-endpoint indexer SELECTION — the actual #99 symptom,
 /// where <c>/torznab/api</c> answers successfully but with no usenet indexers in the selection.
@@ -217,7 +217,7 @@ public sealed class SourceConnectivityProber
     /// choice <c>NzbHydraSource</c> makes — and this URI is never logged or returned.
     ///
     /// The <c>/api</c> suffix is the Newznab endpoint; see the type doc for why probing that one
-    /// alone establishes everything the four outcomes can distinguish (#99).
+    /// alone establishes everything the five outcomes can distinguish (#99).
     /// </summary>
     private static Uri BuildCapsUri(string baseUrl, string? apiKey)
     {
