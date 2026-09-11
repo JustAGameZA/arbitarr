@@ -8,7 +8,7 @@
 
 ## Checklist
 
-- [ ] `dotnet build` and `dotnet test -m:1` pass locally (sequential — parallel runs are unreliable)
+- [ ] `dotnet build` and `dotnet test -m:1` pass locally (use `-m:1` for the measured count; CI derives the same ratcheted count by summing the matrix groups' `.trx` files)
 - [ ] UI changes: `npm run typecheck`, `npm test`, and `npm run lint` pass in `src/Arbitarr.Web`
 - [ ] Behavioral changes have test coverage in the matching `tests/Arbitarr.*.Tests` project
 - [ ] Test-count floors, if raised, hold a **measured** number — not the old floor plus tests added

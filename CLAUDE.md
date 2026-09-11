@@ -128,9 +128,10 @@ to test anything:
     failed once it was never established.
 - Assert **per row** where a flag is written per row. "Some row has it" still passes when
   an implementation writes one value to all of them.
-- The suite is **not reliably parallel-safe across assemblies** (shared SQLite/port
-  state). A parallel run under-counts *and* invents failures. Measure with `-m:1`, as CI
-  does.
+- Parallel runs are supported since the test isolation work (#163, arb-rga). A local
+  `dotnet test -m:1` is still the simplest way to get one total comparable to the count CI's
+  `gate` job ratchets — CI reaches the same number by summing the four matrix groups' `.trx`
+  files.
 
 ## 5. Verification commands
 
@@ -138,7 +139,7 @@ Backend, from the repo root:
 
 ```
 dotnet build                 # expect 0 warnings, 0 errors
-dotnet test -m:1             # sequential; parallel runs are unreliable (§4)
+dotnet test -m:1             # sequential; use for measured counts
 ```
 
 Frontend, from `src/Arbitarr.Web`:

@@ -221,8 +221,10 @@ dotnet build
 dotnet test -m:1
 ```
 
-The suite is run sequentially (`-m:1`): it is not reliably parallel-safe across assemblies, and a
-parallel run both under-counts and invents failures.
+Parallel runs are supported since the test isolation work (#163, arb-rga). A local
+`dotnet test -m:1` is still the simplest way to get one total comparable to the count CI's
+`gate` job ratchets — CI reaches the same number by summing the four matrix groups' `.trx`
+files.
 
 The admin UI is built separately, from `src/Arbitarr.Web`:
 
