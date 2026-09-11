@@ -52,6 +52,28 @@ CSS modules.
 
 ---
 
+## Status badges
+
+**Status badges are filled, not outlined.** A badge carries a low-opacity fill of its semantic
+colour behind a border and text in that same colour at full strength — the neutral `.badge` uses a
+muted fill, and the ok / warn / danger variants each use their own. A filled pill reads as a status
+at a glance in a dense table, where an outline of the same colour does not.
+
+The fills are tokens (`--badge-fill`, `--ok-fill`, `--warn-fill`, `--danger-fill`) for the reason
+stated under *Rules for component styles*: they need alpha, and needing alpha is not a licence to
+inline a literal.
+
+**The alpha is load-bearing.** On a dark theme a translucent fill *lightens* the ground, so raising
+the alpha costs contrast. At 0.12 the muted, ok and warn text colours all clear WCAG AA (4.5:1)
+composited over `--bg-panel`; at 0.16 muted and ok fall under it. AC-CHROME-5 measures this, so
+raising the alpha fails CI rather than quietly degrading legibility.
+
+`--danger` is a documented exception held to 3:1, the large/bold-text floor. It is already 3.68:1
+on `--bg-panel` *unfilled*, so it misses AA body text independently of any fill; lightening it is
+tracked as `arb-4uk`.
+
+---
+
 ## State and storage
 
 **The admin key lives in a session-only Zustand store.** Never `localStorage`, never

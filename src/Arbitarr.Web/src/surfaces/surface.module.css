@@ -184,21 +184,25 @@
   font-size: 11px;
   font-weight: 600;
   border: 1px solid var(--border);
+  background: var(--badge-fill);
   color: var(--fg-muted);
 }
 
 .badgeOk {
   border-color: var(--ok);
+  background: var(--ok-fill);
   color: var(--ok);
 }
 
 .badgeWarn {
   border-color: var(--warn);
+  background: var(--warn-fill);
   color: var(--warn);
 }
 
 .badgeDanger {
   border-color: var(--danger);
+  background: var(--danger-fill);
   color: var(--danger);
 }
 
