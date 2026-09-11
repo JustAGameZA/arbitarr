@@ -12,6 +12,16 @@ namespace Arbitarr.Ai;
 /// Value sent as Ollama's <c>keep_alive</c> field. A long/indefinite duration keeps the model
 /// resident between calls, matching the "kept permanently loaded" operational fact recorded in
 /// docs/step0-measurements.md (avoids the ~59s cold-load cost recurring per call).
+///
+/// <para>
+/// Accepted forms: a bare integer (e.g. <c>"-1"</c>, <c>"300"</c>) — Ollama interprets this as
+/// SECONDS, with <c>-1</c> meaning "keep loaded indefinitely" — or a Go duration string carrying
+/// an explicit unit (e.g. <c>"-1m"</c>, <c>"30m"</c>). Ollama parses any STRING <c>keep_alive</c>
+/// value as a Go duration, so a bare integer sent as a JSON string (<c>"keep_alive":"-1"</c>) is
+/// rejected with 400 <c>time: missing unit in duration "-1"</c> — the integer form must therefore
+/// be serialised as a JSON NUMBER on the wire (<see cref="OllamaClient"/> handles this), while a
+/// unit-bearing value is serialised as a JSON string verbatim.
+/// </para>
 /// </param>
 public sealed record OllamaOptions(Uri BaseUrl, string Model, string KeepAlive = "-1")
 {

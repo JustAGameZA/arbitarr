@@ -23,7 +23,8 @@ public sealed class OllamaOptionsStartupTests
     // `new Uri(baseUrlRaw)` throw during service registration.
     private const string MalformedBaseUrl = "not-a-url";
 
-    private static WebApplicationFactory<Program> CreateHost(string configDirectory, string? baseUrl)
+    private static WebApplicationFactory<Program> CreateHost(
+        string configDirectory, string? baseUrl, string? keepAlive = null)
     {
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -32,6 +33,11 @@ public sealed class OllamaOptionsStartupTests
             if (baseUrl is not null)
             {
                 builder.UseSetting("Arbitarr:Ai:Ollama:BaseUrl", baseUrl);
+            }
+
+            if (keepAlive is not null)
+            {
+                builder.UseSetting("Arbitarr:Ai:Ollama:KeepAlive", keepAlive);
             }
         });
     }
@@ -103,6 +109,54 @@ public sealed class OllamaOptionsStartupTests
 
             var options = host.Services.GetRequiredService<OllamaOptions>();
             Assert.Equal(validBaseUrl, options.BaseUrl.ToString().TrimEnd('/'));
+        }
+        finally
+        {
+            Cleanup(configDirectory);
+        }
+    }
+
+    /// <summary>
+    /// An <c>Arbitarr:Ai:Ollama:KeepAlive</c> value that is neither a bare integer nor a
+    /// unit-bearing Go duration string must not be used verbatim — it falls back to the built-in
+    /// default ("-1") rather than being carried through to <see cref="OllamaClient"/>, which would
+    /// otherwise reproduce the "-1x"/"-1"-as-string 400 this bead fixes.
+    /// </summary>
+    [Fact]
+    public async Task A_malformed_keep_alive_falls_back_to_the_default()
+    {
+        var configDirectory = NewConfigDirectory();
+
+        try
+        {
+            await using var host = CreateHost(configDirectory, baseUrl: null, keepAlive: "-1x");
+            using var client = host.CreateClient();
+
+            var options = host.Services.GetRequiredService<OllamaOptions>();
+            Assert.Equal("-1", options.KeepAlive);
+        }
+        finally
+        {
+            Cleanup(configDirectory);
+        }
+    }
+
+    /// <summary>
+    /// Positive control for the fallback above: a well-formed unit-bearing duration is kept
+    /// verbatim, so the malformed-value test is a rejection of bad input, not a blanket override.
+    /// </summary>
+    [Fact]
+    public async Task A_valid_keep_alive_duration_is_kept_verbatim()
+    {
+        var configDirectory = NewConfigDirectory();
+
+        try
+        {
+            await using var host = CreateHost(configDirectory, baseUrl: null, keepAlive: "-1m");
+            using var client = host.CreateClient();
+
+            var options = host.Services.GetRequiredService<OllamaOptions>();
+            Assert.Equal("-1m", options.KeepAlive);
         }
         finally
         {
