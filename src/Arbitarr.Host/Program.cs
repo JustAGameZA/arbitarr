@@ -312,7 +312,19 @@ builder.Services.AddSingleton(sp =>
     var section = builder.Configuration.GetSection("Arbitarr:Ai:Ollama");
     var baseUrlRaw = section["BaseUrl"] ?? Arbitarr.Data.Settings.OllamaBaseUrlResolver.DefaultBaseUrl;
     var model = section["Model"] ?? Arbitarr.Data.Settings.OllamaModelResolver.DefaultModel;
-    var keepAlive = section["KeepAlive"] ?? "-1";
+    var keepAliveRaw = section["KeepAlive"] ?? "-1";
+    var keepAliveDurationPattern = new System.Text.RegularExpressions.Regex(@"^-?\d+(ns|us|µs|ms|s|m|h)$");
+    var keepAlive = keepAliveRaw;
+    if (!long.TryParse(keepAliveRaw, out _) && !keepAliveDurationPattern.IsMatch(keepAliveRaw))
+    {
+        var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("Arbitarr.Host.Program");
+        logger.LogWarning(
+            "AI: the Arbitarr:Ai:Ollama:KeepAlive environment variable is not a usable value " +
+            "(expected a bare integer or a Go duration string with a unit, e.g. \"-1\" or \"30m\") " +
+            "and was not used for the startup-fallback client options; the built-in default (\"-1\") " +
+            "was used instead.");
+        keepAlive = "-1";
+    }
 
     // arb-6u6: this singleton's BaseUrl is only ever the STARTUP FALLBACK (see the comment above
     // for why it must still work standalone) — it is never the live value once OllamaBaseUrlSeeder

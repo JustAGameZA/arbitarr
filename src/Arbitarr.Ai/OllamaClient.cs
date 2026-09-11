@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Arbitarr.Core.Releases;
 using Arbitarr.Core.Sources.CircuitBreaker;
 
@@ -170,7 +171,46 @@ public sealed class OllamaClient : IOllamaClient
         [property: JsonPropertyName("messages")] IReadOnlyList<OllamaChatRequestMessage> Messages,
         [property: JsonPropertyName("stream")] bool Stream,
         [property: JsonPropertyName("format")] JsonElement Format,
-        [property: JsonPropertyName("keep_alive")] string KeepAlive);
+        [property: JsonPropertyName("keep_alive")]
+        [property: JsonConverter(typeof(OllamaKeepAliveJsonConverter))]
+        string KeepAlive);
+
+    /// <summary>
+    /// Serialises <see cref="OllamaOptions.KeepAlive"/> as the wire shape Ollama actually accepts:
+    /// a JSON NUMBER for a bare integer (Ollama treats a string here as a Go duration and rejects a
+    /// unit-less integer string, e.g. <c>"-1"</c>, with 400 <c>time: missing unit in duration
+    /// "-1"</c>), or a JSON STRING verbatim when the value already carries a Go duration unit (e.g.
+    /// <c>"-1m"</c>, <c>"30m"</c>).
+    /// </summary>
+    private sealed class OllamaKeepAliveJsonConverter : JsonConverter<string>
+    {
+        private static readonly Regex DurationPattern =
+            new(@"^-?\d+(ns|us|µs|ms|s|m|h)$", RegexOptions.Compiled);
+
+        public override string Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
+            reader.TokenType == JsonTokenType.Number
+                ? reader.GetInt64().ToString()
+                : reader.GetString() ?? string.Empty;
+
+        public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options)
+        {
+            if (long.TryParse(value, out var integer))
+            {
+                writer.WriteNumberValue(integer);
+            }
+            else if (DurationPattern.IsMatch(value))
+            {
+                writer.WriteStringValue(value);
+            }
+            else
+            {
+                // Unreachable for validated values (Program.cs validates at startup and falls back
+                // to the default otherwise), but write verbatim rather than throw for an
+                // OllamaOptions constructed directly by a test/caller with an unvalidated value.
+                writer.WriteStringValue(value);
+            }
+        }
+    }
 
     private sealed record OllamaChatRequestMessage(
         [property: JsonPropertyName("role")] string Role,

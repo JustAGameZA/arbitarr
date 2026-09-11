@@ -84,14 +84,45 @@ public class OllamaClientTests
     }
 
     [Fact]
-    public async Task ClassifyAsync_RequestBody_ForwardsKeepAlive()
+    public async Task ClassifyAsync_RequestBody_ForwardsKeepAlive_AsJsonNumberByDefault()
     {
         var (client, handler, _) = CreateClient(SuccessResponse());
 
         await client.ClassifyAsync(Candidate());
 
         var body = await handler.LastRequestBodyAsync();
-        Assert.Equal("-1", body.RootElement.GetProperty("keep_alive").GetString());
+        var keepAlive = body.RootElement.GetProperty("keep_alive");
+        Assert.Equal(JsonValueKind.Number, keepAlive.ValueKind);
+        Assert.Equal(-1, keepAlive.GetInt32());
+    }
+
+    [Theory]
+    [InlineData("-1", JsonValueKind.Number)]
+    [InlineData("300", JsonValueKind.Number)]
+    [InlineData("-1m", JsonValueKind.String)]
+    [InlineData("30m", JsonValueKind.String)]
+    public async Task ClassifyAsync_RequestBody_KeepAlive_WireShapeMatchesInputForm(
+        string keepAliveOption, JsonValueKind expectedKind)
+    {
+        var handler = new RecordingHandler(SuccessResponse());
+        var httpClient = new HttpClient(handler);
+        var breaker = new AlwaysClosedCircuitBreaker();
+        var options = new OllamaOptions(new Uri("http://192.0.2.138:31434"), "test-model:latest", keepAliveOption);
+        var client = new OllamaClient(options, httpClient, breaker);
+
+        await client.ClassifyAsync(Candidate());
+
+        var body = await handler.LastRequestBodyAsync();
+        var keepAlive = body.RootElement.GetProperty("keep_alive");
+        Assert.Equal(expectedKind, keepAlive.ValueKind);
+        if (expectedKind == JsonValueKind.Number)
+        {
+            Assert.Equal(int.Parse(keepAliveOption), keepAlive.GetInt32());
+        }
+        else
+        {
+            Assert.Equal(keepAliveOption, keepAlive.GetString());
+        }
     }
 
     [Fact]
