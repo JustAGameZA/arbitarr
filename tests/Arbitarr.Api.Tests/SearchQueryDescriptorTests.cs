@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Arbitarr.Api.Search;
 using Arbitarr.Core.Sources;
 using Microsoft.AspNetCore.WebUtilities;
@@ -171,6 +173,101 @@ public class SearchQueryDescriptorTests
         Assert.DoesNotContain(PlantedKey, detail, StringComparison.Ordinal);
         Assert.DoesNotContain("apikey", reason, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("apikey", detail, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// arb-6jks: the shared producer/consumer parity fixture (tests/fixtures/search-detail.json),
+    /// also consumed by searchDetail.test.ts on the frontend. This is the PARITY pin — it proves the
+    /// two sides agree. It does not replace the individual <c>Assert.Equal</c> tests above: those are
+    /// the PRODUCER pin, and are what fails first on a format change (see the class doc comment on
+    /// this pin's counterpart in searchDetail.test.ts).
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(SharedFixtureCases))]
+    public void DescribeDetailMatchesTheSharedFixture(SharedFixtureCase testCase)
+    {
+        var query = Query(
+            text: testCase.Query.RawQ ?? testCase.Query.Q,
+            categories: testCase.Query.Cats,
+            tvdbId: testCase.Query.TvdbId,
+            tmdbId: testCase.Query.TmdbId,
+            season: testCase.Query.Season,
+            episode: testCase.Query.Episode,
+            type: SearchTypeParser.Parse(testCase.Query.Type),
+            absolute: testCase.Query.Abs);
+
+        Assert.Equal(testCase.Detail, SearchQueryDescriptor.DescribeDetail(query));
+    }
+
+    public static TheoryData<SharedFixtureCase> SharedFixtureCases()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "fixtures", "search-detail.json");
+        var json = File.ReadAllText(path);
+        var cases = JsonSerializer.Deserialize<List<SharedFixtureCase>>(json)
+            ?? throw new InvalidOperationException($"Failed to deserialize fixture at {path}.");
+
+        // Guard against a fixture that no suite reads (arb-6jks): an empty or missing file must fail
+        // this test, not silently skip it.
+        Assert.True(cases.Count > 0, $"Expected at least one case in {path}.");
+
+        var data = new TheoryData<SharedFixtureCase>();
+        foreach (var testCase in cases)
+        {
+            data.Add(testCase);
+        }
+
+        return data;
+    }
+
+    public sealed class SharedFixtureCase
+    {
+        [JsonPropertyName("name")]
+        public string Name { get; init; } = "";
+
+        [JsonPropertyName("query")]
+        public SharedFixtureQuery Query { get; init; } = new();
+
+        [JsonPropertyName("detail")]
+        public string Detail { get; init; } = "";
+
+        public override string ToString() => Name;
+    }
+
+    public sealed class SharedFixtureQuery
+    {
+        [JsonPropertyName("type")]
+        public string Type { get; init; } = "";
+
+        [JsonPropertyName("cats")]
+        public int[] Cats { get; init; } = Array.Empty<int>();
+
+        [JsonPropertyName("tvdbid")]
+        public int? TvdbId { get; init; }
+
+        [JsonPropertyName("tmdbid")]
+        public int? TmdbId { get; init; }
+
+        [JsonPropertyName("season")]
+        public int? Season { get; init; }
+
+        [JsonPropertyName("episode")]
+        public int? Episode { get; init; }
+
+        [JsonPropertyName("abs")]
+        public int? Abs { get; init; }
+
+        [JsonPropertyName("q")]
+        public string? Q { get; init; }
+
+        /// <summary>
+        /// arb-6jks: present only for the "query text needing trim" case. The wire format is already
+        /// trimmed (<c>DescribeDetail</c> and <c>parseSearchDetail</c> both operate post-trim), so an
+        /// untrimmed input has nowhere to round-trip through <c>q</c> itself — this carries the raw,
+        /// untrimmed text fed into <see cref="SearchQueryDescriptor.DescribeDetail"/>, while
+        /// <see cref="Q"/> stays the expected (trimmed) value the TS side asserts against.
+        /// </summary>
+        [JsonPropertyName("rawQ")]
+        public string? RawQ { get; init; }
     }
 
     [Fact]

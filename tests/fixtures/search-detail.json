@@ -1,0 +1,129 @@
+[
+  {
+    "name": "text-only search",
+    "query": {
+      "type": "search",
+      "cats": [],
+      "tvdbid": null,
+      "tmdbid": null,
+      "season": null,
+      "episode": null,
+      "abs": null,
+      "q": "bleach"
+    },
+    "detail": "type=search;q=bleach"
+  },
+  {
+    "name": "categories-only feed",
+    "query": {
+      "type": "tvsearch",
+      "cats": [5030, 5040],
+      "tvdbid": null,
+      "tmdbid": null,
+      "season": null,
+      "episode": null,
+      "abs": null,
+      "q": null
+    },
+    "detail": "type=tvsearch;cats=5030,5040"
+  },
+  {
+    "name": "ids, season and episode",
+    "query": {
+      "type": "tvsearch",
+      "cats": [5030, 5040],
+      "tvdbid": 74796,
+      "tmdbid": null,
+      "season": 2,
+      "episode": 5,
+      "abs": null,
+      "q": null
+    },
+    "detail": "type=tvsearch;cats=5030,5040;tvdbid=74796;season=2;episode=5"
+  },
+  {
+    "name": "movie search",
+    "query": {
+      "type": "movie",
+      "cats": [],
+      "tvdbid": null,
+      "tmdbid": 438631,
+      "season": null,
+      "episode": null,
+      "abs": null,
+      "q": "dune"
+    },
+    "detail": "type=movie;tmdbid=438631;q=dune"
+  },
+  {
+    "name": "absolute zero is a real value",
+    "query": {
+      "type": "tvsearch",
+      "cats": [],
+      "tvdbid": 74796,
+      "tmdbid": null,
+      "season": null,
+      "episode": null,
+      "abs": 0,
+      "q": "0"
+    },
+    "detail": "type=tvsearch;tvdbid=74796;abs=0;q=0"
+  },
+  {
+    "name": "query text containing a semicolon",
+    "query": {
+      "type": "search",
+      "cats": [],
+      "tvdbid": null,
+      "tmdbid": null,
+      "season": null,
+      "episode": null,
+      "abs": null,
+      "q": "a;b"
+    },
+    "detail": "type=search;q=a;b"
+  },
+  {
+    "name": "query text needing trim",
+    "query": {
+      "type": "search",
+      "cats": [],
+      "tvdbid": null,
+      "tmdbid": null,
+      "season": null,
+      "episode": null,
+      "abs": null,
+      "q": "bleach",
+      "rawQ": "  bleach  "
+    },
+    "detail": "type=search;q=bleach"
+  },
+  {
+    "name": "all fields",
+    "query": {
+      "type": "tvsearch",
+      "cats": [5030, 5040],
+      "tvdbid": 74796,
+      "tmdbid": 438631,
+      "season": 2,
+      "episode": 5,
+      "abs": 3,
+      "q": "bleach"
+    },
+    "detail": "type=tvsearch;cats=5030,5040;tvdbid=74796;tmdbid=438631;season=2;episode=5;abs=3;q=bleach"
+  },
+  {
+    "name": "bare feed spelling (whitespace-only q)",
+    "query": {
+      "type": "search",
+      "cats": [],
+      "tvdbid": null,
+      "tmdbid": null,
+      "season": null,
+      "episode": null,
+      "abs": null,
+      "q": "   "
+    },
+    "detail": "type=search"
+  }
+]

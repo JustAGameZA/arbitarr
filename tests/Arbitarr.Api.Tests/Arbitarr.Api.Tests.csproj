@@ -22,4 +22,9 @@
     <ProjectReference Include="..\Arbitarr.TestSupport\Arbitarr.TestSupport.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- arb-6jks: the shared producer/consumer parity fixture, also read by searchDetail.test.ts. -->
+    <None Include="..\fixtures\search-detail.json" Link="fixtures\search-detail.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

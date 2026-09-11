@@ -366,7 +366,10 @@ is not restated here, because a second copy of a wire format is a second thing
 to keep true. Two consumers already parse it — the Activity surface and the
 frontend's `searchDetail.ts` — which is what makes it a format rather than an
 implementation detail, and why `IEventSink`'s "free-form kind-specific detail"
-does not describe this kind.
+does not describe this kind. `tests/fixtures/search-detail.json` (arb-6jks) is
+the producer/consumer parity contract for this grammar: both
+`SearchQueryDescriptorTests` and `searchDetail.test.ts` read the same file, so
+the two sides cannot drift with both suites green.
 
 Being byte-identical for the same search is a *property the format is for*, not
 an incidental one: `Detail` is one of the six fields `EventRepository` compares
