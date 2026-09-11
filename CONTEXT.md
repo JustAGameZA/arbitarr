@@ -357,6 +357,25 @@ query snapshot keeps one *result set* stable while a caller pages through it; a
 release lookup keeps one *rendered release* resolvable long after the search
 that produced it has been forgotten.
 
+**Search detail format.** The machine-readable spelling of *which* search an
+event row is about, written into an event's `Detail` by
+`SearchQueryDescriptor.DescribeDetail` — semicolon-separated `key=value` pairs
+in a fixed order, with absent parts omitted. **That method is the authority on
+the grammar**, including which keys exist and why the free-text one is last; it
+is not restated here, because a second copy of a wire format is a second thing
+to keep true. Two consumers already parse it — the Activity surface and the
+frontend's `searchDetail.ts` — which is what makes it a format rather than an
+implementation detail, and why `IEventSink`'s "free-form kind-specific detail"
+does not describe this kind.
+
+Being byte-identical for the same search is a *property the format is for*, not
+an incidental one: `Detail` is one of the six fields `EventRepository` compares
+to decide whether a new event folds onto the previous row (incrementing its
+`RepeatCount`) instead of writing another. Any per-occurrence value rendered
+into it — a duration, a timestamp, a result count — therefore makes every
+occurrence a distinct event and defeats that folding. The same applies to an
+event's `Reason`, which is in the same identity.
+
 ---
 
 ## Cache ages
