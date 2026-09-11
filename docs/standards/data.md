@@ -207,6 +207,17 @@ materialised: `EventRepository.QueryAsync`, `CountAsync`, `GetAllAsync`, `PruneA
 `Where`/`Take` is correct and unbounded. Any new time-bounded read must batch the same way, and
 must not restate `EventQuery.MaxLimit` as a bound on the work.
 
+**Prunes over a large table page by primary key, not one `ToListAsync()`.** Every prune in
+`MaintenanceJob` filters `DateTimeOffset` columns client-side for the reason above, but a single
+whole-table `ToListAsync()` per pass only stays cheap while the table stays small. The release
+lookup table is the largest one (one row per rendered release across every `*arr` RSS sync), so
+`PruneReleaseLookupAsync` instead reads ordered pages of `Id` + `ExpiresAt` (projection,
+`AsNoTracking`), evaluates `PrunePredicates.IsReleaseLookupEntryPrunable` per page, and deletes
+the matching ids for that page with `ExecuteDeleteAsync` before advancing past the last id seen.
+Paging by the primary key rather than by offset means a page's own deletions cannot shift which
+rows the next page reads. The other prunes are unchanged and still load their whole table; page
+one only when a table's growth actually warrants it.
+
 ---
 
 ## Settings

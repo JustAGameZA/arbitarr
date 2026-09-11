@@ -482,6 +482,66 @@ public sealed class MaintenanceJobTests : IDisposable
     }
 
     /// <summary>
+    /// arb-zwk item 3: the release lookup prune is paged (500 rows/page), so this proves the
+    /// paging itself does not lose or double-count rows across a boundary. 1,203 rows span three
+    /// full pages plus a partial one; expired/unexpired rows are interleaved (every third row is
+    /// expired) so a page-alignment bug that only manifests at the edges cannot hide behind a
+    /// prune count that happens to still add up. Asserted per row via the exact surviving id set,
+    /// not just the count — a paging bug that skips the last page's tail row would still produce
+    /// the right count if it also mis-deleted a row elsewhere.
+    /// </summary>
+    [Fact]
+    public async Task RunAsync_PrunesExpiredReleaseLookupRows_AcrossPagingBoundaries()
+    {
+        const int totalRows = 1203;
+        var expiredIds = new List<int>();
+        var liveIds = new List<int>();
+
+        using (var context = CreateContext())
+        {
+            context.Database.Migrate();
+            for (var i = 0; i < totalRows; i++)
+            {
+                var expired = i % 3 == 0;
+                if (expired)
+                {
+                    expiredIds.Add(i);
+                }
+                else
+                {
+                    liveIds.Add(i);
+                }
+
+                context.ReleaseLookupEntries.Add(new ReleaseLookupEntry
+                {
+                    ProxyGuid = $"guid-{i}",
+                    SourceName = "hydra",
+                    PayloadJson = "{}",
+                    RecordedAt = Now - TimeSpan.FromDays(14),
+                    ExpiresAt = expired ? Now - TimeSpan.FromSeconds(1) : Now + TimeSpan.FromSeconds(1),
+                });
+            }
+            context.SaveChanges();
+        }
+
+        using (var context = CreateContext())
+        {
+            var job = new MaintenanceJob(context, _timeProvider);
+            var result = await job.RunAsync(Settings(TimeSpan.FromDays(7)));
+
+            Assert.Equal(expiredIds.Count, result.ReleaseLookupRowsPruned);
+        }
+
+        using (var context = CreateContext())
+        {
+            var remaining = context.ReleaseLookupEntries.Select(e => e.ProxyGuid).ToList();
+            Assert.Equal(liveIds.Count, remaining.Count);
+            var expectedSurvivors = liveIds.Select(i => $"guid-{i}").ToHashSet();
+            Assert.Equal(expectedSurvivors, remaining.ToHashSet());
+        }
+    }
+
+    /// <summary>
     /// arb-dng: the query snapshot cache prune deletes the expired row and keeps the live one, in
     /// ONE pass over a table holding both. Asserted PER ROW rather than by count alone — "one row
     /// was deleted" still passes when the implementation deleted the wrong one, which for this table
