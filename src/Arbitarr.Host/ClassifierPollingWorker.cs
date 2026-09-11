@@ -41,6 +41,17 @@ namespace Arbitarr.Host;
 /// </summary>
 public sealed class ClassifierPollingWorker : BackgroundService
 {
+    /// <summary>
+    /// arb-s4lg: how many per-call classification failures may log their full detail at Warning in
+    /// a single cycle before the rest are demoted to Debug. Three, because the value of those rows
+    /// is diagnostic rather than statistical — the first few answer "what is breaking?" and the
+    /// hundredth identical row answers nothing the cycle summary does not, while costing an
+    /// operator the rest of the Logs tab. The cap resets each cycle, so a sustained outage stays
+    /// visible at Warning indefinitely without ever flooding it, and the summary line reports how
+    /// many were suppressed.
+    /// </summary>
+    private const int MaxDetailedFailuresPerCycle = 3;
+
     private readonly Func<(ClassifierPollingWorkerDependencies Dependencies, IDisposable? Scope)> _resolveDependencies;
     private readonly TimeProvider _timeProvider;
     private readonly TitleNormalizer _titleNormalizer;
@@ -228,6 +239,13 @@ public sealed class ClassifierPollingWorker : BackgroundService
         var failed = 0;
         var rewritten = 0;
 
+        // arb-s4lg: the per-cycle rate cap. The counter and the cap live here because "a cycle" is
+        // this type's concept — ReleaseClassifier has no idea one is running — and it resets on
+        // every pass, so a sustained outage costs the same few rows each cycle instead of one per
+        // candidate forever.
+        var failuresByType = new Dictionary<string, int>(StringComparer.Ordinal);
+        var detailedFailures = 0;
+
         foreach (var rendered in candidates)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -259,7 +277,22 @@ public sealed class ClassifierPollingWorker : BackgroundService
 
             if (cached is null)
             {
-                await deps.ClassifierWorker.ClassifyAndCacheAsync(candidate, rendered.SourceName, cancellationToken).ConfigureAwait(false);
+                // The cap is evaluated BEFORE the call, so the Nth failure is still detailed and the
+                // (N+1)th is not; the counter only advances when a failure actually occurs.
+                var detailAtWarning = detailedFailures < MaxDetailedFailuresPerCycle;
+                await deps.ClassifierWorker.ClassifyAndCacheAsync(
+                    candidate,
+                    rendered.SourceName,
+                    cancellationToken,
+                    onFailure: type =>
+                    {
+                        failuresByType[type] = failuresByType.GetValueOrDefault(type) + 1;
+                        if (detailAtWarning)
+                        {
+                            detailedFailures++;
+                        }
+                    },
+                    detailAtWarning: detailAtWarning).ConfigureAwait(false);
                 // Re-read rather than assume: a fail-open classification writes nothing, and an
                 // orphaned rewrite must never be attached to a verdict that was never cached.
                 cached = deps.VerdictCacheReader.TryGet(key);
@@ -296,7 +329,7 @@ public sealed class ClassifierPollingWorker : BackgroundService
             }
         }
 
-        WarnOnFailures(classified, failed);
+        WarnOnFailures(classified, failed, failuresByType, detailedFailures);
 
         await RecordCycleAsync(deps, classified, failed, rewritten, cancellationToken).ConfigureAwait(false);
     }
@@ -313,13 +346,22 @@ public sealed class ClassifierPollingWorker : BackgroundService
     /// </para>
     ///
     /// <para>
-    /// COUNTS ONLY, and NOT the failing error. That is a deliberate limit, not an oversight: no
-    /// exception reaches this layer to report. <c>ReleaseClassifier.TryClassifyAsync</c> catches
-    /// and discards it, <c>ClassifierWorker.ClassifyAndCacheAsync</c> returns void, and the
-    /// <c>failed</c> counter above is incremented from a null cache RE-READ rather than from any
-    /// error. Carrying the last error's type and message would mean changing that fail-open
-    /// contract across Arbitarr.Ai, which is bead arb-p94g's, not this one's. Until it lands, the
-    /// counts are the whole of what this layer honestly knows.
+    /// The counts are no longer the whole of what this layer knows. They were, when this line was
+    /// written: the classifier caught and discarded the exception, so nothing reached here but a
+    /// null cache RE-READ. arb-p94g gave the classifier its own log line, and arb-s4lg gave it a
+    /// per-call <c>onFailure</c> callback reporting the exception TYPE, so the breakdown now
+    /// arrives and this line carries it. The <c>failed</c> counter above is still incremented from
+    /// the cache re-read, which is deliberate — it is the correctness test — so
+    /// <paramref name="failed"/> and the breakdown's total are counted independently and can
+    /// legitimately differ if a call fails after writing.
+    /// </para>
+    ///
+    /// <para>
+    /// It also reports how many per-call detail rows were SUPPRESSED by the
+    /// <see cref="MaxDetailedFailuresPerCycle"/> cap, so the cap can never silently hide volume: an
+    /// operator reading "3 detailed above, 47 more at Debug" knows both the scale and where the
+    /// rest went. Still the exception TYPES only — never a message, and never a title, GUID,
+    /// source name, prompt or URL.
     /// </para>
     ///
     /// <para>
@@ -328,19 +370,32 @@ public sealed class ClassifierPollingWorker : BackgroundService
     /// error text here — an exception message from an HTTP client is exactly the shape that would.
     /// </para>
     /// </summary>
-    private void WarnOnFailures(int classified, int failed)
+    private void WarnOnFailures(
+        int classified, int failed, Dictionary<string, int> failuresByType, int detailedFailures)
     {
         if (failed == 0)
         {
             return;
         }
 
+        var breakdown = failuresByType.Count == 0
+            ? "unavailable"
+            : string.Join(
+                ", ",
+                failuresByType.OrderBy(pair => pair.Key, StringComparer.Ordinal).Select(pair => $"{pair.Key}={pair.Value}"));
+
+        var suppressed = Math.Max(0, failuresByType.Values.Sum() - detailedFailures);
+
         _logger.LogWarning(
-            "Classifier cycle classified {Classified} of {Attempted} candidates; {Failed} attempt(s) failed. " +
+            "Classifier cycle classified {Classified} of {Attempted} candidates; {Failed} attempt(s) failed, " +
+            "by exception type: {FailuresByType}. {Detailed} logged in full above and {Suppressed} more at Debug. " +
             "The classifier fails open, so searches are unaffected and the releases are left unclassified.",
             classified,
             classified + failed,
-            failed);
+            failed,
+            breakdown,
+            detailedFailures,
+            suppressed);
     }
 
     /// <summary>

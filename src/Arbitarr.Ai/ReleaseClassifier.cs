@@ -53,11 +53,31 @@ public sealed class ReleaseClassifier
     /// </para>
     ///
     /// <para>
-    /// arb-p94g: the catch also LOGS, at Warning, once per failed call. It previously discarded the
-    /// exception with no binding, which made a total model outage invisible — the failure produces
-    /// no verdict, no throw, and no row, so 24 consecutive failed calls (audit F-007) left the
-    /// operator nothing to read. The fail-open behaviour is unchanged: this still returns
-    /// <see langword="null"/>, and cancellation still propagates.
+    /// arb-p94g: the catch also LOGS. It previously discarded the exception with no binding, which
+    /// made a total model outage invisible — the failure produces no verdict, no throw, and no row,
+    /// so 24 consecutive failed calls (audit F-007) left the operator nothing to read. The
+    /// fail-open behaviour is unchanged: this still returns <see langword="null"/>, and
+    /// cancellation still propagates.
+    /// </para>
+    ///
+    /// <para>
+    /// arb-s4lg: that line is RATE-CAPPED rather than unconditional, because "once per failed call"
+    /// is once per candidate per cycle — during a sustained outage every candidate fails, so the
+    /// Warning level filled with identical rows. The caller decides the level per call via
+    /// <paramref name="detailAtWarning"/> and counts types via <paramref name="onFailure"/>; this
+    /// type deliberately knows nothing about cycles, because it has no concept of one. The Host's
+    /// polling worker owns the cap and the per-cycle counter, and reports the rest as a single
+    /// summary line. Nothing is lost when the cap trips: the suppressed calls still log the same
+    /// content at Debug, and their types still reach the summary.
+    /// </para>
+    ///
+    /// <para>
+    /// <see cref="SyncReleaseArbiter"/> (arb-hwqv) is the request-path sibling of this catch, and
+    /// its shape is deliberately different rather than accidentally divergent: it logs every
+    /// per-candidate failure at Debug and raises exactly one Warning per arbitration. Three callers,
+    /// three fan-outs — an arbitration is one user action over many candidates, a classifier cycle
+    /// is many candidates over a background loop, and a single call is one row. Do not align them
+    /// on the strength of the shared fail-open contract.
     /// </para>
     ///
     /// <para>
@@ -78,7 +98,21 @@ public sealed class ReleaseClassifier
     /// construction.
     /// </para>
     /// </summary>
-    public async Task<OllamaVerdict?> TryClassifyAsync(ReleaseCandidate candidate, CancellationToken cancellationToken = default)
+    /// <param name="onFailure">
+    /// Optional. Invoked with the exception's TYPE NAME (never its message) when a call fails, so a
+    /// caller that spans many calls can report them as one summary. Defaulted, so the existing
+    /// two-argument call sites are unaffected.
+    /// </param>
+    /// <param name="detailAtWarning">
+    /// Whether this particular failure's detail line is a Warning (the default, and what a lone
+    /// caller wants) or a Debug row. The caller decides, because only the caller knows how many
+    /// failures it is about to produce; see the rate-cap note above.
+    /// </param>
+    public async Task<OllamaVerdict?> TryClassifyAsync(
+        ReleaseCandidate candidate,
+        CancellationToken cancellationToken = default,
+        Action<string>? onFailure = null,
+        bool detailAtWarning = true)
     {
         ArgumentNullException.ThrowIfNull(candidate);
 
@@ -88,16 +122,29 @@ public sealed class ReleaseClassifier
         }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
+            var exceptionType = ex.GetType().Name;
+
+            // Report the TYPE (never the message) to whoever is counting. The message can embed a
+            // host and is fine in a log row, but this value is aggregated into a summary line, so
+            // only the type crosses the seam.
+            onFailure?.Invoke(exceptionType);
+
             // Type is stated in the template as well as carried by the exception argument: the
             // rendered message is what an operator reads in the Logs tab, and a row whose text is
             // only "classification failed" sends them to the exception column to learn what kind
             // of failure it was.
-            _logger.LogWarning(
-                ex,
+            const string Template =
                 "Classification failed and was skipped for this release ({ExceptionType}): {ExceptionMessage}. " +
-                "The classifier fails open, so the search path is unaffected and the release is left unclassified.",
-                ex.GetType().Name,
-                ex.Message);
+                "The classifier fails open, so the search path is unaffected and the release is left unclassified.";
+
+            if (detailAtWarning)
+            {
+                _logger.LogWarning(ex, Template, exceptionType, ex.Message);
+            }
+            else
+            {
+                _logger.LogDebug(ex, Template, exceptionType, ex.Message);
+            }
 
             return null;
         }
