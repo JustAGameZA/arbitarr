@@ -125,4 +125,38 @@ public class PrunePredicatesTests
         var now = new DateTimeOffset(2026, 9, 11, 12, 0, 0, TimeSpan.Zero);
         Assert.True(PrunePredicates.IsReleaseLookupEntryPrunable(now - TimeSpan.FromDays(1), now));
     }
+
+    /// <summary>
+    /// arb-dng: a snapshot one tick BEFORE its expiry still serves, so it must not be pruned. The
+    /// three tests around this boundary are what pin the predicate to
+    /// <c>QuerySnapshotStore.GetAsync</c>: the two must agree exactly on which side of
+    /// <c>ExpiresAt</c> a row is alive, or there is an instant where a pagination token resolves but
+    /// has been deleted, or is kept but no longer resolves.
+    /// </summary>
+    [Fact]
+    public void QuerySnapshotCache_NotPrunable_OneTickBeforeExpiry()
+    {
+        var now = new DateTimeOffset(2026, 9, 11, 12, 0, 0, TimeSpan.Zero);
+        Assert.False(PrunePredicates.IsQuerySnapshotCacheEntryPrunable(now + TimeSpan.FromTicks(1), now));
+    }
+
+    /// <summary>
+    /// arb-dng: the boundary is INCLUSIVE — a row exactly AT its expiry is prunable, matching
+    /// <c>QuerySnapshotStore.GetAsync</c>'s <c>ExpiresAt &lt;= asOf</c>, which stops serving it at
+    /// that same instant.
+    /// </summary>
+    [Fact]
+    public void QuerySnapshotCache_Prunable_ExactlyAtExpiry()
+    {
+        var now = new DateTimeOffset(2026, 9, 11, 12, 0, 0, TimeSpan.Zero);
+        Assert.True(PrunePredicates.IsQuerySnapshotCacheEntryPrunable(now, now));
+    }
+
+    /// <summary>arb-dng: and comfortably past it, for the ordinary case.</summary>
+    [Fact]
+    public void QuerySnapshotCache_Prunable_PastExpiry()
+    {
+        var now = new DateTimeOffset(2026, 9, 11, 12, 0, 0, TimeSpan.Zero);
+        Assert.True(PrunePredicates.IsQuerySnapshotCacheEntryPrunable(now - TimeSpan.FromDays(1), now));
+    }
 }

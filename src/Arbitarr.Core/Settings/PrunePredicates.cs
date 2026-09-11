@@ -65,4 +65,20 @@ public static class PrunePredicates
     /// </summary>
     public static bool IsReleaseLookupEntryPrunable(DateTimeOffset expiresAt, DateTimeOffset now)
         => expiresAt <= now;
+
+    /// <summary>
+    /// arb-dng: query snapshot cache prune-eligibility predicate. Like
+    /// <see cref="IsReleaseLookupEntryPrunable"/> and unlike the age-based siblings it takes an
+    /// absolute expiry, because the row carries its own <c>ExpiresAt</c> stamped at write time from
+    /// the then-current <c>query_snapshot_ttl</c> setting.
+    ///
+    /// <para>The boundary is INCLUSIVE — a row exactly at its expiry is prunable — and it mirrors
+    /// <c>QuerySnapshotStore.GetAsync</c>'s read-time check, which returns null when
+    /// <c>entry.ExpiresAt &lt;= asOf</c>. The read side decides whether a pagination token still
+    /// resolves, so this follows it rather than the other way round; a disagreement by a tick would
+    /// leave an instant where a snapshot still serves but has already been deleted, or is kept but
+    /// no longer serves.</para>
+    /// </summary>
+    public static bool IsQuerySnapshotCacheEntryPrunable(DateTimeOffset expiresAt, DateTimeOffset now)
+        => expiresAt <= now;
 }
