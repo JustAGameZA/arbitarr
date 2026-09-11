@@ -26,6 +26,23 @@ namespace Arbitarr.Core.Ai;
 /// push arbitrary length into either. The cap is applied HERE, at the point of capture, rather than
 /// at the point of display, so no later path can be given the untruncated value by accident.</para>
 ///
+/// <para><b>arb-959: why there are TWO bounds, and why the scrub sits between them.</b> The cut to
+/// <see cref="MaxExcerptLength"/> runs AFTER the scrub, because cutting first can slice a host or
+/// address in half and leave behind a fragment no scrubber arm recognises — <c>dial tcp [fd00</c>
+/// is not host-shaped, so every arm passes over it and the leading half of a real address
+/// publishes. Scrubbing first means the arms always see whole addresses.
+///
+/// But the scrubbers are regex passes, so handing them an unbounded body would turn an oversized
+/// upstream response into an oversized scan — the cost the old "cap first" order was buying. Hence
+/// <see cref="MaxScrubInputLength"/>: an input bound applied BEFORE the scrub, generous enough that
+/// an address straddling offset <see cref="MaxExcerptLength"/> is nowhere near it, small enough to
+/// keep the regex work bounded. The straddle problem does still exist at the larger bound, but a
+/// fragment stranded there sits far past character 200 and so never reaches the excerpt at all.
+///
+/// One consequence worth stating: because redaction replaces addresses with a shorter token, the
+/// excerpt may now come out SHORTER than <see cref="MaxExcerptLength"/> even for a very long body.
+/// The cap is a ceiling, not a promised length.</para>
+///
 /// <para><b>THE EXCERPT IS SCRUBBED ONCE, HERE, AT CONSTRUCTION — never only at display.</b> It is
 /// tempting to keep the raw body and let the display path clean it, since
 /// <c>SanitizedErrorDescription</c> is what feeds the unauthenticated <c>/api/status</c>. That is
@@ -52,9 +69,21 @@ public sealed class OllamaRequestException : HttpRequestException
     public const int MaxExcerptLength = 200;
 
     /// <summary>
-    /// The first <see cref="MaxExcerptLength"/> characters of the response body, whitespace
+    /// arb-959: the most text the scrubber is ever handed — the input bound described on this type,
+    /// applied before the regex passes so an oversized body cannot become an oversized scan.
+    ///
+    /// <para>Four times <see cref="MaxExcerptLength"/>: large enough that an address straddling the
+    /// excerpt cut is comfortably whole by the time the arms see it (the longest shape they match, a
+    /// bracketed IPv6 with a zone and a port, is well under a hundred characters), and small enough
+    /// that the bounded-input argument the old cap-first order rested on still holds.</para>
+    /// </summary>
+    public const int MaxScrubInputLength = 4 * MaxExcerptLength;
+
+    /// <summary>
+    /// At most <see cref="MaxExcerptLength"/> characters of the response body, whitespace
     /// collapsed and SCRUBBED of hosts, addresses and credentials; an empty string when the body
-    /// was empty, unreadable, or scrubbed away entirely.
+    /// was empty, unreadable, or scrubbed away entirely. Shorter than the cap whenever redaction
+    /// shortened the text — the cap is a ceiling, not a promised length.
     ///
     /// <para>Safe to log. Still not safe to assume unbounded: it is capped, and the display path
     /// scrubs again on its own account.</para>
@@ -63,8 +92,9 @@ public sealed class OllamaRequestException : HttpRequestException
 
     /// <param name="statusCode">The status Ollama answered with.</param>
     /// <param name="bodyExcerpt">
-    /// The response-body excerpt. Scrubbed and capped HERE, so a caller may pass raw upstream text
-    /// and no raw text survives onto the object or into <see cref="System.Exception.Message"/>.
+    /// The response-body excerpt. Bounded, scrubbed and capped HERE, in that order, so a caller may
+    /// pass raw upstream text and no raw text survives onto the object or into
+    /// <see cref="System.Exception.Message"/>.
     /// </param>
     /// <remarks>
     /// The ONLY constructor, deliberately: every route onto this object therefore passes through
@@ -87,10 +117,15 @@ public sealed class OllamaRequestException : HttpRequestException
         BodyExcerpt = cleanExcerpt;
     }
 
-    /// <summary>Caps the body, then scrubs it. Cap first: the scrubbers are regex passes, and
-    /// bounding their input keeps an oversized body from becoming an oversized scan.</summary>
+    /// <summary>
+    /// arb-959: collapse → bound the scrub input → scrub → cut to the excerpt cap. The scrub sits
+    /// BETWEEN the two bounds on purpose; see the "TWO bounds" paragraph on this type for why
+    /// neither order alone works. Swapping the last two steps back reintroduces the straddle leak.
+    /// </summary>
     private static string Clean(string? bodyExcerpt) =>
-        Diagnostics.SanitizedErrorDescription.ScrubForPublication(Excerpt(bodyExcerpt));
+        Truncate(
+            Diagnostics.SanitizedErrorDescription.ScrubForPublication(Collapse(bodyExcerpt)),
+            MaxExcerptLength);
 
     /// <summary>
     /// The message carries the SCRUBBED excerpt rather than omitting it. This is what an operator
@@ -128,16 +163,17 @@ public sealed class OllamaRequestException : HttpRequestException
             body = string.Empty;
         }
 
-        // Handed over RAW: the constructor caps and scrubs, and it is the only thing that does, so
-        // there is one place to look for what this type guarantees about its own contents.
+        // Handed over RAW: the constructor bounds, scrubs and caps, and it is the only thing that
+        // does, so there is one place to look for what this type guarantees about its own contents.
         return new OllamaRequestException(statusCode, body);
     }
 
     /// <summary>
     /// Collapses runs of whitespace (a body split across lines becomes one readable line in a
-    /// single-line health field) and truncates to the cap.
+    /// single-line health field) and bounds the result to <see cref="MaxScrubInputLength"/> — the
+    /// scrubber's input bound, NOT the excerpt cap. The excerpt cap is applied after the scrub.
     /// </summary>
-    private static string Excerpt(string? body)
+    private static string Collapse(string? body)
     {
         if (string.IsNullOrWhiteSpace(body))
         {
@@ -146,8 +182,9 @@ public sealed class OllamaRequestException : HttpRequestException
 
         var collapsed = string.Join(' ', body.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
-        return collapsed.Length <= MaxExcerptLength
-            ? collapsed
-            : collapsed[..MaxExcerptLength];
+        return Truncate(collapsed, MaxScrubInputLength);
     }
+
+    private static string Truncate(string text, int limit) =>
+        text.Length <= limit ? text : text[..limit];
 }

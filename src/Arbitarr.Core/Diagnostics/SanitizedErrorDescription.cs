@@ -321,6 +321,14 @@ public static partial class SanitizedErrorDescription
     /// final group and leaves a bare <c>4</c> behind; the <c>\d*</c> absorbs whatever digits that
     /// cap stranded, so no fragment of a port survives beside the redaction token.</para>
     ///
+    /// <para>arb-959, correcting what this note used to claim: a <c>(?!\d)</c> lookahead after the
+    /// port group WOULD also close the stranded digit — the #195 security reviewer showed the engine
+    /// backtracks the four-character hex group to <c>:114</c>… and on until the port alternative
+    /// consumes all five digits and the lookahead is satisfied. So <c>\d*</c> is not the only form
+    /// that works; it was chosen as the simpler one, and because it reaches the same result by
+    /// consuming forwards rather than by making the match depend on backtracking through an arm that
+    /// carries a <c>MatchTimeout</c>.</para>
+    ///
     /// <para><b>Deliberately over-scrubbed:</b> a bare colon-separated run of hex-like groups is
     /// indistinguishable from a MAC address or a timestamp, so <c>aa:bb:cc</c> and <c>12:34:56</c>
     /// are redacted too. That is this file's stated trade — over-scrubbing beats publishing

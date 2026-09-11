@@ -160,6 +160,101 @@ public sealed class SanitizedErrorDescriptionTests
     }
 
     /// <summary>
+    /// arb-959: <b>an address that STRADDLES the excerpt cut must not leave a fragment behind.</b>
+    ///
+    /// <para>The old order cut the collapsed body to <see cref="OllamaRequestException.MaxExcerptLength"/>
+    /// and scrubbed the result. A host positioned across offset 200 was therefore handed to the
+    /// scrubber already cut in half, and half a host is not host-shaped: <c>ollama.int</c> carries
+    /// one dot, no port and no recognised pseudo-TLD, so <see cref="SanitizedErrorDescription"/>'s
+    /// <c>HostWithPort</c> and <c>DottedHostName</c> arms both pass over it and the leading half of a
+    /// real internal hostname published on an unauthenticated surface. Scrubbing before the cut is
+    /// what closes it, and this test is the reason that order cannot be "tidied" back.</para>
+    ///
+    /// <para>Positive control, in the strong form CLAUDE.md §4 asks for: the assertion is not merely
+    /// that the whole host is absent (a wholesale-dropped excerpt would satisfy that), but that the
+    /// specific FRAGMENT the old order stranded is absent, AND that the redaction token is present —
+    /// proving the scrubber saw the address and removed it rather than never reaching it. The
+    /// fragment is first shown findable in the old order's own output, computed here, so the search
+    /// that then asserts absence is demonstrably capable of finding it.</para>
+    /// </summary>
+    [Fact]
+    public void A_host_straddling_the_excerpt_cut_leaves_no_fragment()
+    {
+        // RFC 2606 reserved name, never a real host.
+        const string plantedHost = "ollama.internal.example:11434";
+        const string prefix = """{"error":"dial tcp """;
+        // Positions the host at offset 190, so the cut at 200 falls INSIDE it — leaving "ollama.int",
+        // which has one dot, no port and no recognised pseudo-TLD, so NO arm matches it.
+        var body = prefix + new string('x', 190 - prefix.Length) + plantedHost + " connect: refused\"}";
+
+        // The old order, reproduced through the public surface. Cut to the cap FIRST (the body has
+        // no whitespace runs, so collapsing is a no-op and this slice is exactly what the old
+        // Excerpt() produced), then hand the already-cut text through the constructor — whose own
+        // bounds are no-ops at this length — so all that remains is the scrub, applied to cut text.
+        const string strandedFragment = "ollama.int";
+        var oldOrderExcerpt =
+            new OllamaRequestException(
+                HttpStatusCode.BadRequest,
+                body[..OllamaRequestException.MaxExcerptLength]).BodyExcerpt;
+        // Detectability: the old order really did strand a fragment of the planted host, and this
+        // is the very search used to assert its absence below.
+        Assert.Contains(strandedFragment, oldOrderExcerpt, StringComparison.Ordinal);
+
+        var ex = new OllamaRequestException(HttpStatusCode.BadRequest, body);
+
+        Assert.DoesNotContain(strandedFragment, ex.BodyExcerpt, StringComparison.Ordinal);
+        Assert.DoesNotContain(plantedHost, ex.BodyExcerpt, StringComparison.Ordinal);
+        Assert.DoesNotContain(strandedFragment, ex.Message, StringComparison.Ordinal);
+        // And it was scrubbed, not merely cut short of the address.
+        Assert.Contains(SanitizedErrorDescription.Replacement, ex.BodyExcerpt, StringComparison.Ordinal);
+        // The ceiling still holds.
+        Assert.True(ex.BodyExcerpt.Length <= OllamaRequestException.MaxExcerptLength);
+    }
+
+    /// <summary>
+    /// arb-959: the SECOND bound — <see cref="OllamaRequestException.MaxScrubInputLength"/> — has a
+    /// straddle of its own, and this test documents the accepted behaviour rather than pretending it
+    /// away.
+    ///
+    /// <para>A body long enough to be cut at the scrub-input bound can have a host across THAT cut,
+    /// and the resulting fragment is no more address-shaped than before. The difference is where it
+    /// sits: the input bound is four times the excerpt cap, so anything stranded there is hundreds of
+    /// characters past the end of the excerpt and is discarded by the final truncation. Nothing from
+    /// that region can reach a dashboard or a log line. That is why one bound may be generous and the
+    /// other exact.</para>
+    ///
+    /// <para>Positive control: the host is shown present in the input by the same search, and an
+    /// address planted INSIDE the excerpt region of the same body is shown to have been scrubbed —
+    /// so a vacuously empty excerpt cannot pass this test.</para>
+    /// </summary>
+    [Fact]
+    public void A_host_straddling_the_scrub_input_bound_never_reaches_the_excerpt()
+    {
+        const string farHost = "far.internal.example:11434";
+        const string nearHost = "near.internal.example:11434";
+        const string prefix = """{"error":"dial tcp """;
+        var bound = OllamaRequestException.MaxScrubInputLength;
+
+        // nearHost sits early (inside the excerpt region); farHost straddles the input bound.
+        var head = prefix + nearHost + " then ";
+        var body = head + new string('x', bound - 10 - head.Length) + farHost + " refused\"}";
+
+        // Detectability: both planted hosts are in the input, found by these very searches.
+        Assert.Contains(farHost, body, StringComparison.Ordinal);
+        Assert.Contains(nearHost, body, StringComparison.Ordinal);
+
+        var ex = new OllamaRequestException(HttpStatusCode.BadRequest, body);
+
+        // The far host's region is past the excerpt entirely — neither it nor any prefix of it lands.
+        Assert.DoesNotContain(farHost, ex.BodyExcerpt, StringComparison.Ordinal);
+        Assert.DoesNotContain("far.int", ex.BodyExcerpt, StringComparison.Ordinal);
+        // The near host was inside the excerpt region and was scrubbed there.
+        Assert.DoesNotContain(nearHost, ex.BodyExcerpt, StringComparison.Ordinal);
+        Assert.Contains(SanitizedErrorDescription.Replacement, ex.BodyExcerpt, StringComparison.Ordinal);
+        Assert.True(ex.BodyExcerpt.Length <= OllamaRequestException.MaxExcerptLength);
+    }
+
+    /// <summary>
     /// <b>THE MESSAGE ITSELF IS CLEAN, not merely the display path.</b>
     ///
     /// <para>Scrubbing only where the dashboard reads would leave the raw body on
