@@ -116,11 +116,18 @@ if (!string.Equals(
     // when the store is unwritable, both the failure and the notice about it vanish, and the Logs
     // tab becomes structurally unable to explain why it is empty. Console/docker logs is the one
     // surface guaranteed to survive that, so the last-resort report goes there directly.
-    builder.Logging.AddProvider(new Arbitarr.Data.Logging.SqliteLoggerProvider(
+    //
+    // arb-1of: the registration moved behind LoggingSetup.AddArbitarrSqliteLogging, which adds
+    // this provider AND the per-provider category filters that keep framework chatter out of the
+    // store. It is one call rather than inline statements so a test can drive the same code --
+    // Program.cs's top-level statements are not independently constructible, so the guards for
+    // this region have had to assert against Program.cs's TEXT, which cannot show that a filter
+    // actually drops a line. Console is a different provider type and is deliberately unfiltered.
+    Arbitarr.Host.Logging.LoggingSetup.AddArbitarrSqliteLogging(
+        builder.Logging,
         logStore,
-        LogLevel.Information,
         onError: ex => Console.Error.WriteLine(
-            $"[arbitarr] log sink write failed; entries are being dropped. {ex.GetType().Name}: {ex.Message}")));
+            $"[arbitarr] log sink write failed; entries are being dropped. {ex.GetType().Name}: {ex.Message}"));
 }
 
 builder.Services.AddSingleton(new SqliteConnectionOptions { DatabasePath = databasePath });
