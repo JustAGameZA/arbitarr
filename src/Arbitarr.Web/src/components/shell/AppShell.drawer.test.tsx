@@ -1,9 +1,10 @@
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { renderApp } from '../../test/renderApp';
 import { useAdminKeyStore } from '../../state/adminKeyStore';
+import { mockApi, signedIn } from '../../test/mockApi';
 
 /**
  * The off-canvas drawer (#48). jsdom does not evaluate media queries, so the
@@ -16,12 +17,21 @@ import { useAdminKeyStore } from '../../state/adminKeyStore';
 describe('AppShell off-canvas drawer (#48)', () => {
   beforeEach(() => {
     useAdminKeyStore.setState({ key: null, serverKeyUnset: false });
+    // arb-7m7: RequireSession now renders nothing until the first
+    // /api/auth/session answer arrives (previously it rendered the shell
+    // immediately, which is what let these tests skip mocking a session at
+    // all). A mocked signed-in session is required for the shell to mount.
+    mockApi({ ...signedIn() });
   });
 
-  it('is closed by default with aria-expanded=false', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('is closed by default with aria-expanded=false', async () => {
     renderApp('/');
 
-    const toggle = screen.getByRole('button', { name: 'Open navigation' });
+    const toggle = await screen.findByRole('button', { name: 'Open navigation' });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
   });
 
@@ -29,7 +39,7 @@ describe('AppShell off-canvas drawer (#48)', () => {
     const user = userEvent.setup();
     renderApp('/');
 
-    await user.click(screen.getByRole('button', { name: 'Open navigation' }));
+    await user.click(await screen.findByRole('button', { name: 'Open navigation' }));
 
     const toggle = screen.getByRole('button', { name: 'Close navigation' });
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
@@ -39,7 +49,7 @@ describe('AppShell off-canvas drawer (#48)', () => {
     const user = userEvent.setup();
     renderApp('/');
 
-    await user.click(screen.getByRole('button', { name: 'Open navigation' }));
+    await user.click(await screen.findByRole('button', { name: 'Open navigation' }));
     await user.click(screen.getByRole('button', { name: 'Close navigation' }));
 
     expect(screen.getByRole('button', { name: 'Open navigation' })).toHaveAttribute(
@@ -52,7 +62,7 @@ describe('AppShell off-canvas drawer (#48)', () => {
     const user = userEvent.setup();
     renderApp('/');
 
-    const toggle = screen.getByRole('button', { name: 'Open navigation' });
+    const toggle = await screen.findByRole('button', { name: 'Open navigation' });
     await user.click(toggle);
 
     expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveFocus();
@@ -66,7 +76,7 @@ describe('AppShell off-canvas drawer (#48)', () => {
     const user = userEvent.setup();
     renderApp('/');
 
-    await user.click(screen.getByRole('button', { name: 'Open navigation' }));
+    await user.click(await screen.findByRole('button', { name: 'Open navigation' }));
     expect(screen.getByRole('button', { name: 'Close navigation' })).toBeInTheDocument();
 
     await user.keyboard('{Escape}');
@@ -80,6 +90,8 @@ describe('AppShell off-canvas drawer (#48)', () => {
   it('does not react to Escape while already closed', async () => {
     const user = userEvent.setup();
     renderApp('/');
+
+    await screen.findByRole('button', { name: 'Open navigation' });
 
     // Guards against a handler that fires unconditionally and, say, throws or
     // steals focus even when there is nothing open to close.
@@ -95,7 +107,7 @@ describe('AppShell off-canvas drawer (#48)', () => {
     const user = userEvent.setup();
     const { container } = renderApp('/');
 
-    await user.click(screen.getByRole('button', { name: 'Open navigation' }));
+    await user.click(await screen.findByRole('button', { name: 'Open navigation' }));
 
     const backdrop = container.querySelector('[aria-hidden="true"].backdrop, [class*="backdrop"]');
     expect(backdrop).not.toBeNull();
@@ -107,9 +119,10 @@ describe('AppShell off-canvas drawer (#48)', () => {
     );
   });
 
-  it('renders no backdrop while closed', () => {
+  it('renders no backdrop while closed', async () => {
     const { container } = renderApp('/');
 
+    await screen.findByRole('button', { name: 'Open navigation' });
     expect(container.querySelector('[class*="backdrop"]')).toBeNull();
   });
 
@@ -130,9 +143,10 @@ describe('AppShell off-canvas drawer (#48)', () => {
       return element as HTMLElement;
     }
 
-    it('marks the aside closed by default', () => {
+    it('marks the aside closed by default', async () => {
       const { container } = renderApp('/');
 
+      await screen.findByRole('button', { name: 'Open navigation' });
       expect(aside(container)).toHaveAttribute('data-open', 'false');
     });
 
@@ -140,7 +154,7 @@ describe('AppShell off-canvas drawer (#48)', () => {
       const user = userEvent.setup();
       const { container } = renderApp('/');
 
-      await user.click(screen.getByRole('button', { name: 'Open navigation' }));
+      await user.click(await screen.findByRole('button', { name: 'Open navigation' }));
       expect(aside(container)).toHaveAttribute('data-open', 'true');
 
       await user.click(screen.getByRole('button', { name: 'Close navigation' }));
@@ -151,7 +165,7 @@ describe('AppShell off-canvas drawer (#48)', () => {
       const user = userEvent.setup();
       const { container } = renderApp('/');
 
-      await user.click(screen.getByRole('button', { name: 'Open navigation' }));
+      await user.click(await screen.findByRole('button', { name: 'Open navigation' }));
       expect(aside(container)).toHaveAttribute('data-open', 'true');
 
       await user.click(screen.getByRole('link', { name: 'Rules' }));
@@ -164,7 +178,7 @@ describe('AppShell off-canvas drawer (#48)', () => {
       const user = userEvent.setup();
       const { container } = renderApp('/');
 
-      await user.click(screen.getByRole('button', { name: 'Open navigation' }));
+      await user.click(await screen.findByRole('button', { name: 'Open navigation' }));
 
       // The nav must NOT carry a competing state class: the transform lives on
       // exactly one element, and two nested transforms is how arb-759 is
@@ -179,7 +193,7 @@ describe('AppShell off-canvas drawer (#48)', () => {
     const user = userEvent.setup();
     renderApp('/');
 
-    await user.click(screen.getByRole('button', { name: 'Open navigation' }));
+    await user.click(await screen.findByRole('button', { name: 'Open navigation' }));
     expect(screen.getByRole('button', { name: 'Close navigation' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: 'Rules' }));

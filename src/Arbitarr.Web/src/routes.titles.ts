@@ -1,11 +1,12 @@
 /**
  * The single path -> label mapping for the app's seven surfaces.
  *
- * Two consumers read this table and must never drift apart:
+ * Three consumers read this table and must never drift apart:
  *  - pageTitle.test.tsx, which asserts the in-page <h1> (AC2b: exactly one
  *    page title per view, living in the content pane).
  *  - AppShell's document-title effect (documentTitle.test.tsx), which sets
  *    the browser tab title per route.
+ *  - Login.tsx, which sets `document.title` to `LOGIN_TITLE` on mount.
  *
  * Adding a surface means adding a row here -- nowhere else.
  */
@@ -24,6 +25,17 @@ export const APP_NAME = 'Arbitarr';
 
 /** Title used for any path that does not match a row in ROUTES. */
 export const NOT_FOUND_TITLE = `Page not found — ${APP_NAME}`;
+
+/**
+ * Title for the sign-in screen (arb-7m7).
+ *
+ * `/login` is deliberately absent from ROUTES above -- see routes.tsx's note on
+ * why it and `/setup` sit outside the guarded shell -- so it cannot pick up a
+ * title through `resolveDocumentTitle`. Kept here rather than as a literal in
+ * Login.tsx so the title mechanism stays in one file, the same reason every
+ * other route's title lives in this table rather than at its call site.
+ */
+export const LOGIN_TITLE = `Sign in — ${APP_NAME}`;
 
 /**
  * Resolves the document title for a given pathname.
