@@ -54,6 +54,16 @@ public sealed class RemoteAddressWebApplicationFactory : WebApplicationFactory<P
     /// <summary>The per-instance <c>/config</c> directory this host was given.</summary>
     public string ConfigDirectory => _configDirectory;
 
+    /// <summary>
+    /// The exception that defeated the final delete attempt, or null when the directory went away.
+    ///
+    /// <para>KEEP IN STEP WITH <see cref="ArbitarrWebApplicationFactory"/>, which carries the full
+    /// rationale: the failure is TOLERATED (a locked file must not fail a green run) but recorded
+    /// rather than swallowed silently, so the next person to look does not re-derive the leak from
+    /// scratch. Without it this twin discards the same evidence its sibling keeps.</para>
+    /// </summary>
+    public Exception? LastDeleteFailure { get; private set; }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         Directory.CreateDirectory(_configDirectory);
@@ -144,6 +154,7 @@ public sealed class RemoteAddressWebApplicationFactory : WebApplicationFactory<P
             {
                 if (attempt == attempts)
                 {
+                    LastDeleteFailure = ex;
                     return;
                 }
 
