@@ -1,6 +1,8 @@
 using Arbitarr.Core.Filtering;
 using Arbitarr.Core.Releases;
 using Arbitarr.Core.Sources.CircuitBreaker;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Arbitarr.Ai;
 
@@ -21,10 +23,18 @@ namespace Arbitarr.Ai;
 public sealed class ReleaseClassifier
 {
     private readonly IOllamaClient _ollamaClient;
+    private readonly ILogger<ReleaseClassifier> _logger;
 
-    public ReleaseClassifier(IOllamaClient ollamaClient)
+    /// <param name="logger">
+    /// Optional, and defaulted, so every existing <c>new ReleaseClassifier(client)</c> call site
+    /// keeps compiling unchanged — there are several in the test suite, and the Host resolves this
+    /// type from DI, which supplies <see cref="ILogger{TCategoryName}"/> automatically without any
+    /// registration change. A null logger means "log nowhere", never a null reference.
+    /// </param>
+    public ReleaseClassifier(IOllamaClient ollamaClient, ILogger<ReleaseClassifier>? logger = null)
     {
         _ollamaClient = ollamaClient ?? throw new ArgumentNullException(nameof(ollamaClient));
+        _logger = logger ?? NullLogger<ReleaseClassifier>.Instance;
     }
 
     /// <summary>
@@ -41,6 +51,32 @@ public sealed class ReleaseClassifier
     /// ever let escape. The only case rethrown is a caller-requested cancellation, so genuine
     /// shutdown/cancellation still propagates instead of being swallowed as "no verdict".
     /// </para>
+    ///
+    /// <para>
+    /// arb-p94g: the catch also LOGS, at Warning, once per failed call. It previously discarded the
+    /// exception with no binding, which made a total model outage invisible — the failure produces
+    /// no verdict, no throw, and no row, so 24 consecutive failed calls (audit F-007) left the
+    /// operator nothing to read. The fail-open behaviour is unchanged: this still returns
+    /// <see langword="null"/>, and cancellation still propagates.
+    /// </para>
+    ///
+    /// <para>
+    /// The line carries the exception TYPE and MESSAGE and NOTHING THAT IDENTIFIES THE RELEASE — no
+    /// title, guid, source name, prompt text or request URL. The exception itself goes in the
+    /// ILogger exception slot so the stack is available; both the rendered message and the exception
+    /// pass through <c>LogMessageCleanser</c> at the log store's single choke point.
+    /// </para>
+    ///
+    /// <para>
+    /// The exception message is NOT stripped of the host, deliberately. A connection failure's
+    /// message embeds <c>host:port</c>, and that is the diagnosis — <c>CredentialPatterns</c>'
+    /// remarks record why the log cleanser must not gain the host arms that
+    /// <c>SanitizedErrorDescription</c> has: <c>/api/admin/logs</c> is admin-gated, so removing the
+    /// hostname would cost the diagnostic value without protecting anyone not already
+    /// authenticated. The non-2xx path is safe by construction regardless, because
+    /// <see cref="Arbitarr.Core.Ai.OllamaRequestException"/> scrubs and caps the response body at
+    /// construction.
+    /// </para>
     /// </summary>
     public async Task<OllamaVerdict?> TryClassifyAsync(ReleaseCandidate candidate, CancellationToken cancellationToken = default)
     {
@@ -50,8 +86,19 @@ public sealed class ReleaseClassifier
         {
             return await _ollamaClient.ClassifyAsync(candidate, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception) when (!cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
+            // Type is stated in the template as well as carried by the exception argument: the
+            // rendered message is what an operator reads in the Logs tab, and a row whose text is
+            // only "classification failed" sends them to the exception column to learn what kind
+            // of failure it was.
+            _logger.LogWarning(
+                ex,
+                "Classification failed and was skipped for this release ({ExceptionType}): {ExceptionMessage}. " +
+                "The classifier fails open, so the search path is unaffected and the release is left unclassified.",
+                ex.GetType().Name,
+                ex.Message);
+
             return null;
         }
     }
