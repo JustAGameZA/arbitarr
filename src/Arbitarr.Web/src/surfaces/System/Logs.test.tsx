@@ -412,6 +412,10 @@ describe('System logs message filter', () => {
 
     expect(screen.queryByText('Refresh cycle completed.')).not.toBeInTheDocument();
     expect(screen.getByText('Source probe failed for source 4.')).toBeInTheDocument();
+
+    // The footer line describes the client-filtered subset against the server's
+    // unfiltered page (3 entries), not against total/pageCount.
+    expect(screen.getByText('Showing 1 of 3 rows on this page match the message filter.')).toBeInTheDocument();
   });
 
   it('restores all rows when the message filter is cleared', async () => {
@@ -424,9 +428,19 @@ describe('System logs message filter', () => {
     await user.type(input, 'probe');
     expect(screen.queryByText('Refresh cycle completed.')).not.toBeInTheDocument();
 
+    // Positive control: the line is present while filtered, so its absence after
+    // clearing is evidence the filter state changed rather than the line never
+    // rendering at all.
+    expect(
+      screen.getByText('Showing 1 of 3 rows on this page match the message filter.'),
+    ).toBeInTheDocument();
+
     await user.clear(input);
     expect(screen.getByText('Refresh cycle completed.')).toBeInTheDocument();
     expect(screen.getByText('Source probe failed for source 4.')).toBeInTheDocument();
+    expect(
+      screen.queryByText(/rows on this page match the message filter/),
+    ).not.toBeInTheDocument();
   });
 });
 

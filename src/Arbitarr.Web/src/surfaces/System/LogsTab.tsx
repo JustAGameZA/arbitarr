@@ -259,13 +259,26 @@ export function LogsTab() {
       <section className={styles.panel}>
         <h2 className={styles.panelHeading}>Logs</h2>
         <div className={styles.panelBody}>
+          {/* The render prop's own `data` argument is intentionally unused here:
+              `visibleEntries` (declared above, with its own `logs.data ? … : []`
+              fallback) already narrows to the message filter and replaces it. */}
           <QueryState isPending={logs.isPending} error={logs.error} data={logs.data}>
             {() => (
               <>
                 <LogsTable entries={visibleEntries} />
 
+                {trimmedMessageFilter !== '' && (
+                  <p className={styles.muted}>
+                    Showing {visibleEntries.length} of {logs.data?.entries.length ?? 0} rows on
+                    this page match the message filter.
+                  </p>
+                )}
+
                 {/* Hidden entirely on a single page: a disabled Next under a short table
-                    is noise. Same rule the Activity surface applies. */}
+                    is noise. Same rule the Activity surface applies. total/pageCount are
+                    always derived from the server's unfiltered result set, never from
+                    visibleEntries -- the pager describes what the server served, not what
+                    the message filter narrowed it to. */}
                 {total > servedPageSize && (
                   <div className={local.paging}>
                     <button
