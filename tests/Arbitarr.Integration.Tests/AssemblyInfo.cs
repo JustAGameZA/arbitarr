@@ -1,6 +1,6 @@
 // This assembly runs its test classes IN PARALLEL (arb-rga.4). The attribute that used to
 // serialise it -- [assembly: CollectionBehavior(DisableTestParallelization = true)] -- is gone,
-// and the two pieces of process-global state that forced it are gone from the TESTS:
+// and the pieces of process-global state that forced it are handled:
 //
 //   * The config-directory race (arb-rga.2): hosts are handed their /config directory per-builder
 //     via builder.UseSetting("Arbitarr:ConfigDir", ...), not through the process-wide
@@ -9,6 +9,26 @@
 //   * SqliteConnection.ClearAllPools() (arb-rga.3): every TEST-SIDE call site now clears a NAMED
 //     pool (SqliteTestDatabase / SqlitePools) instead of every pool in the process, and
 //     TestProcessGlobalStateTests bans the process-global form from returning to test IL.
+//   * ReleaseGuid._hmacKey (arb-0hd0): the HMAC secret behind every proxy guid, rewritten by
+//     ReleaseGuid.Configure from Program.cs on EVERY host build. Safe now for two reasons, and the
+//     first is the one that matters: RenderedRelease.ProxyGuid is materialised once per instance,
+//     so the five evaluations in a single search request agree BY CONSTRUCTION even if the secret
+//     changes mid-request. Secondly, this factory passes Arbitarr:ReleaseGuidSecret per builder
+//     (again UseSetting, for the same reason as ConfigDir), deterministic per config directory, so
+//     a host build no longer writes a NEW value into the global at all. The second alone would not
+//     be sufficient: two factories still write different values to one static.
+//
+// THIS LIST WAS INCOMPLETE FOR THREE MONTHS, AND THE OMISSION COST FOUR CI FAILURES. It previously
+// read "the two pieces of process-global state that forced it are gone from the TESTS" and
+// concluded parallelism was safe. ReleaseGuid._hmacKey was never audited (arb-rga.4 enumerated
+// only the first two), and it produced arb-agh: an intermittent 404 on an issued download link,
+// with no exception and no log line, misdiagnosed twice and surviving one merged fix (#201) before
+// being traced. The lesson is in the SHAPE of the reasoning, not only the missing item -- "these N
+// globals are handled, therefore parallelism is safe" is worth exactly as much as the enumeration
+// is complete, and nothing was checking completeness. Something is now:
+// Arbitarr.Architecture.Tests' ProductionProcessGlobalStateTests fails on a mutable non-readonly
+// static in a production assembly unless it is allow-listed there with a stated reason. A fourth
+// one cannot arrive silently, and this list can no longer drift by someone forgetting to edit it.
 //
 // THE PROCESS-GLOBAL CLEAR IS NOT GONE FROM THE PROCESS, and that is the live hazard for the
 // parallelism enabled here. Production Arbitarr.Data.Backup.RestoreService still calls
