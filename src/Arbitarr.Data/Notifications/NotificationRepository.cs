@@ -46,6 +46,14 @@ public sealed class NotificationRepository
     private const string SuppressionRateWindowSettingName = "notification:suppression_rate_window";
     private const string DisabledTriggersSettingName = "notification:disabled_triggers";
     private const string CursorSettingName = "notification:cursor";
+
+    /// <summary>
+    /// arb-u8e: the high-water mark for repeats onto rows the Id cursor has already passed. ONE
+    /// fixed row, like every other name here — the type doc explains why nothing in this store may
+    /// grow per event, which is also why this is a single watermark rather than a per-row count.
+    /// </summary>
+    private const string RepeatsSeenAtSettingName = "notification:repeats_seen_at";
+
     private const string FailingSourcesSettingName = "notification:failing_sources";
     private const string SuppressionRateHighSettingName = "notification:suppression_rate_high";
     private const string LastDeliverySettingName = "notification:last_delivery_outcome";
@@ -197,10 +205,24 @@ public sealed class NotificationRepository
             }
         }
 
+        // arb-u8e. An absent or unparseable watermark reads as null, which makes the next pass
+        // re-read every repeat still in the store rather than skipping to now — the same direction
+        // the absent-cursor case chooses, and for the same reason: notifying late beats never
+        // notifying about a condition the operator was not told of.
+        DateTimeOffset? repeatsSeenAt = rows.TryGetValue(RepeatsSeenAtSettingName, out var rawRepeats)
+            && DateTimeOffset.TryParse(
+                rawRepeats,
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.RoundtripKind,
+                out var parsedRepeats)
+                ? parsedRepeats
+                : null;
+
         return new NotificationState(
             cursor,
             failing,
-            ParseBool(rows, SuppressionRateHighSettingName, false));
+            ParseBool(rows, SuppressionRateHighSettingName, false),
+            repeatsSeenAt);
     }
 
     /// <summary>Persists the notifier's policy state after an evaluation cycle.</summary>
@@ -211,6 +233,11 @@ public sealed class NotificationRepository
         await UpsertAsync(
             CursorSettingName,
             state.Cursor?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty,
+            cancellationToken);
+
+        await UpsertAsync(
+            RepeatsSeenAtSettingName,
+            state.RepeatsSeenAt?.ToString("O", System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty,
             cancellationToken);
 
         var failing = string.Join('\n', state.FailingSources.Select(kvp => $"{kvp.Value}\t{kvp.Key}"));
