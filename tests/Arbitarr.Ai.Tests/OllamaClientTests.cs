@@ -108,7 +108,10 @@ public class OllamaClientTests
         var handler = new RecordingHandler(SuccessResponse());
         var httpClient = new HttpClient(handler);
         var breaker = new AlwaysClosedCircuitBreaker();
-        var options = new OllamaOptions(new Uri("http://192.0.2.138:31434"), "test-model:latest", keepAliveOption);
+        // arb-43b: the option is now a validated value type. Parsed here rather than changing the
+        // InlineData rows, so this test still drives the exact strings it always has.
+        Assert.True(Arbitarr.Core.Ai.OllamaKeepAlive.TryParse(keepAliveOption, out var keepAliveValue));
+        var options = new OllamaOptions(new Uri("http://192.0.2.138:31434"), "test-model:latest", keepAliveValue);
         var client = new OllamaClient(options, httpClient, breaker);
 
         await client.ClassifyAsync(Candidate());

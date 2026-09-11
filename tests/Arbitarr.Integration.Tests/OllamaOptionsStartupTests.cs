@@ -3,6 +3,7 @@ using Arbitarr.TestSupport;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace Arbitarr.Integration.Tests;
@@ -24,7 +25,7 @@ public sealed class OllamaOptionsStartupTests
     private const string MalformedBaseUrl = "not-a-url";
 
     private static WebApplicationFactory<Program> CreateHost(
-        string configDirectory, string? baseUrl, string? keepAlive = null)
+        string configDirectory, string? baseUrl, string? keepAlive = null, List<string>? logSink = null)
     {
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -38,6 +39,11 @@ public sealed class OllamaOptionsStartupTests
             if (keepAlive is not null)
             {
                 builder.UseSetting("Arbitarr:Ai:Ollama:KeepAlive", keepAlive);
+            }
+
+            if (logSink is not null)
+            {
+                builder.ConfigureLogging(logging => logging.AddProvider(new CapturingLoggerProvider(logSink)));
             }
         });
     }
@@ -133,7 +139,7 @@ public sealed class OllamaOptionsStartupTests
             using var client = host.CreateClient();
 
             var options = host.Services.GetRequiredService<OllamaOptions>();
-            Assert.Equal("-1", options.KeepAlive);
+            Assert.Equal("-1", options.KeepAlive.Text);
         }
         finally
         {
@@ -156,11 +162,106 @@ public sealed class OllamaOptionsStartupTests
             using var client = host.CreateClient();
 
             var options = host.Services.GetRequiredService<OllamaOptions>();
-            Assert.Equal("-1m", options.KeepAlive);
+            Assert.Equal("-1m", options.KeepAlive.Text);
         }
         finally
         {
             Cleanup(configDirectory);
+        }
+    }
+
+    /// <summary>
+    /// arb-43b, closing the gap the bead named: the fallback test above asserts only the resulting
+    /// VALUE, which would still pass if the host silently swallowed a bad value and told nobody.
+    /// This asserts the operator is actually warned.
+    /// </summary>
+    [Fact]
+    public async Task A_malformed_keep_alive_logs_a_warning()
+    {
+        var configDirectory = NewConfigDirectory();
+        var logs = new List<string>();
+
+        try
+        {
+            await using var host = CreateHost(configDirectory, baseUrl: null, keepAlive: "-1x", logSink: logs);
+            using var client = host.CreateClient();
+
+            // Resolving the singleton is what runs the factory that validates and logs.
+            var options = host.Services.GetRequiredService<OllamaOptions>();
+            Assert.Equal("-1", options.KeepAlive.Text);
+
+            Assert.Contains(logs, line => line.Contains("KeepAlive", StringComparison.Ordinal));
+        }
+        finally
+        {
+            Cleanup(configDirectory);
+        }
+    }
+
+    /// <summary>
+    /// POSITIVE CONTROL for the assertion above (CLAUDE.md section 4). "No warning was logged" is
+    /// vacuous unless a warning would have been CAPTURED had one been logged — the test above proves
+    /// the sink catches it, and this one proves a valid value produces nothing, so the two together
+    /// show the warning tracks the input rather than always or never firing.
+    /// </summary>
+    [Fact]
+    public async Task A_valid_keep_alive_logs_no_warning()
+    {
+        var configDirectory = NewConfigDirectory();
+        var logs = new List<string>();
+
+        try
+        {
+            await using var host = CreateHost(configDirectory, baseUrl: null, keepAlive: "-1m", logSink: logs);
+            using var client = host.CreateClient();
+
+            var options = host.Services.GetRequiredService<OllamaOptions>();
+            Assert.Equal("-1m", options.KeepAlive.Text);
+
+            Assert.DoesNotContain(logs, line => line.Contains("KeepAlive", StringComparison.Ordinal));
+        }
+        finally
+        {
+            Cleanup(configDirectory);
+        }
+    }
+
+    /// <summary>
+    /// Captures warning-and-above messages so a test can assert what the host told the operator.
+    /// Deliberately minimal: it records rendered text only, because that is what an operator reads.
+    /// </summary>
+    private sealed class CapturingLoggerProvider(List<string> sink) : ILoggerProvider
+    {
+        public ILogger CreateLogger(string categoryName) => new CapturingLogger(sink);
+
+        public void Dispose()
+        {
+        }
+
+        private sealed class CapturingLogger(List<string> sink) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Warning;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter)
+            {
+                if (!IsEnabled(logLevel))
+                {
+                    return;
+                }
+
+                ArgumentNullException.ThrowIfNull(formatter);
+                lock (sink)
+                {
+                    sink.Add(formatter(state, exception));
+                }
+            }
         }
     }
 }

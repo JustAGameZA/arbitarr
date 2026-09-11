@@ -371,12 +371,13 @@ public sealed class OllamaConnectivityProber
     /// constant — and the envelope around it is four field names Ollama's API fixes anyway.</para>
     ///
     /// <para><b>There is deliberately no <c>keep_alive</c>.</b> Getting that field's wire shape right
-    /// is subtle (a bare integer must be a JSON number, not a string) and the converter that knows
-    /// the rule is private to <c>OllamaClient</c>. Re-implementing it here would put a second copy of
-    /// a rule that has already caused one production fault in a second assembly. Omitting the field
-    /// lets Ollama apply its own default, which is right for a one-shot probe that is not trying to
-    /// keep a model resident. The honest tradeoff: this probe would not itself have caught a
-    /// keep_alive-only fault. A shared Core-level helper is tracked as arb-43b.</para>
+    /// is subtle (a bare integer must be a JSON number, not a string). Since arb-43b the single
+    /// implementation of that rule is <see cref="OllamaKeepAlive"/>, here in Core, so sending the
+    /// field would no longer duplicate anything — the original objection is gone. It stays omitted
+    /// for the reason that is about this probe rather than about the rule: letting Ollama apply its
+    /// own default is right for a one-shot probe that is not trying to keep a model resident. The
+    /// honest tradeoff is unchanged — this probe would not itself have caught a keep_alive-only
+    /// fault.</para>
     /// </summary>
     private sealed record ProbeChatRequest(
         [property: JsonPropertyName("model")] string Model,
