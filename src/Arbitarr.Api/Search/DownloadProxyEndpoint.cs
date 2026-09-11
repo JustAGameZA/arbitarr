@@ -40,8 +40,13 @@ public static class DownloadProxyEndpoint
         IReleaseLookup releaseLookup,
         IReadOnlyList<IUpstreamSource> sources,
         IEventSink eventSink,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IDownloadRefusalTracker? refusalTracker = null,
+        TimeProvider? timeProvider = null)
     {
+        refusalTracker ??= NullDownloadRefusalTracker.Instance;
+        timeProvider ??= TimeProvider.System;
+
         if (await apiKeyResolver.ResolveAsync(apikey, cancellationToken).ConfigureAwait(false) is null)
         {
             return Results.StatusCode(StatusCodes.Status401Unauthorized);
@@ -65,6 +70,12 @@ public static class DownloadProxyEndpoint
             await using var bounded = new MaxLengthStream(stream);
             using var buffer = new MemoryStream();
             await bounded.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
+
+            // The ONE event that clears a sticky refusal health item: a payload actually came back
+            // from this source. Recorded here, after the body is fully read, rather than on the
+            // FetchDownloadAsync call — a fetch that starts and then trips the size cap is not a
+            // successful grab, and clearing on it would hide a still-broken download path.
+            refusalTracker.RecordSuccessfulGrab(release.SourceName);
             return Results.Bytes(buffer.ToArray(), "application/octet-stream");
         }
         catch (RequestLimitReachedException)
@@ -107,6 +118,20 @@ public static class DownloadProxyEndpoint
                 reason: ex.Message,
                 sourceDisplayName: null,
                 cancellationToken: CancellationToken.None).ConfigureAwait(false);
+
+            // arb-ln0: the event above scrolls off the Activity feed while the misconfiguration is
+            // still in force, so the same refusal also raises a STICKY per-source health item on
+            // /api/status. It clears only on a successful grab from this source (see the success
+            // path above) — never on time, a worker cycle, or a successful search.
+            //
+            // The reason text obeys the SAME rule as ex.Message two comments up, and for the same
+            // reason: /api/status is PublicRead and un-gated, so this string is built from the
+            // CONFIGURED source name and the int status code only, never from upstream-supplied
+            // text such as the Location header.
+            refusalTracker.RecordRefusal(
+                release.SourceName,
+                $"Refused HTTP {ex.StatusCode}: the source redirected instead of serving the file.",
+                timeProvider.GetUtcNow());
             return Results.StatusCode(StatusCodes.Status502BadGateway);
         }
         catch (DownloadTooLargeException)

@@ -109,6 +109,28 @@
   font-style: italic;
 }
 
+/*
+ * Blocking health banner (arb-ln0). Colours come from the existing --danger /
+ * --danger-fill tokens, the same pair .badgeDanger uses, so light and dark both
+ * follow theme.css rather than a literal declared here.
+ *
+ * Heavier than .error on purpose: .error is a one-line message beside the thing
+ * that failed, while this announces a condition that persists across the whole
+ * surface until an operator acts, and has to survive being skimmed past.
+ */
+.banner {
+  border: 1px solid var(--danger);
+  border-radius: 4px;
+  background: var(--danger-fill);
+  color: var(--danger);
+  padding: 10px 12px;
+  margin: 0 0 12px;
+}
+
+.banner + .banner {
+  margin-top: -4px;
+}
+
 /* --- Forms --------------------------------------------------------------- */
 
 .form {

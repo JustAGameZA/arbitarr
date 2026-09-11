@@ -38,6 +38,45 @@ function FactRow({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
+/**
+ * The blocking health banners (arb-ln0).
+ *
+ * Renders NOTHING for an empty list — the absence of a banner is the healthy state, and a
+ * "no problems" panel would train the operator to skim past exactly the region that matters.
+ *
+ * The wording states the fix, not just the fault: ADR 0014 records that the original incident's
+ * whole cost was invisibility, with the setting name buried in event text nobody was watching.
+ * "Observed since" is deliberately hedged — the server holds these in memory only, so the
+ * timestamp is when THIS PROCESS first saw the condition, which a restart resets even though the
+ * misconfiguration is unchanged. Claiming a plain "since" would overstate it.
+ *
+ * `role="alert"` rather than a bare div: this appears after the page has already rendered, when
+ * the status query resolves, so a screen-reader user would otherwise never be told.
+ */
+function HealthBanners({ status }: { status: StatusResponse }) {
+  // Defaulted rather than dereferenced: `health` is additive, so a response produced before it
+  // existed (an older host behind a proxy, a cached body) carries no such key. Reading .length off
+  // that undefined throws during render, and because this sits inside the Status panel it takes
+  // the whole panel down — turning a missing optional field into a blank surface. An absent list
+  // and an empty list mean the same thing here: nothing is refused, so render no banner.
+  const items = status.health ?? [];
+  if (items.length === 0) {
+    return null;
+  }
+
+  return (
+    <>
+      {items.map((item) => (
+        <div key={`${item.key}-${item.sourceName}`} className={styles.banner} role="alert">
+          {item.sourceName} refused a download: it redirected instead of serving the file —
+          observed since {formatTimestamp(item.observedSinceUtc)}. Fix &lsquo;NZB access type&rsquo;
+          in NZBHydra2 by setting it to Proxy rather than Redirect to indexer.
+        </div>
+      ))}
+    </>
+  );
+}
+
 function WorkerHealth({ status }: { status: StatusResponse }) {
   const { worker } = status;
   return (
@@ -274,6 +313,7 @@ export default function DashboardPage() {
           <QueryState isPending={status.isPending} error={status.error} data={status.data}>
             {(data) => (
               <>
+                <HealthBanners status={data} />
                 <WorkerHealth status={data} />
                 <SourcesTable status={data} nzbHydraConfigured={config.data?.nzbHydraConfigured} />
               </>

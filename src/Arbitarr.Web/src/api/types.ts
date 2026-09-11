@@ -78,11 +78,33 @@ export interface WorkerHealth {
   consecutiveFailedCycles: number;
 }
 
+/**
+ * StatusEndpoint.cs — HealthItem (arb-ln0).
+ *
+ * An outstanding operator-actionable condition. Health items are PROCESS-LIFETIME: the server
+ * holds them in memory, clears each one on the specific event that proves the condition is over
+ * (for a refused download, an actual successful grab from that source), and loses them all on
+ * restart. `observedSinceUtc` therefore means "first observed since the server process started",
+ * not "when the condition began" — render it as such rather than as an absolute age claim.
+ */
+export interface HealthItem {
+  /** Stable kind identifier; branch on this rather than parsing `summary`. */
+  key: string;
+  /** "blocking" — the affected function cannot work at all until an operator acts. */
+  severity: string;
+  sourceName: string;
+  summary: string;
+  observedSinceUtc: string;
+  lastObservedUtc: string;
+}
+
 /** StatusEndpoint.cs — StatusResponse. */
 export interface StatusResponse {
   status: string;
   sources: SourceStatus[];
   worker: WorkerHealth;
+  /** Empty when nothing is wrong. */
+  health: HealthItem[];
 }
 
 /** RecentSearchLog.cs — RecentSearchEntry. */

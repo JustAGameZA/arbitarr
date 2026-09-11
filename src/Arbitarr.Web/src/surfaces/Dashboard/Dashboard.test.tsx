@@ -29,6 +29,19 @@ const status = {
     lastError: null,
     consecutiveFailedCycles: 0,
   },
+  // arb-ln0: the healthy default. The banner tests below override this rather than the fixture
+  // carrying an item, so every OTHER test in this file also asserts, implicitly, that a healthy
+  // payload renders no banner.
+  health: [],
+};
+
+const blockingHealthItem = {
+  key: 'download-refused-redirect',
+  severity: 'blocking',
+  sourceName: 'nzbhydra2',
+  summary: 'Refused HTTP 302: the source redirected instead of serving the file.',
+  observedSinceUtc: '2026-09-06T09:00:00+00:00',
+  lastObservedUtc: '2026-09-06T10:00:00+00:00',
 };
 
 const recent = [
@@ -125,6 +138,67 @@ describe('Dashboard', () => {
     // 86400s = exactly one day: arb-rzx's formatter matches the server's own
     // TimeSpan.ToString() convention that Settings and System already render.
     expect(screen.getByText('1.00:00:00')).toBeInTheDocument();
+  });
+
+  it('renders a blocking banner for a health item, naming the source and the setting to change', async () => {
+    mockApi({
+      ...allOk,
+      '/api/status': { body: { ...status, health: [blockingHealthItem] } },
+    });
+    renderSurface(<DashboardPage />);
+
+    const banner = await screen.findByRole('alert');
+    expect(banner).toHaveTextContent('nzbhydra2');
+    expect(banner).toHaveTextContent('NZB access type');
+    // "observed since" is the process-lifetime hedge: the server loses these on restart, so the
+    // wording must not read as "the problem started at this time".
+    expect(banner).toHaveTextContent(/observed since/i);
+    expect(banner.classList).toContain(surfaceStyles.banner);
+  });
+
+  it('renders no banner when the health list is empty', async () => {
+    // Paired with the test above deliberately: that one proves a banner IS detectable by this
+    // query, so this absence assertion cannot pass vacuously against a component that renders no
+    // alert under any circumstances.
+    mockApi(allOk);
+    renderSurface(<DashboardPage />);
+
+    // Wait for the status panel to have actually resolved before asserting the absence, or this
+    // passes merely because nothing has rendered yet.
+    expect(await screen.findByText('42 candidates · 40 refreshed · 2 failed')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('keeps the status panel readable when the response carries no health field at all', async () => {
+    // `health` is additive, so a body produced before it existed omits the key entirely. Reading
+    // .length off that undefined throws during render and, because the banners sit inside the
+    // Status panel, takes the whole panel down with it -- a missing optional field becoming a
+    // blank surface. This is the regression the DecisionReview suite caught, pinned here at the
+    // component rather than left to depend on some other file's fixture staying stale.
+    const statusWithoutHealth = { ...status };
+    delete (statusWithoutHealth as Partial<typeof status>).health;
+    mockApi({ ...allOk, '/api/status': { body: statusWithoutHealth } });
+    renderSurface(<DashboardPage />);
+
+    expect(await screen.findByText('42 candidates · 40 refreshed · 2 failed')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('renders one banner per affected source', async () => {
+    mockApi({
+      ...allOk,
+      '/api/status': {
+        body: {
+          ...status,
+          health: [blockingHealthItem, { ...blockingHealthItem, sourceName: 'second-source' }],
+        },
+      },
+    });
+    renderSurface(<DashboardPage />);
+
+    const banners = await screen.findAllByRole('alert');
+    expect(banners).toHaveLength(2);
+    expect(banners[1]).toHaveTextContent('second-source');
   });
 
   it('shows the server reason when a panel fails, and keeps the others', async () => {

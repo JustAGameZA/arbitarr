@@ -279,6 +279,12 @@ builder.Services.AddScoped(sp => new PaginationSnapshotService(
 builder.Services.AddSingleton<RefreshWorkerHealthTracker>(_ => new RefreshWorkerHealthTracker(RefreshWorkerDefaults.WorkerEnabled));
 builder.Services.AddSingleton<IRefreshWorkerHealth>(sp => sp.GetRequiredService<RefreshWorkerHealthTracker>());
 
+// arb-ln0: sticky per-source download-refusal health, singleton for the same reason the worker
+// health above is — the download proxy (writer) and StatusEndpoint (reader) must see one instance
+// for the app's lifetime. In-memory and process-lifetime by design: nothing is persisted (arb-v3w)
+// and nothing is notified (arb-apj), so a restart clears every item.
+builder.Services.AddSingleton<Arbitarr.Core.Diagnostics.IDownloadRefusalTracker, Arbitarr.Core.Diagnostics.DownloadRefusalTracker>();
+
 // M7-8b/AC24: options are re-read from the settings store on every cycle (see
 // SettingsRefreshWorkerOptionsSource), not captured once at startup from RefreshWorkerDefaults.
 builder.Services.AddScoped<IRefreshWorkerOptionsSource, SettingsRefreshWorkerOptionsSource>();
@@ -1147,8 +1153,10 @@ app.MapGet("/download/{proxyGuid}", async (
     IReleaseLookup releaseLookup,
     IReadOnlyList<IUpstreamSource> sources,
     Arbitarr.Core.Diagnostics.IEventSink eventSink,
+    Arbitarr.Core.Diagnostics.IDownloadRefusalTracker refusalTracker,
+    TimeProvider timeProvider,
     CancellationToken cancellationToken) =>
-    await DownloadProxyEndpoint.HandleAsync(proxyGuid, apikey, apiKeyResolver, releaseLookup, sources, eventSink, cancellationToken).ConfigureAwait(false))
+    await DownloadProxyEndpoint.HandleAsync(proxyGuid, apikey, apiKeyResolver, releaseLookup, sources, eventSink, cancellationToken, refusalTracker, timeProvider).ConfigureAwait(false))
     .WithClassification(RouteClassification.PublicRead);
 
 // Terminal 404 for unmatched /api/ paths, so a typo'd, renamed or removed API route fails

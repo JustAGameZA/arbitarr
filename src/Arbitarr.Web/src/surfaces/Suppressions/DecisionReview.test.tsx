@@ -55,6 +55,7 @@ const DASHBOARD_READS = {
         lastError: null,
         consecutiveFailedCycles: 0,
       },
+      health: [],
     },
   },
   '/api/searches/recent': { body: [] },

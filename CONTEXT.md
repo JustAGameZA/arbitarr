@@ -105,6 +105,24 @@ a healthy source as down after a few *arr retries, when the real fault is an
 upstream set to redirect mode rather than proxy mode. See
 [ADR 0014](docs/adr/0014-refuse-upstream-download-redirects.md).
 
+**Health item.** An outstanding operator-actionable condition, reported per source
+in `/api/status`'s `health` list and rendered as a banner on the Dashboard. It is
+**not** a source's circuit-breaker state: a health item names a condition the
+*operator* must fix, and the source it names is typically healthy — a refused
+redirect is exactly that case, which is why the Sources block shows nothing wrong.
+Severity `blocking` means the affected function cannot work at all until someone
+acts.
+
+Health items are **process-lifetime**. They live in memory, are **cleared only by
+the specific event that proves the condition is over** — for a refused download,
+an actual successful grab from that same source, never elapsed time, a worker
+cycle, or a successful search — and are **lost on restart**. So
+`observedSinceUtc` means "first observed since this process started", not "when
+the condition began"; a restart resets it while the misconfiguration is unchanged,
+which is why the UI hedges with "observed since" rather than "since". Persisting
+them across restarts is tracked separately (arb-v3w), as is notifying on them
+(arb-apj).
+
 ---
 
 ## Probe outcome
