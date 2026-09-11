@@ -394,7 +394,11 @@ builder.Services.AddScoped(sp =>
     var modelName = section["ModelName"]
         ?? sp.GetRequiredService<Arbitarr.Data.Settings.OllamaModelResolver>().Get();
     var modelDigest = section["ModelDigest"] ?? "unknown";
-    var promptVersion = section["PromptVersion"] ?? "v1";
+    // arb-p4r: bumped from "v1" to "v2". Pinning options.temperature/seed on the Ollama request
+    // (OllamaClient) changes what a given prompt yields for the same input, so verdicts cached
+    // under the old, non-deterministic sampling must not be served as if they came from the new,
+    // deterministic one.
+    var promptVersion = section["PromptVersion"] ?? "v2";
     return new AiModelIdentity(modelName, modelDigest, promptVersion);
 });
 // SEC-M5 (SSRF): mirrors SEC-M1 above — the Ollama base URL is config-driven, but disabling
