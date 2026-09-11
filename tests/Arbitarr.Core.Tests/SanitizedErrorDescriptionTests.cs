@@ -256,4 +256,215 @@ public sealed class SanitizedErrorDescriptionTests
         Assert.Contains("qwen2.5", described, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// <b>arb-fbx — the host shapes the original patterns walked straight past.</b> Each row is a
+    /// real leak found by the #193 security review: a single-label LAN host (no dot, no port, so no
+    /// structural pattern matched it), a two-label private-suffix name (the two-dot minimum spared
+    /// it), an IPv6 literal in both the bracketed form Go's <c>net</c> prints and the bare one, and a
+    /// percent-encoded URL (no literal <c>://</c> left for the URL pattern to find).
+    ///
+    /// <para>Positive control per row, as everywhere in this file: the planted value is shown
+    /// findable in the input by the same search that then asserts its absence, and the redaction
+    /// token is asserted PRESENT so a wholesale-dropped excerpt cannot pass as a scrubbed one.</para>
+    /// </summary>
+    [Theory]
+    // Single-label host named by a connection verb — no dot, no port.
+    [InlineData("upstream ollama-gpu-rig rejected the request", "ollama-gpu-rig")]
+    [InlineData("dial mediabox failed", "mediabox")]
+    [InlineData("refused via ollama-gpu-rig", "ollama-gpu-rig")]
+    // Two-label names on private-network suffixes.
+    [InlineData("cannot reach ollama.lan right now", "ollama.lan")]
+    [InlineData("cannot reach nas.local right now", "nas.local")]
+    [InlineData("cannot reach box.home right now", "box.home")]
+    // IPv6, bracketed and bare, with and without a port. RFC 3849 documentation prefix.
+    //
+    // The planted value asserted here is a FRAGMENT of the address, not the whole literal, and that
+    // is deliberate: without the IPv6 arm, HostWithPort eats "db8:1234" out of the middle and
+    // publishes "[2001:<redacted>::42]:11434". A whole-literal assertion passes against that — the
+    // literal really is absent — while the address is on the dashboard. Asserting a surviving
+    // fragment is what makes the row bite; the mutation run in the PR body shows it failing.
+    [InlineData("dial tcp [2001:db8:1234::42]:11434: connect refused", "::42")]
+    [InlineData("dial tcp [2001:db8:1234::42]: connect refused", "::42")]
+    [InlineData("peer 2001:db8:1234::42 went away", "::42")]
+    // #195 review: a bare address FOLLOWED BY A PORT. The hex-group cap stops at four characters,
+    // so the port used to be split and a digit left beside the token — the planted value is the
+    // whole port for that reason.
+    [InlineData("dial tcp fd00:1234:5678::42:11434: connect refused", "11434")]
+    // #195 review: %zone matched neither form, so the whole address published. Planted on the zone
+    // id, which nothing else in the pipeline can redact.
+    [InlineData("peer fe80::1%eth0 went away", "eth0")]
+    [InlineData("dial tcp [fe80::1%eth0]:11434 refused", "eth0")]
+    // #195 review: TWO-GROUP compressed addresses escaped the bare form entirely — fd00::42 is the
+    // ULA this file's own comments cite.
+    //
+    // The planted value is the SUFFIX, not the whole literal, for the same reason the bracketed rows
+    // above plant "::42": against the vulnerable pattern the contextual arm still eats the leading
+    // label, publishing "<redacted>::1" — which does not contain "fe80::1", so a whole-literal
+    // assertion passes while the address is on the dashboard. Verified by mutation; see the PR.
+    [InlineData("peer fe80::1 went away", "::1")]
+    [InlineData("peer fd00::42 went away", "::42")]
+    [InlineData("peer fe80::abcd went away", "::abcd")]
+    // Percent-encoded URL: no literal "://" for the URL pattern to anchor on.
+    [InlineData("proxy http%3A%2F%2Follama.internal.example%3A11434%2Fapi%2Fchat denied", "ollama.internal.example")]
+    // Bare credential with no separator and no scheme.
+    [InlineData("invalid key sk-live-PLACEHOLDER9f8e7d6c", "sk-live-PLACEHOLDER9f8e7d6c")]
+    public void A_host_or_credential_shape_the_original_patterns_missed_is_now_redacted(
+        string excerptText,
+        string plantedValue)
+    {
+        var body = $$"""{"error":"{{excerptText}}"}""";
+
+        // Detectability: the planted value is genuinely in the input, found by this very search.
+        Assert.Contains(plantedValue, body, StringComparison.Ordinal);
+
+        var described = SanitizedErrorDescription.Describe(
+            new OllamaRequestException(HttpStatusCode.BadRequest, body));
+
+        Assert.DoesNotContain(plantedValue, described, StringComparison.Ordinal);
+        // Proves the scrubber fired on text that reached it, rather than the excerpt never arriving.
+        Assert.Contains(SanitizedErrorDescription.Replacement, described, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// <b>The proven leak body from the arb-fbx report, end to end.</b> It carries two hostnames of
+    /// different shapes in one sentence — a two-label private-suffix name and a single-label one —
+    /// and passed the pre-arb-fbx tests unchanged with both published. Kept as its own test rather
+    /// than another row because the property is that BOTH go at once: a fix for either shape alone
+    /// would still pass a single-value row.
+    /// </summary>
+    [Fact]
+    public void The_reported_leak_body_publishes_neither_of_its_two_hostnames()
+    {
+        const string dottedHost = "ollama.lan";
+        const string bareHost = "ollama-gpu-rig";
+        var body =
+            $$"""{"error":"upstream {{dottedHost}} refused via {{bareHost}}: time: missing unit in duration \"-1\""}""";
+
+        Assert.Contains(dottedHost, body, StringComparison.Ordinal);
+        Assert.Contains(bareHost, body, StringComparison.Ordinal);
+
+        var described = SanitizedErrorDescription.Describe(
+            new OllamaRequestException(HttpStatusCode.BadRequest, body));
+
+        Assert.DoesNotContain(dottedHost, described, StringComparison.Ordinal);
+        Assert.DoesNotContain(bareHost, described, StringComparison.Ordinal);
+        Assert.Contains(SanitizedErrorDescription.Replacement, described, StringComparison.Ordinal);
+        // Over-scrubbing is the smaller failure, but it is still a failure: the useful reason — the
+        // only thing that tells one Ollama 400 from another — must survive alongside the redactions.
+        Assert.Contains("missing unit in duration", described, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// <b>Detail an operator needs must NOT be redacted by the widened patterns.</b> Each row is a
+    /// shape a plausible-but-wrong widening would have eaten: a version string (why
+    /// <c>DottedHostName</c> keeps its alphabetic-final-label guard), the sentence-final "duration."
+    /// (why it keeps a label minimum), a model tag whose colon and dot make it look like both a
+    /// host:port and a dotted name, and a bare status code.
+    ///
+    /// <para>These rows are the price side of the trade this file states — over-scrubbing is the
+    /// smaller failure, not a free one — and they are what fails if the single-label arm is ever
+    /// widened to generic words like "model" or "error".</para>
+    /// </summary>
+    [Theory]
+    [InlineData("upgrade to 1.2.3 or later", "1.2.3")]
+    [InlineData("time: missing unit in duration \\\"-1\\\"", "missing unit in duration")]
+    [InlineData("model llama3.1:8b not found", "llama3.1:8b")]
+    [InlineData("model \\\"phi4:14b\\\" not found", "phi4:14b")]
+    [InlineData("rejected with HTTP 400", "HTTP 400")]
+    public void Useful_detail_is_not_eaten_by_the_widened_patterns(
+        string excerptText,
+        string mustSurvive)
+    {
+        var body = $$"""{"error":"{{excerptText}}"}""";
+
+        var described = SanitizedErrorDescription.Describe(
+            new OllamaRequestException(HttpStatusCode.BadRequest, body));
+
+        Assert.Contains(mustSurvive, described, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// <b>What this DELIBERATELY over-scrubs, recorded so it is a decision rather than a surprise.</b>
+    /// A bare colon-separated run of hex-like groups cannot be distinguished from an IPv6 address by
+    /// shape alone, so a MAC address and a clock time are redacted with it. Both are acceptable
+    /// losses under this file's stated principle — an over-scrubbed error message is a smaller
+    /// failure than a published internal address — and both are cheap to recognise in a log, where
+    /// the operator still has the unredacted text.
+    ///
+    /// <para>This test exists so that widening the IPv6 arm further, or narrowing it to win these
+    /// back, is a visible change to a recorded decision rather than an unnoticed side effect.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("checksum aa:bb:cc ok", "aa:bb:cc")]
+    [InlineData("at 12:34:56 the job ran", "12:34:56")]
+    public void Hex_shaped_runs_are_over_scrubbed_on_purpose(string excerptText, string overScrubbed)
+    {
+        var body = $$"""{"error":"{{excerptText}}"}""";
+
+        Assert.Contains(overScrubbed, body, StringComparison.Ordinal);
+
+        var described = SanitizedErrorDescription.Describe(
+            new OllamaRequestException(HttpStatusCode.BadRequest, body));
+
+        Assert.DoesNotContain(overScrubbed, described, StringComparison.Ordinal);
+        Assert.Contains(SanitizedErrorDescription.Replacement, described, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// <b>Truncation-before-scrub cannot split a URL so that a fragment survives.</b> The excerpt is
+    /// cut at <see cref="OllamaRequestException.MaxExcerptLength"/> BEFORE it is scrubbed, so a URL
+    /// can reach the scrubber chopped at an arbitrary offset. This sweeps every cut offset and
+    /// requires that no offset leaves the host or the port behind.
+    ///
+    /// <para>The property holds because <c>Url()</c>'s tail is a greedy <c>\S+</c>, which swallows
+    /// any prefix of a URL just as it swallows a whole one — and nothing else in the file pinned
+    /// that, which is why this test exists. If someone replaces that tail with a structural host/
+    /// port/path grammar, the truncated forms stop matching and this test fails rather than a
+    /// hostname quietly reaching the dashboard.</para>
+    ///
+    /// <para><b>The claim is deliberately limited to URLs, and that limit is a real residual risk
+    /// rather than an oversight (#195 review, HIGH).</b> The same sweep over a bracketed IPv6
+    /// host:port and over a bare dotted name FAILS, and no regex can fix it: a cut at
+    /// "dial tcp [fd00" or "cannot reach ollama" leaves text that is no longer host-SHAPED, so no
+    /// shape-based pattern can recognise it. The contextual arm rescues only the cases where a
+    /// trigger word sits directly in front of the fragment ("peer 2001" scrubs; "cannot reach
+    /// ollama" does not, because "reach" is not a trigger and adding it would redact ordinary
+    /// prose).</para>
+    ///
+    /// <para>What bounds the exposure is that truncation happens at ONE fixed offset
+    /// (<see cref="OllamaRequestException.MaxExcerptLength"/>), not at an attacker-chosen one, so
+    /// this leaks only when a host happens to straddle exactly that boundary, and then only a
+    /// prefix of it. Closing it properly means scrubbing BEFORE truncating — a change to
+    /// <c>OllamaRequestException</c>, outside this bead. Recorded here so the next reader inherits
+    /// the limit rather than the false impression that all shapes are covered.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("http://ollama.internal.example:11434/api/chat", "ollama", "11434")]
+    [InlineData("https://ollama.lan:11434/api/chat?apikey=PLACEHOLDER123", "ollama", "11434")]
+    public void A_truncated_url_never_leaves_a_fragment_behind(
+        string text,
+        string hostFragment,
+        string tailFragment)
+    {
+        for (var cut = 0; cut <= text.Length; cut++)
+        {
+            var prefix = text[..cut];
+
+            // Detectability at the offsets where there is anything to find: the search used below
+            // does locate the host in this very prefix when the cut left it intact.
+            var hostIsPresent = prefix.Contains(hostFragment, StringComparison.Ordinal);
+
+            // Driven through the public surface rather than the internal scrubber, so the test
+            // exercises the path /api/status actually reads.
+            var scrubbed = SanitizedErrorDescription.Describe(
+                new OllamaRequestException(HttpStatusCode.BadRequest, prefix));
+
+            Assert.False(
+                scrubbed.Contains(hostFragment, StringComparison.Ordinal),
+                $"Cut at {cut} published the host: '{scrubbed}' (host was in the input: {hostIsPresent})");
+            Assert.False(
+                scrubbed.Contains(tailFragment, StringComparison.Ordinal),
+                $"Cut at {cut} published the tail fragment '{tailFragment}': '{scrubbed}'");
+        }
+    }
 }
