@@ -64,3 +64,4 @@ of a superseded ADR is what stops the same rejected option being proposed again.
 | [0010](0010-secrets-clear-route.md) | A secret is never readable and omission never clears it; clearing means deleting the owning thing |
 | [0011](0011-test-strategy-lanes-isolation-quarantine.md) | PR lane runs the full suite parallelised; affected-test selection stays local-only; quarantine (with a bead) replaces retries |
 | [0013](0013-backup-staging-under-config-directory.md) | Backup staging lives under the config directory, not the OS temp directory |
+| [0014](0014-refuse-upstream-download-redirects.md) | Refuse the whole 3xx range on upstream downloads; refuse origin-violating redirects |
