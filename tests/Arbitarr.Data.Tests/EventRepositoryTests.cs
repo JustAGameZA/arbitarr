@@ -1,3 +1,4 @@
+using Arbitarr.Core.Diagnostics;
 using Arbitarr.Data.Entities;
 using Arbitarr.Data.Events;
 using Arbitarr.TestSupport;
@@ -822,5 +823,253 @@ public sealed class EventRepositoryTests : IDisposable
 
         // The operational kind still has no answer to give, and must not be coerced into one.
         Assert.Null(rows.Single(r => r.Summary == "A cycle ran").ShadowMode);
+    }
+
+    // ---- arb-itw: coalescing repeated identical events (audit F-008) --------------------------
+    //
+    // The defect these cover is a retry storm writing one row per attempt — 71 identical
+    // SourceFailed rows in six minutes — which both drowns the Activity surface and evicts
+    // unrelated history through the retention window. The fix folds a repeat onto the existing
+    // row and counts it, so EVERY test below asserts the count as well as the row total: an
+    // implementation that simply DISCARDED the repeat would satisfy "one row" while losing the
+    // fact that it happened 71 times, which is the fact worth keeping.
+
+    /// <summary>Records one identical SourceFailed event, so the tests below vary only time.</summary>
+    private static Task<EventEntry> AddFailureAsync(EventRepository repository) =>
+        repository.AddAsync(
+            EventKind.SourceFailed,
+            summary: "Source failed to respond",
+            reason: "Timed out after 10s",
+            sourceDisplayName: "Primary NZBHydra",
+            detail: null,
+            CancellationToken.None);
+
+    [Fact]
+    public async Task AddAsync_folds_an_identical_event_inside_the_window_onto_one_row()
+    {
+        using var context = CreateContext();
+        var start = DateTimeOffset.Parse("2026-09-01T00:00:00Z");
+        var clock = new FakeTimeProvider(start);
+        var repository = new EventRepository(context, clock);
+
+        var first = await AddFailureAsync(repository);
+        clock.Advance(TimeSpan.FromMinutes(1));
+        var second = await AddFailureAsync(repository);
+
+        // The SAME row came back, rather than a second one that merely looks alike.
+        Assert.Equal(first.Id, second.Id);
+
+        var rows = await repository.GetAllAsync(CancellationToken.None);
+        var row = Assert.Single(rows);
+        Assert.Equal(2, row.RepeatCount);
+
+        // OccurredAt stays the FIRST occurrence: the row must not jump up the feed on every
+        // repeat, and "started at X" is half of what the pair of timestamps exists to say.
+        Assert.Equal(start, row.OccurredAt);
+        Assert.Equal(start + TimeSpan.FromMinutes(1), row.LastRepeatedAt);
+    }
+
+    [Fact]
+    public async Task AddAsync_keeps_folding_a_sustained_storm_onto_the_same_row()
+    {
+        using var context = CreateContext();
+        var start = DateTimeOffset.Parse("2026-09-01T00:00:00Z");
+        var clock = new FakeTimeProvider(start);
+        var repository = new EventRepository(context, clock);
+
+        // Thirty minutes of retries at five-minute spacing. Every gap is inside the ten-minute
+        // window but the TOTAL span is three times it, so this fails against an implementation
+        // that measures the window from OccurredAt instead of from the last repeat — the case
+        // that would start a fresh row every ten minutes and leave the storm looking like three
+        // unrelated incidents.
+        for (var i = 0; i < 7; i++)
+        {
+            await AddFailureAsync(repository);
+            clock.Advance(TimeSpan.FromMinutes(5));
+        }
+
+        var row = Assert.Single(await repository.GetAllAsync(CancellationToken.None));
+        Assert.Equal(7, row.RepeatCount);
+        Assert.Equal(start, row.OccurredAt);
+        Assert.Equal(start + TimeSpan.FromMinutes(30), row.LastRepeatedAt);
+    }
+
+    [Fact]
+    public async Task AddAsync_starts_a_new_row_for_an_identical_event_past_the_window()
+    {
+        using var context = CreateContext();
+        var start = DateTimeOffset.Parse("2026-09-01T00:00:00Z");
+        var clock = new FakeTimeProvider(start);
+        var repository = new EventRepository(context, clock);
+
+        await AddFailureAsync(repository);
+        clock.Advance(EventCoalescing.Window + TimeSpan.FromMinutes(1));
+        await AddFailureAsync(repository);
+
+        var rows = await repository.GetAllAsync(CancellationToken.None);
+        Assert.Equal(2, rows.Count);
+
+        // Per row, not in aggregate: a fault recurring an hour later is a new occurrence, and
+        // BOTH rows must read as single occurrences rather than one carrying a count of 2.
+        Assert.All(rows, r => Assert.Equal(1, r.RepeatCount));
+        Assert.All(rows, r => Assert.Null(r.LastRepeatedAt));
+    }
+
+    /// <summary>
+    /// A single occurrence leaves LastRepeatedAt NULL rather than equal to OccurredAt. The
+    /// distinction is what lets a reader tell "happened once" from "happened twice in the same
+    /// instant", and it is what the surface's badge condition rests on.
+    /// </summary>
+    [Fact]
+    public async Task AddAsync_leaves_a_single_occurrence_uncounted_and_unrepeated()
+    {
+        using var context = CreateContext();
+        var repository = new EventRepository(context, new FakeTimeProvider(
+            DateTimeOffset.Parse("2026-09-01T00:00:00Z")));
+
+        await AddFailureAsync(repository);
+
+        var row = Assert.Single(await repository.GetAllAsync(CancellationToken.None));
+        Assert.Equal(1, row.RepeatCount);
+        Assert.Null(row.LastRepeatedAt);
+    }
+
+    /// <summary>
+    /// Every field of the identity participates. Each case differs from the baseline in exactly
+    /// ONE field, so a comparison that dropped that field would fold the pair and fail here —
+    /// which an "all fields equal" test using one wholly different event could not detect.
+    /// </summary>
+    [Theory]
+    [InlineData("summary")]
+    [InlineData("reason")]
+    [InlineData("source")]
+    [InlineData("detail")]
+    [InlineData("kind")]
+    public async Task AddAsync_does_not_fold_events_differing_in_one_field(string differingField)
+    {
+        using var context = CreateContext();
+        var clock = new FakeTimeProvider(DateTimeOffset.Parse("2026-09-01T00:00:00Z"));
+        var repository = new EventRepository(context, clock);
+
+        await repository.AddAsync(
+            EventKind.SourceFailed, "Source failed to respond", "Timed out after 10s",
+            "Primary NZBHydra", "attempt 1", CancellationToken.None);
+
+        clock.Advance(TimeSpan.FromMinutes(1));
+
+        await repository.AddAsync(
+            differingField == "kind" ? EventKind.WorkerCycle : EventKind.SourceFailed,
+            differingField == "summary" ? "Source returned an error" : "Source failed to respond",
+            differingField == "reason" ? "Connection refused" : "Timed out after 10s",
+            differingField == "source" ? "Backup NZBHydra" : "Primary NZBHydra",
+            differingField == "detail" ? "attempt 2" : "attempt 1",
+            CancellationToken.None);
+
+        var rows = await repository.GetAllAsync(CancellationToken.None);
+        Assert.Equal(2, rows.Count);
+        Assert.All(rows, r => Assert.Equal(1, r.RepeatCount));
+    }
+
+    /// <summary>
+    /// ShadowMode is part of the identity too, and is tested apart from the theory above because
+    /// it is the one identity field that is not a string: the same event recorded under shadow
+    /// mode and under enforcement are different facts, and #54's review queue filters on exactly
+    /// this column — folding across it would move a row between two filters that must not share it.
+    /// </summary>
+    [Fact]
+    public async Task AddAsync_does_not_fold_across_shadow_mode()
+    {
+        using var context = CreateContext();
+        var clock = new FakeTimeProvider(DateTimeOffset.Parse("2026-09-01T00:00:00Z"));
+        var repository = new EventRepository(context, clock);
+
+        await repository.AddAsync(
+            EventKind.SearchServed, "Search served", null, null, null,
+            CancellationToken.None, shadowMode: true);
+        clock.Advance(TimeSpan.FromMinutes(1));
+        await repository.AddAsync(
+            EventKind.SearchServed, "Search served", null, null, null,
+            CancellationToken.None, shadowMode: false);
+
+        var rows = await repository.GetAllAsync(CancellationToken.None);
+        Assert.Equal(2, rows.Count);
+        Assert.All(rows, r => Assert.Equal(1, r.RepeatCount));
+    }
+
+    /// <summary>
+    /// DECISIONS NEVER FOLD, even when every field matches and the window is wide open — the rule
+    /// <see cref="EventRepository"/>'s MayCoalesce exists for. A decision is reviewed BY ROW ID and
+    /// aggregated by <c>GetAgreementAsync</c>, so folding two would destroy one reviewable record
+    /// and move a published agreement percentage rather than merely compressing a display.
+    ///
+    /// Detail is null here on purpose. That is the case field-level identity CANNOT protect: two
+    /// decisions about different releases are told apart by the release in Detail, so a rule
+    /// resting on that field alone would fold exactly these two rows.
+    /// </summary>
+    [Fact]
+    public async Task AddAsync_never_folds_decisions_even_when_every_field_matches()
+    {
+        using var context = CreateContext();
+        var clock = new FakeTimeProvider(DateTimeOffset.Parse("2026-09-01T00:00:00Z"));
+        var repository = new EventRepository(context, clock);
+
+        var first = await repository.AddAsync(
+            EventKind.Decision, "Release suppressed", "a test decision", null, null,
+            CancellationToken.None, shadowMode: true);
+        clock.Advance(TimeSpan.FromMinutes(1));
+        var second = await repository.AddAsync(
+            EventKind.Decision, "Release suppressed", "a test decision", null, null,
+            CancellationToken.None, shadowMode: true);
+
+        // Two distinct, separately reviewable rows.
+        Assert.NotEqual(first.Id, second.Id);
+
+        var rows = await repository.GetAllAsync(CancellationToken.None);
+        Assert.Equal(2, rows.Count);
+        Assert.All(rows, r => Assert.Equal(1, r.RepeatCount));
+
+        // The positive control for the exclusion: the ONLY reason these two did not fold is the
+        // kind. An identical pair differing solely in being operational DOES fold under the very
+        // same clock and window, so this test cannot pass vacuously against an implementation
+        // where coalescing silently never runs at all.
+        clock.Advance(TimeSpan.FromMinutes(1));
+        await AddFailureAsync(repository);
+        clock.Advance(TimeSpan.FromMinutes(1));
+        await AddFailureAsync(repository);
+
+        var failures = (await repository.GetAllAsync(CancellationToken.None))
+            .Where(r => r.Kind == EventKind.SourceFailed)
+            .ToList();
+        var folded = Assert.Single(failures);
+        Assert.Equal(2, folded.RepeatCount);
+    }
+
+    /// <summary>
+    /// A repeat folds onto the MOST RECENT row only. Folding onto an older matching row would
+    /// reorder history: the row would keep its original position in the feed while its count grew,
+    /// so a storm that began an hour ago would look like it was still the newest thing to happen
+    /// while the events since it were pushed below.
+    /// </summary>
+    [Fact]
+    public async Task AddAsync_does_not_fold_onto_an_older_row_behind_a_newer_different_one()
+    {
+        using var context = CreateContext();
+        var clock = new FakeTimeProvider(DateTimeOffset.Parse("2026-09-01T00:00:00Z"));
+        var repository = new EventRepository(context, clock);
+
+        await AddFailureAsync(repository);
+        clock.Advance(TimeSpan.FromMinutes(1));
+
+        // A different event lands in between, so the failure is no longer the newest row.
+        await repository.AddAsync(
+            EventKind.WorkerCycle, "A cycle ran", null, null, null, CancellationToken.None);
+        clock.Advance(TimeSpan.FromMinutes(1));
+
+        // Still well inside the window, but it must NOT reach back past the cycle.
+        await AddFailureAsync(repository);
+
+        var rows = await repository.GetAllAsync(CancellationToken.None);
+        Assert.Equal(3, rows.Count);
+        Assert.All(rows, r => Assert.Equal(1, r.RepeatCount));
     }
 }

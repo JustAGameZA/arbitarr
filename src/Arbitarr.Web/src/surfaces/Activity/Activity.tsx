@@ -89,6 +89,33 @@ function Timestamp({ value }: { value: string }) {
   );
 }
 
+/**
+ * The "×N" badge's tooltip (arb-itw).
+ *
+ * The instant is localized rather than left as the raw ISO string, unlike the one
+ * `Timestamp` puts in its own `title`: there the raw value is the POINT (the visible text
+ * is already localized, so the title is what exposes what the server actually sent), while
+ * this tooltip is the only place the last-repeat instant appears at all and its reader is
+ * comparing it against their own clock. It still carries the offset via `timeZoneName`, so
+ * it is no more ambiguous than the row's own timestamp (AC9).
+ *
+ * A malformed value falls back to the raw string for the same reason `Timestamp` does:
+ * showing it makes a server-side format change visible instead of looking like a row that
+ * merely never repeated.
+ */
+function repeatTitle(count: number, lastRepeatedAt: string | null): string {
+  if (lastRepeatedAt === null) {
+    return `repeated ${count} times`;
+  }
+
+  const parsed = new Date(lastRepeatedAt);
+  const rendered = Number.isNaN(parsed.getTime())
+    ? lastRepeatedAt
+    : parsed.toLocaleString(undefined, { timeZoneName: 'short' });
+
+  return `repeated ${count} times, last at ${rendered}`;
+}
+
 function ActivityTable({ entries }: { entries: ActivityEntry[] }) {
   if (entries.length === 0) {
     return (
@@ -122,7 +149,25 @@ function ActivityTable({ entries }: { entries: ActivityEntry[] }) {
               <td>
                 <span className={styles.badge}>{kindLabel(entry.kind)}</span>
               </td>
-              <td>{entry.summary}</td>
+              {/* arb-itw: repeats are folded onto one stored row at write time, so the
+                  count is reported, never recomputed here by grouping the page — a page
+                  boundary would split a group and make the surface disagree with the
+                  server. The badge appears only above 1: rendering "×1" on every row
+                  would add a column of noise to say nothing, and it is the departure
+                  from 1 that is the operational signal. The title pairs the count with
+                  the LAST repeat, because "71 times" without "still, as of now" does not
+                  distinguish a storm that has stopped from one that has not. */}
+              <td>
+                {entry.summary}
+                {entry.repeatCount > 1 && (
+                  <span
+                    className={`${styles.badge} ${local.repeat}`}
+                    title={repeatTitle(entry.repeatCount, entry.lastRepeatedAt)}
+                  >
+                    ×{entry.repeatCount}
+                  </span>
+                )}
+              </td>
               {/* AC2: the row says what happened AND why. An em dash rather than
                   a blank cell, so "this event has no separate reason" reads
                   differently from "the reason failed to load". */}

@@ -95,6 +95,39 @@ public sealed class NotificationDispatcherTests : IDisposable
     private static Task RecordFailureAsync(EventRepository events, string source) =>
         events.AddAsync(EventKind.SourceFailed, "Source failed", "timeout", source, null, CancellationToken.None);
 
+    /// <summary>
+    /// arb-itw: the threshold counts FAILURES, not stored rows, and this pins the seam where that
+    /// distinction is made. Since coalescing, three identical failures inside the window are ONE
+    /// row carrying RepeatCount 3 — so a dispatcher that counted rows would see a single failure,
+    /// never reach a threshold of three, and silently stop reporting a source as down. That is the
+    /// regression this guards, and the policy's own unit tests cannot see it because the folding
+    /// happens in the store beneath them.
+    ///
+    /// The row count is asserted FIRST and deliberately: without it this test would still pass if
+    /// coalescing stopped happening altogether, for the entirely different reason that there were
+    /// three separate rows to count. Pinning "one row, and it still notified" is what makes it bite.
+    /// </summary>
+    [Fact]
+    public async Task Failures_folded_onto_one_row_still_reach_the_consecutive_threshold()
+    {
+        using var context = CreateContext();
+        var events = new EventRepository(context, _time);
+        var (dispatcher, handler) = await CreateDispatcherAsync(context, Enabled());
+
+        for (var i = 0; i < 3; i++)
+        {
+            await RecordFailureAsync(events, "placeholder-source");
+            _time.Advance(TimeSpan.FromSeconds(30));
+        }
+
+        var row = Assert.Single(await events.GetAllAsync(CancellationToken.None));
+        Assert.Equal(3, row.RepeatCount);
+
+        var notification = Assert.Single(await dispatcher.RunCycleAsync());
+        Assert.Equal(NotificationTrigger.SourceFailing, notification.Trigger);
+        Assert.Single(handler.Bodies);
+    }
+
     [Fact]
     public async Task A_source_crossing_the_threshold_notifies_once_through_the_whole_stack()
     {

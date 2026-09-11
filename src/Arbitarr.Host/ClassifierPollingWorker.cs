@@ -2,6 +2,7 @@ using Arbitarr.Ai;
 using Arbitarr.Ai.Normalization;
 using Arbitarr.Api.Rendering;
 using Arbitarr.Api.Search;
+using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Filtering;
 using Arbitarr.Data.Settings;
 using Microsoft.Extensions.DependencyInjection;
@@ -45,7 +46,14 @@ public sealed class ClassifierPollingWorker : BackgroundService
     private readonly TitleNormalizer _titleNormalizer;
     private readonly ILogger _logger;
 
-    /// <summary>Constructs a worker over fixed dependencies. Used by tests (fakes, injected clock).</summary>
+    /// <summary>
+    /// Constructs a worker over fixed dependencies. Used by tests (fakes, injected clock).
+    /// </summary>
+    /// <param name="eventSink">
+    /// Optional, and last in the list, so every construction that predates arb-itw still compiles
+    /// and simply records nothing — a worker that cannot record must still classify. Tests that
+    /// assert on the recorded cycle pass one explicitly.
+    /// </param>
     public ClassifierPollingWorker(
         ClassifierWorker classifierWorker,
         InMemoryReleaseLookup releaseLookup,
@@ -56,11 +64,12 @@ public sealed class ClassifierPollingWorker : BackgroundService
         Func<CancellationToken, Task<bool>> getTitleNormalizationEnabled,
         TimeProvider timeProvider,
         TitleNormalizer? titleNormalizer = null,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        IEventSink? eventSink = null)
         : this(
             () => (new ClassifierPollingWorkerDependencies(
                 classifierWorker, releaseLookup, verdictCacheReader, verdictCacheWriter, modelIdentity,
-                getPollInterval, getTitleNormalizationEnabled), null),
+                getPollInterval, getTitleNormalizationEnabled, eventSink), null),
             timeProvider,
             titleNormalizer,
             logger)
@@ -108,7 +117,12 @@ public sealed class ClassifierPollingWorker : BackgroundService
                         provider.GetRequiredService<IVerdictCacheWriter>(),
                         provider.GetRequiredService<AiModelIdentity>(),
                         settingsReader.GetClassifierPollIntervalAsync,
-                        settingsReader.GetTitleNormalizationEnabledAsync);
+                        settingsReader.GetTitleNormalizationEnabledAsync,
+                        // Resolved from the per-cycle scope alongside everything else. It is
+                        // optional in the record but required here: in the Host the sink is always
+                        // registered, and silently recording nothing in production because a
+                        // registration was missed is the failure this would hide.
+                        provider.GetRequiredService<IEventSink>());
                     return (dependencies, scope);
                 }
                 catch
@@ -210,6 +224,10 @@ public sealed class ClassifierPollingWorker : BackgroundService
 
         var titleNormalizationEnabled = await deps.GetTitleNormalizationEnabled(cancellationToken).ConfigureAwait(false);
 
+        var classified = 0;
+        var failed = 0;
+        var rewritten = 0;
+
         foreach (var rendered in candidates)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -245,10 +263,25 @@ public sealed class ClassifierPollingWorker : BackgroundService
                 // Re-read rather than assume: a fail-open classification writes nothing, and an
                 // orphaned rewrite must never be attached to a verdict that was never cached.
                 cached = deps.VerdictCacheReader.TryGet(key);
+
+                // The re-read IS the success test, for the same reason it is the correctness test
+                // above: a fail-open classification returns normally and writes nothing, so
+                // counting attempts rather than cache hits would report every failed cycle as a
+                // fully successful one — exactly the silent failure the WorkerCycle row exists to
+                // make visible.
+                if (cached is null)
+                {
+                    failed++;
+                }
+                else
+                {
+                    classified++;
+                }
             }
 
             if (rewrittenTitle is not null && cached is not null)
             {
+                rewritten++;
                 // Attach (or back-fill, for entries classified while normalization was off) the
                 // rewrite as a follow-up update under the same key; the verdict is left as cached.
                 await deps.VerdictCacheWriter.PutAsync(
@@ -262,6 +295,57 @@ public sealed class ClassifierPollingWorker : BackgroundService
                     cancellationToken).ConfigureAwait(false);
             }
         }
+
+        await RecordCycleAsync(deps, classified, failed, rewritten, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Records ONE event per cycle that actually did something (arb-itw).
+    ///
+    /// This applies <see cref="Arbitarr.Core.Caching.RefreshWorker"/>'s rule verbatim: record WHAT
+    /// THE CYCLE DID, never merely that it ticked. A cycle whose candidates were all already
+    /// classified did no work and records nothing, which is why this is reached with every
+    /// counter at zero and returns — an event log that records every tick is docker logs with
+    /// extra steps. The empty snapshot case returns even earlier, before any of this.
+    ///
+    /// COUNTS ONLY — never a title, query, source host or key. The same constraint RefreshWorker's
+    /// emission works under, and the reason <c>EventEntry</c> has no field shaped like one.
+    ///
+    /// Kind mirrors RefreshWorker's split: anything successfully classified answers the reader's
+    /// real question and is not merely a tick, but a cycle that attempted work and classified none
+    /// of it is the case that earns a row precisely because it is the shape a silent failure takes.
+    /// Both are WorkerCycle here — unlike RefreshWorker there is no SnapshotRefreshed-equivalent
+    /// kind for "the classifier produced verdicts", and inventing one would mean adding a
+    /// RecordedEventKind plus its mapping for a distinction the Activity reader does not draw.
+    /// </summary>
+    private static async Task RecordCycleAsync(
+        ClassifierPollingWorkerDependencies deps,
+        int classified,
+        int failed,
+        int rewritten,
+        CancellationToken cancellationToken)
+    {
+        if (deps.EventSink is null || (classified == 0 && failed == 0))
+        {
+            return;
+        }
+
+        var attempted = classified + failed;
+        var summary = classified > 0
+            ? $"Classifier cycle classified {classified} of {attempted} candidates"
+            : $"Classifier cycle classified nothing ({failed} of {attempted} attempts failed)";
+
+        // Stated only when non-zero: "0 titles normalized" on every cycle of an instance with
+        // normalization switched off is noise that makes the number stop being read.
+        var reason = rewritten > 0
+            ? $"{rewritten} title(s) normalized this cycle"
+            : null;
+
+        await deps.EventSink.RecordAsync(
+            RecordedEventKind.WorkerCycle,
+            summary,
+            reason: reason,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 }
 
@@ -269,6 +353,11 @@ public sealed class ClassifierPollingWorker : BackgroundService
 /// The per-cycle collaborators a <see cref="ClassifierPollingWorker"/> needs: resolved once per
 /// cycle from a DI scope in the Host, or supplied directly (fakes) in tests.
 /// </summary>
+/// <param name="EventSink">
+/// Where the per-cycle <c>WorkerCycle</c> event goes (arb-itw). Optional, defaulting to null, so
+/// the existing test constructions that predate it keep compiling and simply record nothing — a
+/// worker that cannot record must still classify. The Host always supplies it.
+/// </param>
 public sealed record ClassifierPollingWorkerDependencies(
     ClassifierWorker ClassifierWorker,
     InMemoryReleaseLookup ReleaseLookup,
@@ -276,4 +365,5 @@ public sealed record ClassifierPollingWorkerDependencies(
     IVerdictCacheWriter VerdictCacheWriter,
     AiModelIdentity ModelIdentity,
     Func<CancellationToken, Task<TimeSpan>> GetPollInterval,
-    Func<CancellationToken, Task<bool>> GetTitleNormalizationEnabled);
+    Func<CancellationToken, Task<bool>> GetTitleNormalizationEnabled,
+    IEventSink? EventSink = null);

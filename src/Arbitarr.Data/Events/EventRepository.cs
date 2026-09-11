@@ -1,3 +1,4 @@
+using Arbitarr.Core.Diagnostics;
 using Arbitarr.Data.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -66,10 +67,20 @@ public sealed class EventRepository
         ValidateSummary(summary);
         ValidateSourceDisplayName(sourceDisplayName);
 
+        var now = _timeProvider.GetUtcNow();
+
+        var coalesced = await TryCoalesceAsync(
+            kind, summary, reason, sourceDisplayName, detail, shadowMode, now, cancellationToken);
+
+        if (coalesced is not null)
+        {
+            return coalesced;
+        }
+
         var entry = new EventEntry
         {
             Kind = kind,
-            OccurredAt = _timeProvider.GetUtcNow(),
+            OccurredAt = now,
             Summary = summary,
             Reason = reason,
             SourceDisplayName = sourceDisplayName,
@@ -81,6 +92,174 @@ public sealed class EventRepository
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         return entry;
+    }
+
+    /// <summary>
+    /// Folds an identical event onto the most recent stored row when one is inside
+    /// <see cref="EventCoalescing.Window"/>, incrementing its <see cref="EventEntry.RepeatCount"/>
+    /// and stamping <see cref="EventEntry.LastRepeatedAt"/>. Returns that row, or null when the
+    /// caller should insert a new one.
+    ///
+    /// ONLY THE MOST RECENT ROW IS CONSIDERED, not any row in the window. The point is to fold a
+    /// consecutive burst; matching an older row across intervening different events would reorder
+    /// history, because the folded row keeps its original <see cref="EventEntry.OccurredAt"/> and
+    /// would therefore appear before events that actually preceded this one.
+    ///
+    /// IDENTITY IS ALL SIX FIELDS. Kind, Summary, Reason, SourceDisplayName, Detail and ShadowMode
+    /// must all match. Detail is included because kind-specific identity lives there — two source
+    /// failures naming different releases share a Summary and would otherwise fold into one row and
+    /// lose one of them. ShadowMode likewise: the same event recorded under shadow mode and under
+    /// enforcement are different facts (see <see cref="EventEntry.ShadowMode"/>), and the review
+    /// queue filters on exactly that column.
+    ///
+    /// Field identity is a filter, not the safety property — see <see cref="MayCoalesce"/> for the
+    /// rows that must never fold regardless of how identical their fields look.
+    ///
+    /// A FAILURE HERE FALLS BACK TO A PLAIN INSERT rather than propagating. This method is an
+    /// optimisation of how history is stored; if the lookup fails, the event must still be
+    /// recorded. Throwing would turn a degraded diagnostic surface into a lost event and, on the
+    /// batch path's callers, a logged warning where there had been a working write — the same
+    /// posture <c>ScopedEventSink</c> takes one layer up, applied here so it also holds for callers
+    /// that use this repository directly.
+    /// </summary>
+    /// <summary>
+    /// Whether events of this kind may fold onto an existing row at all (arb-itw).
+    ///
+    /// DECISIONS NEVER FOLD. This is a correctness rule, not tuning. A decision is a discrete
+    /// auditable act: #54's review queue reviews decisions BY ROW ID (<see cref="ReviewAsync"/>)
+    /// and <see cref="GetAgreementAsync"/> aggregates over those rows, so folding two would not
+    /// compress a display — it would destroy one reviewable record and silently move a published
+    /// agreement percentage.
+    ///
+    /// The field comparison in <see cref="TryCoalesceAsync"/> is NOT a substitute for this. Two
+    /// decisions about different releases are told apart by the release in <c>Detail</c>, but only
+    /// while <c>Detail</c> is populated; a rule that holds merely when an optional field happens to
+    /// be set is not a guarantee, and the case where it is null is exactly the case that loses an
+    /// audit record. Excluding the kind closes it by construction.
+    ///
+    /// The flood coalescing exists for is operational — a retry storm writing the same
+    /// <c>SourceFailed</c> — and no operational kind is individually auditable, which is precisely
+    /// what makes those the kinds safe to fold.
+    ///
+    /// Stated over an explicit switch rather than <c>!= Decision</c> so that a kind added later has
+    /// no default: the compiler does not force an answer here, so the reviewer must supply one, and
+    /// the safe answer for an unrecognised kind is "do not fold" — never folding costs storage,
+    /// while folding wrongly costs a record.
+    /// </summary>
+    private static bool MayCoalesce(EventKind kind) => kind switch
+    {
+        EventKind.Decision => false,
+        EventKind.WorkerCycle => true,
+        EventKind.SnapshotRefreshed => true,
+        EventKind.SearchServed => true,
+        EventKind.SourceFailed => true,
+        _ => false,
+    };
+
+    private async Task<EventEntry?> TryCoalesceAsync(
+        EventKind kind,
+        string summary,
+        string? reason,
+        string? sourceDisplayName,
+        string? detail,
+        bool? shadowMode,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (!MayCoalesce(kind))
+        {
+            return null;
+        }
+
+        try
+        {
+            // Ordered by Id alone, NOT by OccurredAt. Two reasons, and the first is fatal rather
+            // than stylistic: SQLite cannot ORDER BY a DateTimeOffset at all (it throws
+            // NotSupportedException), so an OccurredAt ordering here does not merely sort oddly —
+            // it throws on every call, is swallowed by this method's fallback, and leaves
+            // coalescing silently doing nothing while every test that asserts rows DON'T fold
+            // still passes. Second, Id is the right key anyway: it is monotonic per insert, so the
+            // highest Id IS the most recently written row, which is what "fold onto the newest"
+            // means and is the same ordering EventQuery's cursor already pages by.
+            var mostRecent = await _dbContext.Events
+                .OrderByDescending(e => e.Id)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (mostRecent is null
+                || mostRecent.Kind != kind
+                || !string.Equals(mostRecent.Summary, summary, StringComparison.Ordinal)
+                || !string.Equals(mostRecent.Reason, reason, StringComparison.Ordinal)
+                || !string.Equals(mostRecent.SourceDisplayName, sourceDisplayName, StringComparison.Ordinal)
+                || !string.Equals(mostRecent.Detail, detail, StringComparison.Ordinal)
+                || mostRecent.ShadowMode != shadowMode)
+            {
+                return null;
+            }
+
+            // Measured from the row's last activity, so a sustained storm keeps folding onto one
+            // row rather than starting a new one every window-length.
+            var lastActivity = mostRecent.LastRepeatedAt ?? mostRecent.OccurredAt;
+            if (now - lastActivity > EventCoalescing.Window)
+            {
+                return null;
+            }
+
+            // A row that arrives out of order (a clock stepping backwards, or a test provider set
+            // to an earlier instant) must not stamp a LastRepeatedAt that precedes OccurredAt and
+            // read as a repeat that happened before the event did.
+            if (now < mostRecent.OccurredAt)
+            {
+                return null;
+            }
+
+            var previousCount = mostRecent.RepeatCount;
+            var previousLastRepeatedAt = mostRecent.LastRepeatedAt;
+
+            mostRecent.RepeatCount++;
+            mostRecent.LastRepeatedAt = now;
+
+            try
+            {
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch when (!cancellationToken.IsCancellationRequested)
+            {
+                // Undo the in-memory mutation before falling back. The entity is TRACKED, so a
+                // failed save leaves the increment staged in the change tracker; the caller's
+                // plain insert then calls SaveChanges again and would persist this row's bogus
+                // +1 alongside the new row. Restoring the values first makes the fallback a true
+                // insert-only, which is what the swallow contract promises.
+                mostRecent.RepeatCount = previousCount;
+                mostRecent.LastRepeatedAt = previousLastRepeatedAt;
+                return null;
+            }
+
+            return mostRecent;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Shutdown: let the caller's own cancellation handling deal with it rather than
+            // inserting a row on the way out.
+            throw;
+        }
+        catch
+        {
+            // Deliberately broad: the caller inserts a plain row next, which is the correct
+            // outcome, and ScopedEventSink already logs anything that escapes the write as a
+            // whole. See this method's doc for why losing the fold beats losing the event.
+            //
+            // KNOWN COST OF THE SILENCE, and the reason the tests are shaped the way they are.
+            // This handler cannot tell "nothing to fold" from "folding is completely broken",
+            // and during arb-itw it hid exactly that: the query above ordered by OccurredAt,
+            // which SQLite cannot ORDER BY (it throws NotSupportedException on a DateTimeOffset),
+            // so coalescing threw on EVERY call and silently did nothing. Every test asserting
+            // that events do NOT fold still passed. Anything added here must therefore keep at
+            // least one test that fails when folding never happens — the positive control in
+            // AddAsync_never_folds_decisions_even_when_every_field_matches is that guard, and it
+            // is what caught this. Do not "simplify" this method's query back onto a
+            // DateTimeOffset column.
+            return null;
+        }
     }
 
     /// <summary>
@@ -97,6 +276,16 @@ public sealed class EventRepository
     /// staged, so one credential-shaped display name rejects the whole batch rather than writing a
     /// partial one. Rejecting loudly and completely is the same posture <see cref="AddAsync"/>
     /// takes (AC24 — never coerce malformed input into something valid).
+    ///
+    /// THIS PATH DOES NOT COALESCE (arb-itw), and the omission is deliberate. Its only caller emits
+    /// Decision rows, which <see cref="MayCoalesce"/> excludes from folding outright, so coalescing
+    /// here would be code that cannot execute — and a fold inside a burst would be wrong anyway:
+    /// the burst shares one timestamp on purpose (below), so "the same event twice in a row" and
+    /// "two events at the same instant" are indistinguishable at this point, which is exactly the
+    /// distinction folding depends on. Should a future caller batch an operational kind, the fold
+    /// belongs here as a pass over the batch, not as a per-row call into
+    /// <see cref="TryCoalesceAsync"/>, which would reintroduce the N round trips this method exists
+    /// to avoid.
     /// </summary>
     public async Task<IReadOnlyList<EventEntry>> AddRangeAsync(
         IReadOnlyList<(EventKind Kind, string Summary, string? Reason, string? SourceDisplayName, string? Detail, bool? ShadowMode)> events,

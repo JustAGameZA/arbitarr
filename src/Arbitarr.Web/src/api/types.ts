@@ -319,6 +319,14 @@ export interface StalenessEnvelopeResponse {
  * serialized from a C# DateTimeOffset. The offset is part of the contract, not incidental:
  * AC9 requires timestamps to be unambiguous about their timezone, so this string must never
  * be truncated to a bare local-looking datetime on its way to the surface.
+ *
+ * `repeatCount` is how many times this identical event occurred, counting the first, and is 1
+ * on an ordinary row (arb-itw). Repeats are folded onto one stored row at WRITE time, so this
+ * is a fact the server reports — never something the surface recomputes by grouping the page
+ * it happens to be holding, which would disagree with the server the moment a group straddled
+ * a page boundary. `lastRepeatedAt` is when it most recently repeated and is null while
+ * `repeatCount` is 1; together with `occurredAt` it says "started at X, still happening at Y",
+ * which is why `occurredAt` stays the FIRST occurrence and never moves forward.
  */
 export interface ActivityEntry {
   occurredAt: string;
@@ -327,6 +335,8 @@ export interface ActivityEntry {
   reason: string | null;
   sourceDisplayName: string | null;
   detail: string | null;
+  repeatCount: number;
+  lastRepeatedAt: string | null;
 }
 
 /**

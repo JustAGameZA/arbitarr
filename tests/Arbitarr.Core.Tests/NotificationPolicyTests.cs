@@ -30,6 +30,10 @@ public sealed class NotificationPolicyTests
     private static NotificationObservation Failure(string source, int offsetSeconds = 0) =>
         new(ObservedEventKind.SourceFailure, source, Now.AddSeconds(offsetSeconds));
 
+    /// <summary>A failure observation standing for <paramref name="occurrences"/> failures (arb-itw).</summary>
+    private static NotificationObservation RepeatedFailure(string source, int occurrences) =>
+        new(ObservedEventKind.SourceFailure, source, Now, occurrences);
+
     private static NotificationObservation Success(string source, int offsetSeconds = 0) =>
         new(ObservedEventKind.SourceSuccess, source, Now.AddSeconds(offsetSeconds));
 
@@ -47,6 +51,80 @@ public sealed class NotificationPolicyTests
         }
 
         return batch;
+    }
+
+    // ---- arb-itw: one observation can stand for N failures ------------------------------------
+
+    /// <summary>
+    /// A coalesced observation reaches the threshold on its own. Since the event store folds
+    /// repeated identical rows, "failed three times" can arrive as a SINGLE observation carrying
+    /// Occurrences 3 — and a policy counting observations would never report that source as down.
+    /// </summary>
+    [Fact]
+    public void One_observation_carrying_the_threshold_many_occurrences_notifies()
+    {
+        var policy = new NotificationPolicy(Settings(failureThreshold: 3));
+
+        var decision = policy.Evaluate(
+            NotificationState.Empty, [RepeatedFailure("placeholder-source", 3)], cursor: 1, Now);
+
+        var notification = Assert.Single(decision.Notifications);
+        Assert.Equal(NotificationTrigger.SourceFailing, notification.Trigger);
+    }
+
+    /// <summary>
+    /// The count may JUMP PAST the threshold rather than landing on it, and must still fire. This
+    /// is the case the previous `count == threshold` test would have silently dropped: one failure
+    /// followed by an observation worth three steps the count 1 -> 4 against a threshold of 3,
+    /// never equalling it. A coalesced row makes such a jump ordinary rather than exotic.
+    /// </summary>
+    [Fact]
+    public void A_count_jumping_past_the_threshold_still_notifies_exactly_once()
+    {
+        var policy = new NotificationPolicy(Settings(failureThreshold: 3));
+
+        var decision = policy.Evaluate(
+            NotificationState.Empty,
+            [Failure("placeholder-source"), RepeatedFailure("placeholder-source", 3)],
+            cursor: 2,
+            Now);
+
+        Assert.Single(decision.Notifications);
+    }
+
+    /// <summary>
+    /// Having crossed the threshold, further failures — however many one observation represents —
+    /// produce nothing. This is §5's "the N+1th does not re-notify", and it is the property the
+    /// crossing test must not have traded away in order to handle the jump above.
+    /// </summary>
+    [Fact]
+    public void Occurrences_arriving_after_the_threshold_do_not_re_notify()
+    {
+        var policy = new NotificationPolicy(Settings(failureThreshold: 3));
+
+        var first = policy.Evaluate(
+            NotificationState.Empty, [RepeatedFailure("placeholder-source", 3)], cursor: 1, Now);
+        Assert.Single(first.Notifications);
+
+        var second = policy.Evaluate(
+            first.State, [RepeatedFailure("placeholder-source", 10)], cursor: 2, Now);
+
+        Assert.Empty(second.Notifications);
+    }
+
+    /// <summary>
+    /// Occurrences below the threshold still do not notify, so the count is genuinely being read
+    /// rather than any repeated observation being treated as "enough".
+    /// </summary>
+    [Fact]
+    public void One_observation_below_the_threshold_does_not_notify()
+    {
+        var policy = new NotificationPolicy(Settings(failureThreshold: 3));
+
+        var decision = policy.Evaluate(
+            NotificationState.Empty, [RepeatedFailure("placeholder-source", 2)], cursor: 1, Now);
+
+        Assert.Empty(decision.Notifications);
     }
 
     [Fact]
