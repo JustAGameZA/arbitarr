@@ -255,6 +255,17 @@ public static class SearchEndpoint
         // the PARSED query term, never the raw HttpRequest, because the client's apikey travels on
         // that request's query string and /api/activity is un-gated exactly as
         // /api/searches/recent is.
+        //
+        // arb-2b6: that rule is unchanged — what changed is that the text ALONE did not identify the
+        // search. Every RSS and id-based search carries no text, so 55 events all read
+        // `Query '' (tvsearch)` and a zero-result cache hit could not be told from a live query with
+        // real results fired in the same second (audit F-010). SearchQueryDescriptor renders the
+        // whole identifying shape — categories, ids, season/episode, absolute — in two spellings:
+        // one for the reason, one stable and machine-readable for the detail. It is built from the
+        // SearchQuery record, so the boundary above still holds by construction: the record carries
+        // no credential. Note it takes the mode from `query.Type` (parsed, closed to three values)
+        // rather than the raw `searchType` string this reason used to interpolate, so a caller's
+        // arbitrary `t=` value is no longer echoed into an un-gated feed.
         // CacheAge is nullable and all THREE cases matter, so the null arm is written out rather
         // than left to lifted-comparison semantics: SearchResultCacheStage returns a null age on
         // the degraded-empty path, and that path returns CacheBand.Expired after a real upstream
@@ -271,7 +282,8 @@ public static class SearchEndpoint
                 _ when servedWithoutUpstreamCall => $"Search served from cache ({filtered.Count} results)",
                 _ => $"Search served from a live query ({filtered.Count} results)",
             },
-            reason: $"Query '{query.QueryText ?? string.Empty}' ({searchType ?? "search"}), {stopwatch.Elapsed.TotalMilliseconds:F0}ms",
+            reason: $"{SearchQueryDescriptor.Describe(query)}, {stopwatch.Elapsed.TotalMilliseconds:F0}ms",
+            detail: SearchQueryDescriptor.DescribeDetail(query),
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
         return (result with { Releases = filtered }, false);
