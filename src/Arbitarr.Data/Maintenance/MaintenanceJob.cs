@@ -364,6 +364,10 @@ public sealed class MaintenanceJob
 
             if (prunableIds.Count > 0)
             {
+                // EF Core 10 emits one parameter per Contains element, padded to fixed sizes, so a
+                // 500-id page becomes ~1000 parameters; bundled SQLite's limit is 32766, so the
+                // effective ceiling for pageSize is ~16000 — do not raise 500 on the assumption it
+                // is "well under 999".
                 pruned += await _dbContext.ReleaseLookupEntries
                     .Where(e => prunableIds.Contains(e.Id))
                     .ExecuteDeleteAsync(cancellationToken)

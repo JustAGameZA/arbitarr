@@ -522,6 +522,11 @@ public sealed class MaintenanceJobTests : IDisposable
                 });
             }
             context.SaveChanges();
+
+            // Pin the assumption the 500/1000 paging-boundary coverage above relies on: with
+            // totalRows freshly seeded rows and no prior deletes, autoincrement Id runs 1..totalRows,
+            // so it lands exactly on a page boundary (2 full pages of 500 plus a partial third page).
+            Assert.Equal(1203L, context.ReleaseLookupEntries.Max(e => e.Id));
         }
 
         using (var context = CreateContext())
