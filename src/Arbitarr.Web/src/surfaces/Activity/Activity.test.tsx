@@ -30,6 +30,19 @@ const page: ActivityPageResponse = {
   nextCursor: null,
 };
 
+/**
+ * Opens a toolbar filter menu by its trigger and picks an item.
+ *
+ * The trigger name carries the ACTIVE value ("Kind: Everything"), which is what
+ * replaced the visible <select>. Addressing it that way means a regression that
+ * stops the trigger reflecting the current filter fails here rather than
+ * shipping a menu whose label is permanently stale.
+ */
+async function chooseFilter(trigger: string, item: string) {
+  await userEvent.click(screen.getByRole('button', { name: trigger }));
+  await userEvent.click(screen.getByRole('menuitemradio', { name: item }));
+}
+
 describe('Activity', () => {
   beforeEach(() => {
     useAdminKeyStore.setState({ key: null, serverKeyUnset: false });
@@ -135,7 +148,7 @@ describe('Activity', () => {
 
     await screen.findByText('Search served from cache (14 results)');
 
-    await userEvent.selectOptions(screen.getByLabelText('Kind'), 'decision');
+    await chooseFilter('Kind: Everything', 'Decisions');
 
     const calls = api.callsTo('/api/activity');
     const latest = calls[calls.length - 1];
@@ -148,7 +161,7 @@ describe('Activity', () => {
 
     await screen.findByText('Search served from cache (14 results)');
 
-    await userEvent.selectOptions(screen.getByLabelText('Time'), 'week');
+    await chooseFilter('Time: Last 24 hours', 'Last 7 days');
 
     const calls = api.callsTo('/api/activity');
     const since = calls[calls.length - 1].url.searchParams.get('since');
@@ -197,7 +210,7 @@ describe('Activity', () => {
 
     await screen.findByText('Search served from cache (14 results)');
     await userEvent.click(screen.getByRole('button', { name: 'Next' }));
-    await userEvent.selectOptions(screen.getByLabelText('Kind'), 'decision');
+    await chooseFilter('Kind: Everything', 'Decisions');
 
     const calls = api.callsTo('/api/activity');
     const latest = calls[calls.length - 1];
@@ -205,6 +218,31 @@ describe('Activity', () => {
     // a result set that no longer exists, skipping the newest matching rows.
     expect(latest.url.searchParams.has('cursor')).toBe(false);
     expect(latest.url.searchParams.get('kind')).toBe('decision');
+  });
+
+  /**
+   * The two <select>s lived in a panel headed "Filter". Moving them into the
+   * toolbar must remove that panel, not leave it as an empty shell.
+   *
+   * The positive control comes first (CLAUDE.md §4): `queryByRole('heading',
+   * {name})` returns null just as happily when the query shape is wrong or the
+   * surface never rendered, so the assertion that "Filter" is absent proves
+   * nothing on its own. Finding "Events" by the SAME query shape, in the same
+   * render, demonstrates that a surviving heading WOULD be detected.
+   */
+  it('leaves no Filter panel heading behind, the filters having moved into the toolbar', async () => {
+    mockApi({ '/api/activity': { body: page } });
+    renderSurface(<ActivityPage />);
+
+    await screen.findByText('Search served from cache (14 results)');
+
+    expect(screen.queryByRole('heading', { name: 'Events' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Filter' })).not.toBeInTheDocument();
+
+    // And the controls really did survive the move, rather than vanishing with
+    // their panel: absence alone would also pass if the filters were deleted.
+    expect(screen.getByRole('button', { name: 'Kind: Everything' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Time: Last 24 hours' })).toBeInTheDocument();
   });
 
   it('names the source on a row that has one', async () => {
