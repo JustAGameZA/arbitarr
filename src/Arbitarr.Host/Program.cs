@@ -491,7 +491,10 @@ builder.Services.AddSingleton<IReleaseLookup>(sp => new PersistentReleaseLookup(
         return await scope.ServiceProvider.GetRequiredService<IReleaseLookupStore>()
             .FindAsync(proxyGuid, cancellationToken)
             .ConfigureAwait(false);
-    }));
+    },
+    // arb-zwk: so a store fault on the download path is attributable instead of silently answering
+    // as a miss — the root cause of the arb-agh flake.
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(PersistentReleaseLookup).FullName!)));
 
 // Inbound Torznab/Newznab client apikey (M1-9, security-hardened). Distinct from
 // Arbitarr:Sources:NzbHydra:ApiKey (the upstream NZBHydra2 credential Arbitarr uses to call out)
@@ -976,7 +979,7 @@ app.MapGet("/torznab/api", async (
         clientContext?.Name,
         identityResolver,
         releaseLookupStore,
-        loggerFactory.CreateLogger("Arbitarr.Host.Search")).ConfigureAwait(false);
+        loggerFactory.CreateLogger(typeof(SearchEndpoint).FullName!)).ConfigureAwait(false);
 })
     .WithClassification(RouteClassification.PublicRead);
 
@@ -1048,7 +1051,7 @@ app.MapGet("/newznab/api", async (
         clientContext?.Name,
         identityResolver,
         releaseLookupStore,
-        loggerFactory.CreateLogger("Arbitarr.Host.Search")).ConfigureAwait(false);
+        loggerFactory.CreateLogger(typeof(SearchEndpoint).FullName!)).ConfigureAwait(false);
 })
     .WithClassification(RouteClassification.PublicRead);
 
