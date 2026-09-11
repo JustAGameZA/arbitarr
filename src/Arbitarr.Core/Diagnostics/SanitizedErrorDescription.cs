@@ -118,7 +118,19 @@ public static partial class SanitizedErrorDescription
         var text = excerpt;
 
         text = Url().Replace(text, Replacement);
+
+        // arb-qj9: the double-encoded form MUST precede the single-encoded one. "%252F" contains
+        // "%25" followed by "2F"; letting PercentEncodedUrl run first matches nothing here (it wants
+        // a literal "%3A"), but the ordering is pinned anyway so a later edit to either pattern
+        // cannot silently make the single-encoded arm consume the prefix of a double-encoded URL and
+        // strand its tail — the same fragment-leak shape the IPv6/HostWithPort ordering guards.
+        text = DoubleEncodedUrl().Replace(text, Replacement);
         text = PercentEncodedUrl().Replace(text, Replacement);
+
+        // arb-qj9: before the host arms, because a UNC path's server name carries no dot, no port
+        // and no scheme — none of them can see it, and running it here keeps the whole path together
+        // rather than letting a later arm take a bite out of the middle.
+        text = UncPath().Replace(text, Replacement);
 
         // IPv6 MUST precede HostWithPort. "[fd00:1234:5678::42]:11434" contains several substrings
         // that HostWithPort matches ("1234:5678" reads as host:port), so letting it run first eats a
@@ -172,6 +184,43 @@ public static partial class SanitizedErrorDescription
     private static partial Regex PercentEncodedUrl();
 
     /// <summary>
+    /// arb-qj9: the DOUBLE-encoded URL — <c>http%253A%252F%252Fhost%253A11434</c>. A value that has
+    /// been round-tripped through a query string twice (a proxy echoing back a parameter it was
+    /// itself given encoded) carries <c>%25</c> where the single-encoded form carries <c>%</c>, so
+    /// neither <see cref="Url"/> nor <see cref="PercentEncodedUrl"/> sees it.
+    ///
+    /// <para><b>This was a PARTIAL leak, not a total one, which is why the test plants a fragment.</b>
+    /// <see cref="DottedHostName"/> already matched inside the encoded text and removed the dotted
+    /// middle of the name, so what actually survived was the stranded FIRST LABEL and the encoded
+    /// port — "ollama" and "%253A11434" out of "ollama.internal.example:11434". Planting the whole
+    /// URL and asserting its absence would therefore have passed against a scrubber with no fix at
+    /// all; the row plants what genuinely survived instead (the lesson from arb-fbx's own vacuous
+    /// row). Same greedy tail as the other two URL arms, for the truncation reason given on
+    /// <see cref="Url"/>.</para>
+    /// </summary>
+    [GeneratedRegex(
+        @"\bhttps?%253A%252F%252F\S+",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex DoubleEncodedUrl();
+
+    /// <summary>
+    /// arb-qj9: a Windows UNC path — <c>\\NASBOX\media\share</c>. The first component after the
+    /// leading pair of backslashes is a HOSTNAME, and nothing else in this file is shaped to see it:
+    /// it carries no dot, no port and no scheme, so every host arm walked past it and the share name
+    /// published along with the server name.
+    ///
+    /// <para>The whole path is taken, not merely the host component. The share and directory names
+    /// on a NAS are themselves topology ("\\NASBOX\media\tv" says what the box is for), and this
+    /// file's stated trade is that an over-scrubbed message beats a published internal name. A
+    /// forward-slash path is deliberately NOT matched: "/etc/arbitarr/config.json" is ordinary
+    /// diagnostic text an operator needs, and it names no host.</para>
+    /// </summary>
+    [GeneratedRegex(
+        @"\\\\[a-z0-9_-]+(?:\\[^\s\\]+)*",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex UncPath();
+
+    /// <summary>
     /// An IPv6 literal: bracketed with an optional port (<c>[2001:db8::1]:11434</c> — the shape Go's
     /// <c>net</c> package prints, and Ollama is Go), or bare, in either the compressed
     /// (<c>fe80::1</c>) or full (<c>2001:db8:1234::42</c>) form, each with an optional
@@ -219,18 +268,64 @@ public static partial class SanitizedErrorDescription
     /// only connection verbs and the two prepositions that introduce a peer ("refused VIA nas",
     /// "proxied THROUGH gateway") — "model" and "error" are excluded precisely because the word after
     /// them is the useful reason, not a host.</para>
+    ///
+    /// <para><b>arb-qj9: the separator admits punctuation, not just whitespace.</b> Requiring
+    /// <c>\s</c> after the trigger meant the three commonest real forms walked straight through —
+    /// <c>upstream: ollama-gpu-rig</c>, <c>upstream "ollama-gpu-rig"</c>, and a bare
+    /// <c>Host: ollama-gpu-rig</c> header line with no port for <see cref="HostWithPort"/> to catch.
+    /// A header line is exactly how an upstream echoes back the host it was asked for, so this was
+    /// the likeliest of the shapes the #195 review found. The quote or colon is consumed INTO the
+    /// prefix group, so it survives in the output and the line still reads as a header.</para>
+    ///
+    /// <para><b>The separator class includes a BACKSLASH, which is not cosmetic.</b> The excerpt is
+    /// a JSON body, so a quoted host arrives ESCAPED — <c>upstream \"ollama-gpu-rig\"</c>, i.e. the
+    /// characters between the trigger and the host are backslash-then-quote. A class of
+    /// <c>["':=]</c> alone matched the bare form in a hand-written probe and MISSED the real wire
+    /// form; the escaped row in <c>The_shapes_the_security_review_found_no_longer_publish</c> is
+    /// what caught it.</para>
+    ///
+    /// <para><b>arb-qj9: the value class admits <c>_</c>.</b> Docker Compose service names routinely
+    /// carry underscores ("gpu_box_example"), and they are hostnames on the container network — the
+    /// single most likely single-label host to appear in an error from a containerised Ollama.</para>
+    ///
+    /// <para><b>arb-qj9: <c>tcp</c>/<c>udp</c> are skipped after the trigger, not taken as the
+    /// host.</b> Go's network errors read <c>dial tcp gpu_box_example:11434: refused</c>, and the arm
+    /// as written consumed "tcp" as the value — publishing <c>dial &lt;redacted&gt; gpu_box_example</c>,
+    /// which redacted the protocol name and left the real host standing. That mis-fire PREDATES this
+    /// change (the trigger list already carried <c>dial</c>, and <c>\s+</c> already reached "tcp"); it
+    /// is fixed here because this is the arm being widened and the wrong output is this arm's own.
+    /// The protocol is consumed INTO the prefix, so it survives and the line still reads as a dial
+    /// error. <c>HostWithPort</c> catches the host when a port is present; this makes the portless
+    /// form work too.</para>
+    ///
+    /// <para><b>The <c>(?!&lt;)</c> after the protocol keeps the arm IDEMPOTENT, and it is the whole
+    /// reason that lookahead is there.</b> Without it, a second pass over already-scrubbed
+    /// <c>dial tcp &lt;redacted&gt;</c> finds the optional skip followed by <c>&lt;redacted&gt;</c>,
+    /// which the value class cannot match; the engine then BACKTRACKS, discards the skip, and takes
+    /// "tcp" as the value — re-introducing the very mis-fire this change removes, on the second pass
+    /// instead of the first. The remark above on the replacement token not being re-capturable holds
+    /// only because no arm can reach PAST it; an optional group that may be discarded is exactly how
+    /// an arm reaches past it. <c>Describe</c> scrubs a body that was already scrubbed at
+    /// construction, so the second pass is the normal path here, not a hypothetical.</para>
     /// </summary>
     [GeneratedRegex(
-        @"(?<prefix>\b(?:upstream|host|dial|peer|via|through|connect(?:ing|ed)?\s+to|resolve|resolving|lookup)\s+)(?<value>[a-z0-9][a-z0-9-]{2,62})\b",
+        @"(?<prefix>\b(?:upstream|host|dial|peer|via|through|connect(?:ing|ed)?\s+to|resolve|resolving|lookup)(?:\s|[""':=\\])+(?:(?:tcp|udp)[46]?\s+)?)(?!(?:tcp|udp)[46]?\b)(?<value>[a-z0-9][a-z0-9_-]{2,62})\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ContextualSingleLabelHost();
 
     /// <summary>
     /// A bare <c>host:port</c> — the shape an <see cref="System.Net.Http.HttpRequestException"/>
     /// message uses ("(ollama.internal.example:11434)"), and the reason this type exists.
+    ///
+    /// <para><b>arb-qj9: labels may contain <c>_</c>.</b> A Docker Compose service name
+    /// ("gpu_box_example:11434") is a hostname on the container network and is the likeliest host to
+    /// appear in an error from a containerised Ollama, but underscore is outside the DNS label
+    /// character class this pattern started from, so the whole <c>host:port</c> published. Admitting
+    /// it here costs nothing — the <c>:port</c> is still required, which is what keeps this arm off
+    /// ordinary prose.</para>
     /// </summary>
     [GeneratedRegex(
-        @"\b(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]*[a-z0-9])?:\d{1,5}\b",
+        @"\b(?:[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?:\d{1,5}\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex HostWithPort();
 
@@ -253,9 +348,18 @@ public static partial class SanitizedErrorDescription
     /// than "any two labels", because relaxing to two labels unconditionally would eat the model tags
     /// and file names an operator needs — "qwen2.5", "config.json". The <c>[a-z]{2,}</c> guard still
     /// applies to both halves.</para>
+    ///
+    /// <para><b>arb-qj9: the suffix list gained <c>box</c>, <c>localhost</c>, <c>onion</c> and
+    /// <c>lokal</c>, and labels may contain <c>_</c>.</b> The #195 security review found these
+    /// leaking: they are private-network suffixes in exactly the sense the list already covers
+    /// (<c>.box</c> ships as the default on several consumer routers, <c>.localhost</c> resolves
+    /// loopback, <c>.onion</c> names a hidden service), so their absence was an omission rather than
+    /// a decision. ENUMERATING remains the right shape — "any two labels" is still what would eat
+    /// "qwen2.5" and "config.json", and this list can only ever be extended by naming a suffix,
+    /// which is a reviewable act.</para>
     /// </summary>
     [GeneratedRegex(
-        @"\b(?:(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.){2,}[a-z]{2,}|[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.(?:lan|local|home|internal|intranet|corp|arpa|localdomain|test|invalid|example))\b",
+        @"\b(?:(?:[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?\.){2,}[a-z]{2,}|[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?\.(?:lan|local|lokal|localhost|home|box|onion|internal|intranet|corp|arpa|localdomain|test|invalid|example))\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex DottedHostName();
 }

@@ -371,6 +371,14 @@ public sealed class SanitizedErrorDescriptionTests
     [InlineData("model llama3.1:8b not found", "llama3.1:8b")]
     [InlineData("model \\\"phi4:14b\\\" not found", "phi4:14b")]
     [InlineData("rejected with HTTP 400", "HTTP 400")]
+    // arb-qj9 rows: one per arm widened by that bead, so each widening carries its own price check.
+    [InlineData("model qwen2.5 not found", "qwen2.5")]                       // .5 is not a suffix
+    [InlineData("missing config.json in /etc", "config.json")]               // .json is not a suffix
+    [InlineData("invalid option: num_ctx", "num_ctx")]                       // underscore is not a host
+    [InlineData("context length 4096 exceeded", "context length 4096")]
+    [InlineData("retry 3 of 5 after 250 ms", "retry 3 of 5")]
+    [InlineData("unsupported format: application/json", "application/json")] // a / path is not UNC
+    [InlineData("post_processing failed for job_id 4417", "post_processing")]
     public void Useful_detail_is_not_eaten_by_the_widened_patterns(
         string excerptText,
         string mustSurvive)
@@ -408,6 +416,124 @@ public sealed class SanitizedErrorDescriptionTests
 
         Assert.DoesNotContain(overScrubbed, described, StringComparison.Ordinal);
         Assert.Contains(SanitizedErrorDescription.Replacement, described, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// <b>arb-qj9: the shapes the #195 security review found still passing.</b> Each row is one
+    /// shape, with the token that ACTUALLY SURVIVED the old scrubber as the planted value.
+    ///
+    /// <para><b>Why the planted token is a fragment and not the whole value</b> — the lesson arb-fbx
+    /// paid for twice. Several of these were only PARTIALLY scrubbed before: the double-encoded URL
+    /// already lost its dotted middle to <c>DottedHostName</c>, and the contextual arm eats the label
+    /// in front of a bare name. Planting the whole value and asserting its absence would therefore
+    /// have passed against a scrubber with no fix at all — a vacuous row wearing the shape of a real
+    /// one (CLAUDE.md §4). Every row below plants the exact substring the OLD pattern left visible,
+    /// verified by running the pre-fix scrubber over each input.</para>
+    /// </summary>
+    [Theory]
+    // (1) Double-encoded URL. Survived: the stranded first label and the encoded port. The dotted
+    // middle was already being eaten, which is precisely why the whole URL is the wrong plant.
+    [InlineData("proxy error for http%253A%252F%252Follama.internal.example%253A11434%252Fapi", "%253A11434")]
+    [InlineData("proxy error for http%253A%252F%252Follama.internal.example%253A11434%252Fapi", "%252F%252Follama")]
+    // (2) Trigger-word punctuation: colon, quote, and a bare Host header with no port to catch it.
+    [InlineData("upstream: ollama-gpu-rig refused", "ollama-gpu-rig")]
+    [InlineData("upstream \\\"ollama-gpu-rig\\\" refused", "ollama-gpu-rig")]
+    [InlineData("Host: ollama-gpu-rig", "ollama-gpu-rig")]
+    // (3) Underscore hostname — a Docker Compose service name.
+    [InlineData("dial tcp gpu_box_example:11434: refused", "gpu_box_example")]
+    // (4) Two-label names on suffixes outside the old allowlist.
+    [InlineData("cannot reach mediabox.box", "mediabox.box")]
+    [InlineData("cannot reach nas.localhost", "nas.localhost")]
+    [InlineData("cannot reach relay.onion", "relay.onion")]
+    // (5) Credential value class: '.' and '+' split the run, stranding the high-entropy tail.
+    [InlineData("invalid key sk.live+PLACEHOLDER.9f8e supplied", "PLACEHOLDER.9f8e")]
+    // (7) UNC path: the server name carries no dot, no port and no scheme, so nothing saw it.
+    [InlineData("read failed \\\\\\\\NASBOX\\\\media\\\\share", "NASBOX")]
+    public void The_shapes_the_security_review_found_no_longer_publish(
+        string excerptText,
+        string plantedToken)
+    {
+        var body = $$"""{"error":"{{excerptText}}"}""";
+
+        // POSITIVE CONTROL: the token really is in the excerpt being scrubbed, so the absence
+        // assertion below is about the pattern working rather than about an empty set.
+        Assert.Contains(plantedToken, body, StringComparison.Ordinal);
+
+        var described = SanitizedErrorDescription.Describe(
+            new OllamaRequestException(HttpStatusCode.BadRequest, body));
+
+        Assert.DoesNotContain(plantedToken, described, StringComparison.Ordinal);
+        // Detectability: something was redacted, so this cannot pass by the excerpt never arriving.
+        Assert.Contains(SanitizedErrorDescription.Replacement, described, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// arb-qj9 (#206 review nit): <c>dial tcp HOST</c> redacts the HOST, not the protocol.
+    ///
+    /// <para>The contextual arm consumed "tcp" as its value and stopped, publishing
+    /// <c>dial &lt;redacted&gt; gpu_box_example</c> — the protocol name redacted and the actual host
+    /// left standing, which is the exact inversion of the arm's purpose. This is the portless case:
+    /// with a port, <c>HostWithPort</c> covers the host regardless, so the bug only bites where
+    /// nothing else can catch it. Pinned as its own fact because the theory row above carries a port
+    /// and would still pass with the mis-fire present.</para>
+    /// </summary>
+    [Fact]
+    public void A_dial_error_redacts_the_host_and_keeps_the_protocol()
+    {
+        const string host = "gpu_box_example";
+        var body = $$"""{"error":"dial tcp {{host}}: connect: connection refused"}""";
+
+        Assert.Contains(host, body, StringComparison.Ordinal);
+
+        var described = SanitizedErrorDescription.Describe(
+            new OllamaRequestException(HttpStatusCode.BadRequest, body));
+
+        Assert.DoesNotContain(host, described, StringComparison.Ordinal);
+        // The protocol is diagnostic, not topology: redacting it was the bug.
+        Assert.Contains("tcp", described, StringComparison.Ordinal);
+        Assert.Contains(SanitizedErrorDescription.Replacement, described, StringComparison.Ordinal);
+
+        // IDEMPOTENCE, and the reason this assertion exists rather than being assumed: the first
+        // attempt at the fix made the protocol-skip optional WITHOUT the (?!<) lookahead, which
+        // passed every assertion above and then ate "tcp" on the second pass — the engine discarded
+        // the optional group and fell back onto it once the host slot held "<redacted>". Describe()
+        // scrubs an already-scrubbed body, so that second pass is the real path, and only this
+        // assertion caught it.
+        // Feeding the already-scrubbed EXCERPT back through as a body must scrub to itself. (The
+        // excerpt, not `described` — re-describing would prepend a second exception header and the
+        // comparison would fail for a reason that has nothing to do with the arms.)
+        var excerpt = described[(described.IndexOf(": ", StringComparison.Ordinal) + 2)..];
+
+        Assert.EndsWith(
+            excerpt,
+            SanitizedErrorDescription.Describe(
+                new OllamaRequestException(HttpStatusCode.BadRequest, excerpt)),
+            StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// arb-qj9 (6): the email local part. Measured, and found ALREADY COVERED — the domain is
+    /// removed by <c>DottedHostName</c>, leaving only "ops@". This test records that as the decided
+    /// state rather than leaving the bead's claim to read as an open gap: the local part is a
+    /// username, not LAN topology, and this file's remit is topology.
+    ///
+    /// <para>Positive control: the domain is shown present in the input and absent from the output,
+    /// so this cannot pass against a scrubber that stopped removing domains.</para>
+    /// </summary>
+    [Fact]
+    public void An_email_address_loses_its_domain_but_keeps_its_local_part()
+    {
+        const string domain = "internal.example";
+        var body = $$"""{"error":"contact ops@{{domain}} for access"}""";
+
+        Assert.Contains(domain, body, StringComparison.Ordinal);
+
+        var described = SanitizedErrorDescription.Describe(
+            new OllamaRequestException(HttpStatusCode.BadRequest, body));
+
+        Assert.DoesNotContain(domain, described, StringComparison.Ordinal);
+        Assert.Contains(SanitizedErrorDescription.Replacement, described, StringComparison.Ordinal);
+        Assert.Contains("ops@", described, StringComparison.Ordinal);
     }
 
     /// <summary>
