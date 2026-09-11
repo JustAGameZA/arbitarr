@@ -103,6 +103,42 @@ describe('PageToolbarMenu', () => {
     );
   });
 
+  /*
+   * Panel alignment at phone width (arb-yxt). An end-aligned menu near the
+   * right edge of a 390px viewport overflows off-screen while it is left-anchored,
+   * so the panel must carry the end-aligned class, not the start one. jsdom
+   * evaluates no media queries and lays nothing out, so this asserts the class
+   * the CSS keys `right: 0` and the `max-width` clamp off; the resulting
+   * on-screen bounding box is manual-only.
+   */
+  it('anchors an end-aligned panel to the opposite edge from a start-aligned one', async () => {
+    const { unmount } = render(
+      <PageToolbarMenu label="View" align="end">
+        <PageToolbarMenuItem label="Compact rows" kind="checkbox" checked onSelect={() => {}} />
+      </PageToolbarMenu>,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'View' }));
+    const endClass = screen.getByRole('menu').className;
+
+    unmount();
+
+    render(
+      <PageToolbarMenu label="Kind: Everything">
+        <PageToolbarMenuItem label="Everything" checked onSelect={() => {}} />
+      </PageToolbarMenu>,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Kind: Everything' }));
+    const startClass = screen.getByRole('menu').className;
+
+    // Compared against each other rather than matched against a literal name:
+    // these are hashed CSS-module identifiers, and asserting one is non-empty
+    // would pass just as happily if both alignments resolved to the same class,
+    // which is precisely the bug (a panel that never flips).
+    expect(endClass).not.toBe('');
+    expect(endClass).not.toBe(startClass);
+  });
+
   it('renders a toggle item as a checkbox rather than a radio', async () => {
     render(
       <PageToolbarMenu label="View" align="end">

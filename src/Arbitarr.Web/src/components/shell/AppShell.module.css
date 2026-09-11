@@ -51,10 +51,9 @@
  * this one changes the chrome itself, so the two stay separate rather than
  * being consolidated into one number.
  *
- * Below it the sidebar column is dropped from the grid entirely (SidebarNav
- * goes off-canvas via `position: fixed` in its own stylesheet) so a single
- * content column can use the full viewport width instead of leaving a gap
- * where the grid track used to be.
+ * Below it the sidebar column is dropped from the grid entirely and the whole
+ * <aside> goes off-canvas, so a single content column can use the full viewport
+ * width instead of leaving a gap where the grid track used to be.
  */
 @media (max-width: 768px) {
   .shell {
@@ -64,11 +63,62 @@
       'content';
   }
 
+  /*
+   * The ASIDE is the off-canvas element, not its child nav (arb-759). It was
+   * the child that translated before, which left this fixed, opaque,
+   * `--sidebar-width`-wide panel sitting over x = 0..211 of every page --
+   * including the hamburger in the top bar -- with no transform, width,
+   * background or pointer-events override of its own to hide it. The transform
+   * lives on exactly ONE of the two elements; putting it back on .nav as well
+   * re-creates competing transforms and a drawer that only moves half way.
+   *
+   * `visibility: hidden` is paired with the translate deliberately: the
+   * translate alone still leaves the links tabbable and announced by a screen
+   * reader from off-screen. `pointer-events: none` is belt-and-braces for the
+   * transition window, during which visibility is still `visible`.
+   */
   .sidebar {
-    /* Out of flow; SidebarNav.module.css positions and transforms it. */
     position: fixed;
     inset: 0 auto 0 0;
     z-index: 20;
+    width: var(--sidebar-width);
+    transform: translateX(-100%);
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+      transform 180ms ease-out,
+      visibility 180ms ease-out;
+  }
+
+  .sidebar[data-open='true'] {
+    transform: translateX(0);
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sidebar {
+      transition: none;
+    }
+  }
+
+  /*
+   * The top bar outranks the drawer. The drawer is `position: fixed` from
+   * `top: 0`, so while OPEN it overlaps the top bar's left end -- which is
+   * where the toggle that closes it lives. Measured at 390px before this rule:
+   * `elementFromPoint` over the centre of the "Close navigation" button
+   * returned the drawer's own brand <div>, so the visible close button could
+   * not be clicked at all. Escape and the backdrop still closed the drawer,
+   * which is exactly why this hid behind a passing test suite.
+   *
+   * A stacking rule, not a geometry one: insetting the drawer below the top bar
+   * instead would trade a full-height drawer for it. `position: relative` is
+   * required -- z-index is ignored on a `position: static` element, so the
+   * value alone would silently do nothing.
+   */
+  .topbar {
+    position: relative;
+    z-index: 25;
   }
 
   .content {

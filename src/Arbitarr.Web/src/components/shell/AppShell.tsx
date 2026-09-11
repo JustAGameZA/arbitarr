@@ -77,8 +77,23 @@ export function AppShell({ children }: AppShellProps) {
 
   return (
     <div className={styles.shell}>
-      <aside className={styles.sidebar}>
-        <SidebarNav ref={drawerRef} isOpen={drawerOpen} />
+      {/*
+        `data-open` drives the off-canvas transform below 768px (arb-759); above
+        the breakpoint it is inert, because the only CSS that reads it sits
+        inside the max-width query. It is therefore safe to write it
+        unconditionally, which is necessary: JS cannot see a media query any
+        more than jsdom can.
+
+        Deliberately NOT mirrored into `aria-hidden`. That would have to be
+        written unconditionally too, and on desktop -- where the sidebar is
+        permanently visible and `drawerOpen` is permanently false -- it would
+        hide the whole primary navigation from screen readers, a worse defect
+        than the one being fixed. The `visibility: hidden` in the mobile rule
+        removes the closed drawer from the accessibility tree and from the tab
+        order at exactly the width where that is correct, and nowhere else.
+      */}
+      <aside className={styles.sidebar} data-open={drawerOpen}>
+        <SidebarNav ref={drawerRef} />
       </aside>
       {drawerOpen && (
         <div

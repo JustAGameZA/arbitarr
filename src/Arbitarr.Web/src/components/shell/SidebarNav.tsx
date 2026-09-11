@@ -51,28 +51,19 @@ export const NAV_ENTRIES: readonly NavEntry[] = [
   { label: 'System', to: '/system', icon: faServer, group: 'System' },
 ];
 
-interface SidebarNavProps {
-  /**
-   * Below the 768px shell breakpoint the nav is an off-canvas drawer (#48);
-   * this toggles the translate that slides it on/off screen. Above the
-   * breakpoint it is inert -- the CSS that reads it is itself inside a
-   * max-width query -- so desktop callers can simply omit it.
-   */
-  isOpen?: boolean;
-}
-
 /**
  * `ref` is forwarded so AppShell can move focus into the drawer's first
  * focusable element when it opens, and back out to the toggle when it closes.
+ *
+ * The nav takes NO open/closed prop. Below the 768px shell breakpoint it is the
+ * <aside> around it that slides off-canvas, driven by `data-open` in
+ * AppShell.module.css (arb-759). A second open-state class here would be a
+ * competing transform on a nested element, which is the defect that fix
+ * removed.
  */
-export const SidebarNav = forwardRef<HTMLElement, SidebarNavProps>(function SidebarNav(
-  { isOpen = false },
-  ref,
-) {
-  const navClassName = isOpen ? `${styles.nav} ${styles.navOpen}` : styles.nav;
-
+export const SidebarNav = forwardRef<HTMLElement>(function SidebarNav(_props, ref) {
   return (
-    <nav ref={ref} className={navClassName} aria-label="Main">
+    <nav ref={ref} className={styles.nav} aria-label="Main">
       <div className={styles.brand}>Arbitarr</div>
       {NAV_ENTRIES.map((entry) => (
         <div key={entry.to}>
