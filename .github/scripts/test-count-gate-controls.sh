@@ -464,6 +464,41 @@ else
   pass "shard_filter blocks on unset TEST_FILTER"
 fi
 
+# ---------------------------------------------------------------------------
+# Call-site ordering (arb-2nx). The three gate functions are NOT independent
+# (test-count-gate.sh ~236-243: the sum loop relies on check_trx_set and the
+# .listed checks having already run) -- nothing before this asserted that the
+# workflow still invokes them in that order. This reads the real workflow
+# file, not a copy, so a future edit that drops or reorders a call is caught
+# where it actually lives.
+# ---------------------------------------------------------------------------
+
+workflow_file="$repo_root/.github/workflows/build-test.yml"
+gate_step_awk='
+  /Enforce test-count floor/ { in_step = 1 }
+  in_step && /\. \.\/\.github\/scripts\/test-count-gate\.sh/ { sourced = 1; next }
+  sourced && /check_trx_set/ { print "check_trx_set"; next }
+  sourced && /check_shard_records/ { print "check_shard_records"; next }
+  sourced && /enforce_backend_floor/ { print "enforce_backend_floor"; in_step = 0; sourced = 0; next }
+'
+call_order=$(awk "$gate_step_awk" "$workflow_file")
+if [ "$call_order" = "$(printf 'check_trx_set\ncheck_shard_records\nenforce_backend_floor')" ]; then
+  pass "the gate step invokes check_trx_set, check_shard_records, enforce_backend_floor in order"
+else
+  fail "the gate step invokes the three gate functions in order" \
+    "found: $(printf '%s' "$call_order" | tr '\n' ' ')"
+fi
+
+backend_job_sources_shard_filter=$(awk '
+  /\. \.\/\.github\/scripts\/shard-filter\.sh/ { found = 1 }
+  END { print found ? "yes" : "no" }
+' "$workflow_file")
+if [ "$backend_job_sources_shard_filter" = "yes" ]; then
+  pass "the backend job sources shard-filter.sh"
+else
+  fail "the backend job sources shard-filter.sh" "no '. ./.github/scripts/shard-filter.sh' line found"
+fi
+
 echo
 echo "controls: ${pass_count} passed, ${fail_count} failed"
 [ "$fail_count" -eq 0 ] || exit 1
