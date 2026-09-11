@@ -113,6 +113,11 @@ Every PR must pass two required checks before merge:
   counts against master's last measured counts so the suite can't silently shrink. Timing, Load
   and Quarantine tests run unfiltered in the nightly workflow instead. See
   [docs/standards/process.md](docs/standards/process.md#lanes).
+  When a test job FAILS, its trx, console output and timing files are also uploaded as
+  `failed-attempt-<run_attempt>-<group>` (and `failed-attempt-<run_attempt>-frontend`) and kept for
+  **14 days** — the routine `trx-*` artifacts expire after 1, and a rerun overwrites the job log
+  that held the stack trace, which is how arb-agh's evidence was lost. Download that artifact
+  rather than reaching for `gh run view --log-failed` on a run that has since been rerun.
 - **`Deploy review environment`** — builds the container image from `Dockerfile` and smoke-checks
   that the running container answers `GET /health`. **A green tick here means the image builds
   and `/health` answers — nothing more.** It does not mean anything was deployed anywhere; no

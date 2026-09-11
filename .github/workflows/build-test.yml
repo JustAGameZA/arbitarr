@@ -418,10 +418,25 @@ jobs:
             # instead of 1492 because Api (181) and Core.Identity (34) both wrote
             # the same default name. Naming the file after the assembly makes the
             # basename unique by construction, independent of runner or timing.
+            # arb-e2x: the console output is teed to a file so a FAILED attempt
+            # can keep it (see the failed-attempt upload below).
+            #
+            # The redirection is attached to the COMMAND sample_peak backgrounds,
+            # not wrapped around the sample_peak call. sample_peak's whole
+            # contract is that `wait "$pid"` returns dotnet test's own status
+            # (see its comment above), and that contract is easiest to keep by
+            # not putting anything between the caller and it. `set -o pipefail`
+            # at the top of this step means a plain pipe would also propagate a
+            # failing test -- both shapes were checked -- so this is the
+            # conservative choice rather than the only correct one.
+            #
+            # stderr is folded into stdout so an assertion message cannot land
+            # in a different file from the test that produced it.
             sample_peak "./TestResults/${trx_name}.peakkb" \
               dotnet test "$dll" \
                 --filter "$run_filter" \
-                --logger "trx;LogFileName=${trx_name}.trx" --results-directory ./TestResults
+                --logger "trx;LogFileName=${trx_name}.trx" --results-directory ./TestResults \
+                > >(tee "./TestResults/${trx_name}.console.log") 2>&1
             echo "$(( $(date +%s) - start ))" > "./TestResults/${trx_name}.secs"
             echo "peak dotnet+testhost RSS: $(cat "./TestResults/${trx_name}.peakkb") KB in $(cat "./TestResults/${trx_name}.secs") s"
             echo "::endgroup::"
@@ -465,6 +480,46 @@ jobs:
             ./TestResults/*.listed
           if-no-files-found: error
           retention-days: 1
+
+      # arb-e2x: keep a FAILED attempt's evidence, which the trx-* artifact above
+      # cannot. Two separate mechanisms destroyed the evidence for arb-agh:
+      #
+      #   1. A rerun of failed jobs OVERWRITES the job log. The stack trace only
+      #      ever lived in that log -- the trx records which test failed, not the
+      #      console output around it -- so `gh run view --log-failed` on both
+      #      arb-agh runs now returns 0 bytes. The .console.log teed in the test
+      #      step above is what puts that output in an artifact instead.
+      #   2. `retention-days: 1` above. Measured on run 34554979831: attempt 1's
+      #      trx-A1 (the failing attempt) and attempt 2's trx-A1 BOTH exist as
+      #      separate artifacts, so the rerun did NOT overwrite the trx -- but
+      #      both expired a day later. 14 days here outlives a weekend, which is
+      #      how long a P0 flake actually takes to get looked at.
+      #
+      # That measurement is also why no `overwrite:` input is needed on either
+      # step: a rerun gets its own artifact namespace, so the same name across
+      # attempts does not 409.
+      #
+      # The name MUST NOT match `trx-*`: the gate downloads `pattern: trx-*` and
+      # sums `executed=` across whatever it finds, so a per-attempt copy under a
+      # matching name would be counted a second time and read as a floor breach.
+      # `${{ github.run_attempt }}` keeps each attempt's copy distinct.
+      - name: Upload failed attempt evidence (group ${{ matrix.group }})
+        if: failure()
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
+        with:
+          name: failed-attempt-${{ github.run_attempt }}-${{ matrix.group }}
+          path: |
+            ./TestResults/*.trx
+            ./TestResults/*.listed
+            ./TestResults/*.secs
+            ./TestResults/*.peakkb
+            ./TestResults/*.console.log
+          # warn, not error: this step runs on ANY failure in the job, including
+          # one that happens before the test step writes anything (a restore or
+          # a shard-filter failure). Erroring there would replace the real
+          # failure in the log with a missing-artifact error.
+          if-no-files-found: warn
+          retention-days: 14
 
   # --------------------------------------------------------------------------
   # frontend: runs in parallel with prep and the backend matrix. It has no .NET
@@ -623,8 +678,18 @@ jobs:
           echo "Frontend chrome guards passed."
 
       - name: Frontend tests
+        # arb-e2x: `shell: bash` is explicit because this file has no
+        # `defaults.run.shell` -- every step sets it individually -- and the tee
+        # below needs pipefail to be the thing that decides the exit code.
+        # Without it the pipeline would report tee's status and a failing suite
+        # would go green. `npm test` writes vitest-report.json (the JSON
+        # reporter the count step reads), so on failure the report AND this
+        # console log both ride up in the failed-attempt artifact below.
+        shell: bash
         working-directory: src/Arbitarr.Web
-        run: npm test
+        run: |
+          set -euo pipefail
+          npm test 2>&1 | tee vitest-console.log
 
       - name: Read frontend test count
         id: count
@@ -651,6 +716,30 @@ jobs:
 
           echo "Frontend passed test count: $total"
           echo "count=$total" >> "$GITHUB_OUTPUT"
+
+      # arb-e2x: the frontend half of the same problem -- see the backend
+      # failed-attempt step for the two mechanisms (a rerun overwrites the job
+      # log; short retention removes the rest) and the arb-agh incident behind
+      # them. vitest-report.json is the JSON reporter's output and
+      # vitest-console.log is the teed console text, which is where a failing
+      # assertion's diff actually appears.
+      #
+      # The name does not match `trx-*`, so the gate never sees it. The frontend
+      # count reaches the gate through the job OUTPUT above, not through an
+      # artifact, so nothing here can affect the ratchet.
+      - name: Upload failed attempt evidence (frontend)
+        if: failure()
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
+        with:
+          name: failed-attempt-${{ github.run_attempt }}-frontend
+          path: |
+            src/Arbitarr.Web/vitest-report.json
+            src/Arbitarr.Web/vitest-console.log
+          # warn, not error: this step runs on any failure in the job, including
+          # a typecheck or lint failure that happens before the test step writes
+          # either file.
+          if-no-files-found: warn
+          retention-days: 14
 
 
   # --------------------------------------------------------------------------
