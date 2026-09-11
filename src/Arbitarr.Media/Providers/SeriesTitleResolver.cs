@@ -1,5 +1,6 @@
 using System.Net.Http;
 using Arbitarr.Core.Identity;
+using Arbitarr.Core.Media;
 using Arbitarr.Core.Sources.CircuitBreaker;
 using Arbitarr.Data.Media;
 using Microsoft.Extensions.Caching.Memory;
@@ -48,6 +49,15 @@ namespace Arbitarr.Media.Providers;
 /// per call costs one settings read against SQLite on a path that is about to make a network
 /// request anyway — and on the hot path it usually costs nothing at all, because
 /// <see cref="ResolveAsync"/> answers from the memo before reaching it.
+/// </para>
+/// <para>
+/// <b>arb-iiy: THE MEMO IS KEYED ON THE INSTANCE AS WELL AS THE SERIES.</b> Because the memo is
+/// checked before the settings read, a repoint would otherwise keep serving the PREVIOUS server's
+/// title for the rest of <see cref="MemoTtl"/>. The key therefore carries
+/// <see cref="IArrInstanceEpoch.Current"/>, which <c>ArrInstanceRepository.SetAsync</c> advances
+/// after a successful write — an in-memory read, so the hit path stays free of the database round
+/// trip that folding the address itself into the key would have required. Entries written under an
+/// earlier epoch are not swept; they become unreachable and expire on their own TTL.
 /// </para>
 /// </remarks>
 public sealed class SeriesTitleResolver : IIdentityResolver
@@ -119,6 +129,7 @@ public sealed class SeriesTitleResolver : IIdentityResolver
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IAsyncCircuitBreaker _circuitBreaker;
     private readonly IMemoryCache _memo;
+    private readonly IArrInstanceEpoch _epoch;
     private readonly TimeSpan _lookupBudget;
 
     public SeriesTitleResolver(
@@ -126,12 +137,14 @@ public sealed class SeriesTitleResolver : IIdentityResolver
         IHttpClientFactory httpClientFactory,
         IAsyncCircuitBreaker circuitBreaker,
         IMemoryCache memo,
+        IArrInstanceEpoch epoch,
         TimeSpan? lookupBudget = null)
     {
         _credentials = credentials ?? throw new ArgumentNullException(nameof(credentials));
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _circuitBreaker = circuitBreaker ?? throw new ArgumentNullException(nameof(circuitBreaker));
         _memo = memo ?? throw new ArgumentNullException(nameof(memo));
+        _epoch = epoch ?? throw new ArgumentNullException(nameof(epoch));
         _lookupBudget = lookupBudget ?? LookupBudget;
     }
 
@@ -253,9 +266,21 @@ public sealed class SeriesTitleResolver : IIdentityResolver
 
     /// <summary>
     /// Namespaced so this resolver's entries cannot collide with another feature's in a shared
-    /// <see cref="IMemoryCache"/>.
+    /// <see cref="IMemoryCache"/>, and carrying the *arr instance epoch so a repoint invalidates.
     /// </summary>
-    private static string MemoKey(int tvdbId) => $"arb-u1c:series-title:{tvdbId}";
+    /// <remarks>
+    /// <para><b>arb-iiy: THE EPOCH COMPONENT.</b> A title is only true OF THE INSTANCE THAT ANSWERED
+    /// IT. Keyed on the tvdbid alone, repointing Sonarr at a different server kept serving the
+    /// previous server's title for the rest of <see cref="MemoTtl"/>. The epoch
+    /// (<see cref="IArrInstanceEpoch"/>) advances whenever that configuration is written, so entries
+    /// from the previous instance are no longer reachable under the new key.</para>
+    ///
+    /// <para>Reading it costs an in-memory field, NOT a settings read — which is the whole reason it
+    /// is a counter rather than the address itself, and what keeps the memo-first path above free of
+    /// the database round trip its comment forbids. Stale entries are not swept: they simply become
+    /// unreachable and expire on their own TTL as before.</para>
+    /// </remarks>
+    private string MemoKey(int tvdbId) => $"arb-u1c:series-title:{_epoch.Current}:{tvdbId}";
 
     private static bool IsUsableTitle(string? candidate) => !string.IsNullOrWhiteSpace(candidate);
 

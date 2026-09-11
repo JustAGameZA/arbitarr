@@ -682,6 +682,13 @@ builder.Services.AddScoped<Arbitarr.Core.Identity.IIdentityResolver, Arbitarr.Me
 // across requests is correct rather than merely convenient.
 builder.Services.AddMemoryCache();
 
+// arb-iiy: the *arr instance epoch the memo key above folds in. SINGLETON for the same reason the
+// memo is one: ArrInstanceRepository (which bumps it, scoped, on the admin write request) and
+// SeriesTitleResolver (which reads it, scoped, on a later search request) are different instances
+// and must see the same counter — a scoped registration would hand each request a zero and the
+// repoint would invalidate nothing.
+builder.Services.AddSingleton<Arbitarr.Core.Media.IArrInstanceEpoch, Arbitarr.Core.Media.ArrInstanceEpoch>();
+
 // The client the *arr identity lookup rides on. NAMED rather than typed because ArrApiProvider is
 // constructed per call around configuration read from the database (see SeriesTitleResolver), so DI
 // cannot activate it as a typed client.
