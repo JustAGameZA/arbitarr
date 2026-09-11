@@ -286,14 +286,18 @@ public sealed class LogStoreTests : IDisposable
         {
             Entry("first", time: start),
             Entry("second", time: start.AddMinutes(1)),
-            Entry("third", time: start.AddMinutes(2)),
+            // The Exception column goes through the SAME cleanse delegate as the Message
+            // (LogStore.WriteAsync), so this row's MESSAGE is deliberately inert and its EXCEPTION is
+            // what triggers the timeout. Without it the cleanse(entry.Exception) call site is never
+            // exercised and deleting it would still leave this test green.
+            Entry("third", time: start.AddMinutes(2), exception: "exception boom"),
         };
 
         string? CleanseWithMiddleRowTimeout(string? text)
         {
             try
             {
-                return text == "second"
+                return text is "second" or "exception boom"
                     ? throw new System.Text.RegularExpressions.RegexMatchTimeoutException()
                     : text;
             }
@@ -313,6 +317,12 @@ public sealed class LogStoreTests : IDisposable
         Assert.Equal(3, page.Total);
         Assert.Equal("first", Assert.Single(page.Entries, e => e.Time == start).Message);
         Assert.Equal(LogMessageCleanser.TimeoutPlaceholder, Assert.Single(page.Entries, e => e.Time == start.AddMinutes(1)).Message);
-        Assert.Equal("third", Assert.Single(page.Entries, e => e.Time == start.AddMinutes(2)).Message);
+
+        // The third row pins the Message and Exception columns INDEPENDENTLY: its exception timed
+        // out and degraded to the placeholder, while its message — which does not trigger — survives
+        // verbatim. Asserting only the message would leave cleanse(entry.Exception) unexercised.
+        var thirdRow = Assert.Single(page.Entries, e => e.Time == start.AddMinutes(2));
+        Assert.Equal("third", thirdRow.Message);
+        Assert.Equal(LogMessageCleanser.TimeoutPlaceholder, thirdRow.Exception);
     }
 }

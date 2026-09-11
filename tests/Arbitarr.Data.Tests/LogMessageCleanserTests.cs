@@ -136,8 +136,11 @@ public sealed class LogMessageCleanserTests
     [Fact]
     public void A_credential_straddling_the_cut_leaves_at_most_a_few_leading_characters()
     {
-        // Position the credential so it starts a few characters before MaxCleanseInputLength and
-        // extends well past it — squarely straddling the boundary.
+        // Position the credential so it straddles the boundary: the `apikey=` PREFIX starts
+        // overlap + prefix.Length (= 12) characters before MaxCleanseInputLength, which puts the
+        // start of the VALUE itself `overlap` (= 5) characters before the cap, with the rest of the
+        // value extending well past it. The arithmetic is overlap minus the prefix length, so
+        // changing either constant moves the boundary — keep both in view when editing.
         const int overlap = 5;
         var prefix = "apikey=";
         var startAt = LogMessageCleanser.MaxCleanseInputLength - overlap;
@@ -151,6 +154,18 @@ public sealed class LogMessageCleanserTests
         // redacted before the cut discards the tail — no fragment of the secret should survive.
         var secretPrefix = SecretValue[..Math.Min(3, SecretValue.Length)];
         Assert.DoesNotContain(secretPrefix, cleansed, StringComparison.Ordinal);
+        Assert.DoesNotContain(SecretValue, cleansed, StringComparison.Ordinal);
+
+        // Proves REDACTION rather than mere absence, without over-claiming at this position. The
+        // credential IS matched and replaced during the overscrub pass, but the pattern keeps its
+        // `apikey=` prefix and only substitutes the value, so Replacement begins `overlap` (= 5)
+        // characters before the cap — and the cut at MaxCleanseInputLength then bisects the token
+        // itself, leaving "apikey=<reda" here rather than a whole "<redacted>". Asserting the FULL
+        // token would fail for the right reason and is why this asserts the surviving marker prefix:
+        // absence of the value alone would also pass had the tail merely been dropped, which is the
+        // different code path A_credential_entirely_in_the_dropped_tail_does_not_appear covers.
+        var markerPrefix = LogMessageCleanser.Replacement[..Math.Min(5, LogMessageCleanser.Replacement.Length)];
+        Assert.Contains(prefix + markerPrefix, cleansed, StringComparison.Ordinal);
     }
 
     [Fact]
