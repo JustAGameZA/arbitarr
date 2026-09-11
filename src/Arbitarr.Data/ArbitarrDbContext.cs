@@ -231,6 +231,11 @@ public sealed class ArbitarrDbContext : DbContext
             // FilterRuleEntry.Pattern/SuppressionAuditLogEntry precedent — ReleaseKeyHash is a
             // fixed-length SHA-256 hex digest (64 chars), ModelName/ModelDigest/PromptVersion are
             // short identity strings with generous headroom above any realistic value.
+            // The cache key's identity actually has a fourth component, DecodingIdentity (#244,
+            // arb-qg3o), folded into ReleaseKeyHash but deliberately NOT stored as its own column:
+            // it is derived from compile-time constants in OllamaOptions, so it is identical for
+            // every row a given build writes, and a debugging query can read it from the deployed
+            // version rather than the table.
             entity.Property(e => e.ReleaseKeyHash).IsRequired().HasMaxLength(64);
             entity.Property(e => e.ModelName).IsRequired().HasMaxLength(256);
             entity.Property(e => e.ModelDigest).IsRequired().HasMaxLength(256);
