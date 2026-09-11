@@ -22,6 +22,13 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Arbitarr.Data\Arbitarr.Data.csproj" />
     <ProjectReference Include="..\Arbitarr.TestSupport\Arbitarr.TestSupport.csproj" />
+    <!--
+      arb-6vf: for the ONE shared credential corpus (CredentialPatternsTests.CredentialCorpus).
+      CredentialPatternsCrossSinkTests asserts that both sinks redact the same shapes, so both sides
+      must be driven from the same rows — a second corpus kept equal by hand would reintroduce
+      exactly the drift this bead removes. That corpus is the only thing used from here.
+    -->
+    <ProjectReference Include="..\Arbitarr.Core.Tests\Arbitarr.Core.Tests.csproj" />
   </ItemGroup>
 
 </Project>
