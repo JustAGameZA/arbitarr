@@ -180,6 +180,28 @@ describe('Login and the route guard (#44)', () => {
     );
   });
 
+  it('Setup points lockout recovery at the README instead of reciting the database steps (arb-eg09)', async () => {
+    // Setup states "There is no password reset" BEFORE the operator chooses a
+    // passphrase -- that warning has a job and stays. What must go is the
+    // database mechanics (arbitarr.db / users table); recovery is now a link
+    // to the same README anchor Login.tsx uses after #236.
+    mockApi({ ...setupRequired() });
+    renderApp('/rules');
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Set up Arbitarr' }))
+      .toBeInTheDocument();
+
+    expect(screen.getByText(/There is no password reset/i)).toBeInTheDocument();
+    expect(screen.queryByText(/users table/i)).toBeNull();
+    expect(screen.queryByText(/arbitarr\.db/i)).toBeNull();
+
+    const link = screen.getByRole('link', { name: 'how to recover a locked-out instance' });
+    expect(link).toHaveAttribute(
+      'href',
+      'https://github.com/JustAGameZA/arbitarr#signing-in-and-what-to-do-when-you-cannot',
+    );
+  });
+
   it('sends an already-signed-in visitor away from /login', async () => {
     mockApi({ ...signedIn('operator') });
     renderApp('/login');

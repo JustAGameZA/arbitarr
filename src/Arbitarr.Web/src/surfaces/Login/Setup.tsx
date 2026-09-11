@@ -102,13 +102,21 @@ export default function Setup() {
           {/*
             Stated before they choose a password rather than after they forget
             it. There is no reset path by design (see UserEntry), so the moment
-            this matters most is the moment the password is being chosen.
+            this matters most is the moment the password is being chosen. The
+            recovery runbook itself lives in the README (arb-hhb moved it off
+            Login.tsx for the same reason); this paragraph only needs to point
+            there, not restate the database steps.
           */}
           <p className={local.help}>
-            Choose a passphrase you will not lose. There is no password reset: if
-            you are locked out, the only ways back are restoring the configuration
-            database from a backup or removing the rows from the users table in{' '}
-            <code>arbitarr.db</code> via the config bind mount.
+            Choose a passphrase you will not lose. There is no password reset:{' '}
+            <a
+              href="https://github.com/JustAGameZA/arbitarr#signing-in-and-what-to-do-when-you-cannot"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              how to recover a locked-out instance
+            </a>
+            .
           </p>
         </div>
       </main>
