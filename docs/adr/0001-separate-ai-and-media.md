@@ -42,3 +42,14 @@ fails the build rather than eroding through review fatigue.
 - The deterministic path stays fully testable without a model, so CI needs no Ollama.
 - Shadow mode is possible at all: arbitration can run and record verdicts without touching results,
   because results do not depend on it.
+
+**2026-09-11 (arb-qg3o).** The verdict cache key gained a fourth component, `DecodingIdentity`, so
+that a change to the classifier's sampling constants (temperature, seed) invalidates cached verdicts
+by construction rather than through an operator-overridable `Arbitarr:Ai:PromptVersion` bump. This
+is the "crossing data needs a `Core` contract" friction above, paid as designed: the token is built
+in `Arbitarr.Ai` from `OllamaOptions` and passed to `Arbitarr.Core` as a plain `string`, so Core
+acquires no Ollama type and the boundary is unchanged. Status unchanged.
+
+Upgrade consequence, once: every existing entry was written under a three-component key and
+therefore misses exactly once after deploy, re-classifying on demand. No migration accompanies it —
+the stored key is a SHA-256 hex digest, so its length does not move when an input is added.

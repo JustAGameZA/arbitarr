@@ -78,7 +78,12 @@ public sealed class ClassifierWorker
         }
 
         var key = VerdictCacheKey.Compute(
-            candidate, sourceName, _modelIdentity.ModelName, _modelIdentity.ModelDigest, _modelIdentity.PromptVersion);
+            candidate,
+            sourceName,
+            _modelIdentity.ModelName,
+            _modelIdentity.ModelDigest,
+            _modelIdentity.PromptVersion,
+            _modelIdentity.DecodingIdentity);
 
         var verdict = string.Equals(result.Verdict, "reject", StringComparison.OrdinalIgnoreCase)
             ? Verdict.Reject

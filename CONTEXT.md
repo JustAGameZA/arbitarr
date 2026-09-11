@@ -196,6 +196,23 @@ reason is a non-answer. It is bounded at `OllamaRequestException.MaxExcerptLengt
 before it can reach `/api/status`, so it carries no host, address or credential.
 The probe is its only writer and never assigns a raw body.
 
+Two terms name components of the **verdict cache key**, and they are deliberately
+separate because they change for different reasons.
+
+The **prompt version** is the version tag of the classification prompt
+**template**, and only the template — `Arbitarr:Ai:PromptVersion`, defaulting to
+`v2`. It answers "what were we asking?". It is not a general-purpose cache-buster:
+arb-p4r briefly used a bump of it to invalidate verdicts after a *decoding* change,
+which both stretched the term and could be defeated by an operator who pinned the
+setting explicitly.
+
+The **decoding identity** is the token naming the sampling constants a verdict was
+decoded under — `t0-s42` for temperature 0, seed 42 (`OllamaOptions.DecodingIdentity`,
+arb-qg3o). It answers "how were we asking?", and it is a cache-key component in its
+own right, so changing either constant invalidates previously cached verdicts by
+construction. It reads no configuration, which is exactly the point: there is no
+setting an operator can pin to keep serving verdicts decoded under the old sampling.
+
 **It is not a source, and the distinction is load-bearing rather than
 terminological.** A source is *searched* — it is an indexer, it appears in the
 sources health table, it carries a Torznab/Newznab API key, and its probe speaks

@@ -22,7 +22,7 @@ public sealed class ClassifierPollingWorkerTests
     private const string NoisyTitle = "Movie 2024 1080p RARBG";
     private const string StrippedTitle = "Movie 2024 1080p";
 
-    private static readonly AiModelIdentity Identity = new("test-model", "digest-1", "v1");
+    private static readonly AiModelIdentity Identity = new("test-model", "digest-1", "v1", "t0-s42");
 
     [Fact]
     public async Task RunCycle_UncachedCandidate_ClassifiesAndCachesVerdict()
@@ -491,7 +491,7 @@ public sealed class ClassifierPollingWorkerTests
     }
 
     private static string KeyFor(string title, string guid, string sourceName = SourceName) =>
-        VerdictCacheKey.Compute(Release(title, guid).Candidate, sourceName, Identity.ModelName, Identity.ModelDigest, Identity.PromptVersion);
+        VerdictCacheKey.Compute(Release(title, guid).Candidate, sourceName, Identity.ModelName, Identity.ModelDigest, Identity.PromptVersion, Identity.DecodingIdentity);
 
     private static RenderedRelease Release(string title, string guid) => new(
         SourceName,

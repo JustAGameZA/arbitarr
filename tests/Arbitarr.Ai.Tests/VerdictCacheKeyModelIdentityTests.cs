@@ -1,7 +1,41 @@
+using System.Globalization;
 using Arbitarr.Core.Filtering;
 using Arbitarr.Core.Releases;
 
 namespace Arbitarr.Ai.Tests;
+
+/// <summary>
+/// arb-qg3o: the decoding identity token itself — the Ai-layer half of the fix. The token is what
+/// travels into <see cref="AiModelIdentity"/>, so these pin both its exact shape (a change to it is
+/// a cache invalidation and must be a deliberate edit, not a drive-by reformat) and the fact that it
+/// is genuinely DERIVED from <see cref="OllamaOptions"/>' constants rather than a literal that could
+/// silently stop tracking them.
+/// </summary>
+public class OllamaDecodingIdentityTests
+{
+    [Fact]
+    public void DecodingIdentity_MatchesTheSamplingConstantsInForce()
+    {
+        Assert.Equal("t0-s42", OllamaOptions.DecodingIdentity);
+    }
+
+    /// <summary>
+    /// The assertion above is a literal, which would keep passing if the token were hardcoded and
+    /// the constants moved on. This one rebuilds the expected token FROM the constants, so the pair
+    /// fails whichever side drifts: change a constant without the token following and this fails;
+    /// change the format without intent and the literal above fails.
+    /// </summary>
+    [Fact]
+    public void DecodingIdentity_IsDerivedFromBothConstants()
+    {
+        var expected = string.Create(
+            CultureInfo.InvariantCulture,
+            $"t{OllamaOptions.SamplingTemperature}-s{OllamaOptions.SamplingSeed}");
+
+        Assert.Equal(expected, OllamaOptions.DecodingIdentity);
+        Assert.Contains(OllamaOptions.SamplingSeed.ToString(CultureInfo.InvariantCulture), OllamaOptions.DecodingIdentity);
+    }
+}
 
 /// <summary>
 /// M5-9/R17: a model-name (or digest/prompt-version) change must invalidate previously cached
@@ -25,8 +59,8 @@ public class VerdictCacheKeyModelIdentityTests
     {
         var candidate = Candidate();
 
-        var keyA = VerdictCacheKey.Compute(candidate, "TestSource", "model-a", "digest-1", "v1");
-        var keyB = VerdictCacheKey.Compute(candidate, "TestSource", "model-b", "digest-1", "v1");
+        var keyA = VerdictCacheKey.Compute(candidate, "TestSource", "model-a", "digest-1", "v1", "t0-s42");
+        var keyB = VerdictCacheKey.Compute(candidate, "TestSource", "model-b", "digest-1", "v1", "t0-s42");
 
         Assert.NotEqual(keyA, keyB);
     }
@@ -36,8 +70,8 @@ public class VerdictCacheKeyModelIdentityTests
     {
         var candidate = Candidate();
 
-        var keyA = VerdictCacheKey.Compute(candidate, "TestSource", "model-a", "digest-1", "v1");
-        var keyB = VerdictCacheKey.Compute(candidate, "TestSource", "model-a", "digest-2", "v1");
+        var keyA = VerdictCacheKey.Compute(candidate, "TestSource", "model-a", "digest-1", "v1", "t0-s42");
+        var keyB = VerdictCacheKey.Compute(candidate, "TestSource", "model-a", "digest-2", "v1", "t0-s42");
 
         Assert.NotEqual(keyA, keyB);
     }
@@ -47,8 +81,8 @@ public class VerdictCacheKeyModelIdentityTests
     {
         var candidate = Candidate();
 
-        var keyA = VerdictCacheKey.Compute(candidate, "TestSource", "model-a", "digest-1", "v1");
-        var keyB = VerdictCacheKey.Compute(candidate, "TestSource", "model-a", "digest-1", "v2");
+        var keyA = VerdictCacheKey.Compute(candidate, "TestSource", "model-a", "digest-1", "v1", "t0-s42");
+        var keyB = VerdictCacheKey.Compute(candidate, "TestSource", "model-a", "digest-1", "v2", "t0-s42");
 
         Assert.NotEqual(keyA, keyB);
     }
@@ -58,8 +92,41 @@ public class VerdictCacheKeyModelIdentityTests
     {
         var candidate = Candidate();
 
-        var keyA = VerdictCacheKey.Compute(candidate, "TestSource", "model-a", "digest-1", "v1");
-        var keyB = VerdictCacheKey.Compute(candidate, "TestSource", "model-a", "digest-1", "v1");
+        var keyA = VerdictCacheKey.Compute(candidate, "TestSource", "model-a", "digest-1", "v1", "t0-s42");
+        var keyB = VerdictCacheKey.Compute(candidate, "TestSource", "model-a", "digest-1", "v1", "t0-s42");
+
+        Assert.Equal(keyA, keyB);
+    }
+
+    /// <summary>
+    /// arb-qg3o: the whole point of the fourth component. A decoding change (temperature or seed)
+    /// must invalidate cached verdicts on its own, with every other component held identical — so
+    /// no configuration value, including a pinned <c>Arbitarr:Ai:PromptVersion</c>, can keep a
+    /// verdict decoded under the old sampling in service.
+    /// </summary>
+    [Fact]
+    public void Compute_DifferentDecodingIdentity_ProducesDifferentKey()
+    {
+        var candidate = Candidate();
+
+        var keyA = VerdictCacheKey.Compute(candidate, "TestSource", "model-a", "digest-1", "v1", "t0-s42");
+        var keyB = VerdictCacheKey.Compute(candidate, "TestSource", "model-a", "digest-1", "v1", "t0.7-s42");
+
+        Assert.NotEqual(keyA, keyB);
+    }
+
+    /// <summary>
+    /// Positive control for the test above: with the decoding identity ALSO held equal, these same
+    /// arguments produce one key. Without this, <c>NotEqual</c> above would still pass if some other
+    /// component were accidentally varying, and the test would not be evidence about decoding at all.
+    /// </summary>
+    [Fact]
+    public void Compute_SameDecodingIdentity_ProducesStableKey()
+    {
+        var candidate = Candidate();
+
+        var keyA = VerdictCacheKey.Compute(candidate, "TestSource", "model-a", "digest-1", "v1", "t0-s42");
+        var keyB = VerdictCacheKey.Compute(candidate, "TestSource", "model-a", "digest-1", "v1", "t0-s42");
 
         Assert.Equal(keyA, keyB);
     }
@@ -78,8 +145,8 @@ public class VerdictCacheKeyModelIdentityTests
             Protocol = candidateA.Protocol,
         };
 
-        var keyA = VerdictCacheKey.Compute(candidateA, "TestSource", "model-a", "digest-1", "v1");
-        var keyB = VerdictCacheKey.Compute(candidateB, "TestSource", "model-a", "digest-1", "v1");
+        var keyA = VerdictCacheKey.Compute(candidateA, "TestSource", "model-a", "digest-1", "v1", "t0-s42");
+        var keyB = VerdictCacheKey.Compute(candidateB, "TestSource", "model-a", "digest-1", "v1", "t0-s42");
 
         Assert.Equal(keyA, keyB);
     }
@@ -112,8 +179,8 @@ public class VerdictCacheKeyModelIdentityTests
             Protocol = ProtocolKind.Torrent,
         };
 
-        var keyA = VerdictCacheKey.Compute(candidateA, "TestSource", "model-a", "digest-1", "v1");
-        var keyB = VerdictCacheKey.Compute(candidateB, "TestSource", "model-a", "digest-1", "v1");
+        var keyA = VerdictCacheKey.Compute(candidateA, "TestSource", "model-a", "digest-1", "v1", "t0-s42");
+        var keyB = VerdictCacheKey.Compute(candidateB, "TestSource", "model-a", "digest-1", "v1", "t0-s42");
 
         Assert.NotEqual(keyA, keyB);
     }

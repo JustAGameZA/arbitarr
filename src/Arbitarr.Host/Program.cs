@@ -403,12 +403,17 @@ builder.Services.AddScoped(sp =>
     // arb-p4r: bumped from "v1" to "v2". Pinning options.temperature/seed on the Ollama request
     // (OllamaClient) changes what a given prompt yields for the same input, so verdicts cached
     // under the old, non-deterministic sampling must not be served as if they came from the new,
-    // deterministic one. Like ModelName above, an operator-set Arbitarr:Ai:PromptVersion defeats
-    // this bump and keeps serving verdicts cached under non-deterministic sampling; the
-    // by-construction fix (folding sampling into the cache identity itself) is tracked as a
-    // follow-up bead.
+    // deterministic one.
+    //
+    // arb-qg3o: the by-construction fix has since landed, and it closed the operator-override hole
+    // this comment used to warn about — sampling now travels in its own DecodingIdentity component
+    // below, which reads no configuration, so pinning Arbitarr:Ai:PromptVersion can no longer keep
+    // verdicts cached under old sampling alive. The default stays at "v2" deliberately: reverting
+    // it to "v1" would itself invalidate the whole cache a second time for no benefit.
     var promptVersion = section["PromptVersion"] ?? "v2";
-    return new AiModelIdentity(modelName, modelDigest, promptVersion);
+    // Built in Arbitarr.Ai from the sampling constants and passed to Core as a plain string, so
+    // Core acquires no Ollama types (ADR-0001).
+    return new AiModelIdentity(modelName, modelDigest, promptVersion, OllamaOptions.DecodingIdentity);
 });
 // SEC-M5 (SSRF): mirrors SEC-M1 above — the Ollama base URL is config-driven, but disabling
 // automatic redirect-following is defense in depth against a compromised/misconfigured endpoint

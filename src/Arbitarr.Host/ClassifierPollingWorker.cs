@@ -257,7 +257,12 @@ public sealed class ClassifierPollingWorker : BackgroundService
             // derived from an earlier rewrite.
             var candidate = rendered.Candidate.WithTitle(rendered.Candidate.OriginalTitle, originalTitleRaw: null);
             var key = VerdictCacheKey.Compute(
-                candidate, rendered.SourceName, deps.ModelIdentity.ModelName, deps.ModelIdentity.ModelDigest, deps.ModelIdentity.PromptVersion);
+                candidate,
+                rendered.SourceName,
+                deps.ModelIdentity.ModelName,
+                deps.ModelIdentity.ModelDigest,
+                deps.ModelIdentity.PromptVersion,
+                deps.ModelIdentity.DecodingIdentity);
 
             var cached = deps.VerdictCacheReader.TryGet(key);
             if (cached is not null && (cached.RewrittenTitle is not null || !titleNormalizationEnabled))

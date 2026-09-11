@@ -25,8 +25,8 @@ public sealed class VerdictCacheKeyTests
         var candidateA = MakeCandidate(Guid.NewGuid().ToString());
         var candidateB = MakeCandidate(Guid.NewGuid().ToString());
 
-        var keyA = VerdictCacheKey.Compute(candidateA, "indexer-1", "gpt-x", "digest-1", "prompt-v1");
-        var keyB = VerdictCacheKey.Compute(candidateB, "indexer-1", "gpt-x", "digest-1", "prompt-v1");
+        var keyA = VerdictCacheKey.Compute(candidateA, "indexer-1", "gpt-x", "digest-1", "prompt-v1", "t0-s42");
+        var keyB = VerdictCacheKey.Compute(candidateB, "indexer-1", "gpt-x", "digest-1", "prompt-v1", "t0-s42");
 
         Assert.NotEqual(candidateA.Guid, candidateB.Guid);
         Assert.Equal(keyA, keyB);
@@ -37,8 +37,8 @@ public sealed class VerdictCacheKeyTests
     {
         var candidate = MakeCandidate(Guid.NewGuid().ToString());
 
-        var keyA = VerdictCacheKey.Compute(candidate, "indexer-1", "gpt-x", "digest-1", "prompt-v1");
-        var keyB = VerdictCacheKey.Compute(candidate, "indexer-1", "gpt-y", "digest-1", "prompt-v1");
+        var keyA = VerdictCacheKey.Compute(candidate, "indexer-1", "gpt-x", "digest-1", "prompt-v1", "t0-s42");
+        var keyB = VerdictCacheKey.Compute(candidate, "indexer-1", "gpt-y", "digest-1", "prompt-v1", "t0-s42");
 
         Assert.NotEqual(keyA, keyB);
     }
@@ -48,8 +48,8 @@ public sealed class VerdictCacheKeyTests
     {
         var candidate = MakeCandidate(Guid.NewGuid().ToString());
 
-        var keyA = VerdictCacheKey.Compute(candidate, "indexer-1", "gpt-x", "digest-1", "prompt-v1");
-        var keyB = VerdictCacheKey.Compute(candidate, "indexer-1", "gpt-x", "digest-2", "prompt-v1");
+        var keyA = VerdictCacheKey.Compute(candidate, "indexer-1", "gpt-x", "digest-1", "prompt-v1", "t0-s42");
+        var keyB = VerdictCacheKey.Compute(candidate, "indexer-1", "gpt-x", "digest-2", "prompt-v1", "t0-s42");
 
         Assert.NotEqual(keyA, keyB);
     }
@@ -59,8 +59,8 @@ public sealed class VerdictCacheKeyTests
     {
         var candidate = MakeCandidate(Guid.NewGuid().ToString());
 
-        var keyA = VerdictCacheKey.Compute(candidate, "indexer-1", "gpt-x", "digest-1", "prompt-v1");
-        var keyB = VerdictCacheKey.Compute(candidate, "indexer-1", "gpt-x", "digest-1", "prompt-v2");
+        var keyA = VerdictCacheKey.Compute(candidate, "indexer-1", "gpt-x", "digest-1", "prompt-v1", "t0-s42");
+        var keyB = VerdictCacheKey.Compute(candidate, "indexer-1", "gpt-x", "digest-1", "prompt-v2", "t0-s42");
 
         Assert.NotEqual(keyA, keyB);
     }
@@ -71,8 +71,8 @@ public sealed class VerdictCacheKeyTests
         var candidateA = MakeCandidate(Guid.NewGuid().ToString(), "Movie.Title.2024.1080p.BluRay.x264");
         var candidateB = MakeCandidate(Guid.NewGuid().ToString(), "  movie.title.2024.1080p.bluray.x264  ");
 
-        var keyA = VerdictCacheKey.Compute(candidateA, "indexer-1", "gpt-x", "digest-1", "prompt-v1");
-        var keyB = VerdictCacheKey.Compute(candidateB, "indexer-1", "gpt-x", "digest-1", "prompt-v1");
+        var keyA = VerdictCacheKey.Compute(candidateA, "indexer-1", "gpt-x", "digest-1", "prompt-v1", "t0-s42");
+        var keyB = VerdictCacheKey.Compute(candidateB, "indexer-1", "gpt-x", "digest-1", "prompt-v1", "t0-s42");
 
         Assert.Equal(keyA, keyB);
     }
