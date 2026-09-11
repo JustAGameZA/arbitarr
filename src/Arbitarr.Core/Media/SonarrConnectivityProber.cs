@@ -12,7 +12,7 @@ namespace Arbitarr.Core.Media;
 ///
 /// <para><b>WHY IT REUSES <see cref="SourceProbeOutcome"/> RATHER THAN DEFINING ITS OWN.</b>
 /// CONTEXT.md distinguishes that enum from <c>OllamaProbeOutcome</c> on a substantive ground, not a
-/// naming one: Ollama's has four members because an AI backend carries no key, so
+/// naming one: Ollama's has six members because an AI backend carries no key, so
 /// <see cref="SourceProbeOutcome.AuthenticationFailed"/> could never be produced there. Sonarr DOES
 /// carry a key, and a wrong key is the single most likely misconfiguration this button exists to
 /// catch, so all five members are reachable here and the existing enum is the right one. Defining a

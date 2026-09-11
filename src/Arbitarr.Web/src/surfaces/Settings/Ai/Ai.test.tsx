@@ -411,7 +411,7 @@ describe('AI backend section', () => {
   /**
    * The model names are DATA, never prose. They appear as options and nowhere
    * else — in particular they are not spliced into the server's fixed wording,
-   * which is what keeps the outcome union at four members and the message derived
+   * which is what keeps the outcome union at six members and the message derived
    * from the closed enum alone.
    *
    * POSITIVE CONTROL: the same search is first shown to FIND the name where it

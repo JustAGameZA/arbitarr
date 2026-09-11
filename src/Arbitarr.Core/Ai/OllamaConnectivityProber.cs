@@ -134,7 +134,7 @@ public sealed class OllamaConnectivityProber
                 // Includes 401/403. Ollama has no authentication, so a service demanding
                 // credentials at this address is not Ollama — an authentication outcome would
                 // send the operator hunting for a key that does not exist. See
-                // OllamaProbeOutcome's note on why there are four outcomes and not five.
+                // OllamaProbeOutcome's note on why there are six outcomes and not five.
                 return OllamaProbeResult.From(OllamaProbeOutcome.UnexpectedResponse);
             }
 

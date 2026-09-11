@@ -92,6 +92,11 @@ clearing is in [ADR 0010](../adr/0010-secrets-clear-route.md) — do not restate
   clearing it would reopen the LAN bootstrap bypass. Sources getting their own dedicated clear
   affordance (short of deleting the source) is deferred.
 
+A related mechanism outside this list: **upstream redirect refusal** (SEC-M1, CONTEXT.md) refuses
+any 3xx on the download path rather than following it, because following it would carry the
+upstream key into a second, off-origin request. See
+[ADR 0014](../adr/0014-refuse-upstream-download-redirects.md).
+
 ---
 
 ## Parsing user-supplied enums
