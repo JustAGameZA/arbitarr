@@ -142,11 +142,26 @@ means three things together, and each is load-bearing:
 - The class implements xunit's `IAsyncLifetime`, never a bare `System.IAsyncDisposable` — see
   [Coverage expectations](#coverage-expectations) for why that distinction is load-bearing.
 - Its `DisposeAsync` **awaits the factory's own `DisposeAsync` first**, draining the host's
-  background work and returning its pooled handles, and only then calls
-  `ConfigDirectoryTeardown.Delete`. Both halves of that delete — the pool clear and the delete
-  itself — are required; see the remarks on
-  [`ConfigDirectoryTeardown`](../../tests/Arbitarr.Integration.Tests/TestSupport/ConfigDirectoryTeardown.cs)
-  for why, rather than a copy of them here.
+  background work and returning its pooled handles. What happens next is one of two shapes,
+  and both satisfy the same rule — own the root, `IAsyncLifetime`, drain before delete:
+  - **Class-owned directory, non-owning host** — the class builds its root over a directory it
+    picked, via `ArbitarrWebApplicationFactory.OverConfigDirectory(dir)`, and after the drain
+    calls `ConfigDirectoryTeardown.Delete` itself. `ReleaseGuidSecretOverrideWarningTests` is the
+    worked example (#281, arb-gphi).
+  - **Owning factory, factory-performed delete** — the class constructs an
+    `ArbitarrWebApplicationFactory` that owns its own directory, and the factory's own
+    `DisposeAsync` performs both the drain and the delete; the class only awaits it.
+    `AdminBackupEndpointsTests` and `StagingSweepIntegrationTests` are the worked examples (#287).
+    That factory-performed delete uses `ConfigDirectoryTeardown.TryDelete`, not `Delete` — see the
+    remarks on
+    [`ConfigDirectoryTeardown`](../../tests/Arbitarr.Integration.Tests/TestSupport/ConfigDirectoryTeardown.cs)
+    for why a factory disposed as a shared fixture must not throw on a failed delete, rather than a
+    copy of them here.
+
+  Either way, both halves of the delete — the pool clear and the delete itself — are required, for
+  the reasons in those same remarks. `ConfigDirectoryHostOwnershipTests` (below) keys on a class
+  that both takes the shared fixture *and* calls the teardown itself; neither shape above does
+  both, so neither trips it.
 
 The shape this rules out is the one that looks harmless: deriving a host with `WithWebHostBuilder`
 from a shared `IClassFixture<WebApplicationFactory<Program>>`. **A derived host belongs to the
