@@ -5,6 +5,7 @@ using Arbitarr.Api.Security;
 using Arbitarr.Core.Security;
 using Arbitarr.Core.Settings;
 using Arbitarr.Data.Entities;
+using Arbitarr.Data.Logging;
 using Arbitarr.Data.Security;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -82,7 +83,10 @@ public sealed class SessionAndKeyAuthorizeIdenticallyTests
             AuthEndpoints.SetupRoute,
             new { username = Username, password = Password });
 
-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        if (response.StatusCode != HttpStatusCode.Created)
+        {
+            Assert.Fail(await DescribeSetupFailureAsync(factory, response));
+        }
 
         var setCookie = Assert.Single(
             response.Headers.GetValues("Set-Cookie"),
@@ -92,6 +96,74 @@ public sealed class SessionAndKeyAuthorizeIdenticallyTests
         client.DefaultRequestHeaders.Add("Cookie", $"{ISessionAuthenticator.CookieName}={token}");
 
         return client;
+    }
+
+    /// <summary>
+    /// arb-j4g9: builds the assertion message for a setup POST that did not return 201, with the
+    /// response body and the Error-level log rows the server wrote while failing it.
+    ///
+    /// <para>This is a local twin of <c>ActivityEmissionTests.DescribeFailureWithErrorLogsAsync</c>,
+    /// not an extraction into shared TestSupport: that method is an instance method reading its own
+    /// class's <c>_factory</c> field, while <c>CreateSessionClientAsync</c> here is <c>static</c> and
+    /// takes its factory as a parameter. Sharing it would mean changing
+    /// <c>ActivityEmissionTests</c>' method to accept a factory argument too, which the brief for
+    /// this change rules out (its passing-path behaviour must stay byte-for-byte identical). The
+    /// poll shape — bounded wall-clock, inside the existing failure path so a throwing read cannot
+    /// mask the original failure — is copied from that method on purpose; the reasoning for it is
+    /// recorded there.</para>
+    /// </summary>
+    private static async Task<string> DescribeSetupFailureAsync(
+        RemoteAddressWebApplicationFactory factory,
+        HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        const int maxBodyLength = 2000;
+        if (body.Length > maxBodyLength)
+        {
+            body = body[..maxBodyLength] + $"... (truncated, {body.Length} chars total)";
+        }
+
+        var lines = new List<string>
+        {
+            $"Account setup returned {(int)response.StatusCode} ({response.StatusCode}) rather than {(int)HttpStatusCode.Created} (Created).",
+            $"Response body: {body}",
+        };
+
+        // The store read is itself best-effort: a failure to fetch the diagnostic must report the
+        // ORIGINAL failure plus why the diagnostic is missing, never replace one with the other.
+        try
+        {
+            var store = factory.Services.GetRequiredService<LogStore>();
+
+            // Bounded poll instead of a fixed sleep: stop as soon as a row shows up, and give up
+            // after ~3s (well beyond the log sink's flush interval) if it genuinely wrote nothing.
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(3);
+            var page = await store.ReadAsync(level: "Error", logger: null, page: 1, pageSize: 50);
+            while (page.Entries.Count == 0 && DateTime.UtcNow < deadline)
+            {
+                await Task.Delay(75);
+                page = await store.ReadAsync(level: "Error", logger: null, page: 1, pageSize: 50);
+            }
+
+            if (page.Entries.Count == 0)
+            {
+                lines.Add("No Error-level log rows were present in the store.");
+            }
+            else
+            {
+                lines.Add($"{page.Entries.Count} Error-level log row(s) of {page.Total} total:");
+                lines.AddRange(page.Entries.Select(e =>
+                    $"  [{e.Time:O}] {e.Logger}: {e.Message}"
+                    + (e.ExceptionType is null ? string.Empty : $" | {e.ExceptionType}")
+                    + (e.Exception is null ? string.Empty : $" | {e.Exception}")));
+            }
+        }
+        catch (Exception ex)
+        {
+            lines.Add($"The Error-level log rows could not be read for this failure: {ex}");
+        }
+
+        return string.Join(Environment.NewLine, lines);
     }
 
     /// <summary>A client presenting an API key of <paramref name="scope"/> and no session.</summary>
