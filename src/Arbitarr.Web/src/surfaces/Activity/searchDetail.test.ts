@@ -59,6 +59,20 @@ describe('parseSearchDetail against the shared fixture', () => {
         `S${String(query.season).padStart(2, '0')}E${String(query.episode).padStart(2, '0')}`,
       );
     }
+
+    // Every case in the shared fixture is built entirely from keys this parser knows, so `rest`
+    // must be empty for every one of them. A producer that starts emitting an unknown key on any
+    // of these shapes should fail here rather than pass silently.
+    expect(parsed?.rest).toEqual({});
+  });
+
+  // Positive control for the assertion above: proves it would actually catch an unknown key,
+  // rather than passing vacuously because no fixture case exercises `rest`.
+  it('fails the rest-is-empty assertion when a fixture-shaped detail carries an unknown key', () => {
+    const parsed = parseSearchDetail('type=search;imdbid=tt0111161;q=shawshank');
+
+    expect(parsed?.rest).not.toEqual({});
+    expect(parsed?.rest).toEqual({ imdbid: 'tt0111161' });
   });
 });
 
