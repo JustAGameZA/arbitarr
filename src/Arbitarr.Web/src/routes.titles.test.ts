@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { createRoutesFromElements } from 'react-router-dom';
 
 import { ROUTES } from './routes.titles';
+import { APP_ROUTE_ELEMENTS } from './routes';
 import { NAV_ENTRIES } from './components/shell/SidebarNav';
 
 /**
@@ -64,5 +66,92 @@ describe('ROUTES and NAV_ENTRIES cover the same paths', () => {
     expect(routePaths).toHaveLength(navPaths.length);
     expect(new Set(routePaths).size).toBe(routePaths.length);
     expect(new Set(navPaths).size).toBe(navPaths.length);
+  });
+});
+
+/**
+ * The third pin (arb-2bms): routes.tsx's JSX against ROUTES.
+ *
+ * The suite above holds ROUTES and NAV_ENTRIES together, which leaves routes.tsx
+ * as the one table nothing read back. Mutation proved that gap real: adding
+ * `<Route path="reports" .../>` to the shell and nowhere else left all five
+ * suites at 0 failed, while the surface routed, rendered, and showed a "Page not
+ * found" browser tab -- because `resolveDocumentTitle` missed. The two
+ * `it.each(ROUTES)` suites never see a path that is not in ROUTES, routing.test.tsx
+ * sweeps NAV_ENTRIES, and SidebarNav.test.tsx reads NAV_ENTRIES too, so a route
+ * that exists in neither table is invisible to every one of them.
+ *
+ * The paths below are read out of the ACTUAL route elements with
+ * `createRoutesFromElements` -- the same conversion React Router performs
+ * internally -- rather than from a hoisted data table that routes.tsx maps over.
+ * A data table would be a second copy of the route list, and a pin against a copy
+ * cannot catch a `<Route>` added straight to the JSX. Converting the elements
+ * means what is asserted is what the app renders.
+ */
+describe('the shell route table and ROUTES cover the same paths (arb-2bms)', () => {
+  // Only the shell's children are in scope: `login` and `setup` are siblings of
+  // the shell route, not children (see routes.tsx on why that placement is
+  // load-bearing), so they fall outside this pin by structure rather than by
+  // being listed as exceptions.
+  const shellChildren =
+    createRoutesFromElements(APP_ROUTE_ELEMENTS).find((route) => route.children)?.children ?? [];
+
+  // `path` is undefined for the index route, which is how React Router represents
+  // it; it is carried here as the sentinel 'index' so the exception list below can
+  // name it. Every other entry contributes its literal path.
+  const shellPaths = shellChildren.map((route) => ('index' in route && route.index ? 'index' : route.path));
+
+  /**
+   * The shell children that intentionally have no ROUTES row, BY NAME.
+   *
+   * Named rather than filtered by predicate so that a new omission still fails:
+   * a rule like "skip anything with a `*`" would silently absorb the next
+   * unintended one. `index` is the Dashboard, which IS in ROUTES but under the
+   * path `/` -- it is mapped rather than excepted, below. `*` is the catch-all,
+   * which is deliberately absent from ROUTES (it is what NOT_FOUND_TITLE covers).
+   */
+  const EXPECTED_EXCEPTIONS = ['*'];
+
+  // ROUTES spells the index route `/`; the JSX spells it `index`. Normalising one
+  // to the other is what lets the two be compared as sets at all.
+  const pinnedShellPaths = shellPaths
+    .filter((path) => !EXPECTED_EXCEPTIONS.includes(path as string))
+    .map((path) => (path === 'index' ? '/' : `/${path}`));
+
+  const routePaths = ROUTES.map(([path]) => path);
+
+  it('gives every shell route a title row', () => {
+    // The direction that catches the bug this suite was written for: a <Route>
+    // added to the shell with no ROUTES row. The surface routes and renders, so
+    // nothing else fails -- only its tab title is wrong.
+    expect(routePaths).toEqual(expect.arrayContaining(pinnedShellPaths));
+  });
+
+  it('gives every title row a shell route', () => {
+    // The converse: a ROUTES row whose <Route> was deleted. `resolveDocumentTitle`
+    // would still answer for the path while nothing routed there.
+    expect(pinnedShellPaths).toEqual(expect.arrayContaining(routePaths));
+  });
+
+  it('holds the exception list to exactly the shell paths that have no title row', () => {
+    // Pins the allow-list itself. Without this, removing `*` from
+    // EXPECTED_EXCEPTIONS would just add `/*` to the compared set and fail the
+    // containment above for a confusing reason -- and, worse, ADDING an entry
+    // here would silently excuse a real omission. Deriving the expected set from
+    // the two tables rather than restating it keeps the list honest in both
+    // directions.
+    const shellPathsWithoutTitleRow = shellPaths.filter(
+      (path) => !routePaths.includes(path === 'index' ? '/' : `/${path}`),
+    );
+
+    expect(EXPECTED_EXCEPTIONS).toEqual(shellPathsWithoutTitleRow);
+  });
+
+  it('holds the two tables to the same length, so neither gains a duplicate row', () => {
+    // Same reasoning as the NAV_ENTRIES suite above: containment both ways is
+    // satisfiable by a duplicate, and ruling duplicates out is what forces the
+    // sets equal. No literal count here either, for the same reason.
+    expect(pinnedShellPaths).toHaveLength(routePaths.length);
+    expect(new Set(pinnedShellPaths).size).toBe(pinnedShellPaths.length);
   });
 });

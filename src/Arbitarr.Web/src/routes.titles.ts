@@ -18,8 +18,11 @@
  * cross-pins this table to NAV_ENTRIES -- a table it does NOT derive its cases
  * from. Do not replace that suite with another `it.each(ROUTES)` one (arb-139r).
  *
- * Adding a surface means adding a row here -- and the matching NAV_ENTRIES row,
- * which is the pair routes.titles.test.ts holds together.
+ * Adding a surface means adding a row here -- and the matching NAV_ENTRIES row
+ * and <Route>, which are the three routes.titles.test.ts holds together: it
+ * cross-pins this table to NAV_ENTRIES and, since arb-2bms, to routes.tsx's route
+ * elements as well (converted with `createRoutesFromElements`, so the JSX is
+ * checked as written). A surface added to any one of the three alone fails there.
  */
 export const ROUTES: ReadonlyArray<[string, string]> = [
   ['/', 'Dashboard'],
