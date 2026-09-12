@@ -83,9 +83,11 @@ public sealed class MaintenanceSyntheticAgeingTests : IDisposable
         // string carries the pragmas DatabaseConnectionStrings spells out. So the old clear named a
         // pool that was always empty and closed nothing, while the real handles stayed checked out —
         // the delete then failed, and the empty catch(IOException) is why it failed in silence.
-        // ClearPoolsFor walks DatabaseConnectionStrings.ForDatabase (Application and Maintenance),
-        // which is the set this class actually uses. This is the same inventory-vs-ownership trap
-        // ConfigDirectoryTeardown documents; here it really was the inventory.
+        // This class opens only the Application string (SqliteConnectionOptions.ToConnectionString
+        // delegates to DatabaseConnectionStrings.Application). ClearPoolsFor also clears Maintenance,
+        // which is harmless surplus — nothing here ever opens that pool either. This is the same
+        // inventory-vs-ownership trap ConfigDirectoryTeardown documents; here it really was the
+        // inventory.
         SqlitePoolCleaner.ClearPoolsFor(_databasePath);
 
         // The sidecars are part of the database rather than incidental litter: in WAL mode SQLite
@@ -135,9 +137,13 @@ public sealed class MaintenanceSyntheticAgeingTests : IDisposable
     {
         QueryScalarLong("PRAGMA wal_checkpoint(TRUNCATE);");
 
-        // Mid-test, and deliberately scoped: the file size is sampled straight after this, and a
-        // pooled handle can still hold unflushed pages. A process-global clear here would close a
-        // parallel class's live connections in the middle of ITS test.
+        // The PRAGMA above is what makes the FileInfo length below meaningful (see the checkpoint
+        // note on this method's summary). This ClearPoolForFile call is inert here: it names a bare
+        // "Data Source=<path>" pool, but every connection in this class comes from
+        // SqliteConnectionFactory, whose connection string carries additional pragmas — so, per the
+        // Dispose comment above, it always clears an empty pool and never touches this class's real
+        // handles. Removing it is deferred (tracked as a follow-up to arb-yt7j), left in place here
+        // to keep this fix-up comments-only.
         SqlitePools.ClearPoolForFile(_databasePath);
         return new FileInfo(_databasePath).Length;
     }

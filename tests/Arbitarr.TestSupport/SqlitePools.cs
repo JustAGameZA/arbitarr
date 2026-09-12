@@ -26,6 +26,13 @@ public static class SqlitePools
     /// Clears the pool for a database opened with a bare <c>Data Source=</c> string — what
     /// <c>BackupPaths.DatabasePath</c> consumers and EF's <c>UseSqlite($"Data Source={path}")</c>
     /// produce.
+    ///
+    /// <para>Correct only for callers that seeded the file through a raw
+    /// <see cref="SqliteConnectionStringBuilder"/> with just <c>DataSource</c> set (e.g.
+    /// <c>RestoreServiceTests</c>, <c>AutomaticBackupJobTests</c>). When the connection instead came
+    /// from <c>SqliteConnectionFactory</c>, use <c>SqlitePoolCleaner.ClearPoolsFor</c> —
+    /// pools are keyed by the full connection string, and that factory's string carries additional
+    /// pragmas a bare <c>Data Source=</c> string does not, so this method would name an empty pool.</para>
     /// </summary>
     public static void ClearPoolForFile(string databasePath)
     {

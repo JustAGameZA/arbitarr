@@ -52,13 +52,14 @@ public sealed class ReleaseGuidSecretOverrideWarningTests
     /// <c>Arbitarr:ReleaseGuidSecret</c> specifically: this class pins a KNOWN value in order to
     /// assert it never reaches the logs, so the factory's directory-derived default must not be the
     /// one in force.</para>
-    /// </summary>
+    ///
     /// <para><b>Both factories are returned, and disposing the ROOT is what drains the host</b> —
     /// the same asymmetry <c>CategoryParamCapTests</c> documents. <c>WithWebHostBuilder</c> hands
     /// back a DERIVED factory that the caller must use to create its client (that is the one
     /// carrying the log capture), while the running host belongs to the root. Awaiting the root's
     /// <c>DisposeAsync</c> stops the host and clears the pools; the derived factory needs no
     /// separate disposal.</para>
+    /// </summary>
     private static (ArbitarrWebApplicationFactory Root, WebApplicationFactory<Program> Host) CreateHost(
         string configDirectory, List<string> logSink, string? environment = null)
     {
