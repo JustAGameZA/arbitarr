@@ -148,6 +148,38 @@ public sealed class LogsEndpointTests : IClassFixture<ArbitarrWebApplicationFact
     }
 
     [Fact]
+    public async Task The_message_parameter_searches_the_store_and_not_just_one_page()
+    {
+        // arb-w8ju, over the wire: the search that System > Logs used to do over the rows already in
+        // the browser now happens in the store, so Total and the paging agree with it.
+        await SeedAdminKeyAsync();
+        var store = _factory.Services.GetRequiredService<LogStore>();
+
+        // Its own logger, and deliberately NOT sharing a prefix with "Test.LogsEndpoint" or
+        // "Test.MinLevelFilter": the logger filter is a SUBSTRING match over this class's shared
+        // fixture store, so a name extending theirs would fold these rows into their results and
+        // fail their totals (and a name they extend would fold theirs into this one).
+        const string logger = "Search.MessageQuery";
+        var start = DateTimeOffset.UtcNow.AddMinutes(-5);
+        await store.WriteAsync(new[]
+        {
+            new PendingLogEntry(start, "Error", logger, "a needle in the store", null, null),
+            // The positive control: a row under the SAME logger that the message filter must
+            // exclude. Without it, "one row came back" would hold for a filter that was ignored
+            // entirely, since the logger filter alone would already have returned exactly one row.
+            new PendingLogEntry(start.AddSeconds(1), "Error", logger, "an unrelated haystack line", null, null),
+        });
+
+        using var client = _factory.CreateClient();
+
+        var page = await GetLogsAsync(client, $"/api/admin/logs?logger={logger}&message=needle");
+
+        Assert.NotNull(page);
+        Assert.Equal(1, page!.Total);
+        Assert.Equal("a needle in the store", Assert.Single(page.Entries).Message);
+    }
+
+    [Fact]
     public async Task An_oversized_page_size_is_clamped()
     {
         await SeedAdminKeyAsync();

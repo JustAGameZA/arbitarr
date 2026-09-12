@@ -76,6 +76,14 @@ export interface LogFilters {
   level: LogLevelName | 'all';
   /** Substring match against the logger category; empty means all loggers. */
   logger: string;
+  /**
+   * Substring match against the message text; empty means all messages.
+   *
+   * Sent to the server (arb-w8ju) rather than applied to the rows in hand: the store
+   * searches the whole database and its COUNT feeds the pager, so "no such line" means
+   * the log store has none rather than that this page had none.
+   */
+  message: string;
 }
 
 /** Rows per page. Below LogStore.MaxPageSize (200), so the server never clamps this. */
@@ -89,9 +97,9 @@ export const LOG_PAGE_SIZE = 50;
  * while the table still renders plausible rows, which no render-level assertion would
  * catch.
  *
- * An empty or whitespace-only logger is OMITTED rather than sent as an empty string. The
- * store treats a whitespace filter as absent anyway, so sending one would work by
- * accident; leaving it out keeps the request honest about what was asked.
+ * An empty or whitespace-only logger or message is OMITTED rather than sent as an empty
+ * string. The store treats a whitespace filter as absent anyway, so sending one would work
+ * by accident; leaving it out keeps the request honest about what was asked.
  */
 export function buildLogsQuery(filters: LogFilters, page: number): string {
   const params = new URLSearchParams();
@@ -103,6 +111,11 @@ export function buildLogsQuery(filters: LogFilters, page: number): string {
   const logger = filters.logger.trim();
   if (logger !== '') {
     params.set('logger', logger);
+  }
+
+  const message = filters.message.trim();
+  if (message !== '') {
+    params.set('message', message);
   }
 
   if (page > 1) {
@@ -134,7 +147,10 @@ export function buildLogsQuery(filters: LogFilters, page: number): string {
  */
 export function useLogsQuery(filters: LogFilters, page: number) {
   return useQuery({
-    queryKey: ['admin', 'logs', filters.level, filters.logger.trim(), page],
+    // Every filter that reaches buildLogsQuery is in the key, message included: a filter
+    // that changes the URL but not the key serves the previous search's cached rows back
+    // and looks like a search that found nothing new.
+    queryKey: ['admin', 'logs', filters.level, filters.logger.trim(), filters.message.trim(), page],
     queryFn: () => apiFetch<LogsResponse>(buildLogsQuery(filters, page)),
     placeholderData: keepPreviousData,
   });

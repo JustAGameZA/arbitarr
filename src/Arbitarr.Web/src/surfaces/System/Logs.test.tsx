@@ -420,50 +420,69 @@ describe('System logs message filter', () => {
     vi.unstubAllGlobals();
   });
 
-  it('hides rows not matching the message filter and keeps matching ones', async () => {
+  it('asks the server for the message rather than filtering the rows in hand', async () => {
+    const api = mockApi(allRoutes);
+    const user = userEvent.setup();
+    renderSurface(<SystemPage />);
+    await openLogsTab(user);
+
+    await user.type(screen.getByLabelText('Message'), 'probe');
+
+    // arb-w8ju: searching is the SERVER's job now, so the assertion is on the request.
+    const request = api.callsTo('/api/admin/logs').at(-1);
+    expect(request?.url.searchParams.get('message')).toBe('probe');
+  });
+
+  it('renders every row the server returned, without filtering them again', async () => {
+    // The mock keeps returning all three fixture rows whatever is typed, which is what a
+    // server that ignored the parameter would look like. Any surviving client-side filter
+    // would drop two of them here -- so this fails if the visibleEntries derivation comes
+    // back, and it is the reason the assertion is a row COUNT rather than a presence check.
     mockApi(allRoutes);
     const user = userEvent.setup();
     renderSurface(<SystemPage />);
     const table = await openLogsTab(user);
 
-    // Positive control: the row is present before filtering, so its later absence is
-    // evidence the filter did something rather than evidence the row was never there.
-    expect(within(table).getByText('Refresh cycle completed.')).toBeInTheDocument();
-    expect(within(table).getByText('Source probe failed for source 4.')).toBeInTheDocument();
+    expect(within(table).getAllByRole('row')).toHaveLength(entries.length + 1);
 
     await user.type(screen.getByLabelText('Message'), 'probe');
 
-    expect(screen.queryByText('Refresh cycle completed.')).not.toBeInTheDocument();
-    expect(screen.getByText('Source probe failed for source 4.')).toBeInTheDocument();
-
-    // The footer line describes the client-filtered subset against the server's
-    // unfiltered page (3 entries), not against total/pageCount.
-    expect(screen.getByText('Showing 1 of 3 rows on this page match the message filter.')).toBeInTheDocument();
+    const after = await screen.findByRole('table');
+    expect(within(after).getAllByRole('row')).toHaveLength(entries.length + 1);
+    expect(within(after).getByText('Refresh cycle completed.')).toBeInTheDocument();
   });
 
-  it('restores all rows when the message filter is cleared', async () => {
-    mockApi(allRoutes);
+  it('drops the message parameter when the filter is cleared', async () => {
+    const api = mockApi(allRoutes);
     const user = userEvent.setup();
     renderSurface(<SystemPage />);
     await openLogsTab(user);
 
     const input = screen.getByLabelText('Message');
     await user.type(input, 'probe');
-    expect(screen.queryByText('Refresh cycle completed.')).not.toBeInTheDocument();
 
-    // Positive control: the line is present while filtered, so its absence after
-    // clearing is evidence the filter state changed rather than the line never
-    // rendering at all.
-    expect(
-      screen.getByText('Showing 1 of 3 rows on this page match the message filter.'),
-    ).toBeInTheDocument();
+    // Positive control: the parameter is on the wire while filtered, so its absence after
+    // clearing is evidence the filter changed rather than evidence it was never sent.
+    expect(api.callsTo('/api/admin/logs').at(-1)?.url.searchParams.get('message')).toBe('probe');
 
     await user.clear(input);
-    expect(screen.getByText('Refresh cycle completed.')).toBeInTheDocument();
-    expect(screen.getByText('Source probe failed for source 4.')).toBeInTheDocument();
-    expect(
-      screen.queryByText(/rows on this page match the message filter/),
-    ).not.toBeInTheDocument();
+
+    // Omitted, not `message=` -- an empty string would be a filter the store treats as
+    // absent only by accident.
+    expect(api.callsTo('/api/admin/logs').at(-1)?.url.searchParams.has('message')).toBe(false);
+  });
+
+  it('returns to page one when the message filter changes', async () => {
+    const api = mockApi(allRoutes);
+    const user = userEvent.setup();
+    renderSurface(<SystemPage />);
+    await openLogsTab(user);
+
+    await user.type(screen.getByLabelText('Message'), 'probe');
+
+    // A server-side search changes which rows exist, so page 3 of the old result set is not
+    // page 3 of the new one -- and may be past its end entirely.
+    expect(api.callsTo('/api/admin/logs').at(-1)?.url.searchParams.has('page')).toBe(false);
   });
 });
 
@@ -575,39 +594,54 @@ describe('System logs paging', () => {
 });
 
 describe('buildLogsQuery', () => {
-  it('omits both filters and the page when nothing is narrowed', () => {
+  it('omits every filter and the page when nothing is narrowed', () => {
     // Tested directly rather than only through the surface: the filter-to-URL mapping
     // is what breaks silently, since a dropped parameter still renders a plausible
     // table of the wrong rows.
-    expect(buildLogsQuery({ level: 'all', logger: '' }, 1)).toBe(
+    expect(buildLogsQuery({ level: 'all', logger: '', message: '' }, 1)).toBe(
       `/api/admin/logs?pageSize=${LOG_PAGE_SIZE}`,
     );
   });
 
-  it('sends both filters when they are set', () => {
-    const query = buildLogsQuery({ level: 'Error', logger: 'Search.SearchService' }, 1);
+  it('sends every filter when they are set', () => {
+    const query = buildLogsQuery(
+      { level: 'Error', logger: 'Search.SearchService', message: 'probe' },
+      1,
+    );
     const params = new URL(query, 'http://localhost').searchParams;
 
     expect(params.get('level')).toBe('Error');
     expect(params.get('logger')).toBe('Search.SearchService');
+    expect(params.get('message')).toBe('probe');
   });
 
-  it('trims a whitespace-only logger rather than sending it', () => {
+  it('trims a whitespace-only logger or message rather than sending it', () => {
     // The store treats a whitespace filter as absent, so sending one would work by
     // accident; omitting it keeps the request honest about what was asked.
     const params = new URL(
-      buildLogsQuery({ level: 'all', logger: '   ' }, 1),
+      buildLogsQuery({ level: 'all', logger: '   ', message: '   ' }, 1),
       'http://localhost',
     ).searchParams;
 
     expect(params.has('logger')).toBe(false);
+    expect(params.has('message')).toBe(false);
+  });
+
+  it('trims the surrounding whitespace off a message it does send', () => {
+    const params = new URL(
+      buildLogsQuery({ level: 'all', logger: '', message: '  probe  ' }, 1),
+      'http://localhost',
+    ).searchParams;
+
+    expect(params.get('message')).toBe('probe');
   });
 
   it('sends the page only past the first', () => {
     expect(
-      new URL(buildLogsQuery({ level: 'all', logger: '' }, 3), 'http://localhost').searchParams.get(
-        'page',
-      ),
+      new URL(
+        buildLogsQuery({ level: 'all', logger: '', message: '' }, 3),
+        'http://localhost',
+      ).searchParams.get('page'),
     ).toBe('3');
   });
 });
