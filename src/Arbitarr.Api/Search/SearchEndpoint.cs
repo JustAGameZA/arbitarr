@@ -36,7 +36,7 @@ public static class SearchEndpoint
     /// <summary>
     /// arb-bgg9: the Torznab/Newznab error code rendered when an infrastructure exception escapes
     /// the search pipeline. 900 ("Unknown error" in the protocol's published code table —
-    /// see https://newznab.readthedocs.io/en/latest/misc/api/#error-codes) rather
+    /// see https://newznab.readthedocs.io/en/latest/misc/api.html#newznab-error-codes) rather
     /// than <see cref="RateLimitErrorCode"/>, which is already spoken for by a DIFFERENT and much
     /// more specific condition — reusing it would tell an *arr "the indexer is rate-limiting you",
     /// which is advice to back off rather than to retry, and would be wrong about the cause.
