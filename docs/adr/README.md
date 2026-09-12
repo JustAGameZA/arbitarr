@@ -67,3 +67,4 @@ of a superseded ADR is what stops the same rejected option being proposed again.
 | [0014](0014-refuse-upstream-download-redirects.md) | Refuse the whole 3xx range on upstream downloads; refuse origin-violating redirects |
 | [0015](0015-persist-release-lookup.md) | The release lookup is two tiers: in-memory first, a persisted row on a miss, so a link survives a restart and outlives 30 minutes |
 | [0016](0016-persist-download-refusal-health.md) | The download-refusal health item is two tiers, `Notifying(Persistent(concrete))`, rehydrated by an awaited hosted service before the host serves |
+| [0017](0017-sqlite-connection-lifetime-for-ef-contexts.md) | EF contexts receive a closed, EF-owned SQLite connection that configures itself on every open |

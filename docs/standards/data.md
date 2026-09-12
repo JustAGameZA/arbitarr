@@ -118,7 +118,21 @@ connection, not when EF takes charge of it** — `RelationalConnection` adopts i
 on the context's first use, so a context resolved and never used adopts nothing and the flag has
 nothing to act on. The connection must therefore also be handed over *closed*, which is why `Create`
 builds it with `SqliteConnectionFactory.CreateUnopenedConnection`; see that method's remarks for the
-unused-context leak this closes (arb-auam).
+unused-context leak this closes (arb-auam), and
+[ADR 0017](../adr/0017-sqlite-connection-lifetime-for-ef-contexts.md) for the decision, the
+alternatives it beat, and the tests that pin each half.
+
+**In tests, a pooled handle carries `busy_timeout` with it, which can make a test of the pragma
+vacuous.** `busy_timeout` is connection-scoped state and a connection returned to the pool *keeps*
+it, so any earlier factory call on the same file leaves a pooled handle already carrying the
+configured value — `ConvertToWalOnce` alone is enough to seed it, since it applies the timeout on a
+connection of its own. A later `Open()` then draws that handle and reads back the right answer having
+configured nothing, so the test passes against an implementation that applies no pragma at all. A
+test asserting the pragma must therefore measure its reference on a **separate database file** and
+**clear this file's pool** (via `SqlitePoolCleaner.ClearPoolsFor`, never `ClearAllPools`) before the
+open under test. Both are required; dropping either restores the vacuum. The measured repro is
+`CreateUnopenedConnectionTests` (`tests/Arbitarr.Data.Tests/CreateUnopenedConnectionTests.cs`), where
+deleting the `StateChange` registration outright left the naive version of the test passing.
 
 **`SqliteConnection.ClearAllPools()` is banned.** It is process-global: it force-closes every pooled
 connection in the process, including those of unrelated databases and of whatever test happens to
