@@ -121,6 +121,12 @@ public class ProductionProcessGlobalStateTests
     /// not something that slips in and is discovered by a flake three months later. A new entry
     /// costs one line and a sentence saying why concurrent mutation is safe; that sentence is the
     /// whole value of the test.</para>
+    ///
+    /// <para><c>{ get; init; }</c> auto-properties are already excluded, because their backing
+    /// field is emitted <c>initonly</c> — the same <see cref="System.Reflection.FieldInfo.IsInitOnly"/>
+    /// check below that excludes a get-only auto-property excludes an init-only one too. Accessor
+    /// visibility (a private setter) does not change IL-level mutability, so no separate handling
+    /// exists for it on purpose.</para>
     /// </summary>
     [Fact]
     public void Every_mutable_static_in_production_is_allow_listed_with_a_reason()

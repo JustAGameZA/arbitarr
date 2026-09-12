@@ -126,6 +126,13 @@ public static partial class CredentialPatterns
     /// <c>"password": "abc…"</c>. Deliberately requires a credential-shaped NAME rather than
     /// matching any long token, so ordinary identifiers (a release GUID, a commit SHA) are not
     /// mangled into unreadability — a log line redacted into uselessness is its own outage.
+    ///
+    /// <para>This is why <c>Arbitarr:ReleaseGuidSecret</c> gets redacted at all: the setting NAME
+    /// contains the literal <c>secret</c>, so this pattern matches it even though the value itself
+    /// is ordinary base64 with no distinguishing shape. Renaming that setting away from every word
+    /// in the alternation below silently drops the coverage. See
+    /// <c>ProductionProcessGlobalStateTests</c> in <c>Arbitarr.Architecture.Tests</c> for the fuller
+    /// account.</para>
     /// </summary>
     [GeneratedRegex(
         @"(?<prefix>\b[\w-]*(?:api[_-]?key|apikey|token|passkey|password|secret)[\w-]*""?\s*[:=]\s*""?)(?<value>[^\s,;""'}\]]{4,})",
