@@ -36,8 +36,13 @@ namespace Arbitarr.Core.Ai;
 /// upstream response into an oversized scan — the cost the old "cap first" order was buying. Hence
 /// <see cref="MaxScrubInputLength"/>: an input bound applied BEFORE the scrub, generous enough that
 /// an address straddling offset <see cref="MaxExcerptLength"/> is nowhere near it, small enough to
-/// keep the regex work bounded. The straddle problem does still exist at the larger bound, but a
-/// fragment stranded there sits far past character 200 and so never reaches the excerpt at all.
+/// keep the regex work bounded. The straddle problem does still exist at the larger bound, and a
+/// fragment stranded there is not guaranteed to sit past character 200 by the time redaction is
+/// done — earlier redactions shrink the text ahead of it, and about 30 redacted addresses in the
+/// first 800 characters is enough to pull that fragment back across the excerpt cut. What holds
+/// unconditionally is narrower: text past <see cref="MaxScrubInputLength"/> is never scrubbed and
+/// never reaches the excerpt, full stop — nothing from beyond that bound can shift into or out of
+/// the excerpt region no matter how much redaction happens ahead of it.
 ///
 /// One consequence worth stating: because redaction replaces addresses with a shorter token, the
 /// excerpt may now come out SHORTER than <see cref="MaxExcerptLength"/> even for a very long body.

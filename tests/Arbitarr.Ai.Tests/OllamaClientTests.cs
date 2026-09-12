@@ -294,6 +294,14 @@ public class OllamaClientTests
     /// misbehaving endpoint must not be able to push an arbitrarily long string into either. The
     /// assertion is on the exact cap rather than "shorter than the body", which a truncation to any
     /// length would satisfy.
+    ///
+    /// <para>The exact-length assertion holds only because this body is all 'x' — nothing
+    /// redactable, so the scrub is a no-op and the excerpt comes out exactly
+    /// <see cref="OllamaRequestException.MaxExcerptLength"/> long. <see cref="OllamaRequestException"/>'s
+    /// own remarks are explicit that the cap is a CEILING, not a promised length: since redaction
+    /// replaces addresses with a shorter token, a body containing a host would come out shorter than
+    /// the cap. This test's exact-length assertion is not a general property of the excerpt — it is
+    /// this body's absence of anything to redact.</para>
     /// </summary>
     [Fact]
     public async Task ClassifyAsync_NonSuccessResponse_TruncatesALongBodyToTheCap()
