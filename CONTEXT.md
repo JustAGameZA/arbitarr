@@ -349,7 +349,9 @@ says which of Arbitarr's own two inbound routes a request arrived on: Arbitarr s
 `/torznab/api` and `/newznab/api` to Sonarr and Radarr regardless of what its sources
 are, so a `Torznab` source and a Torznab client request are opposite ends of the broker.
 Distinct again from the `arr:{kind}:` namespace of the Arr instance section below, where
-`kind` means `sonarr` or `radarr`.
+`kind` means `sonarr` or `radarr`. **Not to be confused with Source adapter** (below):
+the kind is the stored string a `Source` row is configured with; the adapter is the class
+that kind selects at runtime. A kind never implements anything itself.
 
 **Access mode.** How a download from a source is served **downstream**, to the client
 (`Source.NzbAccessMode`): `Proxy`, where Arbitarr fetches the file upstream and streams
@@ -389,6 +391,85 @@ the rule and its reasoning are in
 [data.md](docs/standards/data.md#settings). `TimeoutSeconds` is nullable for the same
 structural reason but does not mean unlimited: null there is "use the global default",
 not "no timeout".
+
+---
+
+## Source adapter and feed parser
+
+**Source adapter.** The class implementing `IUpstreamSource` for one **Source kind**
+above — `NewznabSource` for `Newznab` and `Torznab` alike (one adapter serves both
+families, arb-x7w8.2), `NzbHydraSource` for `NzbHydra`. An adapter owns transport (its
+`HttpClient` and per-source `TimeoutSeconds`), auth placement (where the source's key is
+attached to a request) and refusal policy (what it refuses to follow or serve, e.g.
+[ADR 0014](docs/adr/0014-refuse-upstream-download-redirects.md)'s redirect refusal). An
+adapter never deduplicates its own results — see **Dedup group** below; placement, not an
+adapter's diligence, is what makes that true. **Not to be confused with Source kind**,
+which is the string a `Source` row is configured with; the adapter is the code that kind
+selects, not the kind itself.
+
+**Feed parser.** `TorznabFeedParser` (`src/Arbitarr.Core/Sources/TorznabFeedParser.cs`),
+shared by every adapter that speaks the Newznab/Torznab family. It is **static, holds no
+secret and no per-caller policy** — a pure wire-format transform, not a thing an adapter
+owns an instance of. It matches the response's schema **namespace**, not its element
+prefix, which is what makes a `newznab:attr` from a `/api` endpoint parse identically to a
+`torznab:attr` from `/torznab/api`: the two families differ in endpoint and in which attrs
+an indexer populates, never in grammar. A `<link>` that fails SEC-M1 origin-pinning drops
+the whole item rather than falling back to a placeholder URI.
+
+Sharing the parser and duplicating `SourceRepository`'s Radarr repository
+([docs/standards/architecture.md](docs/standards/architecture.md), Radarr precedent) are
+opposite calls for one reason, not a contradiction: the repository is a **secret-reading
+call site** whose invariant is a caller *count* (CLAUDE.md §1), where a second caller is
+the failure mode to prevent, and duplicating it keeps that count at one per instance type.
+The feed parser is a **stateless wire-format function** holding no secret and no
+per-caller policy, so there is no caller-count invariant to protect — only a drifting
+copy to avoid. A drifting repository fails loudly (an extra caller is easy to spot); a
+drifting parser copy fails silently, since both copies keep returning plausible items.
+
+---
+
+## Dedup, budget and backoff vocabulary
+
+Terms introduced normatively by [ADR 0019](docs/adr/0019-dedup-is-a-pipeline-stage-with-conservative-exact-merge.md)
+and [ADR 0020](docs/adr/0020-api-hit-budget-and-durable-backoff.md); implemented by
+arb-x7w8.8 and arb-x7w8.10 respectively.
+
+**Dedup group.** The set of candidates the dedup pipeline stage judges to be the same
+release, per ADR 0019: members merge only on exact evidence (normalised title equality,
+size within a tight tolerance, and the same `ProtocolKind`), **all members are retained**,
+ordered by source priority, and the first is the representative. A **false split** (two
+rows for one release) is a visible, self-correcting duplicate; a **false merge** hides one
+release behind another and is a wrong answer under
+[ADR 0002](docs/adr/0002-admit-no-match-when-ambiguous.md) — the asymmetry the equality
+rule exists to preserve. **Not to be confused with** a release group or a Usenet posting
+group (the "Obfuscated title" section above) — this is Arbitarr's own merge unit, unrelated
+to either sense of "group" a release name or a Newznab attribute carries.
+
+**API-hit budget.** The per-source daily or hourly cap on queries and grabs, derived from
+the events store rather than a purpose-built counter table (ADR 0020). A source at its
+limit is **skipped**, not failed — a budgeted indexer is working correctly, it has simply
+been used as much as it may be today.
+
+**Backoff.** The escalating pause applied to a source after transient upstream faults,
+held durably and separately from `IAsyncCircuitBreaker` (which stays an in-process,
+short-window fault detector — ADR 0020's whole point is that these are not the same
+thing). Backoff escalates on failure and **resets to zero on success**, never decrementing
+one step at a time.
+
+**Three backoff states.** ADR 0020 requires a source's condition to be one of three,
+kept distinguishable to the operator rather than collapsed into one "unavailable":
+**skipped** (budget exhausted, not a fault), **backing off** (escalating after a
+transient fault, expected to recover), and **permanently disabled** (an authentication
+failure, which no amount of waiting fixes). Collapsing any two of these removes the
+signal that tells an operator whether to wait or to act.
+
+**Startup grace window.** The period after host start during which backoff escalation is
+suppressed, per ADR 0020, so that every source failing at once on a cold start — upstreams
+not yet reachable — does not disable the whole set simultaneously.
+
+The concrete shape of the durable backoff row and the budget check itself is **defined
+when arb-x7w8.10 lands**; this section records only the vocabulary ADR 0020 already
+defines.
 
 ---
 
