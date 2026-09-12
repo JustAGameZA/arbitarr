@@ -1,3 +1,4 @@
+using Arbitarr.Core.Diagnostics;
 using Arbitarr.Data.Media;
 using Arbitarr.TestSupport;
 using Microsoft.EntityFrameworkCore;
@@ -83,6 +84,73 @@ public sealed class RadarrCredentialProviderTests : IDisposable
         Assert.False(await repository.HasApiKeyAsync(CancellationToken.None));
 
         Assert.Null(await new RadarrCredentialProvider(repository).GetAsync(CancellationToken.None));
+    }
+
+    /// <summary>
+    /// THE KEY IS REDACTED FROM <see cref="RadarrCredential.ToString"/>.
+    ///
+    /// <para>A positional record's synthesised <c>ToString</c> renders every positional member, so
+    /// without the override this type would print its own key — and it is handed to code about to
+    /// make a network request, which is the code most likely to reach a log line or an exception
+    /// message. Neither existing layer covers that shape: <c>IHttpClientFactory</c>'s redaction
+    /// collapses a URI's query string and <c>LogMessageCleanser</c> scrubs query strings but not
+    /// paths, while a bare <c>ApiKey = value</c> inside a record's string form is not a URI at all
+    /// (CLAUDE.md §1).</para>
+    ///
+    /// <para><b>POSITIVE CONTROL (CLAUDE.md §4):</b> the redaction marker must BE PRESENT. That is
+    /// what proves the key reached the formatter and was replaced there, rather than the absence
+    /// below passing because <c>ToString</c> returned something empty, or the type name alone, or
+    /// because the planted key was never in play. The key is planted through the real provider, so
+    /// the value under test is the one a consumer actually receives.</para>
+    /// </summary>
+    [Fact]
+    public async Task The_credential_redacts_its_key_when_rendered_as_a_string()
+    {
+        await using var context = CreateContext();
+        var repository = new RadarrInstanceRepository(context);
+        await repository.SetAsync(BaseUrl, ApiKey, CancellationToken.None);
+
+        var credential = await new RadarrCredentialProvider(repository).GetAsync(CancellationToken.None);
+        Assert.NotNull(credential);
+
+        // The key really is in play: the credential carries it, so a formatter that printed its
+        // members verbatim WOULD have it to print.
+        Assert.Equal(ApiKey, credential!.ApiKey);
+
+        var rendered = credential.ToString();
+
+        // POSITIVE CONTROL: the redaction fired.
+        Assert.Contains(CredentialPatterns.Replacement, rendered, StringComparison.Ordinal);
+        // ...therefore this absence is a real redaction rather than an empty or truncated render.
+        Assert.DoesNotContain(ApiKey, rendered, StringComparison.OrdinalIgnoreCase);
+
+        // The address is still rendered in full — it is not a credential, and printing it is what
+        // makes the override useful for diagnostics rather than merely silent.
+        Assert.Contains(BaseUrl, rendered, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The same redaction through an interpolated string, which is the shape a log call actually
+    /// takes — <c>$"{credential}"</c> and a structured-logging argument both route through
+    /// <c>ToString</c>, but asserting only the direct call would leave a reader wondering whether the
+    /// interpolation path differs. It does not, and this pins that.
+    /// </summary>
+    [Fact]
+    public async Task The_redaction_holds_when_the_credential_is_interpolated()
+    {
+        await using var context = CreateContext();
+        var repository = new RadarrInstanceRepository(context);
+        await repository.SetAsync(BaseUrl, ApiKey, CancellationToken.None);
+
+        var credential = await new RadarrCredentialProvider(repository).GetAsync(CancellationToken.None);
+        Assert.NotNull(credential);
+
+        var line = $"probing {credential}";
+
+        // POSITIVE CONTROL: the marker is present, so the credential really was formatted into the
+        // line rather than the interpolation producing nothing.
+        Assert.Contains(CredentialPatterns.Replacement, line, StringComparison.Ordinal);
+        Assert.DoesNotContain(ApiKey, line, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

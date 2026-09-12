@@ -775,11 +775,6 @@ builder.Services.AddScoped<Arbitarr.Data.Media.RadarrInstanceRepository>();
 // as every *arr client above -- a misconfigured address answering 30x must not make this process
 // reissue a request (carrying Radarr's API key) at a host nobody configured.
 //
-// THE TIMEOUT IS SET HERE, ONCE, AT REGISTRATION, and never assigned on the resolved HttpClient: the
-// client is pooled by IHttpClientFactory and assigning Timeout after a request has started throws
-// (see ArrApiProvider's remarks). The prober additionally bounds each call with a linked CTS, which
-// is what actually fires first; this value is the outer backstop for the pooled handler.
-//
 // NO .RemoveAllLoggers() HERE, DELIBERATELY, for exactly the measured reason the
 // SonarrConnectivityProber registration above sets out at length -- read that comment rather than a
 // summary of it. In short: this client's key rides in the QUERY STRING
@@ -792,10 +787,7 @@ builder.Services.AddScoped<Arbitarr.Data.Media.RadarrInstanceRepository>();
 // SonarrKeyIsScrubbedFromLogsTests and DisableUriRedactionSwitchTests pin. The same process-wide
 // System.Net.Http.DisableUriRedaction dependency the Sonarr comment documents applies to this client
 // unchanged.
-builder.Services.AddHttpClient<Arbitarr.Core.Media.RadarrConnectivityProber>(client =>
-    {
-        client.Timeout = TimeSpan.FromSeconds(15);
-    })
+builder.Services.AddHttpClient<Arbitarr.Core.Media.RadarrConnectivityProber>()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 
 // arb-6l9b.1: the SINGLE production reader of the stored Radarr API key, holding

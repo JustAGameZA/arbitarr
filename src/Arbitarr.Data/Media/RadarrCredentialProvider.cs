@@ -1,3 +1,5 @@
+using Arbitarr.Core.Diagnostics;
+
 namespace Arbitarr.Data.Media;
 
 /// <summary>
@@ -19,7 +21,34 @@ namespace Arbitarr.Data.Media;
 /// </remarks>
 /// <param name="BaseUrl">The validated absolute base URL of the configured Radarr instance.</param>
 /// <param name="ApiKey">The key to send to that instance, and to nowhere else.</param>
-public sealed record RadarrCredential(Uri BaseUrl, string ApiKey);
+public sealed record RadarrCredential(Uri BaseUrl, string ApiKey)
+{
+    /// <summary>
+    /// <b>OVERRIDDEN BECAUSE THE SYNTHESISED ONE PRINTS THE KEY.</b> A positional record's
+    /// compiler-generated <c>ToString</c> renders every positional member, so the default here would
+    /// produce <c>RadarrCredential { BaseUrl = ..., ApiKey = the-actual-key }</c> — and this type is
+    /// handed to code that is about to make a network request, which is exactly the code most likely
+    /// to end up in a log line, an exception message, or a structured-logging argument that formats
+    /// its operands.
+    ///
+    /// <para><b>NEITHER EXISTING LAYER WOULD CATCH IT</b> (CLAUDE.md §1). <c>IHttpClientFactory</c>'s
+    /// redaction collapses a URI's QUERY STRING and nothing else, and <c>LogMessageCleanser</c> scrubs
+    /// credentials in query strings but not in URL paths. A bare <c>ApiKey = value</c> inside a
+    /// record's string form is in neither — it is not a URI at all — so the value would reach the log
+    /// store verbatim. Redacting at the source is the only layer that covers this shape.</para>
+    ///
+    /// <para>The base URL is still rendered in full: it is deliberately not a credential, and
+    /// <see cref="RadarrInstanceRepository.ValidateBaseUrl"/> rejecting userinfo is what keeps that
+    /// true. Printing it is what makes this override useful for diagnostics rather than merely
+    /// silent.</para>
+    ///
+    /// <para>The marker is <see cref="CredentialPatterns.Replacement"/> rather than a literal, so this
+    /// redaction and the cleanser's can never drift apart into two spellings a search would have to
+    /// know about separately.</para>
+    /// </summary>
+    public override string ToString() =>
+        $"{nameof(RadarrCredential)} {{ {nameof(BaseUrl)} = {BaseUrl}, {nameof(ApiKey)} = {CredentialPatterns.Replacement} }}";
+}
 
 /// <summary>
 /// The single production reader of the stored Radarr API key, and the reason
