@@ -37,6 +37,16 @@ interface SectionNavProps {
 }
 
 /**
+ * How long a click's highlight resists being overwritten by the observer.
+ *
+ * A deadline, not a duration to wait out: the normal path clears the
+ * suppression as soon as the clicked section is reported intersecting, which is
+ * typically the next callback. This bound exists only so the never-intersects
+ * case (arb-81x8 bug 1) cannot suppress forever, so it is deliberately generous.
+ */
+const SUPPRESS_WINDOW_MS = 1000;
+
+/**
  * Sticky in-page section nav for the single-page Settings (arb-5oe, epic
  * decision 3: ONE page with an anchor list, deliberately not tabs and not
  * sub-routes -- Sonarr v4's own Settings is a single list page).
@@ -159,14 +169,23 @@ export function SectionNav({ entries }: SectionNavProps) {
         // viewport.
         const bandTop = (root ?? document.documentElement).getBoundingClientRect().top;
 
-        // Among sections whose heading has scrolled at or past the band's top
-        // edge (their own top is >= bandTop, i.e. not above it), the one
-        // closest to that edge -- the smallest such top -- is the section the
-        // operator is actually looking at. A tall preceding section can still
-        // be "intersecting" (its bottom is still inside the band) while its
-        // own top sits well above bandTop; comparing tops rather than
+        // Among sections at or past the scrollport's top edge (their own top
+        // is >= bandTop, i.e. not above it), the one closest to that edge --
+        // the smallest such top -- wins. A tall preceding section can still be
+        // "intersecting" (its bottom is still inside the band) while its own
+        // top sits well above bandTop; comparing tops rather than
         // document-array order is what excludes it in favour of whichever
-        // section's heading has actually reached the band.
+        // section has actually reached the edge.
+        //
+        // "At the scrollport's top edge" is NOT the same as "what the operator
+        // is looking at": below 1100px the sticky strip covers the first 68px
+        // of the pane (Settings.module.css's scroll-margin-top), so a section
+        // level with bandTop is behind it. Compensating for that offset is
+        // arb-9b42's job, not this comparison's.
+        //
+        // On equal tops both reduces below keep the incumbent (their
+        // comparisons are strict), so the first candidate encountered wins and
+        // document order remains the tie-break of last resort.
         const withinBand = intersecting.filter(
           (observation) => observation.boundingClientRect.top >= bandTop,
         );
@@ -196,9 +215,11 @@ export function SectionNav({ entries }: SectionNavProps) {
         // would count as intersecting at once -- the highlight would then
         // never move off the first entry.
         root,
-        // Biased to the top: the band sits just below the pane's top edge, so
-        // the highlighted entry is the section whose heading the operator is
-        // actually looking at rather than whichever occupies the most pixels.
+        // Biased to the top: the band is anchored at the pane's own top edge,
+        // so the highlighted entry is the section that has reached that edge
+        // rather than whichever occupies the most pixels. See the bandTop
+        // comment above for why that edge is not the same as what is visible
+        // below 1100px.
         rootMargin: '0px 0px -70% 0px',
       },
     );
@@ -237,23 +258,27 @@ export function SectionNav({ entries }: SectionNavProps) {
                 // alone (no preventDefault) so `#hash` updates and the
                 // scroll-into-view/keyboard behaviour from #199 are unchanged.
                 setActiveId(entry.id);
-                // The browser's own jump (smooth-scrolled unless the operator
-                // has prefers-reduced-motion) will fire a burst of observer
-                // callbacks for whatever the viewport passes on the way,
-                // which would otherwise immediately overwrite the click with
-                // a stale mid-scroll candidate. Suppressed until either the
-                // clicked target itself is reported intersecting (the normal
-                // case) or a bounded window elapses (the target-never-
-                // intersects case from bug 1, where that report never comes).
-                // The window is shorter under reduced motion because the jump
-                // there is instant rather than animated, so there is no
-                // multi-frame scroll to wait out.
-                const reducedMotion =
-                  typeof window.matchMedia === 'function' &&
-                  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                // The jump fires a burst of observer callbacks for whatever
+                // the viewport passes on the way, which would otherwise
+                // overwrite the click with a stale mid-scroll candidate.
+                // Suppressed until the clicked target is reported
+                // intersecting, which is the normal exit and usually the very
+                // next callback.
+                //
+                // The window is only the fallback for the never-intersects
+                // case from bug 1 -- a section below the last scrollable
+                // position is never reported at all, so without a deadline the
+                // suppression would never lift. It is sized generously for
+                // that reason: nothing waits it out in the normal path, so a
+                // large value costs nothing and a tight one risks expiring
+                // mid-scroll on a slow frame.
+                //
+                // It holds NO timer. The deadline is compared lazily inside the
+                // observer callback, so there is nothing to clear on unmount --
+                // do not convert this to a setTimeout.
                 suppressUntilRef.current = {
                   id: entry.id,
-                  until: performance.now() + (reducedMotion ? 150 : 1000),
+                  until: performance.now() + SUPPRESS_WINDOW_MS,
                 };
               }}
             >
