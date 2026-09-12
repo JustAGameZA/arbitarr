@@ -484,4 +484,69 @@ public class DedupStageTests
 
         Assert.Same(only, Stage().Deduplicate(new[] { only })[0]);
     }
+
+    // --- Persistence round trip ------------------------------------------------------------------
+
+    /// <summary>
+    /// <b>A dedup group is only useful if it survives being stored.</b> Both writers of a result set
+    /// persist it as JSON — <c>SnapshotPayload</c> for the pagination snapshot and
+    /// <c>CachedSearchPayload</c> for the two-age cache row — so a group that serialised as a bare
+    /// representative would lose every member somewhere between being computed and being served,
+    /// and the request path would never notice.
+    /// </summary>
+    private static SnapshotPayload RoundTrip(SnapshotPayload payload) =>
+        System.Text.Json.JsonSerializer.Deserialize<SnapshotPayload>(
+            System.Text.Json.JsonSerializer.Serialize(payload))!;
+
+    private static SnapshotPayload GroupedSnapshot() =>
+        new(Stage().Deduplicate(new[] { Release("alpha"), Release("beta") }), TimeSpan.Zero, Core.Caching.CacheBand.Fresh);
+
+    [Fact]
+    public void A_grouped_release_survives_a_snapshot_round_trip_as_one_entry()
+    {
+        Assert.Single(RoundTrip(GroupedSnapshot()).Releases);
+    }
+
+    /// <summary>
+    /// The member count specifically: a serializer that dropped <c>AlternateMembers</c> would still
+    /// produce exactly one entry, so the count above cannot detect that on its own.
+    /// </summary>
+    [Fact]
+    public void A_grouped_releases_members_survive_a_snapshot_round_trip()
+    {
+        var restored = RoundTrip(GroupedSnapshot());
+
+        Assert.Equal(2, 1 + restored.Releases[0].AlternateMembers.Count);
+    }
+
+    /// <summary>
+    /// Each member's own link survives, so what comes back out of the store is still per-member
+    /// addressable rather than N copies of the representative (P9/P10 across persistence).
+    /// </summary>
+    [Fact]
+    public void Each_members_link_survives_a_snapshot_round_trip()
+    {
+        var representative = RoundTrip(GroupedSnapshot()).Releases[0];
+
+        Assert.Equal(
+            new[] { "http://alpha.example.invalid/get/1", "http://beta.example.invalid/get/1" },
+            representative.AlternateMembers.Select(m => m.Candidate.Link.ToString())
+                .Prepend(representative.Candidate.Link.ToString()).ToArray());
+    }
+
+    /// <summary>
+    /// <c>ProxyGuid</c> is computed in the initialiser rather than serialised, so it must be
+    /// RECOMPUTED to the same value on the way back in — a member whose guid changed across
+    /// persistence would be unaddressable even once members are registered.
+    /// </summary>
+    [Fact]
+    public void Each_members_proxy_guid_is_stable_across_a_snapshot_round_trip()
+    {
+        var before = GroupedSnapshot();
+        var after = RoundTrip(before);
+
+        Assert.Equal(
+            before.Releases[0].AlternateMembers.Select(m => m.ProxyGuid).Prepend(before.Releases[0].ProxyGuid),
+            after.Releases[0].AlternateMembers.Select(m => m.ProxyGuid).Prepend(after.Releases[0].ProxyGuid));
+    }
 }

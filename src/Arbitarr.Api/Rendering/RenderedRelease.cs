@@ -26,17 +26,22 @@ namespace Arbitarr.Api.Rendering;
 /// <para><b>The losers are carried here rather than discarded, and that is the point.</b>
 /// <c>docs/adr/0019-dedup-is-a-pipeline-stage-with-conservative-exact-merge.md</c> applies ADR
 /// 0003's de-rank-never-discard to this axis: the ordering carries the preference, the set carries
-/// the options, so a failed grab against this release can fall back to another member's
-/// <see cref="ProxyGuid"/>. Dropping them would express the preference by destroying the
-/// alternative.</para>
+/// the options. Dropping them would express the preference by destroying the alternative.</para>
+///
+/// <para><b>The fallback grab is NOT reachable yet, and this note must not be read as saying it
+/// is.</b> Retaining the members is what makes it possible to OFFER one later; it does not offer
+/// one today, because <c>SearchEndpoint</c> registers only each group's representative in the
+/// release lookup, so a member's <see cref="ProxyGuid"/> resolves to nothing at the download proxy.
+/// Registering members is a follow-up (its own bead), deliberately not done here. What ships is the
+/// retention and the ordering; the affordance that consumes them is the next step.</para>
 ///
 /// <para>Held on the representative rather than as a side record because the source name dedup
 /// orders by already lives here, not on <see cref="ReleaseCandidate"/>, and because every
 /// downstream reader (renderer, release lookup, download proxy) already holds a
 /// <c>RenderedRelease</c> — a parallel structure would need threading through all of them. The
-/// members are themselves <c>RenderedRelease</c>, so each fallback arrives with its own source
-/// name and its own computed <see cref="ProxyGuid"/>, which is what the proxy needs to actually
-/// grab it.</para>
+/// members are themselves <c>RenderedRelease</c>, so each carries its own source name and its own
+/// computed <see cref="ProxyGuid"/> — the identity a proxy would need to grab it, once members are
+/// registered.</para>
 ///
 /// <para><b>Members are flat, never nested.</b> A member's own <see cref="AlternateMembers"/> is
 /// always empty: <c>DedupStage</c> builds each group from the ungrouped merge output in one pass,
@@ -80,9 +85,19 @@ public sealed record RenderedRelease(
     /// it happens to preserve the upstream guid today, but the correctness of this type must not
     /// rest on that staying true.</para>
     ///
-    /// <para>Record equality is unaffected: <c>ProxyGuid</c> is not a positional member, so it is
-    /// not part of the generated <c>Equals</c>/<c>GetHashCode</c> — two instances with the same
-    /// three components remain equal, exactly as before.</para>
+    /// <para><c>ProxyGuid</c> is not a positional member, so it is not part of the generated
+    /// <c>Equals</c>/<c>GetHashCode</c> — computing it here does not itself affect equality.</para>
+    ///
+    /// <para><b>Record equality is nonetheless NOT structural on this type, and relying on it is a
+    /// trap.</b> There are now FOUR positional components, and the fourth,
+    /// <see cref="AlternateMembers"/>, is an <c>IReadOnlyList&lt;RenderedRelease&gt;</c> — a
+    /// reference type with no value semantics — so the synthesized <c>Equals</c> compares it by
+    /// REFERENCE. Two structurally identical grouped releases, each holding an equal but distinct
+    /// list, are therefore <b>not equal</b>, and a JSON round trip produces exactly that shape: the
+    /// deserialized copy has a fresh list instance. An ungrouped release compares as it always did,
+    /// since every empty group shares <c>Array.Empty&lt;RenderedRelease&gt;()</c>, which is why this
+    /// was easy to miss. Compare grouped releases field-wise (as
+    /// <c>SearchResultRefresherTests</c> does), never with <c>==</c>.</para>
     /// </summary>
     public string ProxyGuid { get; } = ReleaseGuid.Compute(new ReleaseIdentity(SourceName, Candidate.Guid));
 }
