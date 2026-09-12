@@ -52,7 +52,7 @@ public sealed class StatusHealthItemsTests : IDisposable
         var response = await client.GetFromJsonAsync<StatusResponse>("/api/status");
 
         var item = Assert.Single(response!.Health);
-        Assert.Equal("download-refused-redirect", item.Key);
+        Assert.Equal(StatusEndpoint.DownloadRefusedRedirectKey, item.Key);
         Assert.Equal("blocking", item.Severity);
         Assert.Equal("nzbhydra2", item.SourceName);
         Assert.Contains("302", item.Summary);

@@ -14,7 +14,7 @@ A misconfigured upstream can cause every download attempt to fail. On 2026-09-08
 
 ## Decision
 
-**Arbitarr refuses the entire 3xx HTTP status range on download requests (including 304 Not Modified), with no allowance for following the redirect or retrying. The refusal is recorded as an unnamed `SourceFailed` activity event so operators can see it on the Activity feed, but it does not trigger notifications or alter the source's health status.**
+**Arbitarr refuses the entire 3xx HTTP status range on download requests (including 304 Not Modified), with no allowance for following the redirect or retrying. The refusal is recorded as an unnamed `SourceFailed` activity event so operators can see it on the Activity feed, but it does not alter the source's health status. (Since #247/arb-apj it does trigger a notification — one on appear, one on clear — pushed from a decorator around the health-item tracker below, not from `NotificationDispatcher`/`FoldSourceFailure`; see the Consequences section.)**
 
 SEC-M1 is implemented as `AllowAutoRedirect = false` across seven typed client registrations in the composition root, combined with origin-pinning re-validation at fetch time. This ensures redirects reach the application code as response objects rather than being silently followed by the framework, and any redirect to a different host is rejected by the fetch-time guard. When a redirect is detected on the download path, it is refused with a typed `UpstreamRedirectRefusedException` and recorded as a `SourceFailed` activity event (with `sourceDisplayName: null`) carrying a human-readable summary.
 
@@ -36,7 +36,7 @@ The operator must set **NZBHydra2 Downloading > NZB access type = "Proxy"** (men
 
 ### Unnamed event is recorded; source remains healthy
 
-A refused redirect is recorded as a `SourceFailed` activity event with the source unnamed (deliberately: a named event would cause `NotificationPolicy.FoldSourceFailure` to announce a healthy source as down after three Sonarr retries). The event lands on the Activity feed with a human-readable summary (`"Download refused: NZBHydra2 redirected instead of serving the file"`), but operators who are not actively monitoring the dashboard will not be alerted. A separate persistent health item (arb-ln0 PR 2) will make the condition visible on the dashboard status block; persistence across restarts is tracked as bead arb-v3w.
+A refused redirect is recorded as a `SourceFailed` activity event with the source unnamed (deliberately: a named event would cause `NotificationPolicy.FoldSourceFailure` to announce a healthy source as down after three Sonarr retries). The event lands on the Activity feed with a human-readable summary (`"Download refused: NZBHydra2 redirected instead of serving the file"`), but operators who are not actively monitoring the dashboard would previously not have been alerted. A separate persistent health item (arb-ln0 PR 2) makes the condition visible on the dashboard status block; it now survives a restart too (delivered — see [ADR 0016](0016-persist-download-refusal-health.md)), and an operator is now also notified on the item's appear/clear edges, delivered outside `FoldSourceFailure` for the same reason the event above is unnamed (arb-apj, #247).
 
 ### No outbound credential leak
 

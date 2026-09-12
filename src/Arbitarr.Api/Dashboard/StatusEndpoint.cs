@@ -93,8 +93,15 @@ public static class StatusEndpoint
     /// <summary>
     /// The <see cref="HealthItem.Key"/> a refused-redirect download reports under. Stable so a
     /// client can branch on the kind of condition without parsing the summary prose.
+    ///
+    /// <para>Public (arb-d3kt): <c>Arbitarr.Api</c> has no <c>InternalsVisibleTo</c> for the test
+    /// assemblies, so an <c>internal</c> modifier here could not actually back the "stable
+    /// contract" claim above — tests exercising it had to hardcode the literal instead, which is
+    /// precisely the kind of drift a named constant exists to prevent. Making it public is the
+    /// smaller fix: the value already crosses the wire on every <c>/api/status</c> response, so
+    /// widening its C# accessibility exposes no new information.</para>
     /// </summary>
-    internal const string DownloadRefusedRedirectKey = "download-refused-redirect";
+    public const string DownloadRefusedRedirectKey = "download-refused-redirect";
 
     private static async Task<StatusResponse> HandleAsync(
         SourceHealthRepository healthRepository,

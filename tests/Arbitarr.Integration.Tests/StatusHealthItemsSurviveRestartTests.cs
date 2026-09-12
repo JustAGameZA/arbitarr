@@ -116,7 +116,7 @@ public sealed class StatusHealthItemsSurviveRestartTests : IDisposable
         using var secondClient = second.CreateClient();
 
         var rehydrated = Assert.Single(await ReadHealthAsync(secondClient));
-        Assert.Equal("download-refused-redirect", rehydrated.Key);
+        Assert.Equal(StatusEndpoint.DownloadRefusedRedirectKey, rehydrated.Key);
         Assert.Equal("blocking", rehydrated.Severity);
         Assert.Equal("nzbhydra2", rehydrated.SourceName);
         Assert.Contains("302", rehydrated.Summary);
@@ -230,13 +230,12 @@ public sealed class StatusHealthItemsSurviveRestartTests : IDisposable
         // having failed and left nothing to notify about.
         Assert.Single(await ReadHealthAsync(restartedClient));
 
-        // Long enough that a delivery raised by rehydration would have landed; the notifier posts
-        // from a fire-and-forget task, so reading immediately could pass by reading too early.
-        await Task.Delay(TimeSpan.FromMilliseconds(750));
-        Assert.Empty(handler.Bodies);
-
-        // THE CONTROL: a genuinely new edge, on a source that was NOT rehydrated, through this same
-        // host and handler. This must deliver, or the emptiness above proved nothing.
+        // THE CONTROL, driven FIRST rather than after a fixed sleep: a genuinely new edge, on a
+        // source that was NOT rehydrated, through this same host and handler. Waiting on its
+        // delivery (rather than a flat 750ms) is what makes the silence assertion below meaningful
+        // instead of a race against an arbitrary duration — a slower CI box could not turn a real
+        // rehydration-notifies regression into a false pass, and a faster one could not turn a
+        // genuine bug into a false failure.
         var restartedTracker = restarted.Services.GetRequiredService<IDownloadRefusalTracker>();
         await restartedTracker.RecordRefusalAsync("other-source", "refused", First.AddHours(1));
 
@@ -249,7 +248,10 @@ public sealed class StatusHealthItemsSurviveRestartTests : IDisposable
         var delivered = Assert.Single(handler.Bodies);
         Assert.Contains("other-source", delivered, StringComparison.Ordinal);
 
-        // And the rehydrated source is still not among what was posted.
+        // THE SILENCE ASSERTION: by the time the control's delivery has landed, any delivery that
+        // rehydration itself would have raised has necessarily already landed too — both are posted
+        // from the same fire-and-forget path on the same host. So the rehydrated source's continued
+        // absence here is not "we didn't wait long enough", it is "it was never posted".
         Assert.DoesNotContain("nzbhydra2", delivered, StringComparison.Ordinal);
     }
 

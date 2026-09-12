@@ -97,6 +97,12 @@ public sealed class DownloadRefusalTracker : IDownloadRefusalTracker
     /// <see cref="PersistentDownloadRefusalTracker"/> can apply the entry semantics — in particular
     /// the preserve-<c>ObservedSinceUtc</c> rule — without going back through an async wrapper that
     /// would only re-enter here.
+    ///
+    /// <para><c>DownloadRefusalRehydrationService</c> (Host) depends on this preserving
+    /// <c>ObservedSinceUtc</c> on a repeat call: it replays a persisted row as two calls to this
+    /// method (one to fix the instant, one to advance <c>LastObservedUtc</c>), so the rehydrated
+    /// item reports the same "since" as the row it came from only because the second call does not
+    /// overwrite it.</para>
     /// </summary>
     public void RecordRefusal(string sourceName, string reason, DateTimeOffset at)
     {
