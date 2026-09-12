@@ -115,4 +115,45 @@ public sealed class RouteClassificationTests : IClassFixture<ArbitarrWebApplicat
             Assert.DoesNotContain('{', endpoint.RoutePattern.RawText!);
         }
     }
+
+    /// <summary>
+    /// arb-6l9b.4: the library reads are <see cref="RouteClassification.AdminMutating"/> even though
+    /// they are GETs, for the same reason the queue reads above are.
+    ///
+    /// <para><b>Classification is by PATH PREFIX, never by verb</b> (CLAUDE.md §2). These are the
+    /// same trap as the queue reads and arguably a worse one: a GET returning a list of series titles
+    /// reads even more like a dashboard fact than a download queue does. It is not one. It makes an
+    /// AUTHENTICATED OUTBOUND CALL on the operator's behalf using a stored credential, so exposing it
+    /// unauthenticated would hand any LAN caller an inventory of the operator's media library and a
+    /// way to make this process issue key-bearing requests on demand. Pinned by name because the
+    /// generic sweep asserts only that whatever classification a route declares is honoured — it
+    /// cannot notice a route that declared the wrong one.</para>
+    /// </summary>
+    [Fact]
+    public void The_arr_library_reads_are_classified_AdminMutating_despite_being_GETs()
+    {
+        var dataSource = _factory.Services.GetRequiredService<EndpointDataSource>();
+
+        var libraryRoutes = new[]
+        {
+            Arbitarr.Api.Admin.AdminArrLibraryEndpoints.SonarrSeriesRoute,
+            Arbitarr.Api.Admin.AdminArrLibraryEndpoints.RadarrMoviesRoute,
+        };
+
+        foreach (var route in libraryRoutes)
+        {
+            var endpoint = dataSource.Endpoints
+                .OfType<RouteEndpoint>()
+                .SingleOrDefault(e => e.RoutePattern.RawText == route);
+
+            Assert.NotNull(endpoint);
+            Assert.Equal(RouteClassification.AdminMutating, endpoint!.GetClassification());
+
+            // CONCRETE, NOT TEMPLATED, and asserted rather than assumed:
+            // AdminApiKeyRouteEnumerationTests' sweep skips every {-containing route by design, so a
+            // later edit moving paging or the q filter into a path segment would drop these out of
+            // that sweep in silence. Both are query-string precisely to keep this true.
+            Assert.DoesNotContain('{', endpoint.RoutePattern.RawText!);
+        }
+    }
 }
