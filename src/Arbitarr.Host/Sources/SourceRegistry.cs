@@ -152,7 +152,6 @@ public sealed class SourceRegistry : ISourceRegistry
         return _resolved = sources;
     }
 
-
     /// <summary>
     /// Maps one row onto its adapter and appends it, or logs why it was skipped — the one place the
     /// kind mapping, the per-source client and the skip rules are expressed.

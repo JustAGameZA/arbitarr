@@ -207,9 +207,12 @@ builder.Services.AddSingleton(nzbHydraEnvironment);
 var resolvedSourceConfiguration = new ResolvedSourceConfiguration();
 builder.Services.AddSingleton(resolvedSourceConfiguration);
 
-// "Configured" means AT LEAST ONE ENABLED SOURCE WITH A KEY — arb-x7w8.4 restates the 53d predicate
-// for N sources, and the meaning is unchanged for the N=1 case the contract was written against.
-// The answer is still produced by SourceSeeder's resolve pass rather than recomputed here.
+// "Configured" still means AT LEAST ONE ENABLED NZBHYDRA SOURCE WITH A KEY — deliberately NOT "at
+// least one enabled source of any kind". The answer is produced by SourceSeeder's resolve pass,
+// whose query filters Kind == NzbHydraKind && Enabled (SourceSeeder:184), so a deployment whose only
+// sources are direct Newznab/Torznab rows searches them through SourceRegistry while still reporting
+// unconfigured here. Restating this predicate for N sources is arb-72mf's, not arb-x7w8.4's: it is a
+// dashboard-contract change rather than a comment fix, so the behaviour was left alone.
 // Registered as a factory rather than an instance because the resolution has not happened yet at
 // this point in startup; the singleton is first resolved on a request, long after SourceSeeder has
 // run. The dashboard's effective-config view (M2 §2, D1 surface 3) reports this without ever
