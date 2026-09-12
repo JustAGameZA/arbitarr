@@ -7,6 +7,7 @@ import {
   faFilter,
   faBan,
   faClockRotateLeft,
+  faListCheck,
   faGear,
   faServer,
   type IconDefinition,
@@ -22,19 +23,24 @@ interface NavEntry {
 }
 
 /**
- * The seven addressable nav entries (AC5), in this order.
+ * The eight addressable nav entries (AC5), in this order.
  *
- * SEVEN as of #55, which added Activity. It was six before that: the five
- * product surfaces were Dashboard, Search, Rules, Suppressions and Settings,
- * with System as the one additional section. An earlier draft counted Settings
- * and System both as product surfaces and again as sections, which is why this
- * comment states the accounting rather than just asserting a number.
+ * EIGHT as of arb-6l9b.5, which added Library. It was seven before that, since
+ * #55 added Activity, and six before that: the five product surfaces were
+ * Dashboard, Search, Rules, Suppressions and Settings, with System as the one
+ * additional section. An earlier draft counted Settings and System both as
+ * product surfaces and again as sections, which is why this comment states the
+ * accounting rather than just asserting a number.
  *
  * Activity is a product surface, not a section: it answers an operator question
  * ("what did Arbitarr do, and why") the way Suppressions does, rather than
  * being configuration or diagnostics. It sits beside Suppressions because the
  * two read the same decisions from opposite ends -- Suppressions lists what was
  * withheld, Activity lists everything that happened, those included.
+ *
+ * Library is likewise a product surface: it answers "what does each configured
+ * *arr have queued and in its library", the same shape of operator question as
+ * Activity and Suppressions, not configuration or diagnostics.
  *
  * SidebarNav.test.tsx asserts the count exactly -- not `>=` -- so a dropped
  * entry and a smuggled-in one both fail. A new surface means updating that test,
@@ -47,6 +53,7 @@ export const NAV_ENTRIES: readonly NavEntry[] = [
   { label: 'Rules', to: '/rules', icon: faFilter },
   { label: 'Suppressions', to: '/suppressions', icon: faBan },
   { label: 'Activity', to: '/activity', icon: faClockRotateLeft },
+  { label: 'Library', to: '/library', icon: faListCheck },
   { label: 'Settings', to: '/settings', icon: faGear, group: 'Settings' },
   { label: 'System', to: '/system', icon: faServer, group: 'System' },
 ];
