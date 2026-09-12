@@ -461,6 +461,33 @@ event's `Reason`, which is in the same identity.
 
 ---
 
+## Obfuscated title
+
+A scrambled/hash-like Usenet release title, produced by some posting groups as
+a routine anti-abuse convention, not a junk signal. Arbitarr passes it to the
+classifier and to Sonarr **verbatim, by design**:
+`ClassificationPrompt.UsenetGuidance` (`src/Arbitarr.Ai/ClassificationPrompt.cs`
+~:31-37, Usenet-arm-only, torrent arm omits it, pinned by `ObfuscatedNameTests`)
+tells the model this is not junk; Sonarr matches a grab on history, not
+filename; and SABnzbd already deobfuscates post-download via
+par2/`Deobfuscate.py`. The operator lever for one indexer's titles is an
+**NZBHydra2 custom title mapping**, upstream of Arbitarr.
+
+Normalization (`TitleNormalizer`/`DenyList`,
+`src/Arbitarr.Ai/Normalization/`, default OFF) only **removes** tokens from a
+4-entry deny list; it can never synthesise text, so it can never deobfuscate.
+
+**Rejected, not to be re-proposed:** hash-like detection/de-ranking (collides
+with `FilterStage`'s M1-4 never-rewrite invariant,
+`src/Arbitarr.Api/Search/FilterStage.cs` ~:24-27, and
+[ADR 0002](docs/adr/0002-admit-no-match-when-ambiguous.md)); an alternate
+title from Newznab attributes (no such field exists); fetching the NZB to
+read segment subjects (a second caller of
+`ReadApiKeyForUpstreamRequestAsync`, forbidden by CLAUDE.md §1, and would
+break Sonarr's grab-history match).
+
+---
+
 ## Cache ages
 
 `FreshUntil` and `ServeUntil` are two different boundaries on the same entry:
