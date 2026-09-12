@@ -181,6 +181,10 @@ public sealed class EventRepository
             // still passes. Second, Id is the right key anyway: it is monotonic per insert, so the
             // highest Id IS the most recently written row, which is what "fold onto the newest"
             // means and is the same ordering EventQuery's cursor already pages by.
+            //
+            // Folding onto the GLOBALLY newest row this way is what makes NotificationDispatcher's
+            // own defensive ordering unreachable — see NotificationDispatcherTests.
+            // A_failure_after_a_recovery_starts_a_new_row_rather_than_folding_backwards.
             var mostRecent = await _dbContext.Events
                 .OrderByDescending(e => e.Id)
                 .FirstOrDefaultAsync(cancellationToken);

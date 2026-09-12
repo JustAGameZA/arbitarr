@@ -392,6 +392,12 @@ function NotificationForm({
             rejection here is its answer rather than this page&apos;s guess. The window is a
             duration such as 01:00:00.
           </p>
+
+          <p className={local.hint}>
+            A burst of identical failures folded into one repeated row counts as a single
+            occurrence toward the consecutive-failure count above, so the threshold can trip later
+            than the raw failure count would suggest — never earlier.
+          </p>
         </div>
 
         <div className={local.group}>
