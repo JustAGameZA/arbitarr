@@ -644,6 +644,14 @@ builder.Services.AddScoped<ICredentialResolver, DbCredentialResolver>();
 // ApiKeyRepository wraps the scoped ArbitarrDbContext, which is not thread-safe.
 builder.Services.AddSingleton<IApiKeyLastUsedRecorder, ThrottledApiKeyLastUsedRecorder>();
 
+// arb-acy9: the SAME singleton, also as a hosted service, so its StopAsync drains writes that are
+// still in flight when the host stops. Without it a write dispatched just before shutdown finds its
+// scope's provider gone and logs the recorder's failure Warning on every restart, which buries a
+// real signal in noise. GetRequiredService, not a second construction: two instances would each
+// drain a set the other never wrote to.
+builder.Services.AddHostedService(sp =>
+    (ThrottledApiKeyLastUsedRecorder)sp.GetRequiredService<IApiKeyLastUsedRecorder>());
+
 // #44: human authentication. Sessions authorize against #58's primitive above rather than a second
 // model — DbSessionAuthenticator returns the same CredentialResolution DbCredentialResolver does, and
 // AdminApiKeyFilter makes one scope check over whichever credential answered. Key authentication is
@@ -667,6 +675,11 @@ builder.Services.AddScoped<ISessionAuthenticator, DbSessionAuthenticator>();
 
 // Singleton for the same reason as the recorder above: the throttle state must outlive a request.
 builder.Services.AddSingleton<ISessionActivityRecorder, ThrottledSessionActivityRecorder>();
+
+// arb-acy9: and the same drain for sessions, for the same reason — with a sharper consequence,
+// since a lost stamp here can idle out a live session rather than stale a display.
+builder.Services.AddHostedService(sp =>
+    (ThrottledSessionActivityRecorder)sp.GetRequiredService<ISessionActivityRecorder>());
 
 // Singleton because the rate-limit counters must outlive a request — a per-request limiter would
 // count to one forever and defend against nothing.

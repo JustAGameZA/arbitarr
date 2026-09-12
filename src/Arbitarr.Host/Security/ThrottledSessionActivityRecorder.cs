@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using Arbitarr.Core.Security;
 using Arbitarr.Data.Security;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace Arbitarr.Host.Security;
 
@@ -26,10 +27,36 @@ namespace Arbitarr.Host.Security;
 /// therefore dropped once they age past the throttle window, on the same call that walks them. The
 /// sweep is bounded by how many DISTINCT sessions were seen in the last minute, which on a
 /// single-operator appliance is a handful.</para>
+///
+/// <para><b>AND IT DRAINS AT SHUTDOWN (arb-acy9)</b>, as an <see cref="IHostedService"/>, for the
+/// reason and by the mechanism set out on <see cref="ThrottledApiKeyLastUsedRecorder"/> — with more
+/// at stake, since the stamp abandoned here is the one idle expiry is measured against, so losing it
+/// at every restart shortens a live session rather than staling a display. The Warning below is
+/// untouched: the drain removes the shutdown case that made it fire spuriously, which is what lets
+/// the remaining occurrences be read as the genuine failures it was written for.</para>
+///
+/// <para>The drain's two escapes carry over unchanged, including the one that no timeout closes:
+/// <see cref="DrainAsync"/> samples <c>_inFlight</c> once, so a stamp dispatched after that sample
+/// is never waited for — and Kestrel may still be finishing requests, hence still calling
+/// <see cref="RecordSeen"/>, while the drain runs. See the key recorder's copy for the full
+/// argument.</para>
 /// </summary>
-public sealed class ThrottledSessionActivityRecorder : ISessionActivityRecorder
+public sealed class ThrottledSessionActivityRecorder : ISessionActivityRecorder, IHostedService
 {
+    /// <summary>
+    /// How long <see cref="StopAsync"/> waits for in-flight writes. Deliberately the same figure as
+    /// <see cref="ThrottledApiKeyLastUsedRecorder.DrainTimeout"/> — the two drain the same kind of
+    /// write against the same database, and two numbers differing for no stated reason is worse than
+    /// one. Referenced rather than redeclared so they cannot drift apart.
+    /// </summary>
+    public static TimeSpan DrainTimeout => ThrottledApiKeyLastUsedRecorder.DrainTimeout;
+
     private readonly ConcurrentDictionary<long, DateTimeOffset> _lastWrittenAt = new();
+
+    /// <summary>The writes dispatched but not yet finished; see the key recorder's field for why a
+    /// set of tasks rather than a counter.</summary>
+    private readonly ConcurrentDictionary<Task, byte> _inFlight = new();
+
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<ThrottledSessionActivityRecorder> _logger;
@@ -70,7 +97,74 @@ public sealed class ThrottledSessionActivityRecorder : ISessionActivityRecorder
 
         PruneStaleEntries(now);
 
-        _ = Task.Run(() => WriteAsync(sessionId, now));
+        Dispatch(sessionId, now);
+    }
+
+    /// <inheritdoc />
+    /// <remarks>Nothing to start: the drain is the only reason this is a hosted service.</remarks>
+    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Drains in-flight writes while the DI provider is still alive. The shutdown token is not
+    /// passed to the wait — it is already signalled on a forced shutdown, which would make the drain
+    /// a no-op exactly when it is needed. See <see cref="ThrottledApiKeyLastUsedRecorder.StopAsync"/>.
+    /// </remarks>
+    public Task StopAsync(CancellationToken cancellationToken) => DrainAsync();
+
+    /// <summary>
+    /// Waits for every write dispatched so far, bounded by <see cref="DrainTimeout"/>. Tasks in the
+    /// set never fault — <see cref="WriteAsync"/> swallows and logs — so there is nothing for
+    /// <see cref="Task.WhenAll(IEnumerable{Task})"/> to rethrow.
+    /// </summary>
+    private async Task DrainAsync()
+    {
+        var pending = _inFlight.Keys.ToArray();
+        if (pending.Length == 0)
+        {
+            return;
+        }
+
+        var all = Task.WhenAll(pending);
+        var completed = await Task.WhenAny(all, Task.Delay(DrainTimeout)).ConfigureAwait(false);
+
+        if (!ReferenceEquals(completed, all))
+        {
+            // The captured total, not a re-count of the unfinished — see the key recorder's copy for
+            // why a re-count can print a self-contradicting "Gave up waiting for 0".
+            _logger.LogWarning(
+                "Gave up waiting for {PendingCount} in-flight session activity write(s) after {DrainSeconds}s of shutdown; " +
+                "the affected sessions may idle out earlier than their last real use.",
+                pending.Length,
+                DrainTimeout.TotalSeconds);
+        }
+    }
+
+    /// <summary>
+    /// Dispatches the write detached while keeping it visible to <see cref="DrainAsync"/>. The gate
+    /// exists so the task is in the set before it can possibly complete; see
+    /// <see cref="ThrottledApiKeyLastUsedRecorder"/>'s copy for the full argument.
+    /// </summary>
+    private void Dispatch(long sessionId, DateTimeOffset seenAt)
+    {
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var write = Task.Run(async () =>
+        {
+            await gate.Task.ConfigureAwait(false);
+            await WriteAsync(sessionId, seenAt).ConfigureAwait(false);
+        });
+
+        _inFlight[write] = 0;
+
+        _ = write.ContinueWith(
+            (completed, _) => _inFlight.TryRemove(completed, out byte _),
+            state: null,
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+
+        gate.SetResult();
     }
 
     /// <summary>
