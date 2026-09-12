@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import styles from './SectionNav.module.css';
 
@@ -51,6 +51,51 @@ interface SectionNavProps {
  */
 export function SectionNav({ entries }: SectionNavProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
+  const navRef = useRef<HTMLElement | null>(null);
+  const [fadeLeft, setFadeLeft] = useState(false);
+  const [fadeRight, setFadeRight] = useState(false);
+
+  useEffect(() => {
+    const nav = navRef.current;
+    if (nav === null) {
+      return undefined;
+    }
+
+    // The strip's own scrollbar is hidden (scrollbar-width: none in
+    // SectionNav.module.css), so this is the only signal left that it
+    // scrolls. Re-measured on both scroll and resize: a window resize can
+    // cross the 1100px breakpoint and turn the horizontal strip into the
+    // vertical rail (overflow-x: visible there), or change how many entries
+    // fit, either of which changes scrollWidth without the container ever
+    // firing a scroll event on its own.
+    const update = () => {
+      const { scrollLeft, scrollWidth, clientWidth } = nav;
+      setFadeLeft(scrollLeft > 0);
+      // A 1px slack rather than an exact equality: sub-pixel layout can leave
+      // scrollLeft + clientWidth a fraction short of scrollWidth even when
+      // the strip is scrolled all the way to its end, which would otherwise
+      // keep the right fade lit past the last entry.
+      setFadeRight(scrollLeft + clientWidth < scrollWidth - 1);
+    };
+
+    update();
+
+    nav.addEventListener('scroll', update, { passive: true });
+
+    // ResizeObserver over a window resize listener: the vertical rail at
+    // >=1100px never fires a window resize just because entries were added
+    // or removed, but its own box still changes size.
+    let resizeObserver: ResizeObserver | undefined;
+    if (typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(update);
+      resizeObserver.observe(nav);
+    }
+
+    return () => {
+      nav.removeEventListener('scroll', update);
+      resizeObserver?.disconnect();
+    };
+  }, [entries]);
 
   useEffect(() => {
     // jsdom implements neither IntersectionObserver nor media queries, so this
@@ -114,7 +159,13 @@ export function SectionNav({ entries }: SectionNavProps) {
   }, [entries]);
 
   return (
-    <nav aria-label="Settings sections" className={styles.nav}>
+    <nav
+      aria-label="Settings sections"
+      className={styles.nav}
+      ref={navRef}
+      data-fade-left={fadeLeft ? 'true' : undefined}
+      data-fade-right={fadeRight ? 'true' : undefined}
+    >
       <ul className={styles.list}>
         {entries.map((entry) => (
           <li key={entry.id}>

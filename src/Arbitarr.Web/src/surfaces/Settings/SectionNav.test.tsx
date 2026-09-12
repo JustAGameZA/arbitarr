@@ -167,6 +167,89 @@ describe('SectionNav', () => {
   });
 });
 
+describe('SectionNav edge fade', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /**
+   * Stubs the nav element's scroll geometry, since jsdom performs no layout
+   * and scrollWidth/clientWidth/scrollLeft are always 0 there. `scrollLeft`
+   * is stubbed as a getter/setter pair, not a plain value, so a test can
+   * change it after render the same way a real scroll event would and have
+   * the component's own scroll listener see the new value.
+   */
+  function stubScrollGeometry(nav: HTMLElement, { scrollWidth, clientWidth, scrollLeft = 0 }: {
+    scrollWidth: number;
+    clientWidth: number;
+    scrollLeft?: number;
+  }) {
+    let currentScrollLeft = scrollLeft;
+    Object.defineProperty(nav, 'scrollWidth', { configurable: true, value: scrollWidth });
+    Object.defineProperty(nav, 'clientWidth', { configurable: true, value: clientWidth });
+    Object.defineProperty(nav, 'scrollLeft', {
+      configurable: true,
+      get: () => currentScrollLeft,
+      set: (value: number) => {
+        currentScrollLeft = value;
+      },
+    });
+  }
+
+  function fireScroll(nav: HTMLElement, scrollLeft: number) {
+    act(() => {
+      nav.scrollLeft = scrollLeft;
+      nav.dispatchEvent(new Event('scroll'));
+    });
+  }
+
+  it('shows no fade when the content fits (scrollWidth === clientWidth)', () => {
+    renderNav();
+    const nav = screen.getByRole('navigation');
+    act(() => {
+      stubScrollGeometry(nav, { scrollWidth: 300, clientWidth: 300 });
+      nav.dispatchEvent(new Event('scroll'));
+    });
+
+    expect(nav).not.toHaveAttribute('data-fade-left');
+    expect(nav).not.toHaveAttribute('data-fade-right');
+  });
+
+  it('shows only the right fade when overflowing at scrollLeft 0', () => {
+    renderNav();
+    const nav = screen.getByRole('navigation');
+    act(() => {
+      stubScrollGeometry(nav, { scrollWidth: 600, clientWidth: 300, scrollLeft: 0 });
+      nav.dispatchEvent(new Event('scroll'));
+    });
+
+    expect(nav).not.toHaveAttribute('data-fade-left');
+    expect(nav).toHaveAttribute('data-fade-right', 'true');
+  });
+
+  it('shows only the left fade once scrolled to the end', () => {
+    renderNav();
+    const nav = screen.getByRole('navigation');
+    stubScrollGeometry(nav, { scrollWidth: 600, clientWidth: 300, scrollLeft: 0 });
+
+    fireScroll(nav, 300);
+
+    expect(nav).toHaveAttribute('data-fade-left', 'true');
+    expect(nav).not.toHaveAttribute('data-fade-right');
+  });
+
+  it('shows both fades when scrolled to the middle of overflowing content', () => {
+    renderNav();
+    const nav = screen.getByRole('navigation');
+    stubScrollGeometry(nav, { scrollWidth: 600, clientWidth: 300, scrollLeft: 0 });
+
+    fireScroll(nav, 150);
+
+    expect(nav).toHaveAttribute('data-fade-left', 'true');
+    expect(nav).toHaveAttribute('data-fade-right', 'true');
+  });
+});
+
 describe('slugifyGroup', () => {
   it('lowercases and hyphenates a server-owned group name', () => {
     expect(slugifyGroup('Caching')).toBe('caching');
