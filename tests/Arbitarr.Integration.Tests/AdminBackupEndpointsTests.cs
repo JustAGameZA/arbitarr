@@ -233,9 +233,14 @@ public sealed class AdminBackupEndpointsTests : IAsyncLifetime
     /// (<see cref="Restore_is_refused_during_the_bootstrap_window_and_reads_no_form"/>) and the
     /// Data.Tests bomb equivalent are both refused BEFORE the validator opens anything as SQLite —
     /// the bootstrap gate never reads the form, and the bomb is cut off at the extraction bound. A
-    /// corrupt database is the only refusal that reaches
-    /// <c>BackupArchiveValidator.IsReadableSqliteDatabase</c>, which is the only place the staged
-    /// file gets an OS handle. So this path was the one with no coverage, and it was the one
+    /// corrupt database is the first refusal that reaches
+    /// <c>BackupArchiveValidator.IsReadableSqliteDatabase</c>. The staged file gets an OS handle in
+    /// TWO places — that readability check and the migration-id read after it
+    /// (<c>BackupService.ReadStagedUploadMigrationId</c>), both unpooled since arb-zupt; a corrupt
+    /// file returns before the second, so this test exercises the first. The refusal that runs
+    /// between the second open and the cleanup is SchemaTooNew, pinned in
+    /// <c>RestoreServiceTests.Validation_refuses_a_newer_schema_and_names_both_versions</c>. So this
+    /// path was the one with no coverage, and it was the one
     /// leaking: the read-only connection was POOLED, its <c>Dispose</c> returned the handle to the
     /// pool instead of closing the file, and the validator's <c>TryDelete</c> swallowed the
     /// resulting IOException — leaving <c>arbitarr-restore-validate-&lt;guid&gt;.db</c> behind while

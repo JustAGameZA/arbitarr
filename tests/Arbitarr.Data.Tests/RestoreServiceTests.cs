@@ -105,18 +105,35 @@ public sealed class RestoreServiceTests : IDisposable
         Assert.Equal(BackupValidationFailure.CorruptDatabase, result.Failure);
     }
 
+    /// <summary>
+    /// AC5, plus the arb-zupt residue pin for this refusal.
+    ///
+    /// <para><b>Why the "leaves nothing staged" half belongs HERE and not only on the corrupt-
+    /// database test.</b> A corrupt database is refused at the readability check, which is the FIRST
+    /// place the staged file is opened. SchemaTooNew is refused later, after a SECOND open — the
+    /// migration-id read — and it returns between that read and the <c>finally</c>'s cleanup. So
+    /// this is the only refusal that can leak through the second handle, and while that read was
+    /// pooled it did: the corrupt-database test could never catch it, because a corrupt file returns
+    /// before the migration-id read runs at all.</para>
+    /// </summary>
     [Fact]
     public void Validation_refuses_a_newer_schema_and_names_both_versions()
     {
-        // AC5. Silently accepting this produces a database the running build cannot read, and the
+        // Silently accepting this produces a database the running build cannot read, and the
         // failure surfaces later and somewhere else.
         var path = BuildArchive(includeDatabase: true, includeSecret: true, migrationId: FutureMigration);
 
-        var result = BackupArchiveValidator.Validate(path, KnownMigrations, _paths.StagingDirectory);
+        var stagedBefore = CountStagedValidationFiles();
+        using var result = BackupArchiveValidator.Validate(path, KnownMigrations, _paths.StagingDirectory);
 
         Assert.Equal(BackupValidationFailure.SchemaTooNew, result.Failure);
         Assert.Contains(FutureMigration, result.Message, StringComparison.Ordinal);
         Assert.Contains(CurrentMigration, result.Message, StringComparison.Ordinal);
+
+        // As in the corrupt-database test: the validator always CALLS File.Delete on what it
+        // staged, so a surviving file means the delete threw and was swallowed — and the only thing
+        // that makes it throw is an open handle, here the migration-id read's.
+        Assert.Equal(stagedBefore, CountStagedValidationFiles());
     }
 
     [Fact]
@@ -183,10 +200,14 @@ public sealed class RestoreServiceTests : IDisposable
     ///
     /// <para><b>Why this is a distinct case and not a second spelling of the same one.</b> The bomb
     /// above is refused from the central directory, before a byte is written and long before
-    /// anything is opened as SQLite. A corrupt database is the ONLY refusal that gets as far as
-    /// <c>BackupArchiveValidator.IsReadableSqliteDatabase</c>, which is the only place a staged file
-    /// is handed to SQLite at all — so this is the only path where the cleanup has a live handle to
-    /// contend with, and it was the one that leaked: the read-only connection was pooled, its
+    /// anything is opened as SQLite. A corrupt database is the only refusal that gets as far as
+    /// <c>BackupArchiveValidator.IsReadableSqliteDatabase</c> and no further — the staged file is
+    /// handed to SQLite in TWO places, this readability check and the migration-id read after it
+    /// (<c>BackupService.ReadStagedUploadMigrationId</c>), and a corrupt file returns before the
+    /// second runs. Both are unpooled; the refusal that can leak through the second one is
+    /// SchemaTooNew, pinned in
+    /// <see cref="Validation_refuses_a_newer_schema_and_names_both_versions"/>. This path was the
+    /// one that leaked through the FIRST: the read-only connection was pooled, its
     /// <c>Dispose</c> returned the handle rather than closing the file, and the <c>finally</c>'s
     /// <c>TryDelete</c> swallowed the resulting IOException. The refusal reported success and
     /// <c>arbitarr-restore-validate-&lt;guid&gt;.db</c> stayed on disk.</para>

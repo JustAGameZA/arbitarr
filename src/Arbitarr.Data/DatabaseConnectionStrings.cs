@@ -80,12 +80,46 @@ public static class DatabaseConnectionStrings
         }.ToString();
 
     /// <summary>
+    /// The string for a STAGED UPLOAD under inspection — a database
+    /// <see cref="Backup.BackupArchiveValidator"/> extracted from an untrusted archive and must be
+    /// able to DELETE the moment it has finished reading it.
+    ///
+    /// <para><b>Pooling is off, and that is the whole point of this shape.</b> A pooled connection's
+    /// <c>Dispose</c> RETURNS the handle to the pool rather than closing the file, so the OS handle
+    /// outlives the method that opened it — and nothing clears that pool, because
+    /// <see cref="ForDatabase"/> deliberately does not enumerate this shape: it names a file a
+    /// restore never replaces, so no <c>ClearPoolsFor</c> reaches it. The staged file's delete then
+    /// fails on Windows with "being used by another process" and the refusal path leaves residue
+    /// behind while reporting it cleaned up (arb-zupt). Closing by construction beats clearing a
+    /// pool afterwards: it cannot be defeated by a return or a throw between <c>Open</c> and any
+    /// later clear, and both callers have one — SQLITE_NOTADB on a corrupt file, and the
+    /// SchemaTooNew refusal that returns between the migration-id read and the cleanup.</para>
+    ///
+    /// <para>ReadOnly because the caller is inspecting a file it does not trust and has no reason to
+    /// write to.</para>
+    ///
+    /// <para>Like <see cref="SnapshotDestination"/>, it lives here rather than as an inline builder
+    /// at the call site so <c>NoInlineDatabaseConnectionStringsTests</c> need not add
+    /// <c>BackupService</c> to the types allowed to BUILD a connection string — that test keeps
+    /// build-a-string and open-a-connection as separate lists precisely so a type trusted to open is
+    /// not thereby trusted to invent the shape.</para>
+    /// </summary>
+    public static string StagedUpload(string stagedPath) =>
+        new SqliteConnectionStringBuilder
+        {
+            DataSource = stagedPath,
+            Mode = SqliteOpenMode.ReadOnly,
+            Pooling = false,
+        }.ToString();
+
+    /// <summary>
     /// Every connection string this assembly can open against <paramref name="databasePath"/>.
     /// <see cref="Backup.SqlitePoolCleaner"/> clears the pool for each, which is what lets a
     /// restore swap the file with no surviving handle on it.
     ///
-    /// <para><see cref="SnapshotDestination"/> is absent on purpose — see its own remarks: it names
-    /// a fresh temp file, not the database being replaced.</para>
+    /// <para><see cref="SnapshotDestination"/> and <see cref="StagedUpload"/> are absent on purpose
+    /// — see their own remarks: each names a temp file, not the database being replaced. Because no
+    /// clear reaches them, <see cref="StagedUpload"/> has to close by construction instead.</para>
     ///
     /// <para>Adding a shape here is what makes it covered. Adding one anywhere else is the bug this
     /// type exists to prevent, and <c>NoInlineDatabaseConnectionStringsTests</c> (in

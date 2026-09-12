@@ -98,10 +98,6 @@ public class NoInlineDatabaseConnectionStringsTests
     /// <list type="bullet">
     /// <item><c>DatabaseConnectionStrings</c> — the single builder itself. This is the type every
     /// other site is required to delegate to, so of course it builds.</item>
-    /// <item><c>BackupArchiveValidator</c> — genuinely builds one inline, and is exempt on the
-    /// merits: it names a STAGED TEMP file extracted from an uploaded archive, never the live
-    /// database, so its pool is not one a restore has to clear. Its ReadOnly mode is specific to
-    /// inspecting an untrusted file. See the comment at its call site.</item>
     /// <item><c>Logging.LogStore</c> — genuinely builds one inline, and is exempt BY NAME with the
     /// CLAUDE.md section 1 reason: it owns the SECOND database (<c>arbitarr-logs.db</c>,
     /// <c>LogStore.DatabaseFileName</c>), deliberately separate from <c>arbitarr.db</c>. A restore
@@ -112,11 +108,17 @@ public class NoInlineDatabaseConnectionStringsTests
     /// <para><c>BackupService</c> is deliberately ABSENT: its snapshot destination string is built
     /// by <c>DatabaseConnectionStrings.SnapshotDestination</c> precisely so that this list does not
     /// have to name it.</para>
+    ///
+    /// <para><c>BackupArchiveValidator</c> is ABSENT TOO, and used not to be (arb-zupt). It built a
+    /// ReadOnly, unpooled string inline for the staged file it inspects; that shape now lives in
+    /// <c>DatabaseConnectionStrings.StagedUpload</c>, shared with the migration-id read of the SAME
+    /// staged file in <c>BackupService</c> — which is what made the two agree on pooling instead of
+    /// only the first one being unpooled. Shrinking this list is the point: an exemption removed is
+    /// a shape that can no longer drift.</para>
     /// </summary>
     private static readonly string[] TypesAllowedToBuildAConnectionString =
     [
         "Arbitarr.Data.DatabaseConnectionStrings",
-        "Arbitarr.Data.Backup.BackupArchiveValidator",
         "Arbitarr.Data.Logging.LogStore",
     ];
 
@@ -134,12 +136,13 @@ public class NoInlineDatabaseConnectionStringsTests
     /// of the pool to clear (<c>ClearPool</c> selects by the connection's own string). Every string
     /// it uses comes from <c>DatabaseConnectionStrings.ForDatabase</c>, and it never opens the
     /// connection.</item>
-    /// <item><c>BackupService</c> — its three connections (snapshot source, snapshot destination,
-    /// migration-id reader) all take their strings from <c>DatabaseConnectionStrings</c>. It is
-    /// trusted to OPEN, and — being absent from the builder list — still cannot invent a
-    /// string.</item>
-    /// <item><c>BackupArchiveValidator</c> — opens the staged file it built the ReadOnly string
-    /// for, per its entry above.</item>
+    /// <item><c>BackupService</c> — its connections (snapshot source, snapshot destination, and the
+    /// migration-id reader in both its pooled and its staged-upload form) all take their strings
+    /// from <c>DatabaseConnectionStrings</c>. It is trusted to OPEN, and — being absent from the
+    /// builder list — still cannot invent a string.</item>
+    /// <item><c>BackupArchiveValidator</c> — opens the staged file it is inspecting, with the
+    /// ReadOnly unpooled string from <c>DatabaseConnectionStrings.StagedUpload</c>. On this list
+    /// only: since arb-zupt it no longer builds that string itself.</item>
     /// <item><c>Logging.LogStore</c> — opens the log database, per its entry above.</item>
     /// </list>
     ///
