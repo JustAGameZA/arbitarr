@@ -1,6 +1,7 @@
 using Arbitarr.Core.Releases;
 using Arbitarr.Core.Sources;
 using Arbitarr.Data.Logging;
+using Arbitarr.Integration.Tests.TestSupport;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -31,7 +32,7 @@ namespace Arbitarr.Integration.Tests;
 /// verbatim by request-logging middleware — so this exercises the realistic leak path, not a
 /// hypothetical one. If a future change starts logging request URLs, THIS TEST is what fails.
 /// </summary>
-public sealed class LogSecretInjectionTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class LogSecretInjectionTests : IClassFixture<WebApplicationFactory<Program>>, IDisposable
 {
     // "secret-api-key" is the value the pre-commit secret guard allowlists (and the one
     // SearchRecentLogTests already uses); the suffix keeps it distinctive when searching log rows.
@@ -74,6 +75,14 @@ public sealed class LogSecretInjectionTests : IClassFixture<WebApplicationFactor
             });
         });
     }
+
+    /// <summary>
+    /// This class builds its own config directory, so it owns deleting it (arb-gphi).
+    /// <see cref="ConfigDirectoryTeardown"/> carries why the pool clear and the delete are both
+    /// required — and this class's directory holds the LOG database the assertions read, so the
+    /// clear has to cover that second database too.
+    /// </summary>
+    public void Dispose() => ConfigDirectoryTeardown.Delete(_configDirectory);
 
     [Fact]
     public async Task An_apikey_driven_through_the_search_pipeline_appears_in_no_log_row()

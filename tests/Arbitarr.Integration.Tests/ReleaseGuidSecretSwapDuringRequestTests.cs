@@ -6,6 +6,7 @@ using Arbitarr.Api.Rendering;
 using Arbitarr.Api.Search;
 using Arbitarr.Core.Releases;
 using Arbitarr.Core.Sources;
+using Arbitarr.Integration.Tests.TestSupport;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -39,7 +40,7 @@ namespace Arbitarr.Integration.Tests;
 /// <c>ReleaseGuidSecret</c> collection does not cover anything here. Nothing else may join it.</para>
 /// </summary>
 [Collection(ReleaseGuidSecretSwapDuringRequestTests.CollectionName)]
-public sealed class ReleaseGuidSecretSwapDuringRequestTests : IAsyncDisposable
+public sealed class ReleaseGuidSecretSwapDuringRequestTests : IAsyncLifetime
 {
     internal const string CollectionName = "ReleaseGuidSecret(Integration)";
 
@@ -306,21 +307,19 @@ public sealed class ReleaseGuidSecretSwapDuringRequestTests : IAsyncDisposable
         }
     }
 
-    public async ValueTask DisposeAsync()
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public async Task DisposeAsync()
     {
         foreach (var factory in _factories)
         {
             await factory.DisposeAsync();
         }
 
-        try
-        {
-            Directory.Delete(_configDirectory, recursive: true);
-        }
-        catch (IOException)
-        {
-            // Best-effort cleanup; a locked SQLite file on Windows must not fail the run.
-        }
+        // The delete used to run bare inside an empty catch (IOException): no pool clear, so it lost
+        // to a pooled handle and said nothing (arb-gphi). ConfigDirectoryTeardown does both halves
+        // and throws if the delete still fails.
+        ConfigDirectoryTeardown.Delete(_configDirectory);
     }
 }
 

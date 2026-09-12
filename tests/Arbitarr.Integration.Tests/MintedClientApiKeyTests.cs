@@ -3,6 +3,7 @@ using Arbitarr.Core.Security;
 using Arbitarr.Core.Sources;
 using Arbitarr.Data.Logging;
 using Arbitarr.Data.Security;
+using Arbitarr.Integration.Tests.TestSupport;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,8 +19,20 @@ namespace Arbitarr.Integration.Tests;
 /// <c>DbClientApiKeyResolver</c>: the bug being fixed was not that the resolver was wrong, it was
 /// that the ROUTES resolved through the config-backed implementation, and only driving the real
 /// routes through the real container can establish that they no longer do.
+///
+/// <para><b>IAsyncLifetime, never <c>System.IAsyncDisposable</c>.</b> xunit v2 awaits
+/// <see cref="IAsyncLifetime"/> and calls <see cref="IDisposable"/>; it does not know about
+/// <c>System.IAsyncDisposable</c> and silently ignores a class that declares only that. This class
+/// declared it, so its teardown had NEVER ONCE RUN — 8 fully INTACT config directories per run,
+/// which is why replacing the body of <c>DisposeAsync</c> alone changed nothing (arb-gphi). With the
+/// interface corrected the teardown runs and the residue drops to 5 partial ones, whose remaining
+/// cause is arb-gz3o — see the note on <see cref="DisposeAsync"/>.
+/// Verified against xunit 2.9.2 in a throwaway project outside the repository: a class implementing
+/// only <c>System.IAsyncDisposable</c> had its <c>DisposeAsync</c> skipped while a sibling's
+/// <c>IDisposable.Dispose</c> ran. A dead teardown reads exactly like a working one at the call
+/// site, so the INTERFACE is the load-bearing part of this declaration.</para>
 /// </summary>
-public sealed class MintedClientApiKeyTests : IAsyncDisposable
+public sealed class MintedClientApiKeyTests : IAsyncLifetime
 {
     // "secret-api-key" is the prefix the pre-commit secret guard allowlists; the suffix keeps it
     // distinctive when searching log rows.
@@ -316,16 +329,34 @@ public sealed class MintedClientApiKeyTests : IAsyncDisposable
     private static async Task FlushLogSinkAsync() =>
         await Task.Delay(SqliteLoggerProvider.FlushInterval + TimeSpan.FromMilliseconds(750));
 
-    public async ValueTask DisposeAsync()
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    /// <summary>
+    /// The delete used to run bare, with no pool clear, inside an empty <c>catch (IOException)</c>
+    /// — and on a <c>DisposeAsync</c> xunit never called at all (see the interface note on the class).
+    /// <see cref="ConfigDirectoryTeardown"/> clears both databases' pools first (arb-gphi).
+    ///
+    /// <para><b>TryDelete rather than Delete, and this is the one class where that is not the
+    /// factories' reason.</b> With the teardown finally running, this class's directory still
+    /// survives it — and MEASURED, the file that wins is <c>arbitarr-logs.db</c>, not
+    /// <c>arbitarr.db</c>: "the process cannot access the file 'arbitarr-logs.db' because it is
+    /// being used by another process", on all five tests. The log store's connection string is built
+    /// with Mode, Cache AND Pooling set and <c>SqlitePools.ClearLogStorePool</c> reproduces that
+    /// shape exactly, so the pool clear is naming the right pool — which means the handle was never
+    /// RETURNED to it. That is a connection outliving disposal, which is <b>arb-gz3o</b>'s open
+    /// question, not this change's: arb-gphi is about teardown that was missing or half-written,
+    /// and this teardown is now complete and still loses.</para>
+    ///
+    /// <para>Throwing here would therefore fail five tests for a defect they do not contain and
+    /// which is already tracked, so the residue is left visible to arb-gz3o rather than converted
+    /// into a red suite. This is NOT the empty <c>catch (IOException)</c> this change removes
+    /// everywhere else: that swallowed an unknown failure silently, whereas this names the file that
+    /// wins, the evidence that the pool clear is correct, and the bead that owns it.</para>
+    /// </summary>
+    public async Task DisposeAsync()
     {
         await _factory.DisposeAsync();
-        try
-        {
-            Directory.Delete(_configDirectory, recursive: true);
-        }
-        catch (IOException)
-        {
-            // Best-effort cleanup; a locked SQLite file on Windows must not fail the run.
-        }
+
+        ConfigDirectoryTeardown.TryDelete(_configDirectory);
     }
 }

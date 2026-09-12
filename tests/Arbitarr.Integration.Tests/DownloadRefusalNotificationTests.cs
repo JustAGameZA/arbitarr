@@ -5,6 +5,7 @@ using Arbitarr.Core.Notifications;
 using Arbitarr.Core.Releases;
 using Arbitarr.Core.Sources;
 using Arbitarr.Data.Notifications;
+using Arbitarr.Integration.Tests.TestSupport;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -36,7 +37,7 @@ namespace Arbitarr.Integration.Tests;
 /// <para>The upstream address is RFC 5737 TEST-NET-1 and the webhook URL an obviously-fake
 /// <c>example.com</c> form: no real endpoint enters committed content.</para>
 /// </summary>
-public sealed class DownloadRefusalNotificationTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class DownloadRefusalNotificationTests : IClassFixture<WebApplicationFactory<Program>>, IDisposable
 {
     private const string ApiKey = "placeholder-refusal-notification-client-key";
 
@@ -58,16 +59,17 @@ public sealed class DownloadRefusalNotificationTests : IClassFixture<WebApplicat
 
     private readonly WebApplicationFactory<Program> _factory;
     private readonly CapturingHandler _handler = new();
+    private readonly string _configDirectory;
 
     public DownloadRefusalNotificationTests(WebApplicationFactory<Program> factory)
     {
-        var configDirectory = Path.Combine(
+        _configDirectory = Path.Combine(
             Path.GetTempPath(), "arbitarr-refusal-notification-tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(configDirectory);
+        Directory.CreateDirectory(_configDirectory);
 
         _factory = factory.WithWebHostBuilder(builder =>
         {
-            builder.UseSetting("Arbitarr:ConfigDir", configDirectory);
+            builder.UseSetting("Arbitarr:ConfigDir", _configDirectory);
             builder.UseSetting("Arbitarr:ApiKey", ApiKey);
 
             builder.ConfigureServices(services =>
@@ -105,6 +107,15 @@ public sealed class DownloadRefusalNotificationTests : IClassFixture<WebApplicat
             });
         });
     }
+
+    /// <summary>
+    /// This class builds its own config directory, so it owns deleting it (arb-gphi). It never did:
+    /// this is the same shape as the nine classes that bead enumerated, found by measuring the
+    /// residue after fixing those rather than from the original list.
+    /// <see cref="ConfigDirectoryTeardown"/> carries why the pool clear and the delete are both
+    /// required.
+    /// </summary>
+    public void Dispose() => ConfigDirectoryTeardown.Delete(_configDirectory);
 
     /// <summary>Records the real serialized bodies the transport posted.</summary>
     private sealed class CapturingHandler : HttpMessageHandler

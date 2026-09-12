@@ -3,6 +3,7 @@ using System.Text.Json;
 using Arbitarr.Data.Entities;
 using Arbitarr.Data.Sources;
 using Arbitarr.Host.Sources;
+using Arbitarr.Integration.Tests.TestSupport;
 using Arbitarr.TestSupport;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -57,26 +58,22 @@ public sealed class SourceResolutionTests
     private static string NewConfigDirectory() =>
         Path.Combine(Path.GetTempPath(), "arbitarr-53b-source-resolution", Guid.NewGuid().ToString("N"));
 
-    private static void Cleanup(string configDirectory)
-    {
-        // Scoped to the databases the host created under THIS test's own config directory rather
-        // than ClearAllPools(), which would also close pooled connections belonging to test classes
-        // running in parallel (arb-rga.3). The host owns these files (it was given the directory
-        // via Arbitarr:ConfigDir and has been disposed by now), so they are NOT wrapped in a
-        // SqliteTestDatabase — that fixture is only for a database the test itself opens.
-        SqlitePools.ClearPoolsForDirectory(configDirectory);
-        try
-        {
-            if (Directory.Exists(configDirectory))
-            {
-                Directory.Delete(configDirectory, recursive: true);
-            }
-        }
-        catch (IOException)
-        {
-            // Best-effort; a locked SQLite file on Windows shouldn't fail the run.
-        }
-    }
+    /// <summary>
+    /// Scoped to the databases the host created under THIS test's own config directory rather than
+    /// ClearAllPools(), which would also close pooled connections belonging to test classes running
+    /// in parallel (arb-rga.3). The host owns these files (it was given the directory via
+    /// <c>Arbitarr:ConfigDir</c> and has been disposed by now), so they are NOT wrapped in a
+    /// <c>SqliteTestDatabase</c> — that fixture is only for a database the test itself opens.
+    ///
+    /// <para>This used to clear only <see cref="SqlitePools.ClearPoolsForDirectory"/> and then
+    /// swallow the failure in an empty <c>catch (IOException)</c>. That is half the teardown and no
+    /// report: without the main database's own clear the delete lost to a pooled handle every time,
+    /// and the catch meant nothing ever said so — 24 directories per run (arb-gphi), the CLAUDE.md
+    /// §4 "absence that was never detectable" shape. <see cref="ConfigDirectoryTeardown"/> does both
+    /// halves and THROWS, so a teardown that stops working fails the class that owns it.</para>
+    /// </summary>
+    private static void Cleanup(string configDirectory) =>
+        ConfigDirectoryTeardown.Delete(configDirectory);
 
     private static async Task<bool> ReadNzbHydraConfiguredAsync(HttpClient client)
     {

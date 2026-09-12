@@ -1,3 +1,4 @@
+using Arbitarr.Integration.Tests.TestSupport;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Xunit;
@@ -158,13 +159,9 @@ public sealed class ReleaseGuidSecretValidationTests : IDisposable
             factory.Dispose();
         }
 
-        try
-        {
-            Directory.Delete(_configDirectory, recursive: true);
-        }
-        catch (IOException)
-        {
-            // A temp directory that will not delete is not a test failure.
-        }
+        // The delete used to run bare inside an empty catch (IOException): no pool clear, so it lost
+        // to a pooled handle and said nothing (arb-gphi). ConfigDirectoryTeardown does both halves
+        // and throws if the delete still fails.
+        ConfigDirectoryTeardown.Delete(_configDirectory);
     }
 }

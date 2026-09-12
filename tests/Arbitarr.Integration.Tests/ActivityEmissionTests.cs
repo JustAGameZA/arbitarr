@@ -3,6 +3,7 @@ using Arbitarr.Api.Dashboard;
 using Arbitarr.Core.Releases;
 using Arbitarr.Core.Sources;
 using Arbitarr.Data.Logging;
+using Arbitarr.Integration.Tests.TestSupport;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,20 +24,21 @@ namespace Arbitarr.Integration.Tests;
 /// would be PERSISTED to the SQLite file in the config bind mount and then served un-gated over
 /// <c>/api/activity</c> for the whole retention window. Plan §9 forbids it; this proves it.
 /// </summary>
-public sealed class ActivityEmissionTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class ActivityEmissionTests : IClassFixture<WebApplicationFactory<Program>>, IDisposable
 {
     private const string ApiKey = "secret-api-key";
 
     private readonly WebApplicationFactory<Program> _factory;
+    private readonly string _configDirectory;
 
     public ActivityEmissionTests(WebApplicationFactory<Program> factory)
     {
-        var configDirectory = Path.Combine(Path.GetTempPath(), "arbitarr-activity-emission-tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(configDirectory);
+        _configDirectory = Path.Combine(Path.GetTempPath(), "arbitarr-activity-emission-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_configDirectory);
 
         _factory = factory.WithWebHostBuilder(builder =>
         {
-            builder.UseSetting("Arbitarr:ConfigDir", configDirectory);
+            builder.UseSetting("Arbitarr:ConfigDir", _configDirectory);
             builder.UseSetting("Arbitarr:ApiKey", ApiKey);
 
             builder.ConfigureServices(services =>
@@ -64,6 +66,13 @@ public sealed class ActivityEmissionTests : IClassFixture<WebApplicationFactory<
             });
         });
     }
+
+    /// <summary>
+    /// This class builds its own config directory, so it owns deleting it (arb-gphi).
+    /// <see cref="ConfigDirectoryTeardown"/> carries why the pool clear and the delete are both
+    /// required.
+    /// </summary>
+    public void Dispose() => ConfigDirectoryTeardown.Delete(_configDirectory);
 
     [Fact]
     public async Task A_real_search_records_a_searchServed_event_that_says_how_it_was_served()

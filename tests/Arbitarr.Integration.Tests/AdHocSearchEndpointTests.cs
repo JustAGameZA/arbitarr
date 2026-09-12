@@ -9,6 +9,7 @@ using Arbitarr.Core.Settings;
 using Arbitarr.Core.Sources;
 using Arbitarr.Data;
 using Arbitarr.Data.Entities;
+using Arbitarr.Integration.Tests.TestSupport;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
@@ -23,21 +24,22 @@ namespace Arbitarr.Integration.Tests;
 /// PaginationSnapshotService/UpstreamMergeStage path as <c>/torznab/api</c>, rendering JSON with
 /// releases untouched (title/size/category/guid) plus cache/rate-limit provenance.
 /// </summary>
-public sealed class AdHocSearchEndpointTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class AdHocSearchEndpointTests : IClassFixture<WebApplicationFactory<Program>>, IDisposable
 {
     private const string AdminKey = "adhoc-search-admin-key";
     private const string Route = "/api/admin/search";
 
     private readonly WebApplicationFactory<Program> _factory;
+    private readonly string _configDirectory;
 
     public AdHocSearchEndpointTests(WebApplicationFactory<Program> factory)
     {
-        var configDirectory = Path.Combine(Path.GetTempPath(), "arbitarr-m7-adhoc-search-tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(configDirectory);
+        _configDirectory = Path.Combine(Path.GetTempPath(), "arbitarr-m7-adhoc-search-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_configDirectory);
 
         _factory = factory.WithWebHostBuilder(builder =>
         {
-            builder.UseSetting("Arbitarr:ConfigDir", configDirectory);
+            builder.UseSetting("Arbitarr:ConfigDir", _configDirectory);
 
             builder.ConfigureServices(services =>
             {
@@ -71,6 +73,13 @@ public sealed class AdHocSearchEndpointTests : IClassFixture<WebApplicationFacto
             });
         });
     }
+
+    /// <summary>
+    /// This class builds its own config directory, so it owns deleting it (arb-gphi).
+    /// <see cref="ConfigDirectoryTeardown"/> carries why the pool clear and the delete are both
+    /// required.
+    /// </summary>
+    public void Dispose() => ConfigDirectoryTeardown.Delete(_configDirectory);
 
     /// <summary>
     /// Swappable per-test fake. Defaults to an instant Accept verdict for every candidate; tests

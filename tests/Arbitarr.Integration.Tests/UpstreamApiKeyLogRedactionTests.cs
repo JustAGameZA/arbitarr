@@ -1,5 +1,6 @@
 using Arbitarr.Core.Sources;
 using Arbitarr.Data.Logging;
+using Arbitarr.Integration.Tests.TestSupport;
 using Arbitarr.Sources.NzbHydra;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -59,7 +60,7 @@ namespace Arbitarr.Integration.Tests;
 /// rather than never arriving.
 /// </para>
 /// </summary>
-public sealed class UpstreamApiKeyLogRedactionTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class UpstreamApiKeyLogRedactionTests : IClassFixture<WebApplicationFactory<Program>>, IDisposable
 {
     // Distinctive enough to find in a log row, and prefixed with the value the pre-commit secret
     // guard allowlists (the convention LogSecretInjectionTests already follows).
@@ -71,16 +72,24 @@ public sealed class UpstreamApiKeyLogRedactionTests : IClassFixture<WebApplicati
     private const string UnreachableUpstream = "http://192.0.2.99:5076/";
 
     private readonly WebApplicationFactory<Program> _factory;
+    private readonly string _configDirectory;
 
     public UpstreamApiKeyLogRedactionTests(WebApplicationFactory<Program> factory)
     {
-        var configDirectory = Path.Combine(
+        _configDirectory = Path.Combine(
             Path.GetTempPath(), "arbitarr-upstream-key-log-tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(configDirectory);
+        Directory.CreateDirectory(_configDirectory);
 
         _factory = factory.WithWebHostBuilder(
-            builder => builder.UseSetting("Arbitarr:ConfigDir", configDirectory));
+            builder => builder.UseSetting("Arbitarr:ConfigDir", _configDirectory));
     }
+
+    /// <summary>
+    /// This class builds its own config directory, so it owns deleting it (arb-gphi).
+    /// <see cref="ConfigDirectoryTeardown"/> carries why the pool clear and the delete are both
+    /// required.
+    /// </summary>
+    public void Dispose() => ConfigDirectoryTeardown.Delete(_configDirectory);
 
     [Theory]
     [InlineData(SearchProtocol.Torznab)]
