@@ -96,7 +96,10 @@ skipped by construction, not by luck. `workflow_dispatch`'s `simulate_test_failu
 (arb-5fs) exercises that path on demand: when set, a step immediately after the test step runs
 `exit 1`, gated on `github.event_name == 'workflow_dispatch' && inputs.simulate_test_failure` so
 it is structurally impossible to fire on `push` or `pull_request`, which never populate that
-input.
+input. Triggering it cannot move the test-count floor even on master: `Record test counts` and
+`Upload test counts` inherit `success()` and never run on a failed run, and the floor lookup
+filters on `status=success`, so running this on a feature branch is prudence rather than the
+guard itself.
 
 **Recorded blind spot** (#182 architectural review): a `TEST_FILTER` change that narrows discovery
 and execution *consistently* to a nonzero count passes every per-assembly check — the shards agree,

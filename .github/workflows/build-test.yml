@@ -456,6 +456,7 @@ jobs:
       # check makes that impossibility structural rather than incidental.
       - name: Simulate test failure (group ${{ matrix.group }})
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.simulate_test_failure }}
+        shell: bash
         run: exit 1
 
       - name: Report peak memory (group ${{ matrix.group }})
@@ -712,6 +713,7 @@ jobs:
       # never see this step fire.
       - name: Simulate test failure (frontend)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.simulate_test_failure }}
+        shell: bash
         run: exit 1
 
       - name: Read frontend test count
