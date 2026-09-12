@@ -20,9 +20,16 @@ namespace Arbitarr.Integration.Tests;
 /// this resolver needs is asserted here for that reason, not because resolution is interesting in
 /// itself.</para>
 ///
-/// <para>The AnimeLists tier is deliberately absent from both the resolver and this test — see
-/// <see cref="SeriesTitleResolver"/>'s remarks and bead arb-5uw. When it is wired, its registration
-/// belongs in the assertions below.</para>
+/// <para>arb-5uw: the AnimeLists tier is now WIRED, and its registration is asserted below for
+/// exactly that reason. It is a required constructor dependency, so a missing registration fails
+/// here and at startup rather than leaving the tier dead — the shape this file was created to
+/// prevent, now covering the tier that first exhibited it.</para>
+///
+/// <para>Registered is not the same as active. The tier's source URL
+/// (<c>Arbitarr:AnimeLists:SourceUrl</c>) has no default, so on a stock host the provider resolves
+/// and reports <see cref="AnimeListsProvider.IsConfigured"/> false — which these tests assert,
+/// because "the registration exists AND the default install performs no third-party fetch" are two
+/// separate claims and both are load-bearing.</para>
 /// </remarks>
 public sealed class IdentityResolverWiringTests : IClassFixture<ArbitarrWebApplicationFactory>
 {
@@ -64,6 +71,58 @@ public sealed class IdentityResolverWiringTests : IClassFixture<ArbitarrWebAppli
         Assert.NotNull(services.GetService<SonarrCredentialProvider>());
         Assert.NotNull(services.GetService<IHttpClientFactory>());
         Assert.NotNull(services.GetService<IMemoryCache>());
+
+        // arb-5uw: ADR 0002's fallback tier. This is the assertion the original shape needed and did
+        // not have -- the provider was registered nowhere, an optional parameter swallowed the null,
+        // and the tier was dead in production while its unit tests passed.
+        Assert.NotNull(services.GetService<AnimeListsProvider>());
+    }
+
+    /// <summary>
+    /// arb-5uw: a stock host has no <c>Arbitarr:AnimeLists:SourceUrl</c>, so the registered tier is
+    /// INACTIVE — it will issue no request and fetch no third-party document until an operator
+    /// configures one.
+    /// </summary>
+    /// <remarks>
+    /// This is the property that let the tier be wired without the owner decision the bead was
+    /// blocked on: no upstream is chosen anywhere in the repository, and no first-run network fetch
+    /// can appear on the search path of an install that never opted in. Asserting the registration
+    /// alone would not show it, since a registration carrying a committed default URL would satisfy
+    /// the test above just as well.
+    /// </remarks>
+    [Fact]
+    public void The_anime_lists_tier_is_registered_but_inactive_until_a_source_url_is_configured()
+    {
+        using var scope = _factory.Services.CreateScope();
+
+        var provider = scope.ServiceProvider.GetRequiredService<AnimeListsProvider>();
+
+        Assert.False(provider.IsConfigured);
+    }
+
+    /// <summary>
+    /// The named client the anime-lists fetch rides on exists and carries its timeout from the
+    /// registration rather than from a per-call or constructor assignment.
+    /// </summary>
+    /// <remarks>
+    /// The same fix, and the same guard, as the *arr client above: <see cref="AnimeListsProvider"/>
+    /// is a SINGLETON holding this POOLED client for the life of the process, and
+    /// <see cref="HttpClient.Timeout"/> throws once a request has started on an instance — so the
+    /// constructor assignment this removed could not survive concurrent use. Asserting the
+    /// registered value here is what keeps that assignment from being restored.
+    /// </remarks>
+    [Fact]
+    public void The_named_anime_lists_client_carries_its_timeout_from_the_registration()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var services = scope.ServiceProvider;
+
+        using var client = services.GetRequiredService<IHttpClientFactory>()
+            .CreateClient(AnimeListsProvider.HttpClientName);
+
+        Assert.Equal(
+            services.GetRequiredService<AnimeListsProviderOptions>().EffectiveRequestTimeout,
+            client.Timeout);
     }
 
     /// <summary>

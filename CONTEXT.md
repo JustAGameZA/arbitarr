@@ -73,6 +73,19 @@ confidence, which source resolved the identity, and flags.
 the *arr instance itself is authoritative, then TheXEM, then the Anime-Lists
 dataset (fetched at runtime, rate-limited, never vendored).
 
+**Inactive tier.** A tier that is **registered but performs no work**, because the
+configuration that would make it useful is unset. Distinct from a broken or absent
+one: it resolves from the container, so a missing registration still fails at
+startup, but every lookup returns `NotConfigured` without touching the network or
+the filesystem. `SeriesTitleResolver`'s Anime-Lists tier is the case in point —
+`Arbitarr:AnimeLists:SourceUrl` (an `appsettings`/environment value, **not** a
+`Settings` row and never in `SettingsCatalog`: it is neither a secret nor an admin-UI
+setting) has **no default**, because choosing the third-party mapping document and
+its licence is the operator's decision and a committed default would also put a
+first-run fetch on the search path of an install that never asked for one. Unset,
+the tier contributes nothing and an unresolved title degrades to the id-only
+upstream request; startup says so once, at Information.
+
 ---
 
 **Protocol answer vs infrastructure error.** A **protocol answer** means the request was
@@ -337,6 +350,22 @@ letting the first key be set at all.
 
 **Write-only.** Said of a key with a write path and no read path anywhere — true
 of both the admin key and source API keys.
+
+**Secret family.** One stored secret and its reader, taken together: one
+repository `ReadApiKeyForUpstreamRequestAsync`, one credential provider, N
+consumers. The source API key is one family; the Sonarr instance key is another.
+The unit matters because the single-caller rule is counted per family — adding a
+consumer is free, adding a *reader* is a new family that needs its own provider.
+
+**Credential provider.** The single type that turns one secret family's stored
+key into a value a consumer may send upstream, and the only caller of that
+family's reader (`SourceCredentialProvider`, `SonarrCredentialProvider`).
+Strictly **outbound**: it produces a credential Arbitarr presents *to* an
+upstream. Do not read it as the inbound counterpart — `CredentialResolution`
+above answers "which caller is this, and at what scope", which is the opposite
+direction and an unrelated type. A provider returns `null` for a
+half-configured family rather than a credential with an empty key.
+See [ADR 0018](docs/adr/0018-one-credential-provider-per-secret-family.md).
 
 **Account / operator.** A human sign-in identity: a username and a password hash.
 "Operator" is the person; "account" is the row. Arbitarr is single-operator by
