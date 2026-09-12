@@ -323,6 +323,17 @@ public sealed class ArbitarrDbContext : DbContext
             // SourceRepository.ValidateBaseUrl already rejects anything that isn't a well-formed
             // absolute http(s) URL before it reaches this table.
             entity.Property(e => e.BaseUrl).IsRequired();
+            // arb-x7w8.1 per-indexer columns. ApiPath/LimitsUnit/NzbAccessMode are required with
+            // defaults so a row migrated in from the previous schema gets the safe value rather than
+            // NULL — notably NzbAccessMode "Proxy", the mode that does NOT expose the key to the
+            // client, so an upgrade never turns an existing source into an exposing one.
+            entity.Property(e => e.ApiPath).IsRequired().HasMaxLength(256).HasDefaultValue("/api");
+            entity.Property(e => e.Priority).IsRequired().HasDefaultValue(0);
+            // TimeoutSeconds, QueryLimit and GrabLimit are deliberately nullable with NO default: for
+            // the two limits NULL means unlimited and is a different state from 0 (see Source.cs), so
+            // a default would silently destroy that distinction on every row that never set one.
+            entity.Property(e => e.LimitsUnit).IsRequired().HasMaxLength(16).HasDefaultValue("Day");
+            entity.Property(e => e.NzbAccessMode).IsRequired().HasMaxLength(16).HasDefaultValue("Proxy");
         });
     }
 }
