@@ -13,6 +13,31 @@ namespace Arbitarr.Integration.Tests;
 /// dashboard endpoints, migrations-on-startup behaviour, and static file serving are all exercised
 /// exactly as they run in production. Callers seed rows via <see cref="SeedAsync"/> before issuing
 /// requests through <see cref="WebApplicationFactory{TEntryPoint}.CreateClient()"/>.
+///
+/// <para><b>xUnit tears this down through <c>Dispose</c> only, never <c>DisposeAsync</c>, and that
+/// is safe (arb-000x).</b> This type is injected as an <c>IClassFixture</c> into ~29 classes in
+/// this assembly. xunit 2.9.2 disposes a class fixture through <c>IDisposable</c> only — it never
+/// calls a fixture's own <see cref="IAsyncDisposable.DisposeAsync"/>, so for every one of those ~29
+/// classes only <see cref="Dispose(bool)"/> below ever runs, not <see cref="DisposeAsync"/>. That is
+/// safe here because <see cref="Dispose(bool)"/> is overridden to drain the host (via
+/// <c>base.Dispose(disposing)</c>) before deleting the config directory — the same drain-then-delete
+/// order <see cref="DisposeAsync"/> uses, just synchronous rather than awaited. Both orderings are
+/// pinned: <see cref="HostDisposalDrainsBackgroundWorkTests.The_synchronous_disposal_path_also_stops_writing"/>
+/// (mutation-proved) covers the drain, and
+/// <see cref="ConfigDirectoryIsDeletedOnDisposalTests.The_synchronous_disposal_path_deletes_the_config_directory"/>
+/// covers the delete.</para>
+///
+/// <para><b>Do NOT add <c>IAsyncLifetime</c> to this class.</b> xunit prepends rather than replaces:
+/// a fixture that implements <c>IAsyncLifetime</c> gets <c>DisposeAsync</c> called AND THEN
+/// <c>Dispose</c> — not one or the other. Since <see cref="Dispose(bool)"/> already deletes the
+/// directory, adding <c>IAsyncLifetime</c> would make every one of the ~29 consumers delete it
+/// TWICE per run, for no behavioural benefit (the ordering property already holds on the sync
+/// path). Worse, it would make <see cref="DisposeAsync"/> look load-bearing for these classes when
+/// it is not, inviting a future edit to remove the <see cref="Dispose(bool)"/> override as
+/// "redundant" — which would silently break the ~29 classes that never call
+/// <see cref="DisposeAsync"/> in the first place. See
+/// [process.md Coverage expectations](../../docs/standards/process.md#coverage-expectations) for
+/// the general xunit-lifetime rule this instance follows.</para>
 /// </summary>
 public sealed class ArbitarrWebApplicationFactory : WebApplicationFactory<Program>
 {
