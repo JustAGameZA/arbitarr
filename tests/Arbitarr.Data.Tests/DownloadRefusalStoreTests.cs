@@ -199,4 +199,87 @@ public sealed class DownloadRefusalStoreTests : IDisposable
 
         Assert.Empty(await new DownloadRefusalStore(context).LoadAllAsync());
     }
+
+    /// <summary>
+    /// arb-pu58: the prune removes only the rows whose source is unknown, and reports how many. The
+    /// SELECTIVITY is the assertion that matters — a blanket delete would satisfy "the orphan is
+    /// gone" while destroying the durability this table exists to provide.
+    /// </summary>
+    [Fact]
+    public async Task Pruning_removes_only_the_rows_whose_source_is_not_known()
+    {
+        using (var context = await CreateMigratedContextAsync())
+        {
+            var store = new DownloadRefusalStore(context);
+            await store.UpsertAsync(new DownloadRefusal("configured", "refused", First, First));
+            await store.UpsertAsync(new DownloadRefusal("also-configured", "refused", First, First));
+            await store.UpsertAsync(new DownloadRefusal("removed", "refused", First, First));
+        }
+
+        using (var context = CreateContext())
+        {
+            var pruned = await new DownloadRefusalStore(context)
+                .PruneUnknownSourcesAsync(["configured", "also-configured"]);
+
+            Assert.Equal(1, pruned);
+        }
+
+        using (var context = CreateContext())
+        {
+            var remaining = await new DownloadRefusalStore(context).LoadAllAsync();
+            Assert.Equal(
+                new[] { "also-configured", "configured" },
+                remaining.Select(r => r.SourceName).ToArray());
+        }
+    }
+
+    /// <summary>
+    /// arb-pu58: an EMPTY known-set means the sources table is empty, so every row is orphaned and
+    /// every row goes. This pins the behaviour against the tempting "guard" — short-circuiting an
+    /// empty set into a no-op — which would reintroduce the bug for an install that has removed its
+    /// only source, the very case the bead describes.
+    /// </summary>
+    [Fact]
+    public async Task Pruning_against_no_known_sources_removes_every_row()
+    {
+        using (var context = await CreateMigratedContextAsync())
+        {
+            await new DownloadRefusalStore(context).UpsertAsync(
+                new DownloadRefusal("removed", "refused", First, First));
+        }
+
+        using (var context = CreateContext())
+        {
+            Assert.Equal(1, await new DownloadRefusalStore(context).PruneUnknownSourcesAsync([]));
+        }
+
+        using (var context = CreateContext())
+        {
+            Assert.Empty(await new DownloadRefusalStore(context).LoadAllAsync());
+        }
+    }
+
+    /// <summary>
+    /// arb-pu58: a prune with nothing to do removes nothing and reports zero — which is what makes
+    /// the counts above measurements rather than numbers that happen to match.
+    /// </summary>
+    [Fact]
+    public async Task Pruning_when_every_source_is_known_removes_nothing()
+    {
+        using (var context = await CreateMigratedContextAsync())
+        {
+            await new DownloadRefusalStore(context).UpsertAsync(
+                new DownloadRefusal("configured", "refused", First, First));
+        }
+
+        using (var context = CreateContext())
+        {
+            Assert.Equal(0, await new DownloadRefusalStore(context).PruneUnknownSourcesAsync(["configured"]));
+        }
+
+        using (var context = CreateContext())
+        {
+            Assert.Single(await new DownloadRefusalStore(context).LoadAllAsync());
+        }
+    }
 }

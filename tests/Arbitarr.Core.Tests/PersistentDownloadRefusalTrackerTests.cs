@@ -26,6 +26,8 @@ public class PersistentDownloadRefusalTrackerTests
 
         public int DeleteCount { get; private set; }
 
+        public int PruneCount { get; private set; }
+
         public Exception? FailWith { get; set; }
 
         public Task UpsertAsync(DownloadRefusal refusal, CancellationToken cancellationToken = default)
@@ -50,6 +52,34 @@ public class PersistentDownloadRefusalTrackerTests
 
             _rows.Remove(sourceName);
             return Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// arb-pu58: a REAL prune, not a no-op, for the same reason nothing else here is a mock —
+        /// the rehydration assertions are only meaningful against a store that genuinely removes what
+        /// it reports removing. An empty set prunes everything, exactly as the real store does; see
+        /// the interface doc for why that is correct rather than a guard to add.
+        /// </summary>
+        public Task<int> PruneUnknownSourcesAsync(
+            IReadOnlyCollection<string> knownSourceNames,
+            CancellationToken cancellationToken = default)
+        {
+            PruneCount++;
+            if (FailWith is not null)
+            {
+                return Task.FromException<int>(FailWith);
+            }
+
+            var orphaned = _rows.Keys
+                .Where(name => !knownSourceNames.Contains(name, StringComparer.Ordinal))
+                .ToArray();
+
+            foreach (var name in orphaned)
+            {
+                _rows.Remove(name);
+            }
+
+            return Task.FromResult(orphaned.Length);
         }
 
         public Task<IReadOnlyList<DownloadRefusal>> LoadAllAsync(CancellationToken cancellationToken = default)
@@ -139,7 +169,7 @@ public class PersistentDownloadRefusalTrackerTests
         var tracker = CreateTracker(store);
         Assert.Empty(tracker.Snapshot());
 
-        await tracker.RehydrateAsync();
+        await tracker.RehydrateAsync(["nzbhydra2"]);
 
         var refusal = Assert.Single(tracker.Snapshot());
         Assert.Equal("nzbhydra2", refusal.SourceName);
@@ -157,7 +187,7 @@ public class PersistentDownloadRefusalTrackerTests
         await store.UpsertAsync(new DownloadRefusal("nzbhydra2", "refused", At, At));
 
         var tracker = CreateTracker(store);
-        await tracker.RehydrateAsync();
+        await tracker.RehydrateAsync(["nzbhydra2"]);
 
         var refusal = Assert.Single(tracker.Snapshot());
         Assert.Equal(At, refusal.ObservedSinceUtc);
@@ -169,7 +199,7 @@ public class PersistentDownloadRefusalTrackerTests
     {
         var tracker = CreateTracker(new FakeStore());
 
-        await tracker.RehydrateAsync();
+        await tracker.RehydrateAsync(["nzbhydra2"]);
 
         Assert.Empty(tracker.Snapshot());
     }
@@ -182,7 +212,7 @@ public class PersistentDownloadRefusalTrackerTests
         await store.UpsertAsync(new DownloadRefusal("alpha", "refused", At, At));
 
         var tracker = CreateTracker(store);
-        await tracker.RehydrateAsync();
+        await tracker.RehydrateAsync(["alpha", "zeta"]);
 
         Assert.Equal(new[] { "alpha", "zeta" }, tracker.Snapshot().Select(r => r.SourceName).ToArray());
     }
@@ -222,6 +252,54 @@ public class PersistentDownloadRefusalTrackerTests
     }
 
     /// <summary>
+    /// arb-pu58: a row whose source is no longer configured is neither replayed into memory nor left
+    /// in the store. Both halves matter: replaying it would ghost the Dashboard now, and leaving the
+    /// row would bring it back at the next start even if this pass had filtered it out of the
+    /// snapshot.
+    ///
+    /// <para>The still-configured source is the control. It proves the prune is SELECTIVE — a
+    /// blanket delete would satisfy every assertion about the orphan while silently discarding the
+    /// durability arb-v3w added.</para>
+    /// </summary>
+    [Fact]
+    public async Task Rehydration_prunes_rows_for_unknown_sources_and_keeps_the_rest()
+    {
+        var store = new FakeStore();
+        await store.UpsertAsync(new DownloadRefusal("configured", "refused", At, At));
+        await store.UpsertAsync(new DownloadRefusal("removed", "refused", At, At));
+
+        var tracker = CreateTracker(store);
+
+        var pruned = await tracker.RehydrateAsync(["configured"]);
+
+        Assert.Equal(1, pruned);
+        Assert.Equal(1, store.PruneCount);
+
+        var refusal = Assert.Single(tracker.Snapshot());
+        Assert.Equal("configured", refusal.SourceName);
+
+        // The row itself is gone, not merely absent from the replay.
+        var remaining = Assert.Single(await store.LoadAllAsync());
+        Assert.Equal("configured", remaining.SourceName);
+    }
+
+    /// <summary>
+    /// arb-pu58: with every source still configured the pass prunes nothing and reports zero, so the
+    /// count asserted above is a measurement rather than a constant that happens to agree.
+    /// </summary>
+    [Fact]
+    public async Task Rehydration_prunes_nothing_when_every_source_is_still_configured()
+    {
+        var store = new FakeStore();
+        await store.UpsertAsync(new DownloadRefusal("configured", "refused", At, At));
+
+        var tracker = CreateTracker(store);
+
+        Assert.Equal(0, await tracker.RehydrateAsync(["configured"]));
+        Assert.Single(tracker.Snapshot());
+    }
+
+    /// <summary>
     /// Rehydration, unlike the write paths, does NOT swallow: its caller is the startup service,
     /// which must be able to tell an empty database from an unreadable one in order to log it.
     /// </summary>
@@ -231,7 +309,7 @@ public class PersistentDownloadRefusalTrackerTests
         var store = new FakeStore { FailWith = new InvalidOperationException("database is unreadable") };
         var tracker = CreateTracker(store);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => tracker.RehydrateAsync());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => tracker.RehydrateAsync(["nzbhydra2"]));
     }
 
     [Fact]
