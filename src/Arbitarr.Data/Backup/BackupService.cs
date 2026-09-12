@@ -143,18 +143,47 @@ public sealed class BackupService
     /// archive through this same method — one implementation of "which schema is this file at",
     /// used on both the write and the read side, so the two can never drift.
     /// </summary>
-    public static string? ReadAppliedMigrationId(string databasePath)
+    public static string? ReadAppliedMigrationId(string databasePath) =>
+        ReadMigrationIdWith(DatabaseConnectionStrings.Maintenance(databasePath));
+
+    /// <summary>
+    /// The same read against a STAGED UPLOAD — a file extracted from an untrusted archive that the
+    /// caller must be able to DELETE as soon as this returns.
+    ///
+    /// <para><b>A separate entry point rather than a flag on the method above, because the two
+    /// differ in more than a connection string.</b> The pooled shape is correct for the live and
+    /// snapshot paths and wrong here: this file is not the application database, so
+    /// <c>DatabaseConnectionStrings.ForDatabase</c> does not enumerate its shape and no
+    /// <c>ClearPoolsFor</c> ever reaches its pool — a pooled handle here simply outlives the
+    /// method, and <c>BackupArchiveValidator</c>'s cleanup then fails to delete the file on Windows
+    /// and swallows the error (arb-zupt). Naming the case at the call site is what stops a staged
+    /// path being handed to the pooled overload by a reader who has no way to see the difference
+    /// matters.</para>
+    ///
+    /// <para>This is the SECOND place a staged file is opened; the first is
+    /// <c>BackupArchiveValidator.IsReadableSqliteDatabase</c>. Both are now unpooled, which is what
+    /// makes the SchemaTooNew refusal — which returns between this read and the cleanup — leave
+    /// nothing staged.</para>
+    /// </summary>
+    public static string? ReadStagedUploadMigrationId(string stagedPath) =>
+        ReadMigrationIdWith(DatabaseConnectionStrings.StagedUpload(stagedPath));
+
+    /// <summary>
+    /// The shared body. Takes the finished connection string so the pooling decision is made by the
+    /// caller that knows which kind of file it holds, and is visible in the name it called.
+    /// </summary>
+    private static string? ReadMigrationIdWith(string connectionString)
     {
-        // From DatabaseConnectionStrings, never formatted inline. This method takes an ARBITRARY
-        // path: today's production callers pass a snapshot temp file (SnapshotDatabase's output)
-        // and a staged archive's extracted database (BackupArchiveValidator), neither of which a
-        // restore replaces — but nothing about the signature stops the LIVE path arriving, and
-        // BackupServiceTests already passes it. Taking the string from the one builder makes this
-        // site safe whichever path it is handed: if it is the live one, the pool it fills is one
-        // SqlitePoolCleaner already knows to clear (arb-n21), and no caller has to know which case
-        // it is in.
-        using var connection = new SqliteConnection(
-            DatabaseConnectionStrings.Maintenance(databasePath));
+        // From DatabaseConnectionStrings, never formatted inline. The public entry points above take
+        // an ARBITRARY path: today's production callers pass a snapshot temp file
+        // (SnapshotDatabase's output) and a staged archive's extracted database
+        // (BackupArchiveValidator), neither of which a restore replaces — but nothing about the
+        // signature stops the LIVE path arriving, and BackupServiceTests already passes it. Taking
+        // the string from the one builder makes the pooled site safe whichever path it is handed: if
+        // it is the live one, the pool it fills is one SqlitePoolCleaner already knows to clear
+        // (arb-n21). That reasoning does NOT extend to a staged file, which is why that case has its
+        // own unpooled entry point rather than sharing this one's default.
+        using var connection = new SqliteConnection(connectionString);
         connection.Open();
 
         // Two statements, not one CASE expression. SQLite PREPARES a whole statement before

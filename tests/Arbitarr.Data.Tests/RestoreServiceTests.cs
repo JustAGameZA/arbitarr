@@ -105,18 +105,35 @@ public sealed class RestoreServiceTests : IDisposable
         Assert.Equal(BackupValidationFailure.CorruptDatabase, result.Failure);
     }
 
+    /// <summary>
+    /// AC5, plus the arb-zupt residue pin for this refusal.
+    ///
+    /// <para><b>Why the "leaves nothing staged" half belongs HERE and not only on the corrupt-
+    /// database test.</b> A corrupt database is refused at the readability check, which is the FIRST
+    /// place the staged file is opened. SchemaTooNew is refused later, after a SECOND open — the
+    /// migration-id read — and it returns between that read and the <c>finally</c>'s cleanup. So
+    /// this is the only refusal that can leak through the second handle, and while that read was
+    /// pooled it did: the corrupt-database test could never catch it, because a corrupt file returns
+    /// before the migration-id read runs at all.</para>
+    /// </summary>
     [Fact]
     public void Validation_refuses_a_newer_schema_and_names_both_versions()
     {
-        // AC5. Silently accepting this produces a database the running build cannot read, and the
+        // Silently accepting this produces a database the running build cannot read, and the
         // failure surfaces later and somewhere else.
         var path = BuildArchive(includeDatabase: true, includeSecret: true, migrationId: FutureMigration);
 
-        var result = BackupArchiveValidator.Validate(path, KnownMigrations, _paths.StagingDirectory);
+        var stagedBefore = CountStagedValidationFiles();
+        using var result = BackupArchiveValidator.Validate(path, KnownMigrations, _paths.StagingDirectory);
 
         Assert.Equal(BackupValidationFailure.SchemaTooNew, result.Failure);
         Assert.Contains(FutureMigration, result.Message, StringComparison.Ordinal);
         Assert.Contains(CurrentMigration, result.Message, StringComparison.Ordinal);
+
+        // As in the corrupt-database test: the validator always CALLS File.Delete on what it
+        // staged, so a surviving file means the delete threw and was swallowed — and the only thing
+        // that makes it throw is an open handle, here the migration-id read's.
+        Assert.Equal(stagedBefore, CountStagedValidationFiles());
     }
 
     [Fact]
@@ -174,6 +191,48 @@ public sealed class RestoreServiceTests : IDisposable
         Assert.Null(result.StagedDatabasePath);
 
         // Nothing was extracted: the refusal came from the declared length, before any write.
+        Assert.Equal(stagedBefore, CountStagedValidationFiles());
+    }
+
+    /// <summary>
+    /// arb-zupt: the CORRUPT-DATABASE refusal also leaves nothing staged — the case the test above
+    /// cannot reach.
+    ///
+    /// <para><b>Why this is a distinct case and not a second spelling of the same one.</b> The bomb
+    /// above is refused from the central directory, before a byte is written and long before
+    /// anything is opened as SQLite. A corrupt database is the only refusal that gets as far as
+    /// <c>BackupArchiveValidator.IsReadableSqliteDatabase</c> and no further — the staged file is
+    /// handed to SQLite in TWO places, this readability check and the migration-id read after it
+    /// (<c>BackupService.ReadStagedUploadMigrationId</c>), and a corrupt file returns before the
+    /// second runs. Both are unpooled; the refusal that can leak through the second one is
+    /// SchemaTooNew, pinned in
+    /// <see cref="Validation_refuses_a_newer_schema_and_names_both_versions"/>. This path was the
+    /// one that leaked through the FIRST: the read-only connection was pooled, its
+    /// <c>Dispose</c> returned the handle rather than closing the file, and the <c>finally</c>'s
+    /// <c>TryDelete</c> swallowed the resulting IOException. The refusal reported success and
+    /// <c>arbitarr-restore-validate-&lt;guid&gt;.db</c> stayed on disk.</para>
+    ///
+    /// <para><b>This class's <c>Dispose</c> does not mask it.</b> The
+    /// <c>SqlitePools.ClearPoolsForDirectory</c> there runs at TEARDOWN, after this assertion has
+    /// already been evaluated, so the pooled handle is still held at the moment that matters. What
+    /// the teardown clear does hide is the DIRECTORY residue, which is why the leak surfaced in
+    /// <c>Arbitarr.Integration.Tests</c> (whose factory has no such clear) and not here.</para>
+    /// </summary>
+    [Fact]
+    public void A_corrupt_database_refusal_leaves_nothing_staged()
+    {
+        var path = BuildArchiveWithCorruptDatabase();
+
+        var stagedBefore = CountStagedValidationFiles();
+        using var result = BackupArchiveValidator.Validate(path, KnownMigrations, _paths.StagingDirectory);
+
+        // The refusal must be the corrupt-database one: refused any earlier and the SQLite open this
+        // test exists to check never happened.
+        Assert.Equal(BackupValidationFailure.CorruptDatabase, result.Failure);
+        Assert.Null(result.StagedDatabasePath);
+
+        // The validator always CALLS File.Delete on what it staged, so a surviving file means that
+        // delete threw and was swallowed — and the only thing that makes it throw is an open handle.
         Assert.Equal(stagedBefore, CountStagedValidationFiles());
     }
 
@@ -462,6 +521,25 @@ public sealed class RestoreServiceTests : IDisposable
         Directory.Exists(_paths.StagingDirectory)
             ? Directory.EnumerateFiles(_paths.StagingDirectory, "arbitarr-restore-validate-*").Count()
             : 0;
+
+    /// <summary>
+    /// An archive that is structurally a complete backup — both entries present and correctly named
+    /// — whose database entry is not a SQLite file. Refused by the integrity check rather than by
+    /// any earlier structural one, which is what makes it the archive that reaches the SQLite open.
+    /// </summary>
+    private string BuildArchiveWithCorruptDatabase()
+    {
+        var path = Path.Combine(_configDirectory, "corrupt-" + Guid.NewGuid().ToString("N") + ".zip");
+
+        using (var stream = new FileStream(path, FileMode.Create))
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Create))
+        {
+            WriteTextEntry(archive, BackupArchiveLayout.DatabaseEntryName, "not a SQLite file at all");
+            WriteBytesEntry(archive, BackupArchiveLayout.SecretKeyEntryName, RandomNumberGenerator.GetBytes(32));
+        }
+
+        return path;
+    }
 
     /// <summary>
     /// An archive whose database entry HONESTLY declares more than

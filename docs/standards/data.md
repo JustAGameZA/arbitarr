@@ -107,6 +107,15 @@ carries on reading the old database while the restored one sits on disk looking 
 store's string is deliberately absent from that set — it names a separate file a restore never
 replaces, and clearing it would be the over-reach described next.
 
+**A connection against a file that is not the application database and must be deletable when the
+method returns — a staged upload under inspection — must set `Pooling = false` rather than rely on a
+later clear.** Being outside `ForDatabase` cuts both ways: no `ClearPoolsFor` enumerates that shape,
+so nothing ever reaches its pool, and `Dispose` on a pooled handle only *returns* it rather than
+closing the file. The handle then outlives the method and the delete fails, which on a refusal path
+means residue left behind while the caller reports it cleaned up (`BackupArchiveValidator`,
+arb-zupt). Closing by construction also survives a return or throw between `Open` and any later
+clear, which a pool clear does not.
+
 **`ArbitarrDbContextOptionsFactory.Create` passes `contextOwnsConnection: true`, and that argument
 is load-bearing** — the `UseSqlite(DbConnection)` overload's default is the opposite, leaving
 ownership with the caller, so a disposed `ArbitarrDbContext` does not dispose its connection and the
