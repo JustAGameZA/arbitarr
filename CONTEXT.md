@@ -429,7 +429,7 @@ means *the line was too long*. Reading the first as the second understates a
 redaction failure.
 
 **Backup archive.** The zip `GET /api/admin/backup` produces: a consistent
-snapshot of `arbitarr.db` (taken through SQLite'''s backup API, not a file copy),
+snapshot of `arbitarr.db` (taken through SQLite's backup API, not a file copy),
 `release-guid-secret.key`, and a manifest naming the instant and schema version.
 It excludes `arbitarr-logs.db`, which is the only store left out
 (`BackupArchiveLayout`). It is a **credential-bearing file**, and the snapshot is of
