@@ -337,26 +337,30 @@ public sealed class ActivityEmissionTests : IAsyncLifetime
     ///
     /// <para><b>Read from <see cref="LogStore"/> rather than over <c>GET /api/admin/logs</c>.</b> The
     /// two serve the same rows, and the HTTP route would additionally depend on the admin gate: this
-    /// fixture seeds NO admin key, so the request would be admitted only via the #43 unconfigured-key
+    /// fixture seeds NO admin key -- the <c>Arbitarr:ApiKey</c> setting configured above is the
+    /// CLIENT/torznab key (see Program.cs), a distinct concept from <c>SettingKey.AdminApiKey</c>,
+    /// which this fixture never seeds -- so the request would be admitted only via the #43 unconfigured-key
     /// bootstrap bypass, which is also scoped to local-network callers. That is a working but
     /// incidental reason for a diagnostic to succeed, and it would start returning 401 the day
     /// anything seeds a key into this fixture — silently turning the capture back off, which is the
     /// exact failure this exists to prevent. The store is the same data with none of that coupling.
     /// <see cref="LogSecretInjectionTests"/> reads it the same way.</para>
     ///
-    /// <para><b>The flush wait is not optional.</b> The sink batches on
-    /// <see cref="SqliteLoggerProvider.FlushInterval"/> and never writes on the request thread (#65
-    /// AC5), so a read taken immediately after the failing request would usually find nothing and
-    /// report "no Error rows" for a run that had in fact logged one — a diagnostic that lies about
-    /// its own subject. Paid only on the failure path, so it costs a green run nothing.</para>
+    /// <para><b>The flush wait is not optional, but it is now a bounded poll rather than a fixed
+    /// sleep.</b> The sink batches on <see cref="SqliteLoggerProvider.FlushInterval"/> and never
+    /// writes on the request thread (#65 AC5), so a read taken immediately after the failing
+    /// request would usually find nothing and report "no Error rows" for a run that had in fact
+    /// logged one — a diagnostic that lies about its own subject. Rather than sleeping a fixed
+    /// FlushInterval+750ms, poll the store every ~75ms for up to ~3s and stop as soon as it
+    /// returns a non-empty page, then use whatever was captured (this is diagnostics for the
+    /// failure path only; it does not change the caller's assertion or add retry semantics to any
+    /// test). Paid only on the failure path, so it costs a green run nothing.</para>
     ///
     /// <para>The message says explicitly when the set is EMPTY. "No rows" and "rows not read yet"
     /// are different diagnoses and the next reader must not have to guess which they are holding.</para>
     /// </summary>
     private async Task<string> DescribeFailureWithErrorLogsAsync(HttpResponseMessage response)
     {
-        await Task.Delay(SqliteLoggerProvider.FlushInterval + TimeSpan.FromMilliseconds(750));
-
         var body = await response.Content.ReadAsStringAsync();
         var lines = new List<string>
         {
@@ -369,7 +373,16 @@ public sealed class ActivityEmissionTests : IAsyncLifetime
         try
         {
             var store = _factory.Services.GetRequiredService<LogStore>();
+
+            // Bounded poll instead of a fixed sleep: stop as soon as a row shows up, and give up
+            // after ~3s (well beyond FlushInterval) if the sink genuinely wrote nothing.
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(3);
             var page = await store.ReadAsync(level: "Error", logger: null, page: 1, pageSize: 50);
+            while (page.Entries.Count == 0 && DateTime.UtcNow < deadline)
+            {
+                await Task.Delay(75);
+                page = await store.ReadAsync(level: "Error", logger: null, page: 1, pageSize: 50);
+            }
 
             if (page.Entries.Count == 0)
             {
