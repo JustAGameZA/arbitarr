@@ -60,10 +60,18 @@ function stubObserver() {
   return {
     observed,
     disconnect,
-    intersect(...ids: string[]) {
+    /**
+     * Fires the observer callback. `tops` gives each intersecting id's
+     * `boundingClientRect.top` (defaulting to 0, i.e. exactly at a
+     * zero-positioned band -- callers that care about the topmost comparison
+     * pass real values); entries not present in `tops` but named in `ids`
+     * fall back to the default so existing single-id calls are unaffected.
+     */
+    intersect(ids: string[], tops: Record<string, number> = {}) {
       const records = observed.map((target) => ({
         target,
         isIntersecting: ids.includes(target.id),
+        boundingClientRect: { top: tops[target.id] ?? 0 } as DOMRectReadOnly,
       })) as unknown as IntersectionObserverEntry[];
       // act() is required, not decorative: the callback drives a setState from
       // outside React's event system, so without it the re-render has not been
@@ -109,7 +117,7 @@ describe('SectionNav', () => {
     const observer = stubObserver();
     renderNav();
 
-    observer.intersect('sources');
+    observer.intersect(['sources']);
 
     const current = screen.getByRole('link', { current: true });
     expect(current).toHaveTextContent('Sources');
@@ -122,21 +130,51 @@ describe('SectionNav', () => {
     const observer = stubObserver();
     renderNav();
 
-    observer.intersect('sources');
+    observer.intersect(['sources']);
     expect(screen.getByRole('link', { current: true })).toHaveTextContent('Sources');
 
-    observer.intersect('caching');
+    observer.intersect(['caching']);
     expect(screen.getByRole('link', { current: true })).toHaveTextContent('Caching');
   });
 
-  it('highlights the topmost section when several are on screen at once', () => {
+  it('highlights the section whose top has reached the band, not whichever is first in array order', () => {
     const observer = stubObserver();
     renderNav();
 
     // Reported out of document order on purpose: the callback's array order is
-    // not the page's, so taking the last reported entry would highlight the
-    // section furthest DOWN the page when scrolling up.
-    observer.intersect('caching', 'sources');
+    // not the page's. Sources' top (40) has reached the band (bandTop 0);
+    // Caching's top (500) has not, so on document order alone -- with no
+    // geometry -- a naive "first in array" pick could still land on either.
+    // The real signal is geometry: Sources is inside the band, Caching is not.
+    observer.intersect(['caching', 'sources'], { caching: 500, sources: 40 });
+
+    expect(screen.getByRole('link', { current: true })).toHaveTextContent('Sources');
+  });
+
+  it('prefers the section whose start is inside the band over a taller one merely bleeding into it', () => {
+    const observer = stubObserver();
+    renderNav();
+
+    // Account is a tall preceding section still overlapping the band from
+    // above (its top is well above bandTop, at -400); Sources' own top has
+    // scrolled to just inside the band (10, >= bandTop 0). The array-order
+    // `find` this replaces would have picked Account here (it comes first in
+    // `entries`) purely because of that ordering, with identical geometry to
+    // the reverse-order case in the previous test.
+    observer.intersect(['account', 'sources'], { account: -400, sources: 10 });
+
+    expect(screen.getByRole('link', { current: true })).toHaveTextContent('Sources');
+  });
+
+  it('falls back to the entry nearest the band from above when none has reached it yet', () => {
+    const observer = stubObserver();
+    renderNav();
+
+    // Both intersecting sections' tops are still above the band (bandTop 0):
+    // Account is far above (-800), Sources is closer (-50). Neither "has
+    // reached" the band, so the nearest-from-above fallback applies, and
+    // Sources -- the larger (less negative) top -- wins.
+    observer.intersect(['account', 'sources'], { account: -800, sources: -50 });
 
     expect(screen.getByRole('link', { current: true })).toHaveTextContent('Sources');
   });
@@ -145,14 +183,59 @@ describe('SectionNav', () => {
     const observer = stubObserver();
     renderNav();
 
-    observer.intersect('sources');
+    observer.intersect(['sources']);
     expect(screen.getByRole('link', { current: true })).toHaveTextContent('Sources');
 
     // Scrolling through a gap between sections should not blank the highlight;
     // the operator is still nearest the section they just left.
-    observer.intersect();
+    observer.intersect([]);
 
     expect(screen.getByRole('link', { current: true })).toHaveTextContent('Sources');
+  });
+
+  it('highlights the clicked entry immediately, before the observer reports anything', () => {
+    renderNav();
+
+    act(() => {
+      screen.getByRole('link', { name: 'Caching' }).click();
+    });
+
+    expect(screen.getByRole('link', { current: true })).toHaveTextContent('Caching');
+  });
+
+  it('highlights a clicked entry that can never intersect the band (observer reports nothing for it)', () => {
+    const observer = stubObserver();
+    renderNav();
+
+    act(() => {
+      screen.getByRole('link', { name: 'Caching' }).click();
+    });
+
+    // The section is short and sits below the last reachable scroll position
+    // (arb-81x8 bug 1): the observer never reports it as intersecting at all,
+    // so the click must be what holds the highlight, not the observer.
+    observer.intersect(['account']);
+
+    expect(screen.getByRole('link', { current: true })).toHaveTextContent('Caching');
+  });
+
+  it('does not let a stale observer callback for a different entry steal the highlight right after a click', () => {
+    const observer = stubObserver();
+    renderNav();
+
+    act(() => {
+      screen.getByRole('link', { name: 'Caching' }).click();
+    });
+
+    // A callback naming a DIFFERENT entry, fired while the page is still
+    // mid-scroll toward the clicked target -- exactly the burst a smooth
+    // scroll produces for whatever the viewport passes on the way.
+    observer.intersect(['account'], { account: 20 });
+    expect(screen.getByRole('link', { current: true })).toHaveTextContent('Caching');
+
+    // Once the clicked target itself is reported, the observer resumes.
+    observer.intersect(['caching'], { caching: 20 });
+    expect(screen.getByRole('link', { current: true })).toHaveTextContent('Caching');
   });
 
   it('disconnects the observer on unmount', () => {
