@@ -95,9 +95,8 @@ public sealed class SonarrKeyIsScrubbedFromLogsTests : IClassFixture<ArbitarrWeb
     /// <para>The test above plants exactly one key, so a mutant in which each cleanser arm redacts
     /// only its FIRST match passed it — measured. A retry logged alongside its original is the
     /// realistic shape that produces two, and the second key is what this asserts on. Two separate
-    /// URIs rather than two parameters of one: in <c>?apikey=A&amp;token=B</c> the cleanser's later
-    /// <c>NamedCredential</c> arm redacts <c>B</c> on its own first match, so that shape survives
-    /// the mutant only accidentally and would be a vacuous plant.</para>
+    /// URIs rather than two parameters of one: under the mutant, <c>?apikey=A&amp;token=B</c> still
+    /// ends with no <c>B</c> in the output, so that shape passes and would be a vacuous plant.</para>
     /// </summary>
     [Fact]
     public void A_second_key_bearing_uri_in_the_same_line_is_scrubbed_too()

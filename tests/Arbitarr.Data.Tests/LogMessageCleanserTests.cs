@@ -83,9 +83,13 @@ public sealed class LogMessageCleanserTests
     /// <para>Each test above plants exactly one value per shape, so a mutant in which each arm
     /// replaces only its FIRST match passed this entire file — measured. The planted secret in each
     /// row below is the fragment MEASURED to survive that mutant. Note the query row uses two
-    /// SEPARATE urls rather than two parameters of one url: in <c>?apikey=A&amp;token=B</c> the
-    /// later <c>NamedCredential</c> arm redacts <c>B</c> on its own first match, so that shape
-    /// passes under the mutant and would be a vacuous plant.</para>
+    /// SEPARATE urls rather than two parameters of one url: under the mutant, <c>?apikey=A&amp;token=B</c>
+    /// still ends with no <c>B</c> in the output, so that shape passes and would be a vacuous
+    /// plant.</para>
+    ///
+    /// <para>The webhook row below plants its second value across the Discord and Telegram URLs
+    /// deliberately: those are two matches of the ONE <c>WebhookUrl</c> arm, and must not be
+    /// simplified to a single URL, or the row stops exercising a second match at all.</para>
     /// </summary>
     [Theory]
     [InlineData(

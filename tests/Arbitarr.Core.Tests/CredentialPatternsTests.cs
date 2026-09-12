@@ -82,11 +82,9 @@ public class CredentialPatternsTests
     /// <para><b>The planted secret is the fragment MEASURED to survive the mutant, not simply "the
     /// second value".</b> That distinction is load-bearing, and the query arm is why. Writing the
     /// two credentials as adjacent parameters of ONE url (<c>?apikey=A&amp;token=B</c>) looks like
-    /// the natural plant and is VACUOUS: the query arm does leave <c>B</c> behind under the mutant,
-    /// but the later <c>NamedCredential</c> arm then matches <c>token=B</c> on its own first
-    /// match and redacts it anyway, so the row passes under the mutant and proves nothing. Two
-    /// SEPARATE query occurrences are used instead, which no later arm mops up. Re-measure before
-    /// changing any of these strings.</para>
+    /// the natural plant and is VACUOUS: under the mutant that row still ends with no <c>B</c> in
+    /// the output, so it passes and proves nothing. Two SEPARATE query occurrences are used
+    /// instead, which no later arm mops up. Re-measure before changing any of these strings.</para>
     /// </summary>
     public static TheoryData<string, string> SecondOccurrenceCorpus() => new()
     {
