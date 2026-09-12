@@ -1,4 +1,5 @@
 using System.Net;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using Arbitarr.Core.Ai;
 using Arbitarr.Core.Diagnostics;
@@ -104,15 +105,34 @@ public sealed class SanitizedErrorDescriptionTests
     /// unauthenticated caller is the specific harm this type was created to prevent, and admitting
     /// upstream text is exactly the change that could reintroduce it.
     /// </summary>
-    [Theory]
-    [InlineData("ollama.internal.example")]
-    [InlineData("ollama.internal.example:11434")]
-    [InlineData("http://ollama.internal.example:11434/api/chat")]
-    [InlineData("192.0.2.138")]
-    [InlineData("192.0.2.138:31434")]
-    public void A_planted_host_in_the_body_never_reaches_the_description(string plantedHost)
+    /// <summary>
+    /// arb-19r3: expressed as (excerpt text, planted host) rather than as a bare host list, so these
+    /// rows carry the same shape as every other planted-excerpt corpus here and join
+    /// <see cref="PlantedExcerptBodies"/>. The sentence around the host is the one this theory
+    /// always built — no row's behaviour changes. Without these rows the <c>Url</c> and
+    /// <c>IpAddress</c> arms have no fixed-point coverage at all: the guard Fact was added in this
+    /// same change and FAILED on exactly those two arms until this corpus was included, which is
+    /// the gap working as intended rather than a hypothetical.
+    /// </summary>
+    public static TheoryData<string, string> PlantedHostCorpus() => new()
     {
-        var body = $$"""{"error":"upstream {{plantedHost}} refused the request"}""";
+        { "upstream ollama.internal.example refused the request", "ollama.internal.example" },
+        { "upstream ollama.internal.example:11434 refused the request", "ollama.internal.example:11434" },
+        {
+            "upstream http://ollama.internal.example:11434/api/chat refused the request",
+            "http://ollama.internal.example:11434/api/chat"
+        },
+        { "upstream 192.0.2.138 refused the request", "192.0.2.138" },
+        { "upstream 192.0.2.138:31434 refused the request", "192.0.2.138:31434" },
+    };
+
+    [Theory]
+    [MemberData(nameof(PlantedHostCorpus))]
+    public void A_planted_host_in_the_body_never_reaches_the_description(
+        string excerptText,
+        string plantedHost)
+    {
+        var body = $$"""{"error":"{{excerptText}}"}""";
 
         Assert.Contains(plantedHost, body, StringComparison.Ordinal);
 
@@ -363,47 +383,54 @@ public sealed class SanitizedErrorDescriptionTests
     /// findable in the input by the same search that then asserts its absence, and the redaction
     /// token is asserted PRESENT so a wholesale-dropped excerpt cannot pass as a scrubbed one.</para>
     /// </summary>
+    public static TheoryData<string, string> ShapesTheOriginalPatternsMissedCorpus() => new()
+    {
+        // Single-label host named by a connection verb — no dot, no port.
+        { "upstream ollama-gpu-rig rejected the request", "ollama-gpu-rig" },
+        { "dial mediabox failed", "mediabox" },
+        { "refused via ollama-gpu-rig", "ollama-gpu-rig" },
+        // Two-label names on private-network suffixes.
+        { "cannot reach ollama.lan right now", "ollama.lan" },
+        { "cannot reach nas.local right now", "nas.local" },
+        { "cannot reach box.home right now", "box.home" },
+        // IPv6, bracketed and bare, with and without a port. RFC 3849 documentation prefix.
+        //
+        // The planted value asserted here is a FRAGMENT of the address, not the whole literal, and
+        // that is deliberate: without the IPv6 arm, HostWithPort eats "db8:1234" out of the middle
+        // and publishes "[2001:<redacted>::42]:11434". A whole-literal assertion passes against
+        // that — the literal really is absent — while the address is on the dashboard. Asserting a
+        // surviving fragment is what makes the row bite; the mutation run in the PR body shows it
+        // failing.
+        { "dial tcp [2001:db8:1234::42]:11434: connect refused", "::42" },
+        { "dial tcp [2001:db8:1234::42]: connect refused", "::42" },
+        { "peer 2001:db8:1234::42 went away", "::42" },
+        // #195 review: a bare address FOLLOWED BY A PORT. The hex-group cap stops at four
+        // characters, so the port used to be split and a digit left beside the token — the planted
+        // value is the whole port for that reason.
+        { "dial tcp fd00:1234:5678::42:11434: connect refused", "11434" },
+        // #195 review: %zone matched neither form, so the whole address published. Planted on the
+        // zone id, which nothing else in the pipeline can redact.
+        { "peer fe80::1%eth0 went away", "eth0" },
+        { "dial tcp [fe80::1%eth0]:11434 refused", "eth0" },
+        // #195 review: TWO-GROUP compressed addresses escaped the bare form entirely — fd00::42 is
+        // the ULA this file's own comments cite.
+        //
+        // The planted value is the SUFFIX, not the whole literal, for the same reason the bracketed
+        // rows above plant "::42": against the vulnerable pattern the contextual arm still eats the
+        // leading label, publishing "<redacted>::1" — which does not contain "fe80::1", so a
+        // whole-literal assertion passes while the address is on the dashboard. Verified by
+        // mutation; see the PR.
+        { "peer fe80::1 went away", "::1" },
+        { "peer fd00::42 went away", "::42" },
+        { "peer fe80::abcd went away", "::abcd" },
+        // Percent-encoded URL: no literal "://" for the URL pattern to anchor on.
+        { "proxy http%3A%2F%2Follama.internal.example%3A11434%2Fapi%2Fchat denied", "ollama.internal.example" },
+        // Bare credential with no separator and no scheme.
+        { "invalid key sk-live-PLACEHOLDER9f8e7d6c", "sk-live-PLACEHOLDER9f8e7d6c" },
+    };
+
     [Theory]
-    // Single-label host named by a connection verb — no dot, no port.
-    [InlineData("upstream ollama-gpu-rig rejected the request", "ollama-gpu-rig")]
-    [InlineData("dial mediabox failed", "mediabox")]
-    [InlineData("refused via ollama-gpu-rig", "ollama-gpu-rig")]
-    // Two-label names on private-network suffixes.
-    [InlineData("cannot reach ollama.lan right now", "ollama.lan")]
-    [InlineData("cannot reach nas.local right now", "nas.local")]
-    [InlineData("cannot reach box.home right now", "box.home")]
-    // IPv6, bracketed and bare, with and without a port. RFC 3849 documentation prefix.
-    //
-    // The planted value asserted here is a FRAGMENT of the address, not the whole literal, and that
-    // is deliberate: without the IPv6 arm, HostWithPort eats "db8:1234" out of the middle and
-    // publishes "[2001:<redacted>::42]:11434". A whole-literal assertion passes against that — the
-    // literal really is absent — while the address is on the dashboard. Asserting a surviving
-    // fragment is what makes the row bite; the mutation run in the PR body shows it failing.
-    [InlineData("dial tcp [2001:db8:1234::42]:11434: connect refused", "::42")]
-    [InlineData("dial tcp [2001:db8:1234::42]: connect refused", "::42")]
-    [InlineData("peer 2001:db8:1234::42 went away", "::42")]
-    // #195 review: a bare address FOLLOWED BY A PORT. The hex-group cap stops at four characters,
-    // so the port used to be split and a digit left beside the token — the planted value is the
-    // whole port for that reason.
-    [InlineData("dial tcp fd00:1234:5678::42:11434: connect refused", "11434")]
-    // #195 review: %zone matched neither form, so the whole address published. Planted on the zone
-    // id, which nothing else in the pipeline can redact.
-    [InlineData("peer fe80::1%eth0 went away", "eth0")]
-    [InlineData("dial tcp [fe80::1%eth0]:11434 refused", "eth0")]
-    // #195 review: TWO-GROUP compressed addresses escaped the bare form entirely — fd00::42 is the
-    // ULA this file's own comments cite.
-    //
-    // The planted value is the SUFFIX, not the whole literal, for the same reason the bracketed rows
-    // above plant "::42": against the vulnerable pattern the contextual arm still eats the leading
-    // label, publishing "<redacted>::1" — which does not contain "fe80::1", so a whole-literal
-    // assertion passes while the address is on the dashboard. Verified by mutation; see the PR.
-    [InlineData("peer fe80::1 went away", "::1")]
-    [InlineData("peer fd00::42 went away", "::42")]
-    [InlineData("peer fe80::abcd went away", "::abcd")]
-    // Percent-encoded URL: no literal "://" for the URL pattern to anchor on.
-    [InlineData("proxy http%3A%2F%2Follama.internal.example%3A11434%2Fapi%2Fchat denied", "ollama.internal.example")]
-    // Bare credential with no separator and no scheme.
-    [InlineData("invalid key sk-live-PLACEHOLDER9f8e7d6c", "sk-live-PLACEHOLDER9f8e7d6c")]
+    [MemberData(nameof(ShapesTheOriginalPatternsMissedCorpus))]
     public void A_host_or_credential_shape_the_original_patterns_missed_is_now_redacted(
         string excerptText,
         string plantedValue)
@@ -475,12 +502,17 @@ public sealed class SanitizedErrorDescriptionTests
     /// the input by the same search that then asserts its absence, and the redaction token is
     /// asserted present so a wholesale-dropped excerpt cannot pass as a scrubbed one.</para>
     /// </summary>
+    public static TheoryData<string, string> SecondOccurrenceCorpus() => new()
+    {
+        // Two host:port peers. The surviving fragment is the second port, stranded beside the token.
+        { "upstream a.internal.example:11434 then b.internal.example:11434", ":11434" },
+        // Two bare IPv6 peers. The contextual arm eats the second address's leading label,
+        // stranding its compressed suffix.
+        { "peer fd00::42 and peer fe80::1 gone", "::1" },
+    };
+
     [Theory]
-    // Two host:port peers. The surviving fragment is the second port, stranded beside the token.
-    [InlineData("upstream a.internal.example:11434 then b.internal.example:11434", ":11434")]
-    // Two bare IPv6 peers. The contextual arm eats the second address's leading label, stranding
-    // its compressed suffix.
-    [InlineData("peer fd00::42 and peer fe80::1 gone", "::1")]
+    [MemberData(nameof(SecondOccurrenceCorpus))]
     public void A_second_occurrence_of_the_same_shape_is_redacted_too(
         string excerptText,
         string plantedFragment)
@@ -545,9 +577,14 @@ public sealed class SanitizedErrorDescriptionTests
     /// <para>This test exists so that widening the IPv6 arm further, or narrowing it to win these
     /// back, is a visible change to a recorded decision rather than an unnoticed side effect.</para>
     /// </summary>
+    public static TheoryData<string, string> OverScrubbedHexCorpus() => new()
+    {
+        { "checksum aa:bb:cc ok", "aa:bb:cc" },
+        { "at 12:34:56 the job ran", "12:34:56" },
+    };
+
     [Theory]
-    [InlineData("checksum aa:bb:cc ok", "aa:bb:cc")]
-    [InlineData("at 12:34:56 the job ran", "12:34:56")]
+    [MemberData(nameof(OverScrubbedHexCorpus))]
     public void Hex_shaped_runs_are_over_scrubbed_on_purpose(string excerptText, string overScrubbed)
     {
         var body = $$"""{"error":"{{excerptText}}"}""";
@@ -573,25 +610,32 @@ public sealed class SanitizedErrorDescriptionTests
     /// one (CLAUDE.md §4). Every row below plants the exact substring the OLD pattern left visible,
     /// verified by running the pre-fix scrubber over each input.</para>
     /// </summary>
+    public static TheoryData<string, string> SecurityReviewShapesCorpus() => new()
+    {
+        // (1) Double-encoded URL. Survived: the stranded first label and the encoded port. The
+        // dotted middle was already being eaten, which is precisely why the whole URL is the wrong
+        // plant.
+        { "proxy error for http%253A%252F%252Follama.internal.example%253A11434%252Fapi", "%253A11434" },
+        { "proxy error for http%253A%252F%252Follama.internal.example%253A11434%252Fapi", "%252F%252Follama" },
+        // (2) Trigger-word punctuation: colon, quote, and a bare Host header with no port to catch
+        // it.
+        { "upstream: ollama-gpu-rig refused", "ollama-gpu-rig" },
+        { "upstream \\\"ollama-gpu-rig\\\" refused", "ollama-gpu-rig" },
+        { "Host: ollama-gpu-rig", "ollama-gpu-rig" },
+        // (3) Underscore hostname — a Docker Compose service name.
+        { "dial tcp gpu_box_example:11434: refused", "gpu_box_example" },
+        // (4) Two-label names on suffixes outside the old allowlist.
+        { "cannot reach mediabox.box", "mediabox.box" },
+        { "cannot reach nas.localhost", "nas.localhost" },
+        { "cannot reach relay.onion", "relay.onion" },
+        // (5) Credential value class: '.' and '+' split the run, stranding the high-entropy tail.
+        { "invalid key sk.live+PLACEHOLDER.9f8e supplied", "PLACEHOLDER.9f8e" },
+        // (7) UNC path: the server name carries no dot, no port and no scheme, so nothing saw it.
+        { "read failed \\\\\\\\NASBOX\\\\media\\\\share", "NASBOX" },
+    };
+
     [Theory]
-    // (1) Double-encoded URL. Survived: the stranded first label and the encoded port. The dotted
-    // middle was already being eaten, which is precisely why the whole URL is the wrong plant.
-    [InlineData("proxy error for http%253A%252F%252Follama.internal.example%253A11434%252Fapi", "%253A11434")]
-    [InlineData("proxy error for http%253A%252F%252Follama.internal.example%253A11434%252Fapi", "%252F%252Follama")]
-    // (2) Trigger-word punctuation: colon, quote, and a bare Host header with no port to catch it.
-    [InlineData("upstream: ollama-gpu-rig refused", "ollama-gpu-rig")]
-    [InlineData("upstream \\\"ollama-gpu-rig\\\" refused", "ollama-gpu-rig")]
-    [InlineData("Host: ollama-gpu-rig", "ollama-gpu-rig")]
-    // (3) Underscore hostname — a Docker Compose service name.
-    [InlineData("dial tcp gpu_box_example:11434: refused", "gpu_box_example")]
-    // (4) Two-label names on suffixes outside the old allowlist.
-    [InlineData("cannot reach mediabox.box", "mediabox.box")]
-    [InlineData("cannot reach nas.localhost", "nas.localhost")]
-    [InlineData("cannot reach relay.onion", "relay.onion")]
-    // (5) Credential value class: '.' and '+' split the run, stranding the high-entropy tail.
-    [InlineData("invalid key sk.live+PLACEHOLDER.9f8e supplied", "PLACEHOLDER.9f8e")]
-    // (7) UNC path: the server name carries no dot, no port and no scheme, so nothing saw it.
-    [InlineData("read failed \\\\\\\\NASBOX\\\\media\\\\share", "NASBOX")]
+    [MemberData(nameof(SecurityReviewShapesCorpus))]
     public void The_shapes_the_security_review_found_no_longer_publish(
         string excerptText,
         string plantedToken)
@@ -796,20 +840,75 @@ public sealed class SanitizedErrorDescriptionTests
     /// on why the public surface is used instead). No new secrets: every row here is a body already
     /// planted by another test above.
     ///
-    /// <para><b>Not a vacuous property.</b> The class-level remark on <c>ScrubForPublication</c>
-    /// states idempotence as a property of the composition of ALL arms; a mutation run in a
-    /// throwaway console project outside this repo confirmed a deliberately non-idempotent stand-in
-    /// transformation (one that redacts only the first bare-label match per pass, so a second pass
-    /// finds a new label-shaped token the first pass left behind) fails this exact fixed-point check
-    /// on every row below: "Failures: 5 / 5" against the five rows reused here. This test would catch
-    /// that stand-in; it is not the same as merely asserting an empty set contains nothing.</para>
+    /// <para><b>Not a vacuous property, and re-measured for arb-19r3 against the WIDER corpus.</b>
+    /// The class-level remark on <c>ScrubForPublication</c> states idempotence as a property of the
+    /// composition of ALL arms. A mutation run in a throwaway console project outside this repo
+    /// (nothing from it is in this repository) drove both mutants over the exact corpus this theory
+    /// now consumes, 36 rows:
+    /// <list type="bullet">
+    /// <item>A deliberately NON-IDEMPOTENT stand-in — one that redacts only the first bare-label
+    /// match per pass, so a second pass finds a new label-shaped token the first left behind —
+    /// failed the fixed-point assertion on <b>36 / 36</b> rows (it was 5 / 5 against #292's five
+    /// hand-picked rows; the corpus is what widened it).</item>
+    /// <item>An IDENTITY stand-in that returns its input unchanged <b>trivially satisfied the
+    /// fixed-point assertion on 36 / 36</b> rows — which is precisely why the non-vacuity assertion
+    /// below is not optional. Against that same stand-in the non-vacuity assertion fails 36 / 36.</item>
+    /// </list>
+    /// So this test catches both a scrubber that does too little and one that never settles; it is
+    /// not the same as merely asserting an empty set contains nothing.</para>
+    ///
+    /// <para><b>arb-19r3: the rows are no longer hand-picked.</b> They were five
+    /// <c>InlineData</c> literals, one per arm family, so a fixture added for a FUTURE arm joined
+    /// this property only if someone remembered to add a sixth — the gap the #292 architecture
+    /// review named. The rows now come from <see cref="FixedPointCorpus"/>, which unions every
+    /// planted-excerpt corpus in this file, so a row added to any per-arm scrub theory joins the
+    /// fixed-point property by construction rather than by memory.</para>
+    ///
+    /// <para><b>Why a UNION of the existing corpora rather than one corpus feeding everything.</b>
+    /// The per-arm theories do not all assert the same property, and two of them are mutually
+    /// exclusive with this one: <see cref="Useful_detail_is_not_eaten_by_the_widened_patterns"/>
+    /// requires its rows to be scrubbed as LITTLE as possible — several of its rows are unchanged by
+    /// the scrubber, which is the whole point of them — while the non-vacuity assertion below
+    /// requires every row to CHANGE. Merging those into one corpus would force one of the two
+    /// properties to be weakened to accommodate the other. Unioning instead keeps each per-arm
+    /// theory's rows exactly as they were (so the executed count only rises, never falls) and adds
+    /// them all to this property.</para>
+    ///
+    /// <para><b>Per-row non-vacuity is asserted, not assumed.</b> A fixed-point check is trivially
+    /// satisfied by a scrubber that does nothing at all — <c>x == x</c> for any <c>x</c> — so each
+    /// row first asserts the FIRST pass changed the text (CLAUDE.md §4's positive control, in the
+    /// form this property needs). A row whose body the scrubber leaves untouched is therefore a
+    /// FAILING test, not a silently skipped one; if a future row belongs in this file but is not
+    /// meant to change, it belongs in the negative theory instead.</para>
     /// </summary>
+    public static TheoryData<string> FixedPointCorpus()
+    {
+        var data = new TheoryData<string>();
+
+        foreach (var excerptText in PlantedExcerptBodies())
+        {
+            data.Add(excerptText);
+        }
+
+        return data;
+    }
+
+    /// <summary>
+    /// Every planted excerpt body in this file, de-duplicated. The single place that knows which
+    /// corpora exist — <see cref="Every_arm_family_has_at_least_one_corpus_row"/> reads it too, so
+    /// the guard and the property can never be looking at different sets.
+    /// </summary>
+    private static IEnumerable<string> PlantedExcerptBodies() =>
+        PlantedHostCorpus()
+            .Concat(ShapesTheOriginalPatternsMissedCorpus())
+            .Concat(SecondOccurrenceCorpus())
+            .Concat(SecurityReviewShapesCorpus())
+            .Concat(OverScrubbedHexCorpus())
+            .Select(row => (string)row[0]!)
+            .Distinct(StringComparer.Ordinal);
+
     [Theory]
-    [InlineData("upstream ollama.internal.example refused the request")]
-    [InlineData("dial tcp gpu_box_example:11434: connect: connection refused")]
-    [InlineData("peer fe80::1%eth0 went away")]
-    [InlineData("invalid key sk-live-PLACEHOLDER9f8e7d6c")]
-    [InlineData("cannot reach mediabox.box")]
+    [MemberData(nameof(FixedPointCorpus))]
     public void Scrubbing_an_already_scrubbed_excerpt_reaches_a_fixed_point(string excerptText)
     {
         var body = $$"""{"error":"{{excerptText}}"}""";
@@ -822,10 +921,75 @@ public sealed class SanitizedErrorDescriptionTests
         // OUTPUT would prepend a second exception header and compare unequal for a reason that has
         // nothing to do with the scrub arms.
         var excerptOnce = describedOnce[(describedOnce.IndexOf(": ", StringComparison.Ordinal) + 2)..];
+
+        // NON-VACUITY, per row: the first pass actually changed something. Without this a scrubber
+        // that returns its input unchanged satisfies the fixed-point assertion below on every row.
+        Assert.NotEqual(body, excerptOnce);
+        Assert.Contains(SanitizedErrorDescription.Replacement, excerptOnce, StringComparison.Ordinal);
+
         var describedTwice = SanitizedErrorDescription.Describe(
             new OllamaRequestException(HttpStatusCode.BadRequest, excerptOnce));
         var excerptTwice = describedTwice[(describedTwice.IndexOf(": ", StringComparison.Ordinal) + 2)..];
 
         Assert.Equal(excerptOnce, excerptTwice);
+    }
+
+    /// <summary>
+    /// arb-19r3: <b>the corpus covers every scrub arm, so a new arm added without a fixture
+    /// FAILS.</b>
+    ///
+    /// <para>The fixed-point property is only as wide as the corpus feeding it. Making the corpus
+    /// the union of the per-arm theories removes the "remember to add a sixth row" gap for arms
+    /// that ALREADY have a fixture, but not for a newly added arm with none: that arm would compile,
+    /// run, and be exercised by nothing — the same gap
+    /// <c>CredentialPatternsTests.Every_arm_is_matched_by_at_least_one_corpus_row</c> (arb-01z)
+    /// closes for the shared credential arms. This is that mechanism, reused against the host arms
+    /// this file owns.</para>
+    ///
+    /// <para><b>Why reflection over <c>[GeneratedRegex]</c> members rather than a hand-kept name
+    /// list</b> — for the reason given in full on that test: a hand-kept list is the
+    /// "kept in step by a comment" pattern that has already drifted here once, and discovering arms
+    /// by attribute means a renamed arm needs no edit while an UNCOVERED one fails.</para>
+    ///
+    /// <para><b>Why each arm is matched against its OWN pattern, not against the pipeline's
+    /// output.</b> Running the corpus through <c>Describe</c> and checking that something was
+    /// redacted would let one arm's match hide another arm's total lack of coverage — the vacuous
+    /// "some row has it" shape CLAUDE.md §4 warns against. Each arm's compiled <see cref="Regex"/>
+    /// is invoked directly, so an arm is credited only by a match against ITSELF.</para>
+    ///
+    /// <para>The arms are private, so they are reached by reflection rather than by name; that is
+    /// also why there is no <c>InternalsVisibleTo</c> dependency here.</para>
+    /// </summary>
+    [Fact]
+    public void Every_arm_family_has_at_least_one_corpus_row()
+    {
+        var arms = typeof(SanitizedErrorDescription)
+            .GetMethods(BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Static)
+            .Where(m => m.ReturnType == typeof(Regex) && m.GetParameters().Length == 0)
+            .Where(m => m.GetCustomAttributes().Any(a => a.GetType().Name == "GeneratedRegexAttribute"))
+            .ToList();
+
+        // Sanity floor: if reflection stopped finding the arms (a signature shape it no longer
+        // matches, say), an empty list would make Assert.All below pass vacuously over nothing.
+        // Nine is the arm count at the time of writing; a NEW arm raises it, which is the point.
+        Assert.True(arms.Count >= 9, $"Expected at least 9 GeneratedRegex arms, found {arms.Count}.");
+
+        // The bodies as the scrubber actually receives them — wrapped in the JSON envelope the
+        // per-arm theories build — so an arm that only matches in context is still credited.
+        var corpusBodies = PlantedExcerptBodies()
+            .Select(excerptText => $$"""{"error":"{{excerptText}}"}""")
+            .ToList();
+
+        Assert.All(arms, method =>
+        {
+            var regex = (Regex)method.Invoke(null, null)!;
+            var matchedByAnyRow = corpusBodies.Any(body => regex.IsMatch(body));
+
+            Assert.True(
+                matchedByAnyRow,
+                $"Arm \"{method.Name}\" is matched by no row in the planted-excerpt corpus — " +
+                "add a row whose planted value has this arm's shape, which also joins it to " +
+                nameof(Scrubbing_an_already_scrubbed_excerpt_reaches_a_fixed_point) + ".");
+        });
     }
 }
