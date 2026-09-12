@@ -28,6 +28,15 @@ const SECRET_URL = 'https://example.com/hooks/placeholder-super-secret-webhook-t
 /** The token half, searched separately so a leak of only the path still fails. */
 const SECRET_TOKEN = 'placeholder-super-secret-webhook-token';
 
+const ALL_TRIGGERS = [
+  'SourceFailing',
+  'SourceRecovered',
+  'SuppressionRateHigh',
+  'SuppressionRateNormal',
+  'DownloadRefused',
+  'DownloadRefusalCleared',
+];
+
 const unconfigured = {
   enabled: false,
   hasWebhookUrl: false,
@@ -35,6 +44,7 @@ const unconfigured = {
   suppressionRateThreshold: 0.5,
   suppressionRateWindow: '01:00:00',
   enabledTriggers: ['SourceFailing', 'SourceRecovered'],
+  availableTriggers: ALL_TRIGGERS,
   lastDeliveryOutcome: null,
   lastDeliveryAt: null,
 };
@@ -390,6 +400,31 @@ describe('Notifications section', () => {
     expect(
       screen.getByRole('checkbox', { name: /Download refusal cleared/ }),
     ).not.toBeChecked();
+  });
+
+  it('renders a catalogue entry the local labels map does not know about, with a fallback label, rather than dropping it', async () => {
+    const user = userEvent.setup();
+    // arb-4xna: a trigger the server ships that predates this build's TRIGGER_LABELS
+    // entry for it. Deriving the checkbox list from a hand-maintained local array
+    // would make this silently vanish from the page — and therefore from the next
+    // save's `enabledTriggers`, which is exactly the shape that lets the
+    // repository's complement-of-enabled storage silently disable it.
+    const api = mockApi({
+      [ROUTE]: {
+        body: { ...unconfigured, availableTriggers: [...ALL_TRIGGERS, 'RestorePerformed'] },
+      },
+    });
+    renderSurface(<NotificationsSection />);
+
+    const checkbox = await screen.findByRole('checkbox', { name: /RestorePerformed/ });
+    expect(checkbox).not.toBeChecked();
+
+    await user.click(checkbox);
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    // The unrecognised name round-trips verbatim into the save, not coerced or
+    // dropped — the property that closes the silent-disable hole.
+    expect(lastPutBody(api).enabledTriggers).toContain('RestorePerformed');
   });
 
   it('sends the redirect-refusal triggers when toggled on', async () => {

@@ -21,6 +21,14 @@ namespace Arbitarr.Api.Admin;
 /// string or a status code — <see cref="NotificationDeliveryOutcome"/> is closed precisely so this
 /// field cannot carry text derived from the target or its response.
 /// </param>
+/// <param name="AvailableTriggers">
+/// Every <see cref="NotificationTrigger"/> member name, unfiltered by which are enabled (arb-4xna).
+/// The client renders its checkbox list from THIS rather than from a hand-maintained local array, so
+/// a trigger added to the enum in future shows up on the page (and therefore in the next save's
+/// <c>enabledTriggers</c>) the moment the server ships it, instead of silently landing in the
+/// persisted disabled set the way <see cref="NotificationRepository.SetSettingsAsync"/>'s
+/// complement-of-enabled storage would otherwise do to a client that has not caught up.
+/// </param>
 public sealed record NotificationConfigResponse(
     bool Enabled,
     bool HasWebhookUrl,
@@ -28,6 +36,7 @@ public sealed record NotificationConfigResponse(
     double SuppressionRateThreshold,
     string SuppressionRateWindow,
     IReadOnlyList<string> EnabledTriggers,
+    IReadOnlyList<string> AvailableTriggers,
     string? LastDeliveryOutcome,
     DateTimeOffset? LastDeliveryAt);
 
@@ -40,13 +49,31 @@ public sealed record NotificationConfigResponse(
 /// treating omission as a clear would make an ordinary threshold edit silently destroy the
 /// operator's target. Clearing is <c>DELETE /api/admin/notifications/webhook</c>, explicitly.
 /// </summary>
+/// <param name="KnownTriggers">
+/// arb-4xna: the full set of trigger names the CLIENT believes exist — not which are enabled,
+/// <paramref name="EnabledTriggers"/> is that. Required whenever <paramref name="EnabledTriggers"/>
+/// is sent, and checked only for its COUNT against the server's current
+/// <see cref="NotificationTrigger"/> member count.
+///
+/// <para><see cref="NotificationRepository.SetSettingsAsync"/> persists the DISABLED set as the
+/// complement of <paramref name="EnabledTriggers"/>, precisely so a trigger added to the enum after
+/// an operator's last save defaults to enabled rather than muted. That guarantee depends on every
+/// save actually knowing about every current trigger: a client built before a trigger existed has no
+/// way to include it in <paramref name="EnabledTriggers"/>, and without this field the very save
+/// meant to leave it alone would instead compute it into the complement and disable it — silently,
+/// with no error. Comparing <paramref name="EnabledTriggers"/>'s own count against the enum would not
+/// catch this, because an operator legitimately unchecking every box produces exactly that same
+/// short count; only a count the client asserts is "everything I know about", separate from "what I
+/// have enabled", tells the two apart.</para>
+/// </param>
 public sealed record UpdateNotificationConfigRequest(
     bool? Enabled,
     string? WebhookUrl,
     int? ConsecutiveFailureThreshold,
     double? SuppressionRateThreshold,
     string? SuppressionRateWindow,
-    IReadOnlyList<string>? EnabledTriggers);
+    IReadOnlyList<string>? EnabledTriggers,
+    IReadOnlyList<string>? KnownTriggers);
 
 /// <summary>The outcome of <c>POST /api/admin/notifications/test</c>.</summary>
 /// <param name="Outcome">
@@ -168,6 +195,22 @@ public static class AdminNotificationEndpoints
                 parsed.Add(trigger);
             }
 
+            // arb-4xna: see UpdateNotificationConfigRequest.KnownTriggers. A save that names any
+            // EnabledTriggers at all must also declare the full universe it believes exists, and that
+            // universe's COUNT must cover every trigger the server currently has — otherwise the
+            // repository's complement-of-enabled storage would silently disable whichever trigger the
+            // client did not know to name. Checked by count alone: no trigger NAME beyond what the
+            // per-name loop above already allows is required to explain the rejection.
+            var knownTriggerCount = Enum.GetValues<NotificationTrigger>().Length;
+            if (request.KnownTriggers is null || request.KnownTriggers.Count < knownTriggerCount)
+            {
+                return Results.BadRequest(new
+                {
+                    error = $"A request that sets enabledTriggers must also send knownTriggers naming all {knownTriggerCount} " +
+                        "current triggers, so the server can tell an operator's real choice from a client that predates a newer trigger.",
+                });
+            }
+
             triggers = parsed;
         }
 
@@ -281,6 +324,7 @@ public static class AdminNotificationEndpoints
             SuppressionRateThreshold: settings.SuppressionRateThreshold,
             SuppressionRateWindow: settings.SuppressionRateWindow.ToString(),
             EnabledTriggers: settings.EnabledTriggers.Select(t => t.ToString()).OrderBy(t => t, StringComparer.Ordinal).ToList(),
+            AvailableTriggers: Enum.GetValues<NotificationTrigger>().Select(t => t.ToString()).ToList(),
             LastDeliveryOutcome: lastDelivery?.Outcome.ToString(),
             LastDeliveryAt: lastDelivery?.At);
     }

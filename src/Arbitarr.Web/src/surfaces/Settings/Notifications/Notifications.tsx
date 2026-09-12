@@ -19,54 +19,71 @@ import {
 } from './queries';
 
 /**
- * The six triggers #57 and #247 ship, in the order an operator reads them:
- * each failing condition immediately followed by its closing edge.
+ * Friendlier labels and descriptions for the triggers #57 and #247 shipped, in
+ * the order an operator reads them: each failing condition immediately
+ * followed by its closing edge.
  *
- * Enumerated here rather than derived from the server's `enabledTriggers`,
- * which lists only the ones currently ON — deriving the checkbox list from it
- * would make a disabled trigger vanish from the page entirely and leave no way
- * to switch it back on. The names are the server's `NotificationTrigger` enum
- * verbatim; the PUT rejects anything else by name.
+ * THIS IS A LABELS LOOKUP, NOT THE CHECKBOX LIST'S SOURCE OF TRUTH (arb-4xna).
+ * The list rendered on the page is `config.availableTriggers` — every member
+ * of the server's `NotificationTrigger` enum, sent on every GET — with this
+ * map consulted only for wording. Deriving the checkbox list from
+ * `enabledTriggers` (which lists only the ones currently ON) would make a
+ * disabled trigger vanish from the page entirely and leave no way to switch it
+ * back on; deriving it from a hand-maintained local array like this one used
+ * to be would make a trigger the server adds in future silently absent from
+ * both the page and the next save's `enabledTriggers` — which is exactly the
+ * shape that lets `NotificationRepository.SetSettingsAsync`'s
+ * complement-of-enabled storage silently disable it. A catalogue entry with no
+ * entry here still renders, using `fallbackTriggerLabel` for its wording.
  *
  * #57's issue text also named "Restore was performed", which has no emitter
  * until #56 lands. Adding it here and to the server's enum is the whole change
- * when it does.
+ * when it does — and until it lands with a label of its own, it renders with
+ * the fallback wording.
  */
-const TRIGGERS: { name: NotificationTrigger; label: string; description: string }[] = [
-  {
-    name: 'SourceFailing',
+const TRIGGER_LABELS: Record<NotificationTrigger, { label: string; description: string }> = {
+  SourceFailing: {
     label: 'Source started failing',
     description: 'A source crossed the consecutive-failure threshold below.',
   },
-  {
-    name: 'SourceRecovered',
+  SourceRecovered: {
     label: 'Source recovered',
     description: 'A source that had been reported as failing answered successfully again.',
   },
-  {
-    name: 'SuppressionRateHigh',
+  SuppressionRateHigh: {
     label: 'Suppression rate high',
     description: 'The suppression rate over the window below crossed the threshold below.',
   },
-  {
-    name: 'SuppressionRateNormal',
+  SuppressionRateNormal: {
     label: 'Suppression rate back to normal',
     description:
       'The rate fell back under the threshold. Without this one, a rate reported as high and never reported as recovered cannot be told from a still-broken rule.',
   },
-  {
-    name: 'DownloadRefused',
+  DownloadRefused: {
     label: 'Source refusing downloads',
     description:
       'A source started refusing downloads with a redirect. Fires once when the refusal is first seen, never again per retry.',
   },
-  {
-    name: 'DownloadRefusalCleared',
+  DownloadRefusalCleared: {
     label: 'Download refusal cleared',
     description:
       'A source that had been refusing downloads served one successfully again. Fires once when the refusal clears, the closing edge of the trigger above.',
   },
-];
+};
+
+/**
+ * Wording for a catalogue entry this build's `TRIGGER_LABELS` does not know
+ * about yet (arb-4xna) — a trigger the server added after this client was
+ * built. The raw name is shown rather than nothing, so the operator can still
+ * find and toggle it; it is never dropped from the list merely for being
+ * unrecognised.
+ */
+function fallbackTriggerLabel(name: string): { label: string; description: string } {
+  return {
+    label: name,
+    description: 'A notification trigger added on the server that this page has no description for yet.',
+  };
+}
 
 /**
  * What each delivery outcome means to the operator, in the client's own words.
@@ -179,10 +196,10 @@ function NotificationForm({
   );
   const [rateThreshold, setRateThreshold] = useState(String(config.suppressionRateThreshold));
   const [evaluationWindow, setEvaluationWindow] = useState(config.suppressionRateWindow);
-  const [triggers, setTriggers] = useState<NotificationTrigger[]>(config.enabledTriggers);
+  const [triggers, setTriggers] = useState<string[]>(config.enabledTriggers);
   const [confirmingClear, setConfirmingClear] = useState(false);
 
-  const toggleTrigger = (name: NotificationTrigger) =>
+  const toggleTrigger = (name: string) =>
     setTriggers((current) =>
       current.includes(name) ? current.filter((t) => t !== name) : [...current, name],
     );
@@ -202,6 +219,11 @@ function NotificationForm({
       suppressionRateThreshold: Number(rateThreshold),
       suppressionRateWindow: evaluationWindow,
       enabledTriggers: triggers,
+      // arb-4xna: always the server's own catalogue from this load, never a
+      // hand-maintained list — the server checks only its count, so this must
+      // genuinely be everything the page rendered checkboxes for, or a real
+      // gap here would defeat the guard it exists to satisfy.
+      knownTriggers: config.availableTriggers,
     };
 
     // THE FIELD IS OMITTED UNLESS THE OPERATOR TYPED ONE. Omission means "leave
@@ -375,19 +397,24 @@ function NotificationForm({
         <div className={local.group}>
           <h3 className={local.groupHeading}>What to notify about</h3>
 
-          {TRIGGERS.map((trigger) => (
-            <label key={trigger.name} className={local.trigger}>
-              <input
-                type="checkbox"
-                checked={triggers.includes(trigger.name)}
-                onChange={() => toggleTrigger(trigger.name)}
-              />
-              <span className={local.triggerText}>
-                <strong>{trigger.label}</strong>
-                <span className={local.triggerReason}>{trigger.description}</span>
-              </span>
-            </label>
-          ))}
+          {config.availableTriggers.map((name) => {
+            const known = Object.prototype.hasOwnProperty.call(TRIGGER_LABELS, name)
+              ? TRIGGER_LABELS[name as NotificationTrigger]
+              : fallbackTriggerLabel(name);
+            return (
+              <label key={name} className={local.trigger}>
+                <input
+                  type="checkbox"
+                  checked={triggers.includes(name)}
+                  onChange={() => toggleTrigger(name)}
+                />
+                <span className={local.triggerText}>
+                  <strong>{known.label}</strong>
+                  <span className={local.triggerReason}>{known.description}</span>
+                </span>
+              </label>
+            );
+          })}
         </div>
 
         <div className={local.actions}>
