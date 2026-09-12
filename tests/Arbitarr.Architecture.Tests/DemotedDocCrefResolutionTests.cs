@@ -175,27 +175,40 @@ public class DemotedDocCrefResolutionTests
     /// either a type (the whole name) or a member (declaring type = all but the last segment,
     /// member = the last segment). A bare assembly name, a namespace with no type of the same name,
     /// or a <c>.csproj</c> file reference is treated as OUT OF SCOPE, not a failure — see the class
-    /// remarks for why.
+    /// remarks for why. The type and member lookups run BEFORE the namespace check, so a name that
+    /// is both a namespace and a type (e.g. a type later moved so its own name now also names a
+    /// namespace) still resolves via the type branch instead of being silently excluded; only a
+    /// name that resolves to neither falls through to the namespace check.
+    ///
+    /// <para><b>Not a Roslyn analyzer.</b> A Roslyn <see cref="Microsoft.CodeAnalysis"/> semantic
+    /// model would resolve these names with the compiler's own binding rules instead of
+    /// approximating them by reflection, but that means a new analyzer project plus per-csproj
+    /// packaging to wire it into every project that carries a demoted name — a structural cost this
+    /// one ratchet does not justify, and one with no precedent elsewhere in the repo.</para>
+    ///
+    /// <para><b>DeclaredOnly and other resolver gaps.</b> <c>BindingFlags.DeclaredOnly</c> below
+    /// means an INHERITED member — e.g. <c>SettingsValidationException.Message</c>, which today
+    /// stays a <c>&lt;see cref&gt;</c> rather than being demoted (see <see cref="BuiltAssemblies"/>'s
+    /// remarks) — would resolve as a false FAILURE if it were ever demoted to <c>&lt;c&gt;</c> text,
+    /// since the member lookup only sees members declared directly on the named type, not ones
+    /// inherited from a base class. Generic types cited without their backtick arity (e.g.
+    /// <c>List</c> instead of <c>List\`1</c>) and doubly-nested types likewise fail to resolve. Zero
+    /// names in the current demoted set hit either gap; a loud failure is the right direction for a
+    /// ratchet that only ever needs to catch a real regression, not to model every corner of the
+    /// resolver it approximates.</para>
     /// </summary>
-    private static bool ResolvesToTypeOrMember(string fullyQualifiedName, out bool isBareAssemblyName)
+    private static bool ResolvesToTypeOrMember(string fullyQualifiedName, out bool isOutOfScope)
     {
-        isBareAssemblyName = LoadedAssemblies.Value.Any(a =>
+        isOutOfScope = LoadedAssemblies.Value.Any(a =>
             string.Equals(a.GetName().Name, fullyQualifiedName, StringComparison.Ordinal));
-        if (isBareAssemblyName)
+        if (isOutOfScope)
         {
             return true;
         }
 
         if (fullyQualifiedName.EndsWith(".csproj", StringComparison.Ordinal))
         {
-            isBareAssemblyName = true; // out-of-scope for the same reason: not a code symbol.
-            return true;
-        }
-
-        if (LoadedAssemblies.Value.Any(a => a.GetTypes().Any(t =>
-                string.Equals(t.Namespace, fullyQualifiedName, StringComparison.Ordinal))))
-        {
-            isBareAssemblyName = true; // a namespace, not a type or member — see class remarks.
+            isOutOfScope = true; // out-of-scope for the same reason: not a code symbol.
             return true;
         }
 
@@ -210,37 +223,44 @@ public class DemotedDocCrefResolutionTests
         }
 
         var lastDot = fullyQualifiedName.LastIndexOf('.');
-        if (lastDot < 0)
+        if (lastDot >= 0)
         {
-            return false;
+            var declaringTypeName = fullyQualifiedName[..lastDot];
+            var memberName = fullyQualifiedName[(lastDot + 1)..];
+
+            foreach (var assembly in LoadedAssemblies.Value)
+            {
+                var declaringType = assembly.GetType(declaringTypeName, throwOnError: false);
+                if (declaringType is null)
+                {
+                    continue;
+                }
+
+                const BindingFlags AllMembers = BindingFlags.Public | BindingFlags.NonPublic |
+                    BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly;
+
+                if (declaringType.GetMember(memberName, AllMembers).Length > 0)
+                {
+                    return true;
+                }
+
+                // Enum values surface as static fields, already covered by GetMember above, but a
+                // nested type spelled with '.' (Outer.Inner) needs '+' for Type.GetType, which the
+                // whole-name attempt above could not have tried.
+                if (assembly.GetType(declaringTypeName + "+" + memberName, throwOnError: false) is not null)
+                {
+                    return true;
+                }
+            }
         }
 
-        var declaringTypeName = fullyQualifiedName[..lastDot];
-        var memberName = fullyQualifiedName[(lastDot + 1)..];
-
-        foreach (var assembly in LoadedAssemblies.Value)
+        // Reached only once the type and member lookups above have both failed, so a name that is
+        // both a namespace and a type resolves via the type branch above, never here.
+        if (LoadedAssemblies.Value.Any(a => a.GetTypes().Any(t =>
+                string.Equals(t.Namespace, fullyQualifiedName, StringComparison.Ordinal))))
         {
-            var declaringType = assembly.GetType(declaringTypeName, throwOnError: false);
-            if (declaringType is null)
-            {
-                continue;
-            }
-
-            const BindingFlags AllMembers = BindingFlags.Public | BindingFlags.NonPublic |
-                BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly;
-
-            if (declaringType.GetMember(memberName, AllMembers).Length > 0)
-            {
-                return true;
-            }
-
-            // Enum values surface as static fields, already covered by GetMember above, but a
-            // nested type spelled with '.' (Outer.Inner) needs '+' for Type.GetType, which the
-            // whole-name attempt above could not have tried.
-            if (assembly.GetType(declaringTypeName + "+" + memberName, throwOnError: false) is not null)
-            {
-                return true;
-            }
+            isOutOfScope = true; // a namespace, not a type or member — see class remarks.
+            return true;
         }
 
         return false;
@@ -254,14 +274,26 @@ public class DemotedDocCrefResolutionTests
     [Fact]
     public void Every_Demoted_Name_Still_Resolves_To_A_Type_Or_Member()
     {
-        var unresolved = DemotedNames()
-            .Where(entry => !ResolvesToTypeOrMember(entry.Name, out _))
-            .Select(entry => $"'{entry.Name}' (cited in {entry.RelativePath})")
-            .ToArray();
+        var names = DemotedNames();
+        var outOfScopeCount = 0;
+        var unresolved = new List<string>();
+
+        foreach (var entry in names)
+        {
+            if (!ResolvesToTypeOrMember(entry.Name, out var isOutOfScope))
+            {
+                unresolved.Add($"'{entry.Name}' (cited in {entry.RelativePath})");
+            }
+            else if (isOutOfScope)
+            {
+                outOfScopeCount++;
+            }
+        }
 
         Assert.True(
-            unresolved.Length == 0,
-            "The following demoted <c>Name</c> doc comments no longer resolve to a type or member " +
+            unresolved.Count == 0,
+            $"Checked {names.Count} demoted name(s), {outOfScopeCount} out of scope (namespace, " +
+            "assembly name, or .csproj file). The following no longer resolve to a type or member " +
             "in any loaded Arbitarr.* assembly. Each was written as plain text specifically because " +
             "arb-ul4 could not make it a <see cref> (see Directory.Build.props), which means CS1574 " +
             "can no longer catch it going stale — the referent was likely renamed, deleted, or moved. " +
@@ -277,9 +309,9 @@ public class DemotedDocCrefResolutionTests
     [Fact]
     public void Resolver_Fails_On_A_Planted_Nonexistent_Name()
     {
-        var resolved = ResolvesToTypeOrMember("Arbitarr.Nope.Missing", out var isBareAssemblyName);
+        var resolved = ResolvesToTypeOrMember("Arbitarr.Nope.Missing", out var isOutOfScope);
 
-        Assert.False(isBareAssemblyName);
+        Assert.False(isOutOfScope);
         Assert.False(resolved);
     }
 }
