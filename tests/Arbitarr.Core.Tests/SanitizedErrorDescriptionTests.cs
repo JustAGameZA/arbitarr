@@ -897,6 +897,11 @@ public sealed class SanitizedErrorDescriptionTests
     /// Every planted excerpt body in this file, de-duplicated. The single place that knows which
     /// corpora exist — <see cref="Every_arm_family_has_at_least_one_corpus_row"/> reads it too, so
     /// the guard and the property can never be looking at different sets.
+    ///
+    /// <para><see cref="A_truncated_url_never_leaves_a_fragment_behind"/> is deliberately outside
+    /// this union: its rows are driven through a cut-offset sweep over a single planted URL rather
+    /// than exposed as whole excerpt bodies, so it has no <c>(string)row[0]</c> shape for this
+    /// helper to consume.</para>
     /// </summary>
     private static IEnumerable<string> PlantedExcerptBodies() =>
         PlantedHostCorpus()
