@@ -101,6 +101,8 @@ public sealed class ConcurrencyTests : IDisposable
     public void ConcurrentWriteWhileRead_WithWalAndBusyTimeout_ReaderNeverStalls()
     {
         var factory = new SqliteConnectionFactory(ConnectionOptions);
+        // arb-itmm: the conversion is its own call now; OpenConnection only verifies the mode.
+        factory.ConvertToWalOnce();
 
         RunConcurrentContention(
             openWriterConnection: () => factory.OpenConnection(),
@@ -583,9 +585,10 @@ public sealed class ConcurrencyTests : IDisposable
         if (useWalMode)
         {
             // Touch the file once via the production connection factory so WAL mode is set and
-            // verified before EF Core opens the same file.
+            // verified before EF Core opens the same file. arb-itmm: that is now exactly what
+            // ConvertToWalOnce is for — OpenConnection no longer sets the mode, only verifies it.
             var factory = new SqliteConnectionFactory(ConnectionOptions);
-            using var walConnection = factory.OpenConnection();
+            factory.ConvertToWalOnce();
         }
 
         using (var migrationContext = CreateContext())
