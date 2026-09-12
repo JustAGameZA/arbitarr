@@ -155,7 +155,7 @@ public sealed class LogStore
     }
 
     /// <summary>
-    /// Reads one page of rows, newest first, optionally filtered by level and/or logger.
+    /// Reads one page of rows, newest first, optionally filtered by level, logger and/or message.
     ///
     /// <para>The level filter is a MINIMUM SEVERITY (arb-pw7r): asking for Warning returns Warning,
     /// Error and Critical. An exact match hid Error and Critical from an operator who selected the
@@ -170,11 +170,19 @@ public sealed class LogStore
     /// <param name="logger">Substring of the logger category to match; null for all loggers.</param>
     /// <param name="page">1-based page number.</param>
     /// <param name="pageSize">Rows per page.</param>
+    /// <param name="message">
+    /// Substring of the message text to match, case-insensitively; null for all messages (arb-w8ju).
+    /// Declared AFTER <paramref name="pageSize"/> rather than beside <paramref name="logger"/>, which
+    /// is where it belongs by meaning: several callers pass these positionally
+    /// (<c>ReadAsync(null, null, 1, 10)</c>), so inserting a third string parameter in the middle
+    /// would silently re-bind their page number to the new filter and still compile.
+    /// </param>
     public async Task<LogPage> ReadAsync(
         string? level,
         string? logger,
         int page,
         int pageSize,
+        string? message = null,
         CancellationToken cancellationToken = default)
     {
         page = Math.Max(1, page);
@@ -203,6 +211,14 @@ public sealed class LogStore
             filters.Add("Logger LIKE $logger ESCAPE '\\'");
         }
 
+        if (!string.IsNullOrWhiteSpace(message))
+        {
+            // Named $message, not $level-anything: the level filter emits $level0..$levelN, so a
+            // parameter whose name merely STARTS with "$level" would collide with one of them as
+            // soon as the requested severity had enough names above it.
+            filters.Add("Message LIKE $message ESCAPE '\\'");
+        }
+
         var where = filters.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", filters);
 
         await using var connection = OpenConnection();
@@ -211,7 +227,7 @@ public sealed class LogStore
         await using (var countCommand = connection.CreateCommand())
         {
             countCommand.CommandText = $"SELECT COUNT(*) FROM Logs {where};";
-            BindFilters(countCommand, levelNames, logger);
+            BindFilters(countCommand, levelNames, logger, message);
             var scalar = await countCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             total = Convert.ToInt32(scalar, System.Globalization.CultureInfo.InvariantCulture);
         }
@@ -229,7 +245,7 @@ public sealed class LogStore
                 ORDER BY Id DESC
                 LIMIT $limit OFFSET $offset;
                 """;
-            BindFilters(command, levelNames, logger);
+            BindFilters(command, levelNames, logger, message);
             command.Parameters.AddWithValue("$limit", pageSize);
             command.Parameters.AddWithValue("$offset", (long)(page - 1) * pageSize);
 
@@ -410,7 +426,11 @@ public sealed class LogStore
         return names;
     }
 
-    private static void BindFilters(SqliteCommand command, IReadOnlyList<string> levelNames, string? logger)
+    private static void BindFilters(
+        SqliteCommand command,
+        IReadOnlyList<string> levelNames,
+        string? logger,
+        string? message)
     {
         for (var i = 0; i < levelNames.Count; i++)
         {
@@ -419,14 +439,35 @@ public sealed class LogStore
 
         if (!string.IsNullOrWhiteSpace(logger))
         {
-            // Escape the LIKE wildcards so an operator typing "%" in the logger filter searches for
-            // a literal percent sign rather than matching every row.
-            var escaped = logger
-                .Replace("\\", "\\\\", StringComparison.Ordinal)
-                .Replace("%", "\\%", StringComparison.Ordinal)
-                .Replace("_", "\\_", StringComparison.Ordinal);
-            command.Parameters.AddWithValue("$logger", $"%{escaped}%");
+            command.Parameters.AddWithValue("$logger", ContainsPattern(logger));
         }
+
+        if (!string.IsNullOrWhiteSpace(message))
+        {
+            command.Parameters.AddWithValue("$message", ContainsPattern(message));
+        }
+    }
+
+    /// <summary>
+    /// Wraps a user-typed filter into a LIKE "contains" pattern, escaping the wildcards first.
+    ///
+    /// <para>Escaping is not cosmetic: an operator typing "%" must search for a literal percent sign,
+    /// not match every row — a filter that silently stops filtering on a surface serving raw
+    /// application logs shows more than was asked for while looking like it worked. The backslash is
+    /// escaped FIRST, because escaping it after the wildcards would also escape the backslashes this
+    /// method just introduced and turn them back into literals.</para>
+    ///
+    /// <para>Shared by the logger and message filters so the two cannot drift: a second hand-rolled
+    /// copy is exactly how one of them ends up missing a wildcard.</para>
+    /// </summary>
+    private static string ContainsPattern(string filter)
+    {
+        var escaped = filter
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("%", "\\%", StringComparison.Ordinal)
+            .Replace("_", "\\_", StringComparison.Ordinal);
+
+        return $"%{escaped}%";
     }
 
     private SqliteConnection OpenConnection()

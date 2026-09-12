@@ -85,10 +85,23 @@ public static class LogsEndpoint
     /// the tests — wants "and above", and two parameters with overlapping meaning would leave the
     /// question of what <c>?level=Error&amp;minLevel=Warning</c> means answerable only by reading the
     /// handler. Unrecognised names still match exactly; see <see cref="LogStore.ResolveLevelsAtOrAbove"/>.
+    /// An unrecognised level name is deliberately NOT rejected with a 400 the way
+    /// <see cref="AdminNotificationEndpoints"/> rejects an unknown trigger, because the two have
+    /// opposite safe failures: there, a name nobody matched would silently mute a notification, while
+    /// here the wrong answer worth avoiding is a WIDENED page of raw logs — an unrecognised name
+    /// matching exactly yields an empty page, which is the harmless one, and a validating 400 would
+    /// only turn that into an error affordance over a typo.
+    /// </param>
+    /// <param name="message">
+    /// Substring of the message text to search for, case-insensitively (arb-w8ju). Applied by the
+    /// STORE, across the whole log database, so the COUNT behind <c>Total</c> and the paging agree
+    /// with it; System &gt; Logs previously narrowed only the rows already on the page it held, which
+    /// silently answered "no such log line" from one page of a store with hundreds.
     /// </param>
     public static async Task<IResult> HandleAsync(
         string? level,
         string? logger,
+        string? message,
         int? page,
         int? pageSize,
         LogStore store,
@@ -97,7 +110,7 @@ public static class LogsEndpoint
         var requestedPage = Math.Max(1, page ?? 1);
         var requestedPageSize = Math.Clamp(pageSize ?? LogStore.DefaultPageSize, 1, LogStore.MaxPageSize);
 
-        var result = await store.ReadAsync(level, logger, requestedPage, requestedPageSize, cancellationToken);
+        var result = await store.ReadAsync(level, logger, requestedPage, requestedPageSize, message, cancellationToken);
         var loggers = await store.GetLoggersAsync(cancellationToken);
 
         return Results.Ok(new LogsResponse(

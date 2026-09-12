@@ -169,22 +169,83 @@ public sealed class LogStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task Level_and_logger_filters_still_combine()
+    public async Task Level_and_logger_and_message_filters_still_combine()
     {
-        // The level filter grew from one bound parameter to an IN-list of them. The risk in that
-        // change is the OTHER filter's parameter being dropped or renumbered alongside it, which
-        // would widen the query while the level filter still looked correct.
+        // The level filter grew from one bound parameter to an IN-list of them, and arb-w8ju added a
+        // third filter beside it. The risk in either change is ANOTHER filter's parameter being
+        // dropped or renumbered alongside it, which would widen the query while the filter that was
+        // actually edited still looked correct. Each row below is excluded by exactly ONE of the
+        // three filters, so dropping any one of them turns this from 1 row into 2.
         await _store.WriteAsync(new[]
         {
-            Entry("wanted", level: "Error", logger: "Api.Search"),
-            Entry("wrong logger", level: "Error", logger: "Api.Other"),
-            Entry("wrong level", level: "Information", logger: "Api.Search"),
+            Entry("wanted probe", level: "Error", logger: "Api.Search"),
+            Entry("wrong logger probe", level: "Error", logger: "Api.Other"),
+            Entry("wrong level probe", level: "Information", logger: "Api.Search"),
+            Entry("wrong message", level: "Error", logger: "Api.Search"),
         });
 
-        var page = await _store.ReadAsync(level: "Warning", logger: "Search", page: 1, pageSize: 10);
+        var page = await _store.ReadAsync(
+            level: "Warning", logger: "Search", page: 1, pageSize: 10, message: "probe");
 
         Assert.Equal(1, page.Total);
-        Assert.Equal("wanted", Assert.Single(page.Entries).Message);
+        Assert.Equal("wanted probe", Assert.Single(page.Entries).Message);
+    }
+
+    [Fact]
+    public async Task Message_filter_matches_a_substring_case_insensitively()
+    {
+        // arb-w8ju. The non-matching row is the POSITIVE CONTROL: without a row the filter must
+        // EXCLUDE, "only the matching row came back" would pass just as happily against a store
+        // that had nothing else in it, and would prove nothing about the filter.
+        await _store.WriteAsync(new[]
+        {
+            Entry("Source PROBE failed for source 4."),
+            Entry("Refresh cycle completed."),
+        });
+
+        var page = await _store.ReadAsync(level: null, logger: null, page: 1, pageSize: 10, message: "probe");
+
+        // Total comes from the COUNT statement and Entries from the page statement. Asserting both
+        // is what catches the new filter being bound into only one of the two commands -- which
+        // shows the operator a total that disagrees with the rows beside it.
+        Assert.Equal(1, page.Total);
+        Assert.Equal("Source PROBE failed for source 4.", Assert.Single(page.Entries).Message);
+    }
+
+    [Fact]
+    public async Task Message_filter_treats_wildcards_as_literal_text()
+    {
+        // Same rule as the logger filter: a LIKE wildcard typed into the search box must search for
+        // that character. The second row is the positive control -- it is the row a wildcard WOULD
+        // wrongly match, so an unescaped "%" returns two rows here rather than the one.
+        await _store.WriteAsync(new[]
+        {
+            Entry("Disk usage reached 90% of the volume."),
+            Entry("Refresh cycle completed."),
+        });
+
+        var page = await _store.ReadAsync(level: null, logger: null, page: 1, pageSize: 10, message: "90%");
+
+        Assert.Equal(1, page.Total);
+        Assert.Equal("Disk usage reached 90% of the volume.", Assert.Single(page.Entries).Message);
+    }
+
+    [Fact]
+    public async Task Critical_is_the_top_of_the_severity_range_and_excludes_Error()
+    {
+        // The upper bound of the "and above" expansion (#256 review). Every other level test proves
+        // the filter reaches UP; this proves it stops, so an off-by-one that made the expansion
+        // include the level below cannot hide behind them.
+        await _store.WriteAsync(new[]
+        {
+            Entry("an error", level: "Error"),
+            Entry("a critical", level: "Critical"),
+        });
+
+        var page = await _store.ReadAsync(level: "Critical", logger: null, page: 1, pageSize: 10);
+
+        Assert.Equal(1, page.Total);
+        Assert.Equal("a critical", Assert.Single(page.Entries).Message);
     }
 
     [Fact]

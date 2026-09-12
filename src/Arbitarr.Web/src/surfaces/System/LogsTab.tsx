@@ -147,13 +147,7 @@ export function LogsTab() {
   // Defaults to Warning, which the API applies as a MINIMUM severity (arb-pw7r), so this
   // lands the operator on Warning, Error and Critical rather than the full firehose --
   // with "All levels" one click away.
-  const [filters, setFilters] = useState<LogFilters>({ level: 'Warning', logger: '' });
-
-  // Client-side only: the endpoint has no message/text query parameter (checked against
-  // LogsEndpoint.cs), so this narrows only the rows already on the current page rather
-  // than searching the whole store. Wiring a server-side search parameter is a follow-up,
-  // noted in the commit body.
-  const [messageFilter, setMessageFilter] = useState('');
+  const [filters, setFilters] = useState<LogFilters>({ level: 'Warning', logger: '', message: '' });
 
   // 1-based, matching the server's own page numbering rather than translating at the
   // boundary. Offset paging, unlike Activity's cursor: see LogsResponse's note on why the
@@ -182,18 +176,6 @@ export function LogsTab() {
   const pageCount = Math.max(1, Math.ceil(total / servedPageSize));
   const servedPage = logs.data?.page ?? page;
   const loggers = logs.data?.loggers ?? [];
-
-  // Filters only the current page's rows (see messageFilter's declaration above for why
-  // this cannot be a server-side query yet). Case-insensitive substring match against the
-  // message text, mirroring the logger filter's own substring semantics.
-  const trimmedMessageFilter = messageFilter.trim().toLowerCase();
-  const visibleEntries = logs.data
-    ? trimmedMessageFilter === ''
-      ? logs.data.entries
-      : logs.data.entries.filter((entry) =>
-          entry.message.toLowerCase().includes(trimmedMessageFilter),
-        )
-    : [];
 
   return (
     <>
@@ -251,9 +233,9 @@ export function LogsTab() {
                 id={messageFilterId}
                 type="text"
                 className={styles.input}
-                placeholder="Filter messages… (filters this page)"
-                value={messageFilter}
-                onChange={(event) => setMessageFilter(event.target.value)}
+                placeholder="Search messages…"
+                value={filters.message}
+                onChange={(event) => applyFilters({ message: event.target.value })}
               />
             </label>
           </div>
@@ -263,26 +245,16 @@ export function LogsTab() {
       <section className={styles.panel}>
         <h2 className={styles.panelHeading}>Logs</h2>
         <div className={styles.panelBody}>
-          {/* The render prop's own `data` argument is intentionally unused here:
-              `visibleEntries` (declared above, with its own `logs.data ? … : []`
-              fallback) already narrows to the message filter and replaces it. */}
           <QueryState isPending={logs.isPending} error={logs.error} data={logs.data}>
-            {() => (
+            {(data) => (
               <>
-                <LogsTable entries={visibleEntries} />
-
-                {trimmedMessageFilter !== '' && (
-                  <p className={styles.muted}>
-                    Showing {visibleEntries.length} of {logs.data?.entries.length ?? 0} rows on
-                    this page match the message filter.
-                  </p>
-                )}
+                <LogsTable entries={data.entries} />
 
                 {/* Hidden entirely on a single page: a disabled Next under a short table
-                    is noise. Same rule the Activity surface applies. total/pageCount are
-                    always derived from the server's unfiltered result set, never from
-                    visibleEntries -- the pager describes what the server served, not what
-                    the message filter narrowed it to. */}
+                    is noise. Same rule the Activity surface applies. total/pageCount come
+                    from the server's OWN count, which since arb-w8ju is taken with the
+                    message filter applied -- so the pager describes the whole search, not
+                    one page of it. */}
                 {total > servedPageSize && (
                   <div className={local.paging}>
                     <button

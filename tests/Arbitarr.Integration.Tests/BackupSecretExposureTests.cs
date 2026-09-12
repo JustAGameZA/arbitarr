@@ -141,7 +141,7 @@ public sealed class BackupSecretExposureTests : IClassFixture<ArbitarrWebApplica
         await FlushLogSinkAsync();
 
         var store = _factory.Services.GetRequiredService<LogStore>();
-        var page = await store.ReadAsync(null, null, 1, LogStore.MaxPageSize, CancellationToken.None);
+        var page = await store.ReadAsync(null, null, 1, LogStore.MaxPageSize, cancellationToken: CancellationToken.None);
 
         // POSITIVE CONTROL for the log search itself: the store must have rows, or "the key is not
         // in the logs" is a statement about an empty table. Asserting the rows exist is what makes
