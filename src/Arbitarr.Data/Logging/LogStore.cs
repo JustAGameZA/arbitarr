@@ -101,6 +101,12 @@ public sealed class LogStore
     ///
     /// <para><c>public</c>, not <c>internal</c>: there is no <c>InternalsVisibleTo</c> from this
     /// project to the test assembly.</para>
+    ///
+    /// <para><b>A bare <c>null</c> as the second argument binds HERE, not to the overload above</b> —
+    /// <c>WriteAsync(entries, null)</c> is an untyped null that both overloads accept, and this one
+    /// wins as the more specific match, so a caller meaning to pass a <c>CancellationToken</c>
+    /// silently passes no token at all and the write becomes uncancellable. Pass the token by name
+    /// (<c>cancellationToken: ct</c>) or cast the null.</para>
     /// </summary>
     public async Task WriteAsync(
         IReadOnlyList<PendingLogEntry> entries,
