@@ -244,17 +244,34 @@ public sealed class NewznabSource : IUpstreamSource
     /// a form that resolves back onto the base origin is harmless by definition. A string-shape
     /// blacklist would have to be re-derived each time <see cref="Uri"/>'s parsing changes.</para>
     ///
+    /// <para><b>Userinfo is part of the check even though it is not part of an origin.</b>
+    /// <c>http://x@indexer.example:9117/api</c> matches the base on scheme, host AND port, so the
+    /// three-way comparison alone accepts it — but the credentials ride into the request's
+    /// authority, which is logged in full: the framework's URI redaction collapses only the QUERY
+    /// string, and <c>LogMessageCleanser</c>'s patterns do not cover a userinfo segment. Requiring
+    /// it to be empty keeps the authority exactly what the operator configured.</para>
+    ///
     /// <para><b>The constructor, not <see cref="EndpointUri"/>'s getter</b>, so the source fails at
     /// CONSTRUCTION and can never be handed to a caller in a state where a later search would leak.
     /// That also covers the registry (arb-x7w8.4) as a second producer of
     /// <see cref="NewznabSourceOptions"/> without it having to know this rule exists.</para>
     ///
-    /// <para>The message interpolates <see cref="NewznabSourceOptions.SourceName"/> and nothing
-    /// else. Rendering the offending endpoint or ApiPath would print an attacker-chosen host into
-    /// the persistent log store at <c>/api/admin/logs</c>, and the ApiPath may itself be shaped to
-    /// carry text there.</para>
+    /// <para><b>This is the configuration-time side of a three-sided origin invariant, and the three
+    /// are not consolidatable.</b> Here the OUTBOUND endpoint is pinned to the configured base when
+    /// the source is built; at response time the client refuses a redirect that would move the
+    /// request off that origin (<c>AllowAutoRedirect = false</c>, ADR 0014); at parse time
+    /// <c>TorznabFeedParser.TryValidateOriginPinnedLink</c> pins the links a feed hands back. They
+    /// run at different times against different inputs — operator configuration, an upstream
+    /// response status, and upstream-supplied feed content — so none of them can stand in for
+    /// another, and a single shared check would have to be reached from all three.</para>
+    ///
+    /// <para>The exception carries <see cref="NewznabSourceOptions.SourceName"/> and nothing else.
+    /// Rendering the offending endpoint or ApiPath would print an attacker-chosen host into the
+    /// persistent log store at <c>/api/admin/logs</c>, and the ApiPath may itself be shaped to carry
+    /// text there. See <see cref="SourceOriginRefusedException"/> for why it is deliberately NOT an
+    /// <see cref="ArgumentException"/>.</para>
     /// </summary>
-    /// <exception cref="ArgumentException">The resolved endpoint is not on the base URL's origin.</exception>
+    /// <exception cref="SourceOriginRefusedException">The resolved endpoint is not on the base URL's origin.</exception>
     private void EnsureEndpointIsOnBaseOrigin()
     {
         var endpoint = EndpointUri;
@@ -263,15 +280,12 @@ public sealed class NewznabSource : IUpstreamSource
         var sameOrigin =
             string.Equals(endpoint.Scheme, baseUrl.Scheme, StringComparison.OrdinalIgnoreCase)
             && string.Equals(endpoint.Host, baseUrl.Host, StringComparison.OrdinalIgnoreCase)
-            && endpoint.Port == baseUrl.Port;
+            && endpoint.Port == baseUrl.Port
+            && string.IsNullOrEmpty(endpoint.UserInfo);
 
         if (!sameOrigin)
         {
-            throw new ArgumentException(
-                $"Source '{_options.SourceName}': the configured {nameof(NewznabSourceOptions.ApiPath)} resolves to an endpoint " +
-                $"outside the scheme, host or port of {nameof(NewznabSourceOptions.BaseUrl)}. The indexer's API key is sent to " +
-                "that endpoint, so it must stay on the configured origin. Configure a path relative to the base URL.",
-                "options");
+            throw new SourceOriginRefusedException(_options.SourceName);
         }
     }
 

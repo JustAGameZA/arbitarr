@@ -14,9 +14,9 @@ namespace Arbitarr.Sources.Newznab.Tests;
 /// sets are the same question — "does this ApiPath resolve off-origin?" — and splitting them invites
 /// a future edit to widen the guard's refusal onto a form the trim already handles correctly
 /// (<c>/api</c> must keep working) or to narrow it off one that escapes. Each form is a separate
-/// case, because a theory that passed on one absolute form proves nothing about another: the six
-/// escapes differ in scheme, in case and in leading whitespace, and <see cref="Uri"/> treats each of
-/// those differently.</para>
+/// case, because a theory that passed on one form proves nothing about another: the escapes differ
+/// in scheme, in case, in leading whitespace and in carrying userinfo, and <see cref="Uri"/> treats
+/// each of those differently.</para>
 ///
 /// <para><b>Non-vacuity (CLAUDE.md §4).</b> An <c>Assert.Throws</c> is not vacuous in the way an
 /// absence assertion is, but it still proves nothing about WHAT would have happened without the
@@ -43,9 +43,10 @@ public class EndpointOriginGuardTests
         new(options, new HttpClient(handler), new FakeCircuitBreaker());
 
     /// <summary>
-    /// The six forms the 2026-09-12 security audit accepted as escapes, plus the three the trim and
-    /// <see cref="Uri"/> normalisation already neutralise. <c>escapes</c> says whether the RESOLVED
-    /// endpoint leaves the base origin, which is precisely what the guard asserts on.
+    /// The six forms the 2026-09-12 security audit accepted as escapes, plus the userinfo form found
+    /// in the #339 review, plus the three the trim and <see cref="Uri"/> normalisation already
+    /// neutralise. <c>escapes</c> says whether the RESOLVED endpoint leaves the base origin, which is
+    /// precisely what the guard asserts on.
     /// </summary>
     public static TheoryData<string, bool> ApiPathForms => new()
     {
@@ -56,6 +57,11 @@ public class EndpointOriginGuardTests
         { "\thttp://attacker.example/api", true },          // leading tab
         { "HTTP://attacker.example/api", true },           // uppercase scheme
         { "file:///c:/windows/win.ini", true },            // scheme downgrade
+
+        // Matches the base on scheme, host AND port, so ONLY the userinfo clause refuses it: the
+        // credentials would ride into the logged request authority, which neither the framework's
+        // query-string redaction nor LogMessageCleanser covers.
+        { "http://x@indexer.example:9117/api", true },
 
         // --- Already neutralised: TrimStart('/') demotes the protocol-relative forms to path
         // segments, and Uri flattens the traversal back under the base.
@@ -72,7 +78,7 @@ public class EndpointOriginGuardTests
 
         if (escapes)
         {
-            Assert.Throws<ArgumentException>(() => Construct(MakeOptions(apiPath), handler));
+            Assert.Throws<SourceOriginRefusedException>(() => Construct(MakeOptions(apiPath), handler));
         }
         else
         {
@@ -90,7 +96,7 @@ public class EndpointOriginGuardTests
     {
         var apiPath = "http://attacker.example/leaked-path-marker";
 
-        var ex = Assert.Throws<ArgumentException>(() => Construct(MakeOptions(apiPath), OkHandler(EmptyFeed)));
+        var ex = Assert.Throws<SourceOriginRefusedException>(() => Construct(MakeOptions(apiPath), OkHandler(EmptyFeed)));
 
         Assert.Contains("test-indexer", ex.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("attacker.example", ex.Message, StringComparison.OrdinalIgnoreCase);
@@ -153,7 +159,7 @@ public class EndpointOriginGuardTests
     [Fact]
     public void ASameHostApiPath_OnADifferentPort_IsRefused()
     {
-        Assert.Throws<ArgumentException>(
+        Assert.Throws<SourceOriginRefusedException>(
             () => Construct(MakeOptions("http://indexer.example:9999/api"), OkHandler(EmptyFeed)));
     }
 
@@ -164,8 +170,72 @@ public class EndpointOriginGuardTests
     [Fact]
     public void ASameHostApiPath_OnADifferentScheme_IsRefused()
     {
-        Assert.Throws<ArgumentException>(
+        Assert.Throws<SourceOriginRefusedException>(
             () => Construct(MakeOptions("https://indexer.example:9117/api"), OkHandler(EmptyFeed)));
+    }
+
+    /// <summary>
+    /// <b>The refusal is NOT an <see cref="ArgumentException"/>, and a caller's
+    /// <c>catch (ArgumentException)</c> must not swallow it.</b>
+    ///
+    /// <para>The registry (arb-x7w8.4) builds sources in a loop and naturally writes exactly that
+    /// arm to skip a misconfigured row and carry on. Because <see cref="ArgumentNullException"/> IS
+    /// an <see cref="ArgumentException"/>, typing the refusal as one would make a SECURITY refusal
+    /// indistinguishable from an ordinary bad-argument skip. The <c>catch</c> here is deliberately
+    /// the shape that would have swallowed it, so the test fails if the type ever moves back under
+    /// that hierarchy.</para>
+    /// </summary>
+    [Fact]
+    public void TheRefusal_IsNotCaught_ByACallersArgumentExceptionArm()
+    {
+        var escaped = false;
+
+        try
+        {
+            Construct(MakeOptions("http://attacker.example/api"), OkHandler(EmptyFeed));
+        }
+        catch (ArgumentException)
+        {
+            // Reached only if the refusal is (or derives from) ArgumentException.
+            escaped = true;
+        }
+        catch (SourceOriginRefusedException)
+        {
+            escaped = false;
+        }
+
+        Assert.False(escaped);
+    }
+
+    /// <summary>
+    /// The counterpart to the above: the constructor's NULL guards do still throw
+    /// <see cref="ArgumentNullException"/>, so the two are genuinely distinguishable rather than the
+    /// previous test passing because nothing throws an <see cref="ArgumentException"/> here at all.
+    /// Without this, that test would hold just as well against a constructor with no null guards —
+    /// the vacuous shape CLAUDE.md §4 is about.
+    /// </summary>
+    [Fact]
+    public void TheConstructorsNullGuards_StillThrowArgumentNullException_SoTheTwoAreDistinguishable()
+    {
+        Assert.Throws<ArgumentNullException>(
+            () => new NewznabSource(MakeOptions("/api"), new HttpClient(OkHandler(EmptyFeed)), circuitBreaker: null!));
+    }
+
+    /// <summary>
+    /// An IPv6 base accepts an absolute same-origin ApiPath written in the EXPANDED form against a
+    /// COMPRESSED base. <see cref="Uri"/> normalises both host strings to the same compressed text,
+    /// so the ordinal host comparison matches and no special-casing is needed — pinned because a
+    /// future edit to the comparison (a raw string compare on the original input, say) would break
+    /// an operator's IPv6 deployment in a way no other case here would catch.
+    /// </summary>
+    [Fact]
+    public void AnIPv6Base_AcceptsTheSameAddress_WrittenExpandedAgainstACompressedBase()
+    {
+        var options = MakeOptions(
+            "http://[2001:0db8:0000:0000:0000:0000:0000:0001]:9117/api",
+            new Uri("http://[2001:db8::1]:9117/"));
+
+        Assert.NotNull(Construct(options, OkHandler(EmptyFeed)));
     }
 
     /// <summary>
