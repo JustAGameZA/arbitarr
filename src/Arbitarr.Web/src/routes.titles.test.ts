@@ -7,11 +7,17 @@ import { NAV_ENTRIES } from './components/shell/SidebarNav';
  * Cross-pins ROUTES (routes.titles.ts) to NAV_ENTRIES (SidebarNav.tsx), which
  * is the only mechanism that makes a missing title row *fail* rather than pass.
  *
- * The three `it.each(ROUTES)` suites -- routing.test.tsx, pageTitle.test.tsx and
- * documentTitle.test.tsx -- derive their cases from the table under test, so
- * deleting a row deletes its own check: the suite simply shrinks and reports 0
- * failed. SidebarNav.test.tsx reads NAV_ENTRIES, a different table, so it stays
- * green too. The regression that escapes both is real: the surface still routes
+ * The two `it.each(ROUTES)` suites -- pageTitle.test.tsx and documentTitle.test.tsx
+ * -- derive their cases from the table under test, so deleting a row deletes its
+ * own check: each suite simply shrinks by one case and reports 0 failed.
+ *
+ * Nothing on the other side catches it either, and for a reason worth stating,
+ * since routing.test.tsx looks like it should. That suite sweeps NAV_ENTRIES, not
+ * ROUTES, so it is the NAV_ENTRIES-side check rather than an instance of the
+ * failure mode above -- and what it asserts per surface is the rendered <h1> and
+ * the absence of the 404 heading, neither of which a missing ROUTES row disturbs.
+ * SidebarNav.test.tsx likewise reads only NAV_ENTRIES. So the deleted row leaves
+ * every existing suite green, and the regression is real: the surface still routes
  * and still renders, but `resolveDocumentTitle` misses and the browser tab reads
  * "Page not found".
  *
@@ -45,10 +51,17 @@ describe('ROUTES and NAV_ENTRIES cover the same paths', () => {
 
   it('holds the two tables to the same length, so neither gains a duplicate row', () => {
     // Containment both ways is satisfiable by a duplicate: ['/','/'] contains
-    // ['/'] and vice versa. Pinning the lengths closes that, and pins the count
-    // the two comments in routes.titles.ts and SidebarNav.tsx both state.
-    expect(routePaths).toHaveLength(8);
-    expect(navPaths).toHaveLength(8);
+    // ['/'] and vice versa. Ruling duplicates out is what closes that, and with
+    // both tables duplicate-free the two containments above already force the
+    // sets equal -- so equal lengths follow rather than needing their own pin.
+    //
+    // Deliberately no literal count here. SidebarNav.test.tsx owns "exactly
+    // eight" (it asserts the rendered list, where a literal is load-bearing
+    // because the DOM has no table to compare against). Repeating the 8 here
+    // would add a fourth site to edit for a ninth surface, and a stale copy
+    // fails for the wrong reason -- it reports a count that is merely out of
+    // date, not the drift between the two tables that this suite exists to find.
+    expect(routePaths).toHaveLength(navPaths.length);
     expect(new Set(routePaths).size).toBe(routePaths.length);
     expect(new Set(navPaths).size).toBe(navPaths.length);
   });
