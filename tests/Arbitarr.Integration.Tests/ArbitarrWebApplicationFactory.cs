@@ -79,9 +79,10 @@ public sealed class ArbitarrWebApplicationFactory : WebApplicationFactory<Progra
     /// <para><b>This is now expected to be NULL, and is ASSERTED ON</b> by
     /// <see cref="ConfigDirectoryIsDeletedOnDisposalTests"/> (arb-dhua). It was previously
     /// diagnostics-only because the directory was not deletable in-process at all; that is fixed at
-    /// the mechanism — see <c>ArbitarrDbContextOptionsFactory.Create</c>, which now hands EF
-    /// ownership of the connection it opens, so a disposed context RETURNS it to the pool and the
-    /// clear below can close it.</para>
+    /// the mechanism — see <c>ArbitarrDbContextOptionsFactory.Create</c>, which hands EF ownership of
+    /// the connection (arb-dhua) and hands it over CLOSED so EF owns it even when the context is
+    /// never used (arb-auam), so a disposed context RETURNS it to the pool and the clear below can
+    /// close it.</para>
     ///
     /// <para>It stays an exposed property rather than becoming an in-disposal throw: a cleanup
     /// failure must not fault an otherwise-green run from inside <c>Dispose</c>, where it would
