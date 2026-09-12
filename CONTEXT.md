@@ -198,6 +198,46 @@ cannot claim more than it tested.
 
 ---
 
+## Arr section status
+
+`ArrSectionStatus` (`src/Arbitarr.Core/Media/ArrQueue.cs`) is the verdict carried
+by each Library section's read — `GET /api/admin/arr/{sonarr,radarr}/queue`, and
+the series/movies reads that follow. Like the probe outcomes it is a **closed**
+enum with no free-text field, so no failure can carry key-derived text into a
+response; the envelope's `Message` is fixed wording chosen from this value alone.
+
+**It is a READ verdict, not a connectivity verdict**, and that is the whole
+distinction. A probe is triggered by an operator who has just entered an address
+and is asking "does what I saved work". A section status answers "could this
+section be filled just now", on a surface that is read on a schedule and may be
+looking at an instance nobody has configured yet.
+
+| Status | Means | Distinct from |
+|---|---|---|
+| `Ok` | The instance answered with a queue document that parsed | A reachable instance — an empty queue is still `Ok` |
+| `NotConfigured` | No address, or an address with no key | `Unreachable` — nothing was attempted, so the instance is not being accused of anything |
+| `Unreachable` | No usable connection, or past the timeout — including a failed TLS handshake | `NotConfigured` — an address was stored and tried |
+| `AuthenticationFailed` | Reached and answered, but rejected the key | `NotConfigured` — a key was sent and refused, rather than absent |
+| `UnexpectedResponse` | Answered, but not with a queue document — a login page, a 5xx, a redirect | `AuthenticationFailed` — the instance never said the key was wrong |
+
+**Not to be confused with `SourceProbeOutcome`.** Four names are shared (`Ok`,
+`Unreachable`, `AuthenticationFailed`, `UnexpectedResponse`) but the set differs
+at both ends, and each difference is load-bearing:
+
+- **No `TlsFailure`.** A failed handshake is simply "we could not read the
+  section"; telling it apart from a refused connection is the question the
+  *probe* exists to answer, and it already has a button and an outcome for it.
+  Carrying a member this surface would never act on differently would put a value
+  on the wire contract that nothing consumes — the mirror of the mistake
+  `OllamaProbeOutcome` avoids by omitting `AuthenticationFailed`.
+- **Plus `NotConfigured`**, covering **both** "no address" and "an address with
+  no key". They are one value because the operator's next action is identical —
+  finish configuring the section — and because the credential providers already
+  report that half-configured state as null. Attempting the call instead would
+  report `AuthenticationFailed` against an instance that is not actually broken.
+
+---
+
 ## AI backend
 
 An **AI backend** is the LLM instance the classifier speaks to — today Ollama, at
