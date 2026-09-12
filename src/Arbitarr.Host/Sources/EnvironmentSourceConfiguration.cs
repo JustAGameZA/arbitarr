@@ -1,3 +1,5 @@
+using Arbitarr.Core.Diagnostics;
+
 namespace Arbitarr.Host.Sources;
 
 /// <summary>
@@ -31,4 +33,33 @@ public sealed record EnvironmentSourceConfiguration(
     /// </summary>
     public bool AnySettingSupplied =>
         BaseUrlWasSupplied || SourceNameWasSupplied || !string.IsNullOrWhiteSpace(ApiKey);
+
+    /// <summary>
+    /// Renders every member in full except the key, which is
+    /// <see cref="CredentialPatterns.Replacement"/> (arb-1ox9).
+    /// </summary>
+    /// <remarks>
+    /// <para><b>THIS IS THE MECHANISM BEHIND <see cref="ApiKey"/>'s "Never logged, never echoed".</b>
+    /// A comment cannot fail, and this type's whole job is divergence comparison at startup — the
+    /// exact shape that attracts a <c>$"seed config {configuration} differs from the stored row"</c>
+    /// diagnostic. The synthesised <c>ToString</c> on a positional record prints every member by name
+    /// and value, so that line would have written the environment-supplied key into the persistent
+    /// log store served at <c>/api/admin/logs</c> (#65).</para>
+    ///
+    /// <para>The <c>IHttpClientFactory</c> URI redaction does not cover it (that is scoped to an
+    /// outbound request's query string), and while <c>LogMessageCleanser</c> does scrub a rendered
+    /// <c>ApiKey = …</c>, <b>it runs only in the LOG SINK</b> (CLAUDE.md §1) — an exception message
+    /// or console line carrying this record never meets it. Its coverage is name-dependent too: see
+    /// <c>Arbitarr.Data.Security.CreatedApiKey.ToString</c> for the sibling spelling that matches no
+    /// arm of it.</para>
+    ///
+    /// <para>The two <c>WasSupplied</c> flags are rendered because they are what a divergence line is
+    /// actually about — whether the operator set a value — and they carry no secret.</para>
+    /// </remarks>
+    public override string ToString() =>
+        $"{nameof(EnvironmentSourceConfiguration)} {{ {nameof(BaseUrl)} = {BaseUrl}, "
+        + $"{nameof(ApiKey)} = {CredentialPatterns.Replacement}, "
+        + $"{nameof(SourceName)} = {SourceName}, "
+        + $"{nameof(BaseUrlWasSupplied)} = {BaseUrlWasSupplied}, "
+        + $"{nameof(SourceNameWasSupplied)} = {SourceNameWasSupplied} }}";
 }

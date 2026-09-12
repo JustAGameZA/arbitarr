@@ -1,3 +1,5 @@
+using Arbitarr.Core.Diagnostics;
+
 namespace Arbitarr.Sources.NzbHydra;
 
 /// <summary>
@@ -24,4 +26,23 @@ public sealed record NzbHydraSourceOptions(
     public TimeSpan EffectiveRequestTimeout => RequestTimeout ?? TimeSpan.FromSeconds(10);
 
     public TimeSpan EffectiveRateLimitInterval => RateLimitInterval ?? TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// Renders the address and source name in full and the key as
+    /// <see cref="CredentialPatterns.Replacement"/> (arb-1ox9).
+    /// </summary>
+    /// <remarks>
+    /// <b>THIS IS THE MECHANISM BEHIND <see cref="ApiKey"/>'s "never logged"</b>, which until now was
+    /// only a comment: the synthesised <c>ToString</c> on a positional record prints every member by
+    /// name and value. The <c>IHttpClientFactory</c> URI redaction does not cover it (that sees only
+    /// request URIs), and <c>LogMessageCleanser</c> covers it only in the LOG SINK and only because
+    /// this field happens to be spelled "ApiKey" (CLAUDE.md §1). See
+    /// <c>ArrApiProviderOptions.ToString</c> for the full reasoning and
+    /// <c>Arbitarr.Data.Security.CreatedApiKey.ToString</c> for the sibling spelling the cleanser
+    /// misses entirely.
+    /// </remarks>
+    public override string ToString() =>
+        $"{nameof(NzbHydraSourceOptions)} {{ {nameof(BaseUrl)} = {BaseUrl}, "
+        + $"{nameof(ApiKey)} = {CredentialPatterns.Replacement}, "
+        + $"{nameof(SourceName)} = {SourceName} }}";
 }

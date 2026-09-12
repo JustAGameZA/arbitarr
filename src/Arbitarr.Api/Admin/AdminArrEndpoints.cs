@@ -1,3 +1,4 @@
+using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Media;
 using Arbitarr.Core.Sources;
 using Arbitarr.Data.Media;
@@ -37,7 +38,35 @@ public sealed record ArrConfigResponse(string? BaseUrl, bool HasApiKey);
 /// <c>DELETE /api/admin/arr/sonarr</c> unconfigures the whole instance and nothing clears the key
 /// on its own.</para>
 /// </summary>
-public sealed record UpdateArrConfigRequest(string? BaseUrl, string? ApiKey = null);
+public sealed record UpdateArrConfigRequest(string? BaseUrl, string? ApiKey = null)
+{
+    /// <summary>
+    /// Renders the address in full and the submitted key as
+    /// <see cref="CredentialPatterns.Replacement"/> (arb-1ox9).
+    /// </summary>
+    /// <remarks>
+    /// <para>The synthesised <c>ToString</c> on a positional record prints every member by name and
+    /// value, so the default here produced <c>UpdateArrConfigRequest { BaseUrl = …, ApiKey =
+    /// the-submitted-key }</c>. This is a REQUEST BODY carrying a live operator-supplied key, and the
+    /// request-handling path is where a "what did the client send us?" diagnostic line is most likely
+    /// to be added. <c>IHttpClientFactory</c>'s URI redaction does not cover it — that is scoped to an
+    /// outbound request's query string — and while <c>LogMessageCleanser</c> does scrub a rendered
+    /// <c>ApiKey = …</c> on its way into the log store, <b>it runs only in the LOG SINK</b>
+    /// (CLAUDE.md §1). An exception message, console output, or any other surface carrying this
+    /// record never meets it, and <c>ToString</c> is where all of those are formed. The sink's
+    /// coverage is also name-dependent rather than structural: see
+    /// <c>Arbitarr.Data.Security.CreatedApiKey.ToString</c> for the sibling spelling that matches no
+    /// arm of the cleanser and reached the store verbatim.</para>
+    ///
+    /// <para>Distinct from <see cref="Security.ChangePasswordRequest"/>, which documents that it must
+    /// never gain an override: that record has NO non-secret member, so a redacting render would say
+    /// nothing while making the type look safe to log. This one's address is genuinely useful and
+    /// genuinely not a credential, so a safe render exists and is worth having.</para>
+    /// </remarks>
+    public override string ToString() =>
+        $"{nameof(UpdateArrConfigRequest)} {{ {nameof(BaseUrl)} = {BaseUrl}, "
+        + $"{nameof(ApiKey)} = {(ApiKey is null ? "null" : CredentialPatterns.Replacement)} }}";
+}
 
 /// <summary>The outcome of <c>POST /api/admin/arr/sonarr/test</c>.</summary>
 /// <param name="Outcome">
