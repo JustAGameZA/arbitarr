@@ -473,7 +473,13 @@ builder.Services.AddScoped(sp =>
     // below, which reads no configuration, so pinning Arbitarr:Ai:PromptVersion can no longer keep
     // verdicts cached under old sampling alive. The default stays at "v2" deliberately: reverting
     // it to "v1" would itself invalidate the whole cache a second time for no benefit.
-    var promptVersion = section["PromptVersion"] ?? "v2";
+    //
+    // arb-458f: bumped "v2" -> "v3". This one IS the term's documented meaning (CONTEXT.md: the
+    // version tag of the prompt TEMPLATE, and only the template) rather than arb-p4r's stretched
+    // use of it — the user message now carries the Usenet poster/group/files/password/grabs lines,
+    // so the same release asks the model a materially different question than it did under "v2"
+    // and verdicts cached against the old template must not be served for the new one.
+    var promptVersion = section["PromptVersion"] ?? "v3";
     // Built in Arbitarr.Ai from the sampling constants and passed to Core as a plain string, so
     // Core acquires no Ollama types (ADR-0001).
     return new AiModelIdentity(modelName, modelDigest, promptVersion, OllamaOptions.DecodingIdentity);
