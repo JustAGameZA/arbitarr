@@ -1,3 +1,5 @@
+using System.Reflection;
+using System.Text.RegularExpressions;
 using Arbitarr.Core.Diagnostics;
 using Xunit;
 
@@ -172,5 +174,69 @@ public class CredentialPatternsTests
         var twice = CredentialPatterns.RedactCredentials(once);
 
         Assert.Equal(once, twice);
+    }
+
+    /// <summary>
+    /// arb-01z (part 1 of arb-01z; parts 2 and 3 — moving the corpus to Arbitarr.TestSupport, and
+    /// the ordered-list redesign for arb-qj9's ~7 new arms — are explicitly out of scope here; see
+    /// the bd comment on arb-01z).
+    ///
+    /// <para><b>The gap this closes.</b> <c>CredentialPatternsCrossSinkTests</c> and every theory in
+    /// this file are driven by <see cref="CredentialCorpus"/>. Nothing previously tied the ARM SET in
+    /// <see cref="CredentialPatterns"/> to that corpus, so a new arm added without a matching corpus
+    /// row would compile, run, and pass every existing test while being completely unexercised — the
+    /// same "no test proves this fires" gap #206 flagged for arb-qj9's incoming ~7 arms.</para>
+    ///
+    /// <para><b>Why reflection over <c>[GeneratedRegex]</c>-decorated members, not a hand-kept name
+    /// list.</b> A hand-kept list of arm names is exactly the "kept in step by a comment" pattern
+    /// this whole type exists to remove (see the type's remarks on the two sinks drifting under
+    /// arb-fbx). Discovering arms by attribute means a renamed or newly added
+    /// <c>[GeneratedRegex]</c> arm is picked up automatically — nothing here needs editing when an
+    /// arm's name changes, only when one is added with no corpus coverage, which is the failure this
+    /// test exists to catch.</para>
+    ///
+    /// <para><b>Why match against the arm's OWN pattern, not against the aggregate
+    /// <see cref="CredentialPatterns.RedactCredentials"/> output.</b> Running the whole corpus through
+    /// <c>RedactCredentials</c> would let one arm's match hide another arm's total lack of coverage —
+    /// exactly the failure mode of the vacuous "some row has it" assertions CLAUDE.md §4 warns
+    /// against. Instead each arm's compiled <see cref="Regex"/> is invoked directly against every
+    /// corpus input, so an arm is credited only by a match against ITS pattern, not the pipeline's
+    /// combined effect.</para>
+    ///
+    /// <para><b>Positive control (CLAUDE.md §4), run outside this repo.</b> A throwaway console
+    /// project holding a copy of the same four arms plus one extra dummy
+    /// <c>[GeneratedRegex]</c> arm (a bare <c>ghp_[A-Za-z0-9]{20,}</c> GitHub-token shape) and no
+    /// corresponding corpus row, driven through the same reflection-and-match logic as this test,
+    /// reproduced the gap and printed:
+    /// <c>FAIL: Arm "DummyGithubToken" is matched by no row in corpus.</c> and
+    /// <c>1 out of 5 items in the collection did not pass.</c> Removing the dummy arm reduced it back
+    /// to 0 of 4 failing — confirming the assertion is about ARM coverage, not merely corpus size. No
+    /// code from that throwaway project is present in this repository.</para>
+    /// </summary>
+    [Fact]
+    public void Every_arm_is_matched_by_at_least_one_corpus_row()
+    {
+        var arms = typeof(CredentialPatterns)
+            .GetMethods(BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Static)
+            .Where(m => m.ReturnType == typeof(Regex) && m.GetParameters().Length == 0)
+            .Where(m => m.GetCustomAttributes().Any(a => a.GetType().Name == "GeneratedRegexAttribute"))
+            .ToList();
+
+        // Sanity floor: if reflection stopped finding the arms (e.g. a signature shape it no longer
+        // matches), an empty list would make Assert.All below pass vacuously over nothing.
+        Assert.True(arms.Count >= 4, $"Expected at least 4 GeneratedRegex arms, found {arms.Count}.");
+
+        var corpusInputs = CredentialCorpus().Select(row => (string)row[0]!).ToList();
+
+        Assert.All(arms, method =>
+        {
+            var regex = (Regex)method.Invoke(null, null)!;
+            var matchedByAnyRow = corpusInputs.Any(input => regex.IsMatch(input));
+
+            Assert.True(
+                matchedByAnyRow,
+                $"Arm \"{method.Name}\" is matched by no row in {nameof(CredentialCorpus)} — " +
+                "add a corpus row whose planted value has this arm's shape.");
+        });
     }
 }
