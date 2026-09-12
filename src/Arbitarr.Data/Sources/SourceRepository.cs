@@ -4,6 +4,51 @@ using Microsoft.EntityFrameworkCore;
 namespace Arbitarr.Data.Sources;
 
 /// <summary>
+/// The per-indexer tuning knobs added in arb-x7w8.1, carried as one optional argument so the many
+/// existing call sites that have no opinion about them keep their meaning: omitting this is
+/// "whatever the entity defaults say", not "reset everything to zero".
+///
+/// <para>Every member is nullable, and a <c>null</c> member means LEAVE UNSET / UNCHANGED — which is
+/// why <see cref="QueryLimit"/> and <see cref="GrabLimit"/> are <c>int??</c>-shaped by way of the
+/// <see cref="SetQueryLimit"/>/<see cref="SetGrabLimit"/> flags rather than a bare <c>int?</c>. For
+/// those two columns <c>null</c> is itself a meaningful stored value (unlimited, and NOT the same as
+/// <c>0</c> — see <see cref="Entities.Source.QueryLimit"/>), so "leave alone" and "store null" cannot
+/// share one representation without collapsing the very distinction the column exists to keep.</para>
+/// </summary>
+public sealed record SourceOptions
+{
+    /// <summary>New <see cref="Entities.Source.ApiPath"/>, or null to leave it at its current value.</summary>
+    public string? ApiPath { get; init; }
+
+    /// <summary>New <see cref="Entities.Source.Priority"/>, or null to leave it unchanged.</summary>
+    public int? Priority { get; init; }
+
+    /// <summary>New <see cref="Entities.Source.TimeoutSeconds"/>. Only applied when <see cref="SetTimeoutSeconds"/> is true.</summary>
+    public int? TimeoutSeconds { get; init; }
+
+    /// <summary>Whether <see cref="TimeoutSeconds"/> should be written, including when it is null.</summary>
+    public bool SetTimeoutSeconds { get; init; }
+
+    /// <summary>New <see cref="Entities.Source.QueryLimit"/>. Only applied when <see cref="SetQueryLimit"/> is true.</summary>
+    public int? QueryLimit { get; init; }
+
+    /// <summary>Whether <see cref="QueryLimit"/> should be written, including when it is null (unlimited).</summary>
+    public bool SetQueryLimit { get; init; }
+
+    /// <summary>New <see cref="Entities.Source.GrabLimit"/>. Only applied when <see cref="SetGrabLimit"/> is true.</summary>
+    public int? GrabLimit { get; init; }
+
+    /// <summary>Whether <see cref="GrabLimit"/> should be written, including when it is null (unlimited).</summary>
+    public bool SetGrabLimit { get; init; }
+
+    /// <summary>New <see cref="Entities.Source.LimitsUnit"/>, or null to leave it at its current value.</summary>
+    public string? LimitsUnit { get; init; }
+
+    /// <summary>New <see cref="Entities.Source.NzbAccessMode"/>, or null to leave it at its current value.</summary>
+    public string? NzbAccessMode { get; init; }
+}
+
+/// <summary>
 /// #53 stage 53a: persistence for configured upstream sources, with the same
 /// validate-at-the-repository-boundary posture as <see cref="Settings.SettingsRepository"/> (AC24 —
 /// reject malformed input, never clamp or coerce it into something valid).
@@ -51,13 +96,43 @@ public sealed class SourceRepository
     public const string NzbHydraKind = "NzbHydra";
 
     /// <summary>
+    /// The <see cref="Entities.Source.Kind"/> value for a direct Newznab (Usenet) indexer — one
+    /// Arbitarr queries itself rather than through NZBHydra2 (arb-x7w8.1). Declared here alongside
+    /// <see cref="NzbHydraKind"/> for the same ADR 0001 reason: <c>Arbitarr.Data</c> is the one
+    /// project both <c>Api</c> and <c>Host</c> already reference.
+    /// </summary>
+    public const string NewznabKind = "Newznab";
+
+    /// <summary>
+    /// The <see cref="Entities.Source.Kind"/> value for a direct Torznab (torrent) indexer, including
+    /// a Prowlarr or Jackett endpoint speaking Torznab (arb-x7w8.1). Distinct from
+    /// <see cref="NewznabKind"/> rather than a flag on it because the two differ in what they return
+    /// (<c>ProtocolKind</c>) and in how a download is served, not merely in a query parameter.
+    /// </summary>
+    public const string TorznabKind = "Torznab";
+
+    /// <summary>
     /// Every <see cref="Entities.Source.Kind"/> value the running system can actually resolve into a
     /// search source. <see cref="ValidateKind"/> rejects anything outside this set so a casing
     /// mismatch (<c>"nzbhydra"</c>, <c>"NZBHYDRA"</c>) is caught at write time with a 400 instead of
     /// being stored, listed, and silently never matched by <c>SourceSeeder</c>'s ordinal comparison
     /// (arb-pn5) or any future resolver that follows the same pattern.
     /// </summary>
-    public static readonly IReadOnlyCollection<string> KnownKinds = new[] { NzbHydraKind };
+    public static readonly IReadOnlyCollection<string> KnownKinds = new[] { NzbHydraKind, NewznabKind, TorznabKind };
+
+    /// <summary>
+    /// The accepted <see cref="Entities.Source.LimitsUnit"/> values — the rolling window query and
+    /// grab limits are counted over. Matched exactly and ordinally by <see cref="ValidateLimitsUnit"/>,
+    /// the same posture as <see cref="KnownKinds"/>.
+    /// </summary>
+    public static readonly IReadOnlyCollection<string> KnownLimitsUnits = new[] { "Hour", "Day" };
+
+    /// <summary>
+    /// The accepted <see cref="Entities.Source.NzbAccessMode"/> values. Matched exactly and ordinally
+    /// by <see cref="ValidateNzbAccessMode"/>; see that entity property for why <c>"Proxy"</c> is the
+    /// default and <c>"Redirect"</c> is an explicit opt-in.
+    /// </summary>
+    public static readonly IReadOnlyCollection<string> KnownNzbAccessModes = new[] { "Proxy", "Redirect" };
 
     /// <summary>
     /// Validates and inserts a new source. Rejects a non-absolute/non-http(s) <paramref name="baseUrl"/>
@@ -72,7 +147,8 @@ public sealed class SourceRepository
         string baseUrl,
         string? apiKey,
         bool enabled,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        SourceOptions? options = null)
     {
         ValidateKind(kind);
         ValidateDisplayName(displayName);
@@ -89,6 +165,8 @@ public sealed class SourceRepository
             CreatedAt = now,
             UpdatedAt = now,
         };
+
+        ApplyOptions(source, options);
 
         await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
@@ -118,7 +196,8 @@ public sealed class SourceRepository
         string baseUrl,
         string? apiKey,
         bool enabled,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        SourceOptions? options = null)
     {
         var source = await _dbContext.Sources.FirstOrDefaultAsync(s => s.Id == id, cancellationToken)
             ?? throw new SourceValidationException($"Source {id} does not exist.");
@@ -134,6 +213,7 @@ public sealed class SourceRepository
         source.DisplayName = displayName;
         source.BaseUrl = baseUrl;
         source.Enabled = enabled;
+        ApplyOptions(source, options);
         source.UpdatedAt = DateTimeOffset.UtcNow;
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -222,6 +302,74 @@ public sealed class SourceRepository
         return true;
     }
 
+    /// <summary>
+    /// Validates and applies the arb-x7w8.1 per-indexer columns onto <paramref name="source"/>.
+    /// Validation runs before any assignment so a rejected value never half-writes an entity, the
+    /// same AC24 reject-never-clamp posture the rest of this type holds.
+    ///
+    /// <para>The limit columns are written through their explicit <c>Set…</c> flags rather than by
+    /// null-checking the value, because for those two <c>null</c> is a real stored state (unlimited)
+    /// that is NOT <c>0</c>. A null-check would make "store unlimited" indistinguishable from "leave
+    /// whatever is there", so an operator clearing a limit would silently keep the old one.</para>
+    /// </summary>
+    private static void ApplyOptions(Source source, SourceOptions? options)
+    {
+        if (options is null)
+        {
+            return;
+        }
+
+        if (options.ApiPath is not null)
+        {
+            ValidateApiPath(options.ApiPath);
+        }
+
+        if (options.LimitsUnit is not null)
+        {
+            ValidateLimitsUnit(options.LimitsUnit);
+        }
+
+        if (options.NzbAccessMode is not null)
+        {
+            ValidateNzbAccessMode(options.NzbAccessMode);
+        }
+
+        if (options.ApiPath is not null)
+        {
+            source.ApiPath = options.ApiPath;
+        }
+
+        if (options.Priority is not null)
+        {
+            source.Priority = options.Priority.Value;
+        }
+
+        if (options.SetTimeoutSeconds)
+        {
+            source.TimeoutSeconds = options.TimeoutSeconds;
+        }
+
+        if (options.SetQueryLimit)
+        {
+            source.QueryLimit = options.QueryLimit;
+        }
+
+        if (options.SetGrabLimit)
+        {
+            source.GrabLimit = options.GrabLimit;
+        }
+
+        if (options.LimitsUnit is not null)
+        {
+            source.LimitsUnit = options.LimitsUnit;
+        }
+
+        if (options.NzbAccessMode is not null)
+        {
+            source.NzbAccessMode = options.NzbAccessMode;
+        }
+    }
+
     private async Task UpsertApiKeySettingAsync(long sourceId, string apiKey, CancellationToken cancellationToken)
     {
         var name = ApiKeySettingName(sourceId);
@@ -278,6 +426,81 @@ public sealed class SourceRepository
         {
             throw new SourceValidationException(
                 $"'{kind}' is not a known source kind. Accepted value(s): {string.Join(", ", KnownKinds)}.");
+        }
+    }
+
+    /// <summary>
+    /// Rejects any <paramref name="limitsUnit"/> that is not exactly one of
+    /// <see cref="KnownLimitsUnits"/> — same exact-ordinal posture as <see cref="ValidateKind"/> and
+    /// for the same reason (CLAUDE.md §3: a closed string set arriving from the wire is matched by
+    /// name, never leniently). A stored <c>"day"</c> would be accepted here and then never matched by
+    /// the ordinal comparison that decides which rolling window to count over, silently leaving the
+    /// source's limits unenforced.
+    /// </summary>
+    private static void ValidateLimitsUnit(string limitsUnit)
+    {
+        if (string.IsNullOrWhiteSpace(limitsUnit))
+        {
+            throw new SourceValidationException("Source limits unit must not be empty.");
+        }
+
+        if (!KnownLimitsUnits.Contains(limitsUnit, StringComparer.Ordinal))
+        {
+            throw new SourceValidationException(
+                $"'{limitsUnit}' is not a known limits unit. Accepted value(s): {string.Join(", ", KnownLimitsUnits)}.");
+        }
+    }
+
+    /// <summary>
+    /// Rejects any <paramref name="nzbAccessMode"/> that is not exactly one of
+    /// <see cref="KnownNzbAccessModes"/>. Exact ordinal matching matters more here than anywhere
+    /// else in this type: this value selects whether the indexer key is exposed to the client, so a
+    /// leniently-parsed variant that failed to match <c>"Redirect"</c> — or worse, matched it by
+    /// accident — changes a security posture rather than a preference.
+    /// </summary>
+    private static void ValidateNzbAccessMode(string nzbAccessMode)
+    {
+        if (string.IsNullOrWhiteSpace(nzbAccessMode))
+        {
+            throw new SourceValidationException("Source NZB access mode must not be empty.");
+        }
+
+        if (!KnownNzbAccessModes.Contains(nzbAccessMode, StringComparer.Ordinal))
+        {
+            throw new SourceValidationException(
+                $"'{nzbAccessMode}' is not a known NZB access mode. Accepted value(s): {string.Join(", ", KnownNzbAccessModes)}.");
+        }
+    }
+
+    /// <summary>
+    /// Rejects an empty <paramref name="apiPath"/>, and one carrying a query string or an embedded
+    /// <c>apikey=</c>. Appending the key and the search parameters is the adapter's job (arb-x7w8.2),
+    /// which reads the key from its write-only Settings row; a key pasted into this column would be
+    /// a second, readable home for the same secret — exactly the property
+    /// <see cref="Entities.Source"/>'s doc comment exists to prevent — and it would ride along into
+    /// every backup and every response that projects a source.
+    ///
+    /// <para>Deliberately minimal: this is not URL-path validation. It rejects the two shapes that
+    /// break a documented invariant and accepts everything else, because guessing at what a reverse
+    /// proxy may legitimately serve is how a correct deployment gets rejected.</para>
+    /// </summary>
+    private static void ValidateApiPath(string apiPath)
+    {
+        if (string.IsNullOrWhiteSpace(apiPath))
+        {
+            throw new SourceValidationException("Source API path must not be empty.");
+        }
+
+        if (apiPath.Contains('?', StringComparison.Ordinal))
+        {
+            throw new SourceValidationException(
+                "Source API path must not contain a query string; search parameters are appended by Arbitarr.");
+        }
+
+        if (apiPath.Contains("apikey=", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new SourceValidationException(
+                "Source API path must not embed an API key; store the key in the source's API key field instead.");
         }
     }
 

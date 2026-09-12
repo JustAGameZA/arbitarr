@@ -127,6 +127,226 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
         Assert.True(created.HasApiKey);
     }
 
+    /// <summary>
+    /// arb-x7w8.1 POSITIVE CONTROL for the leak sweep above (CLAUDE.md §4). The sweep asserts the
+    /// key is absent from every response body, and this proves that assertion is CAPABLE OF FAILING
+    /// — that it would catch a key projected onto <see cref="SourceResponse"/> rather than passing
+    /// vacuously because the key was never in play.
+    ///
+    /// <para>Asserting that the fixture was created (a 201, a true <c>HasApiKey</c>) proves the
+    /// secret EXISTS. It does not prove it would be DETECTABLE if it leaked. So this plants the
+    /// exact secret into a response body by the only route that can carry one — serializing the
+    /// response the endpoint really produced, with the key attached to it — and asserts the very
+    /// same <c>DoesNotContain</c> check the sweep uses FAILS against it. Only then does it assert
+    /// the real body passes. Without this first half, a rename of the constant, an empty body, or a
+    /// serializer that dropped everything would leave the sweep green and silent.</para>
+    ///
+    /// <para>This is the shape <c>LogSecretInjectionTests</c> uses — it asserts the cleanser's
+    /// replacement marker IS PRESENT, proving the secret reached the check and was scrubbed, rather
+    /// than merely never arriving. The three shipped regressions this guards against (#57, #80, #78)
+    /// all passed a bare absence assertion while a real leak was live.</para>
+    /// </summary>
+    [Fact]
+    public async Task The_no_key_in_response_assertion_would_fail_if_a_key_were_projected()
+    {
+        await SeedAdminKeyAsync();
+        using var client = CreateAdminClient();
+
+        var created = await CreateSourceAsync(client, "Control probe " + Guid.NewGuid().ToString("N"), SecretApiKey);
+        Assert.True(created.HasApiKey);
+
+        using var listResponse = await client.GetAsync(SourcesRoute);
+        var realBody = await listResponse.Content.ReadAsStringAsync();
+
+        // The mutant: the real response with the key projected onto it, exactly as a SourceResponse
+        // that had gained a key-carrying property would serialize. Nothing vulnerable is added to
+        // the product — this constructs the leaked shape here, in the test, and throws it away.
+        var leakedBody = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            id = created.Id,
+            kind = created.Kind,
+            displayName = created.DisplayName,
+            baseUrl = created.BaseUrl,
+            enabled = created.Enabled,
+            hasApiKey = created.HasApiKey,
+            apiKey = SecretApiKey,
+            apiPath = created.ApiPath,
+            priority = created.Priority,
+            limitsUnit = created.LimitsUnit,
+            nzbAccessMode = created.NzbAccessMode,
+        });
+
+        // FIRST: prove the check bites. If this does not throw, the assertion used by the sweep is
+        // incapable of detecting a leak and every "no key in the body" test in this file is vacuous.
+        Assert.ThrowsAny<Xunit.Sdk.XunitException>(
+            () => Assert.DoesNotContain(SecretApiKey, leakedBody, StringComparison.Ordinal));
+
+        // THEN: the real body, checked by that now-proven-capable assertion, carries no key.
+        Assert.DoesNotContain(SecretApiKey, realBody, StringComparison.Ordinal);
+
+        // And the response really did describe the source holding the secret, so the check above ran
+        // against the right payload rather than an empty or unrelated one.
+        Assert.Contains(created.DisplayName, realBody, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// arb-x7w8.1: the two new kinds are accepted end to end and round-trip under their own names,
+    /// asserted per kind. <see cref="SourceRepository.NzbHydraKind"/> is covered by the existing
+    /// create test above, so all three kinds are pinned.
+    /// </summary>
+    [Theory]
+    [InlineData(SourceRepository.NewznabKind)]
+    [InlineData(SourceRepository.TorznabKind)]
+    public async Task A_source_of_each_new_kind_can_be_created_and_reads_back_with_that_kind(string kind)
+    {
+        await SeedAdminKeyAsync();
+        using var client = CreateAdminClient();
+
+        using var response = await client.PostAsJsonAsync(SourcesRoute, new
+        {
+            kind,
+            displayName = $"{kind} indexer " + Guid.NewGuid().ToString("N"),
+            baseUrl = "http://192.0.2.33:9117",
+            apiKey = SecretApiKey,
+            enabled = true,
+        });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        var created = await response.Content.ReadFromJsonAsync<SourceResponse>();
+        Assert.NotNull(created);
+        Assert.Equal(kind, created!.Kind);
+
+        // The documented defaults land rather than zero/empty — notably Proxy, the mode that does
+        // NOT expose the indexer key to the client.
+        Assert.Equal("/api", created.ApiPath);
+        Assert.Equal("Day", created.LimitsUnit);
+        Assert.Equal("Proxy", created.NzbAccessMode);
+    }
+
+    /// <summary>
+    /// arb-x7w8.1, per casing variant. The existing arb-pn5 theory covers the NzbHydra spellings;
+    /// this covers the two kinds added here, and asserts each variant separately rather than "some
+    /// variant is rejected", so a fix that special-cased one spelling cannot pass.
+    /// </summary>
+    [Theory]
+    [InlineData("newznab")]
+    [InlineData("NEWZNAB")]
+    [InlineData("torznab")]
+    [InlineData("TORZNAB")]
+    public async Task A_wrongly_cased_new_source_kind_is_rejected_with_400(string wrongCasing)
+    {
+        await SeedAdminKeyAsync();
+        using var client = CreateAdminClient();
+
+        using var response = await client.PostAsJsonAsync(SourcesRoute, new
+        {
+            kind = wrongCasing,
+            displayName = "Bad new casing " + Guid.NewGuid().ToString("N"),
+            baseUrl = "http://192.0.2.34:9117",
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Newznab", body, StringComparison.Ordinal);
+        Assert.Contains("Torznab", body, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The null-is-not-zero distinction survives the wire, not merely the column: a source created
+    /// with an explicit <c>0</c> limit and one created with no limit at all must come back as two
+    /// different values. Asserted per source and then against each other, so a projection that
+    /// collapsed either into the other is caught in both directions.
+    /// </summary>
+    [Fact]
+    public async Task Null_and_zero_limits_survive_the_wire_as_distinct_values()
+    {
+        await SeedAdminKeyAsync();
+        using var client = CreateAdminClient();
+
+        using var unlimitedResponse = await client.PostAsJsonAsync(SourcesRoute, new
+        {
+            kind = SourceRepository.NewznabKind,
+            displayName = "Unlimited " + Guid.NewGuid().ToString("N"),
+            baseUrl = "http://192.0.2.35:9117",
+            queryLimit = (int?)null,
+            grabLimit = (int?)null,
+        });
+        Assert.Equal(HttpStatusCode.Created, unlimitedResponse.StatusCode);
+        var unlimited = await unlimitedResponse.Content.ReadFromJsonAsync<SourceResponse>();
+
+        using var cappedResponse = await client.PostAsJsonAsync(SourcesRoute, new
+        {
+            kind = SourceRepository.NewznabKind,
+            displayName = "Zero capped " + Guid.NewGuid().ToString("N"),
+            baseUrl = "http://192.0.2.36:9117",
+            queryLimit = 0,
+            grabLimit = 0,
+        });
+        Assert.Equal(HttpStatusCode.Created, cappedResponse.StatusCode);
+        var capped = await cappedResponse.Content.ReadFromJsonAsync<SourceResponse>();
+
+        Assert.NotNull(unlimited);
+        Assert.NotNull(capped);
+
+        Assert.Null(unlimited!.QueryLimit);
+        Assert.Null(unlimited.GrabLimit);
+        Assert.Equal(0, capped!.QueryLimit);
+        Assert.Equal(0, capped.GrabLimit);
+
+        Assert.NotEqual(unlimited.QueryLimit, capped.QueryLimit);
+        Assert.NotEqual(unlimited.GrabLimit, capped.GrabLimit);
+    }
+
+    [Theory]
+    [InlineData("limitsUnit", "day")]
+    [InlineData("limitsUnit", "Week")]
+    [InlineData("nzbAccessMode", "redirect")]
+    [InlineData("nzbAccessMode", "Passthrough")]
+    public async Task A_closed_set_column_outside_its_known_values_is_rejected_with_400(string field, string value)
+    {
+        // CLAUDE.md §3 at the wire boundary, per field and per value. nzbAccessMode matters most:
+        // it selects whether the indexer key is exposed to the client.
+        await SeedAdminKeyAsync();
+        using var client = CreateAdminClient();
+
+        var body = new Dictionary<string, object?>
+        {
+            ["kind"] = SourceRepository.NewznabKind,
+            ["displayName"] = "Bad closed set " + Guid.NewGuid().ToString("N"),
+            ["baseUrl"] = "http://192.0.2.37:9117",
+            [field] = value,
+        };
+
+        using var response = await client.PostAsJsonAsync(SourcesRoute, body);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task An_api_path_embedding_a_key_or_a_query_string_is_rejected_with_400()
+    {
+        // A key pasted into apiPath would be a second, READABLE home for a secret designed to live
+        // write-only in a Settings row — and it would ride into every backup and every response.
+        await SeedAdminKeyAsync();
+        using var client = CreateAdminClient();
+
+        using var response = await client.PostAsJsonAsync(SourcesRoute, new
+        {
+            kind = SourceRepository.NewznabKind,
+            displayName = "Key in path " + Guid.NewGuid().ToString("N"),
+            baseUrl = "http://192.0.2.38:9117",
+            apiPath = $"/api?apikey={SecretApiKey}",
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        // The rejection message must not echo the submitted key back to the caller.
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(SecretApiKey, body, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task The_list_reports_key_presence_as_a_boolean_indicator()
     {

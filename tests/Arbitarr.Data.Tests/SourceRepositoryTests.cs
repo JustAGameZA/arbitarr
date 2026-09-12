@@ -270,6 +270,440 @@ public sealed class SourceRepositoryTests : IDisposable
             CancellationToken.None));
     }
 
+    /// <summary>
+    /// arb-x7w8.1: each of the three kinds round-trips under its OWN name. Asserted per kind via a
+    /// Theory rather than by writing three rows and checking "all three kinds are present", because
+    /// the latter passes if a resolver ever normalises one kind into another — the per-kind assertion
+    /// is what pins that the value read back is the value written.
+    /// </summary>
+    [Theory]
+    [InlineData(SourceRepository.NzbHydraKind)]
+    [InlineData(SourceRepository.NewznabKind)]
+    [InlineData(SourceRepository.TorznabKind)]
+    public async Task AddAsync_round_trips_each_known_kind_under_its_own_name(string kind)
+    {
+        using var context = CreateContext();
+        var repository = new SourceRepository(context);
+
+        var source = await repository.AddAsync(
+            kind: kind,
+            displayName: $"Round trip {kind}",
+            baseUrl: "http://indexer.example/",
+            apiKey: null,
+            enabled: true,
+            CancellationToken.None);
+
+        var stored = await repository.GetAsync(source.Id, CancellationToken.None);
+        Assert.NotNull(stored);
+        Assert.Equal(kind, stored!.Kind);
+    }
+
+    /// <summary>
+    /// The casing guard (arb-pn5) now has to hold for the two kinds added in arb-x7w8.1 as well.
+    /// Asserted per casing variant, not "some variant is rejected": a fix that special-cased only
+    /// lowercase would leave the uppercase spelling stored and silently never matched by the
+    /// resolver's ordinal comparison — the exact original bug, reachable through the new kinds.
+    /// </summary>
+    [Theory]
+    [InlineData("newznab")]
+    [InlineData("NEWZNAB")]
+    [InlineData("torznab")]
+    [InlineData("TORZNAB")]
+    public async Task AddAsync_rejects_a_wrongly_cased_new_kind_and_persists_nothing(string wrongCasing)
+    {
+        using var context = CreateContext();
+        var repository = new SourceRepository(context);
+
+        await Assert.ThrowsAsync<SourceValidationException>(() => repository.AddAsync(
+            kind: wrongCasing,
+            displayName: "Bad casing " + wrongCasing,
+            baseUrl: "http://indexer.example/",
+            apiKey: null,
+            enabled: true,
+            CancellationToken.None));
+
+        Assert.Empty(await repository.GetAllAsync(CancellationToken.None));
+    }
+
+    /// <summary>
+    /// The load-bearing assertion of arb-x7w8.1: <c>null</c> (unlimited) and <c>0</c> (a cap of
+    /// zero) are two different stored states and must round-trip as two different stored states.
+    ///
+    /// <para>Asserted PER ROW — one source written with null limits and one written with 0 — and
+    /// then asserted that the two differ. "Some row has null" would pass against an implementation
+    /// that collapsed every limit to one value; comparing the two rows to each other is what makes
+    /// the collapse detectable in either direction. Collapsing null to 0 silently disables an
+    /// unlimited indexer; collapsing 0 to null lets a limited one run free past its cap.</para>
+    /// </summary>
+    [Fact]
+    public async Task Null_and_zero_limits_round_trip_as_distinct_states()
+    {
+        using var context = CreateContext();
+        var repository = new SourceRepository(context);
+
+        var unlimited = await repository.AddAsync(
+            kind: SourceRepository.NewznabKind,
+            displayName: "Unlimited indexer",
+            baseUrl: "http://indexer.example/",
+            apiKey: null,
+            enabled: true,
+            CancellationToken.None,
+            new SourceOptions
+            {
+                QueryLimit = null,
+                SetQueryLimit = true,
+                GrabLimit = null,
+                SetGrabLimit = true,
+            });
+
+        var capped = await repository.AddAsync(
+            kind: SourceRepository.NewznabKind,
+            displayName: "Zero-capped indexer",
+            baseUrl: "http://indexer.example/",
+            apiKey: null,
+            enabled: true,
+            CancellationToken.None,
+            new SourceOptions
+            {
+                QueryLimit = 0,
+                SetQueryLimit = true,
+                GrabLimit = 0,
+                SetGrabLimit = true,
+            });
+
+        // Re-read from the database rather than trusting the tracked entities, so this exercises the
+        // stored representation — the place a collapse would actually happen.
+        context.ChangeTracker.Clear();
+
+        var storedUnlimited = await repository.GetAsync(unlimited.Id, CancellationToken.None);
+        var storedCapped = await repository.GetAsync(capped.Id, CancellationToken.None);
+        Assert.NotNull(storedUnlimited);
+        Assert.NotNull(storedCapped);
+
+        // Per row, written value read back unchanged.
+        Assert.Null(storedUnlimited!.QueryLimit);
+        Assert.Null(storedUnlimited.GrabLimit);
+        Assert.Equal(0, storedCapped!.QueryLimit);
+        Assert.Equal(0, storedCapped.GrabLimit);
+
+        // And the two states are observably different from each other, in both directions.
+        Assert.NotEqual(storedUnlimited.QueryLimit, storedCapped.QueryLimit);
+        Assert.NotEqual(storedUnlimited.GrabLimit, storedCapped.GrabLimit);
+    }
+
+    /// <summary>
+    /// The remaining arb-x7w8.1 columns round-trip, and an omitted <see cref="SourceOptions"/> takes
+    /// the documented entity defaults rather than zero/empty — notably <c>NzbAccessMode "Proxy"</c>,
+    /// the mode that does NOT expose the indexer key to the client.
+    /// </summary>
+    [Fact]
+    public async Task A_source_added_without_options_takes_the_documented_defaults()
+    {
+        using var context = CreateContext();
+        var repository = new SourceRepository(context);
+
+        var source = await repository.AddAsync(
+            kind: SourceRepository.TorznabKind,
+            displayName: "Defaulted indexer",
+            baseUrl: "http://indexer.example/",
+            apiKey: null,
+            enabled: true,
+            CancellationToken.None);
+
+        context.ChangeTracker.Clear();
+        var stored = await repository.GetAsync(source.Id, CancellationToken.None);
+
+        Assert.NotNull(stored);
+        Assert.Equal("/api", stored!.ApiPath);
+        Assert.Equal(0, stored.Priority);
+        Assert.Null(stored.TimeoutSeconds);
+        Assert.Null(stored.QueryLimit);
+        Assert.Null(stored.GrabLimit);
+        Assert.Equal("Day", stored.LimitsUnit);
+        Assert.Equal("Proxy", stored.NzbAccessMode);
+    }
+
+    [Fact]
+    public async Task Per_indexer_columns_round_trip_when_supplied()
+    {
+        using var context = CreateContext();
+        var repository = new SourceRepository(context);
+
+        var source = await repository.AddAsync(
+            kind: SourceRepository.NewznabKind,
+            displayName: "Tuned indexer",
+            baseUrl: "http://indexer.example/",
+            apiKey: null,
+            enabled: true,
+            CancellationToken.None,
+            new SourceOptions
+            {
+                ApiPath = "/api/v2.0/indexers/all/results/torznab",
+                Priority = 25,
+                TimeoutSeconds = 45,
+                SetTimeoutSeconds = true,
+                QueryLimit = 100,
+                SetQueryLimit = true,
+                GrabLimit = 10,
+                SetGrabLimit = true,
+                LimitsUnit = "Hour",
+                NzbAccessMode = "Redirect",
+            });
+
+        context.ChangeTracker.Clear();
+        var stored = await repository.GetAsync(source.Id, CancellationToken.None);
+
+        Assert.NotNull(stored);
+        Assert.Equal("/api/v2.0/indexers/all/results/torznab", stored!.ApiPath);
+        Assert.Equal(25, stored.Priority);
+        Assert.Equal(45, stored.TimeoutSeconds);
+        Assert.Equal(100, stored.QueryLimit);
+        Assert.Equal(10, stored.GrabLimit);
+        Assert.Equal("Hour", stored.LimitsUnit);
+        Assert.Equal("Redirect", stored.NzbAccessMode);
+    }
+
+    /// <summary>
+    /// Closed string sets are matched by exact ordinal name, per CLAUDE.md §3. Asserted per rejected
+    /// value: a case-insensitive accept would store <c>"day"</c>, which the ordinal comparison that
+    /// picks the rolling window would then never match, leaving the limits silently unenforced.
+    /// </summary>
+    [Theory]
+    [InlineData("day")]
+    [InlineData("DAY")]
+    [InlineData("hour")]
+    [InlineData("Week")]
+    [InlineData(" Day ")]
+    public async Task AddAsync_rejects_a_limits_unit_outside_the_known_set(string limitsUnit)
+    {
+        using var context = CreateContext();
+        var repository = new SourceRepository(context);
+
+        await Assert.ThrowsAsync<SourceValidationException>(() => repository.AddAsync(
+            kind: SourceRepository.NewznabKind,
+            displayName: "Bad unit " + limitsUnit,
+            baseUrl: "http://indexer.example/",
+            apiKey: null,
+            enabled: true,
+            CancellationToken.None,
+            new SourceOptions { LimitsUnit = limitsUnit }));
+
+        Assert.Empty(await repository.GetAllAsync(CancellationToken.None));
+    }
+
+    /// <summary>
+    /// Same exact-match posture for the access mode, where it matters most: this value decides
+    /// whether the indexer key is exposed to the client, so a leniently-matched variant would change
+    /// a security posture rather than a preference.
+    /// </summary>
+    [Theory]
+    [InlineData("proxy")]
+    [InlineData("PROXY")]
+    [InlineData("redirect")]
+    [InlineData("REDIRECT")]
+    [InlineData("Passthrough")]
+    public async Task AddAsync_rejects_an_nzb_access_mode_outside_the_known_set(string accessMode)
+    {
+        using var context = CreateContext();
+        var repository = new SourceRepository(context);
+
+        await Assert.ThrowsAsync<SourceValidationException>(() => repository.AddAsync(
+            kind: SourceRepository.NewznabKind,
+            displayName: "Bad mode " + accessMode,
+            baseUrl: "http://indexer.example/",
+            apiKey: null,
+            enabled: true,
+            CancellationToken.None,
+            new SourceOptions { NzbAccessMode = accessMode }));
+
+        Assert.Empty(await repository.GetAllAsync(CancellationToken.None));
+    }
+
+    /// <summary>
+    /// An API path may not be blank, carry a query string, or embed a key. The last is the one that
+    /// matters: a key pasted here would be a second, READABLE home for a secret whose whole design
+    /// is to live write-only in a Settings row, and it would ride into every backup and every
+    /// response that projects a source.
+    /// </summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("/api?t=search")]
+    [InlineData("/api?apikey=placeholder-not-a-real-key")]
+    [InlineData("/api&apikey=placeholder-not-a-real-key")]
+    [InlineData("/api&APIKEY=placeholder-not-a-real-key")]
+    public async Task AddAsync_rejects_a_malformed_api_path(string apiPath)
+    {
+        using var context = CreateContext();
+        var repository = new SourceRepository(context);
+
+        await Assert.ThrowsAsync<SourceValidationException>(() => repository.AddAsync(
+            kind: SourceRepository.NewznabKind,
+            displayName: "Bad path " + Guid.NewGuid().ToString("N"),
+            baseUrl: "http://indexer.example/",
+            apiKey: null,
+            enabled: true,
+            CancellationToken.None,
+            new SourceOptions { ApiPath = apiPath }));
+
+        Assert.Empty(await repository.GetAllAsync(CancellationToken.None));
+    }
+
+    /// <summary>
+    /// Positive control for the rejections above: a realistic non-default path is still accepted, so
+    /// those theories are rejecting the shapes they name rather than every path.
+    /// </summary>
+    [Fact]
+    public async Task AddAsync_still_accepts_a_normal_non_default_api_path()
+    {
+        using var context = CreateContext();
+        var repository = new SourceRepository(context);
+
+        var source = await repository.AddAsync(
+            kind: SourceRepository.TorznabKind,
+            displayName: "Jackett-style path",
+            baseUrl: "http://indexer.example/",
+            apiKey: null,
+            enabled: true,
+            CancellationToken.None,
+            new SourceOptions { ApiPath = "/api/v2.0/indexers/example/results/torznab" });
+
+        Assert.True(source.Id > 0);
+    }
+
+    /// <summary>
+    /// arb-x7w8.1 migration, up and down. Up is exercised against a database populated at the
+    /// PREVIOUS schema (a source row written before the columns existed), which is the case that can
+    /// actually fail: a NOT NULL column added without a default cannot be applied to an existing
+    /// row. The existing row must come back carrying the documented defaults — above all
+    /// <c>NzbAccessMode "Proxy"</c>, so an upgrade never silently converts a configured source into
+    /// one that exposes its key.
+    /// </summary>
+    [Fact]
+    public async Task The_per_indexer_columns_migration_applies_to_an_existing_source_row()
+    {
+        var optionsBuilder = new DbContextOptionsBuilder<ArbitarrDbContext>();
+        optionsBuilder.UseSqlite(_database.ConnectionString);
+
+        using (var context = new ArbitarrDbContext(optionsBuilder.Options))
+        {
+            var migrator = context.GetInfrastructure()
+                .GetRequiredService<Microsoft.EntityFrameworkCore.Migrations.IMigrator>();
+            await migrator.MigrateAsync("AddDownloadRefusalTable");
+
+            // Written through raw SQL: at this migration the CLR entity's new properties have no
+            // columns to map to, so the DbSet cannot be used to create a genuine pre-upgrade row.
+            await context.Database.ExecuteSqlRawAsync(
+                """
+                INSERT INTO Sources (Kind, DisplayName, BaseUrl, Enabled, CreatedAt, UpdatedAt)
+                VALUES ('NzbHydra', 'Pre-upgrade source', 'http://indexer.example/', 1, '2026-01-01 00:00:00+00:00', '2026-01-01 00:00:00+00:00');
+                """);
+        }
+
+        using (var context = new ArbitarrDbContext(optionsBuilder.Options))
+        {
+            await context.Database.MigrateAsync();
+
+            var upgraded = await context.Sources.SingleAsync(s => s.DisplayName == "Pre-upgrade source");
+
+            // The pre-existing data survived...
+            Assert.Equal("NzbHydra", upgraded.Kind);
+            Assert.Equal("http://indexer.example/", upgraded.BaseUrl);
+
+            // ...and the new columns carry their defaults rather than NULL.
+            Assert.Equal("/api", upgraded.ApiPath);
+            Assert.Equal(0, upgraded.Priority);
+            Assert.Equal("Day", upgraded.LimitsUnit);
+            Assert.Equal("Proxy", upgraded.NzbAccessMode);
+
+            // The nullable limits stay NULL (unlimited) — a default here would have destroyed the
+            // null-is-not-zero distinction on every row that predates the column.
+            Assert.Null(upgraded.TimeoutSeconds);
+            Assert.Null(upgraded.QueryLimit);
+            Assert.Null(upgraded.GrabLimit);
+        }
+    }
+
+    /// <summary>
+    /// The same migration rolls back cleanly: after migrating DOWN to the previous migration the
+    /// seven columns are gone and the pre-existing source row is still there. Asserted by reading
+    /// the SQLite schema directly rather than through the CLR entity, which still declares the
+    /// properties regardless of what the database holds.
+    /// </summary>
+    [Fact]
+    public async Task The_per_indexer_columns_migration_rolls_back_cleanly()
+    {
+        var optionsBuilder = new DbContextOptionsBuilder<ArbitarrDbContext>();
+        optionsBuilder.UseSqlite(_database.ConnectionString);
+
+        using (var context = new ArbitarrDbContext(optionsBuilder.Options))
+        {
+            await context.Database.MigrateAsync();
+
+            context.Sources.Add(new Entities.Source
+            {
+                Kind = SourceRepository.NewznabKind,
+                DisplayName = "Survives rollback",
+                BaseUrl = "http://indexer.example/",
+                Enabled = true,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            });
+            await context.SaveChangesAsync();
+        }
+
+        var addedColumns = new[]
+        {
+            "ApiPath", "Priority", "TimeoutSeconds", "QueryLimit", "GrabLimit", "LimitsUnit", "NzbAccessMode",
+        };
+
+        // Positive control: the columns really are present before the rollback, so the "gone"
+        // assertion below is proven capable of failing rather than passing against a schema that
+        // never had them.
+        foreach (var column in addedColumns)
+        {
+            Assert.Contains(column, await ReadSourcesColumnsAsync());
+        }
+
+        using (var context = new ArbitarrDbContext(optionsBuilder.Options))
+        {
+            var migrator = context.GetInfrastructure()
+                .GetRequiredService<Microsoft.EntityFrameworkCore.Migrations.IMigrator>();
+            await migrator.MigrateAsync("AddDownloadRefusalTable");
+        }
+
+        var afterRollback = await ReadSourcesColumnsAsync();
+        foreach (var column in addedColumns)
+        {
+            Assert.DoesNotContain(column, afterRollback);
+        }
+
+        // The rollback dropped columns, not rows.
+        Assert.Contains("DisplayName", afterRollback);
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM Sources WHERE DisplayName = 'Survives rollback';";
+        Assert.Equal(1L, Convert.ToInt64(await command.ExecuteScalarAsync()));
+    }
+
+    private async Task<List<string>> ReadSourcesColumnsAsync()
+    {
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT name FROM pragma_table_info('Sources');";
+
+        var columns = new List<string>();
+        using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            columns.Add(reader.GetString(0));
+        }
+
+        return columns;
+    }
+
     [Fact]
     public async Task HasApiKeyAsync_is_false_when_no_key_was_ever_set()
     {

@@ -12,8 +12,15 @@ namespace Arbitarr.Api.Admin;
 /// <summary>
 /// One source as served over the wire. Note what is absent: there is no field for the API key, and
 /// deliberately no nullable "key" property that a future edit could start populating. Presence is
-/// reported by <paramref name="HasApiKey"/> and nothing else (§3.1/AC2).
+/// reported by <paramref name="HasApiKey"/> and nothing else (§3.1/AC2). The arb-x7w8.1 per-indexer
+/// columns added below are all non-secret tuning values; none is a string that could carry a key,
+/// and <paramref name="ApiPath"/> is validated at the repository boundary to reject one.
 /// </summary>
+/// <param name="QueryLimit">
+/// Null means UNLIMITED and is a different state from 0 — see <see cref="Arbitarr.Data.Entities.Source.QueryLimit"/>.
+/// It is projected as a nullable so the wire preserves that distinction rather than collapsing it.
+/// </param>
+/// <param name="GrabLimit">Same nullable semantics as <paramref name="QueryLimit"/>: null is unlimited, 0 is a cap of zero.</param>
 public sealed record SourceResponse(
     long Id,
     string Kind,
@@ -21,28 +28,63 @@ public sealed record SourceResponse(
     string BaseUrl,
     bool Enabled,
     bool HasApiKey,
+    string ApiPath,
+    int Priority,
+    int? TimeoutSeconds,
+    int? QueryLimit,
+    int? GrabLimit,
+    string LimitsUnit,
+    string NzbAccessMode,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
 
-/// <summary>Request body for <c>POST /api/admin/sources</c>. <paramref name="ApiKey"/> is write-only and optional.</summary>
+/// <summary>
+/// Request body for <c>POST /api/admin/sources</c>. <paramref name="ApiKey"/> is write-only and optional.
+/// Every arb-x7w8.1 tuning field is optional; omitting one takes the entity default rather than zero.
+/// </summary>
+/// <param name="QueryLimit">
+/// Omitted leaves the default (null, unlimited). Explicitly sending <c>null</c> also means unlimited,
+/// which is NOT the same as sending <c>0</c> — see <see cref="Arbitarr.Data.Entities.Source.QueryLimit"/>.
+/// </param>
 public sealed record CreateSourceRequest(
     string? Kind,
     string? DisplayName,
     string? BaseUrl,
     string? ApiKey,
-    bool? Enabled);
+    bool? Enabled,
+    string? ApiPath = null,
+    int? Priority = null,
+    int? TimeoutSeconds = null,
+    int? QueryLimit = null,
+    int? GrabLimit = null,
+    string? LimitsUnit = null,
+    string? NzbAccessMode = null);
 
 /// <summary>
 /// Request body for <c>PUT /api/admin/sources/{id}</c>. A null <paramref name="ApiKey"/> leaves the
 /// stored key untouched; a non-empty one REPLACES it. There is deliberately no way to express
 /// "give me back what is stored" — the write-only contract means the client never had it.
+///
+/// <para>An omitted tuning field likewise leaves the stored value alone. The two limits cannot use
+/// that convention, because for them <c>null</c> is a real value (unlimited) rather than an absence —
+/// so clearing a limit is expressed by <paramref name="ClearQueryLimit"/> /
+/// <paramref name="ClearGrabLimit"/>, keeping "set to unlimited" distinct from "do not touch".</para>
 /// </summary>
 public sealed record UpdateSourceRequest(
     string? Kind,
     string? DisplayName,
     string? BaseUrl,
     string? ApiKey,
-    bool? Enabled);
+    bool? Enabled,
+    string? ApiPath = null,
+    int? Priority = null,
+    int? TimeoutSeconds = null,
+    int? QueryLimit = null,
+    int? GrabLimit = null,
+    string? LimitsUnit = null,
+    string? NzbAccessMode = null,
+    bool ClearQueryLimit = false,
+    bool ClearGrabLimit = false);
 
 /// <summary>The outcome of <c>POST /api/admin/sources/{id}/test</c>, per §3.3.</summary>
 /// <param name="Outcome">
@@ -88,8 +130,10 @@ public sealed record SourceTestResponse(bool Success, string Outcome, string Mes
 /// non-absolute/non-http(s) URLs, empty or colliding display names, and kinds that are empty or
 /// outside <see cref="SourceRepository.KnownKinds"/> — which, because the comparison is ordinal,
 /// includes a merely wrongly-cased <c>"nzbhydra"</c> — with the AC24 reject-never-clamp posture.
-/// This layer only translates <see cref="SourceValidationException"/> into a 400 — one validation
-/// floor, in one place, already tested.</para>
+/// The arb-x7w8.1 columns are validated there too, by the same exact-ordinal rule: <c>limitsUnit</c>,
+/// <c>nzbAccessMode</c> and <c>apiPath</c>. This layer only translates
+/// <see cref="SourceValidationException"/> into a 400 — one validation floor, in one place, already
+/// tested.</para>
 /// </summary>
 public static class AdminSourceEndpoints
 {
@@ -149,7 +193,23 @@ public static class AdminSourceEndpoints
                 request.BaseUrl ?? string.Empty,
                 request.ApiKey,
                 request.Enabled ?? true,
-                cancellationToken);
+                cancellationToken,
+                new SourceOptions
+                {
+                    ApiPath = request.ApiPath,
+                    Priority = request.Priority,
+                    TimeoutSeconds = request.TimeoutSeconds,
+                    SetTimeoutSeconds = request.TimeoutSeconds is not null,
+                    // On create, an omitted limit and an explicit null both mean "unlimited", which
+                    // is the entity default anyway — so writing the value unconditionally is safe
+                    // here in a way it is not on update, where an omission must not clear a stored cap.
+                    QueryLimit = request.QueryLimit,
+                    SetQueryLimit = true,
+                    GrabLimit = request.GrabLimit,
+                    SetGrabLimit = true,
+                    LimitsUnit = request.LimitsUnit,
+                    NzbAccessMode = request.NzbAccessMode,
+                });
 
             var response = await ToResponseAsync(source, repository, cancellationToken);
             return Results.Created($"{SourcesRoute}/{source.Id}", response);
@@ -190,7 +250,23 @@ public static class AdminSourceEndpoints
                 // source with a base URL but a deliberately-blanked key is not a state the UI offers.
                 request.ApiKey,
                 request.Enabled ?? existing.Enabled,
-                cancellationToken);
+                cancellationToken,
+                new SourceOptions
+                {
+                    ApiPath = request.ApiPath,
+                    Priority = request.Priority,
+                    TimeoutSeconds = request.TimeoutSeconds,
+                    SetTimeoutSeconds = request.TimeoutSeconds is not null,
+                    // A value sets the cap; the explicit Clear flag sets it to null (unlimited).
+                    // Omitting both leaves the stored value alone — the three cases stay distinct
+                    // because null-as-unlimited is a real state, not an absence (see Source.cs).
+                    QueryLimit = request.ClearQueryLimit ? null : request.QueryLimit,
+                    SetQueryLimit = request.ClearQueryLimit || request.QueryLimit is not null,
+                    GrabLimit = request.ClearGrabLimit ? null : request.GrabLimit,
+                    SetGrabLimit = request.ClearGrabLimit || request.GrabLimit is not null,
+                    LimitsUnit = request.LimitsUnit,
+                    NzbAccessMode = request.NzbAccessMode,
+                });
 
             return Results.Ok(await ToResponseAsync(source, repository, cancellationToken));
         }
@@ -282,6 +358,15 @@ public static class AdminSourceEndpoints
             BaseUrl: source.BaseUrl,
             Enabled: source.Enabled,
             HasApiKey: await repository.HasApiKeyAsync(source.Id, cancellationToken),
+            ApiPath: source.ApiPath,
+            Priority: source.Priority,
+            TimeoutSeconds: source.TimeoutSeconds,
+            // Copied straight through as nullables: null (unlimited) must stay distinguishable from
+            // 0 (a cap of zero) on the wire, exactly as it is in the column (see Source.cs).
+            QueryLimit: source.QueryLimit,
+            GrabLimit: source.GrabLimit,
+            LimitsUnit: source.LimitsUnit,
+            NzbAccessMode: source.NzbAccessMode,
             CreatedAt: source.CreatedAt,
             UpdatedAt: source.UpdatedAt);
 }
