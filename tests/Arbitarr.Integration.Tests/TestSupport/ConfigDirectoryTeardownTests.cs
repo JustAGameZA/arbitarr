@@ -155,10 +155,18 @@ public sealed class ConfigDirectoryTeardownTests
         {
             var thrown = Assert.ThrowsAny<IOException>(() => ConfigDirectoryTeardown.Delete(directory));
 
-            // The message must name the teardown's two halves, because that is the diagnostic a
-            // future regression needs — a bare "access denied" sends the reader looking for a virus
-            // scanner instead of a dropped ClearPoolsFor or a missing contextOwnsConnection.
-            Assert.Contains("Both halves", thrown.Message, StringComparison.Ordinal);
+            // The message must name every mechanism the teardown depends on, because that is the
+            // diagnostic a future regression needs — a bare "access denied" sends the reader looking
+            // for a virus scanner instead of a dropped ClearPoolsFor, a missing
+            // contextOwnsConnection, or a connection handed to EF already open.
+            //
+            // Asserted per MECHANISM rather than against one summary phrase ("Both halves"), which is
+            // what this line used to do: that phrasing silently stopped covering the third mechanism
+            // the moment arb-auam added one, while still passing. Naming them individually means a
+            // message that drops one fails here.
+            Assert.Contains("pool clear", thrown.Message, StringComparison.Ordinal);
+            Assert.Contains("contextOwnsConnection: true", thrown.Message, StringComparison.Ordinal);
+            Assert.Contains("CreateUnopenedConnection", thrown.Message, StringComparison.Ordinal);
             Assert.NotNull(thrown.InnerException);
         }
         finally

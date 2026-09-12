@@ -72,6 +72,10 @@ public sealed class SyncReleaseArbiter : ISyncReleaseArbiter
         // broke, which a single line with counts by exception type answers; the per-candidate detail
         // is still emitted, at Debug.
         var failuresByType = new Dictionary<string, int>(StringComparer.Ordinal);
+        // Candidates are arbitrated strictly sequentially (one `await` per iteration, never
+        // fanned out), which is why this per-call Dictionary needs no synchronisation; switching
+        // this loop to Task.WhenAll/Parallel would require failuresByType to become a
+        // ConcurrentDictionary first.
         foreach (var candidate in candidates)
         {
             outcomes.Add(await ArbitrateOneAsync(candidate, context.Budget, failuresByType, cancellationToken).ConfigureAwait(false));
