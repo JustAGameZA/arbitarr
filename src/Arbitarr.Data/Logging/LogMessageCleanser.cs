@@ -62,7 +62,7 @@ public static partial class LogMessageCleanser
     /// nothing stopping the two placeholders from being the same string.
     ///
     /// <para>Unlike the status path (whole-description fail-closed, arb-hihr), the failure unit here
-    /// is one row: <see cref="LogStore.WriteAsync(IReadOnlyList{PendingLogEntry}, CancellationToken)"/>
+    /// is one row: <see cref="LogStore.WriteAsync(IReadOnlyList{PendingLogEntry}, Func{string, string}, CancellationToken)"/>
     /// writes many rows in one batch transaction, and a
     /// timeout on one row's text must not discard the other rows in the batch (arb-qafw). Losing this
     /// one row's message/exception to a fixed marker is an acceptable, bounded cost; losing the whole
@@ -161,7 +161,7 @@ public static partial class LogMessageCleanser
         bool wasTruncated;
         if (text.Length > MaxCleanseInputLength)
         {
-            var scrubLength = Math.Min(text.Length, MaxCleanseInputLength + OverscrubMargin);
+            var scrubLength = NudgeOffSurrogatePair(text, Math.Min(text.Length, MaxCleanseInputLength + OverscrubMargin));
             truncated = text[..scrubLength];
             wasTruncated = true;
         }
@@ -192,9 +192,28 @@ public static partial class LogMessageCleanser
 
         // The overscrub margin was only to let a straddling credential match; the actual persisted
         // text is cut at MaxCleanseInputLength, never the extra margin.
-        var cut = Math.Min(scrubbed.Length, MaxCleanseInputLength);
+        var cut = NudgeOffSurrogatePair(scrubbed, Math.Min(scrubbed.Length, MaxCleanseInputLength));
         return string.Concat(scrubbed.AsSpan(0, cut), TruncationMarker);
     }
+
+    /// <summary>
+    /// arb-59gf: moves <paramref name="cut"/> back by one when it would split a surrogate pair.
+    ///
+    /// <para>Both slices above count UTF-16 code units, but an astral-plane character (any emoji
+    /// past the BMP, and every CJK extension block) occupies TWO of them. Cutting between the high
+    /// and low halves leaves a LONE SURROGATE at the end of the persisted text — not a character,
+    /// and not encodable as UTF-8, so it round-trips as U+FFFD at best and throws at worst on any
+    /// consumer that encodes strictly. The store's own column, the <c>/api/admin/logs</c> JSON
+    /// response, and an operator's export all sit downstream of this cut, so the cheapest place to
+    /// keep the text well-formed is here.</para>
+    ///
+    /// <para>Testing the char BEFORE the cut is sufficient and does not need a matching low-surrogate
+    /// check: a high surrogate at <c>cut - 1</c> is the only way the boundary can land mid-pair,
+    /// because its partner necessarily sits at <c>cut</c> — on the discarded side. Dropping that
+    /// orphaned high half costs one character of an already-truncated text.</para>
+    /// </summary>
+    private static int NudgeOffSurrogatePair(string text, int cut) =>
+        cut > 0 && cut < text.Length && char.IsHighSurrogate(text[cut - 1]) ? cut - 1 : cut;
 
     private static string CleanseCore(string text)
     {

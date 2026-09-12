@@ -337,6 +337,27 @@ along. The log store has no EF migrations and is absent from most operational
 surfaces — anything enumerating stores must grep for `DatabaseFileName`, not for
 `arbitarr.db`.
 
+**Two log sentinels, and they do not mean the same thing.** Both are fixed text
+`LogMessageCleanser` can put into a stored log row in place of the original, and
+an operator reading `/api/admin/logs` will meet both, so the distinction is what
+tells them whether they are looking at a truncated line or a failed one:
+
+- **Redaction timeout placeholder** — `<redaction timed out>`
+  (`LogMessageCleanser.TimeoutPlaceholder`). Replaces **the whole text** of one
+  field when scrubbing it exceeded the regex match timeout. Fail-closed: nothing
+  of the original survives, because what could not be scrubbed cannot be shown.
+  The failure unit is one row's message or exception independently, never the
+  batch — a single pathological line must not cost the rows written with it.
+- **Truncation marker** — `…<truncated>`
+  (`LogMessageCleanser.TruncationMarker`). Appended after a text is cut at
+  `MaxCleanseInputLength`, replacing only the **dropped tail**. The scrubbed head
+  is still there and still readable; the tail is discarded outright, not merely
+  left unscrubbed.
+
+A whole-message sentinel therefore means *scrubbing failed*, while a trailing one
+means *the line was too long*. Reading the first as the second understates a
+redaction failure.
+
 **Backup archive.** The zip `GET /api/admin/backup` produces: a consistent
 snapshot of `arbitarr.db` (taken through SQLite'''s backup API, not a file copy),
 `release-guid-secret.key`, and a manifest naming the instant and schema version.

@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.RegularExpressions;
 using Arbitarr.Data.Logging;
 using Xunit;
@@ -177,6 +178,45 @@ public sealed class LogMessageCleanserTests
 
         Assert.Equal(input, cleansed);
         Assert.DoesNotContain(LogMessageCleanser.TruncationMarker, cleansed, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_cut_landing_inside_an_astral_character_does_not_leave_a_lone_surrogate()
+    {
+        // U+1F510 CLOSED LOCK WITH KEY: outside the BMP, so it is TWO UTF-16 code units. Padding to
+        // one short of the cap puts its high half at MaxCleanseInputLength - 1 and its low half at
+        // MaxCleanseInputLength, so the cut falls exactly between them. The trailing padding is what
+        // pushes the input past the cap so the truncation path runs at all.
+        const string astral = "\U0001F510";
+        var input = new string('x', LogMessageCleanser.MaxCleanseInputLength - 1)
+            + astral
+            + new string('y', 500);
+
+        // Positive control on the SETUP: assert the boundary really is mid-pair, so this test cannot
+        // pass by accidentally never exercising the case it is named for.
+        Assert.True(char.IsHighSurrogate(input[LogMessageCleanser.MaxCleanseInputLength - 1]));
+        Assert.True(char.IsLowSurrogate(input[LogMessageCleanser.MaxCleanseInputLength]));
+
+        // Positive control on the ASSERTION: the un-nudged cut — what this code did before arb-59gf —
+        // computed inline rather than by mutating the class, to demonstrate the assertion below would
+        // actually fail against the old behaviour. An absence assertion that nothing could ever
+        // violate proves nothing.
+        var unNudged = input[..LogMessageCleanser.MaxCleanseInputLength];
+        Assert.Contains(unNudged, char.IsSurrogate);
+        Assert.Throws<EncoderFallbackException>(
+            () => new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true)
+                .GetBytes(unNudged));
+
+        var cleansed = LogMessageCleanser.Cleanse(input);
+
+        Assert.NotNull(cleansed);
+        Assert.EndsWith(LogMessageCleanser.TruncationMarker, cleansed, StringComparison.Ordinal);
+
+        // The marker itself is BMP-only, so any surrogate in the output would have to come from the
+        // cut — no lone half, and the whole string encodes as UTF-8 without a fallback.
+        Assert.DoesNotContain(cleansed!, char.IsSurrogate);
+        new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true)
+            .GetBytes(cleansed!);
     }
 
     // arb-qafw: a regex timeout on one text degrades to a fixed placeholder for THAT text only.
