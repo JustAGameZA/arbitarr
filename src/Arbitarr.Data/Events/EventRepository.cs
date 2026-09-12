@@ -145,6 +145,21 @@ public sealed class EventRepository
     /// no default: the compiler does not force an answer here, so the reviewer must supply one, and
     /// the safe answer for an unrecognised kind is "do not fold" — never folding costs storage,
     /// while folding wrongly costs a record.
+    ///
+    /// <see cref="EventKind.SourceQueryHit"/> and <see cref="EventKind.SourceGrabHit"/>
+    /// (arb-x7w8.10) are exactly the case the paragraph above anticipates: kinds added later, whose
+    /// answer had to be supplied here rather than inherited from a default. They fold — they are
+    /// operational, individually unauditable, and a busy indexer produces precisely the repeated
+    /// burst folding exists for.
+    ///
+    /// THE OPT-IN AND THE BUDGET'S <see cref="EventEntry.RepeatCount"/> ARITHMETIC ARE ONE CHANGE,
+    /// and they had to be. Absent from this switch these kinds would not fold at all, so a budget
+    /// implemented by counting ROWS would agree with a correct one and pass every test — until this
+    /// line landed, at which point it would begin undercounting silently, the count merely low and
+    /// never wrong-looking. <c>SourceApiHitCounter</c> sums RepeatCount for that reason. The
+    /// alternative of defeating folding — rendering a per-occurrence value into Detail or Reason so
+    /// these rows stop matching — is closed, not merely unattractive: those fields are part of the
+    /// fold identity every other consumer depends on.
     /// </summary>
     private static bool MayCoalesce(EventKind kind) => kind switch
     {
@@ -153,6 +168,8 @@ public sealed class EventRepository
         EventKind.SnapshotRefreshed => true,
         EventKind.SearchServed => true,
         EventKind.SourceFailed => true,
+        EventKind.SourceQueryHit => true,
+        EventKind.SourceGrabHit => true,
         _ => false,
     };
 

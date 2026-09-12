@@ -537,6 +537,41 @@ namespace Arbitarr.Data.Migrations
                     b.ToTable("Sources");
                 });
 
+            modelBuilder.Entity("Arbitarr.Data.Entities.SourceBackoffState", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("DisabledLevel")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset?>("DisabledUntil")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsPermanentlyDisabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("LastOutcome")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourceName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SourceName")
+                        .IsUnique();
+
+                    b.ToTable("SourceBackoffStates");
+                });
+
             modelBuilder.Entity("Arbitarr.Data.Entities.SourceHealthRecord", b =>
                 {
                     b.Property<long>("Id")

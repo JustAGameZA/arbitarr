@@ -35,6 +35,20 @@ public enum RecordedEventKind
     /// record a failure without arming the fold.
     /// </summary>
     SourceFailed,
+
+    /// <summary>
+    /// One outbound SEARCH call to one source (arb-x7w8.10) — the per-source API hit the query
+    /// budget counts. Written at the outbound call site, never at the endpoint: see
+    /// <c>Arbitarr.Data.Entities.EventKind.SourceQueryHit</c> for why <see cref="SearchServed"/>
+    /// cannot serve this purpose.
+    /// </summary>
+    SourceQueryHit,
+
+    /// <summary>
+    /// One outbound GRAB call to one source (arb-x7w8.10) — the per-source API hit the grab budget
+    /// counts. A successful grab was recorded nowhere before this kind existed.
+    /// </summary>
+    SourceGrabHit,
 }
 
 /// <summary>

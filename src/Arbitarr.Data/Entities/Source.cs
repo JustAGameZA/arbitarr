@@ -19,17 +19,28 @@ namespace Arbitarr.Data.Entities;
 /// when asked what it supports. Fetched from upstream, refreshed on a TTL, and reconstructible by
 /// asking again; it is cached upstream state, not configuration.</description></item>
 /// <item><description>The <b>per-source query and grab counters, and their rolling window start</b>
-/// (arb-x7w8.5) — the running tallies <see cref="QueryLimit"/>/<see cref="GrabLimit"/> are compared
+/// (arb-x7w8.10) — the running tallies <see cref="QueryLimit"/>/<see cref="GrabLimit"/> are compared
 /// against. These change on every search, so putting them here would rewrite the config row
 /// constantly and make a restored backup silently re-assert a stale window.</description></item>
-/// <item><description>The <b>last error and health state</b> (arb-x7w8.6) — transient runtime
+/// <item><description>The <b>last error and health state</b> (arb-x7w8.11) — transient runtime
 /// observation, already modelled that way by <see cref="SourceHealthRecord"/>.</description></item>
 /// </list>
-/// Each belongs in its own table, following the <see cref="DownloadRefusalEntry"/> precedent for
-/// runtime state that references a source by name rather than living on it. The concrete harm in
-/// collapsing them into this row: they would ride into every configuration backup (which #56 scopes
-/// to config, not telemetry), and a restore would reinstate counters and cached capabilities that
-/// were true at backup time and are not true now.</para>
+/// The concrete harm in collapsing any of them into this row: they would ride into every
+/// configuration backup (which #56 scopes to config, not telemetry), and a restore would reinstate
+/// counters and cached capabilities that were true at backup time and are not true now.</para>
+///
+/// <para><b>They do not all get a table, and the counters get none at all.</b> An earlier version of
+/// this comment prescribed one table each, on the <see cref="DownloadRefusalEntry"/> precedent for
+/// runtime state that references a source rather than living on it.
+/// <see href="../../../docs/adr/0020-api-hit-budget-and-durable-backoff.md">ADR 0020</see>
+/// supersedes that for the counters specifically: <b>the query and grab counts are DERIVED from the
+/// events store</b> — summing <c>RepeatCount</c> over
+/// <see cref="EventKind.SourceQueryHit"/>/<see cref="EventKind.SourceGrabHit"/> rows inside a
+/// rolling <see cref="LimitsUnit"/> window — so there is no counters table and no window-start
+/// column anywhere. The reasoning above about why they do not belong HERE is undisturbed; only the
+/// remedy changed. The durable <b>backoff</b> state does keep its own table
+/// (<see cref="SourceBackoffState"/>), still on the <see cref="DownloadRefusalEntry"/> precedent, so
+/// that precedent continues to hold for runtime state generally.</para>
 /// </summary>
 public sealed class Source
 {
