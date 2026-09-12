@@ -66,13 +66,22 @@ function stubObserver() {
      * zero-positioned band -- callers that care about the topmost comparison
      * pass real values); entries not present in `tops` but named in `ids`
      * fall back to the default so existing single-id calls are unaffected.
+     *
+     * `bottom` is reported alongside `top` because the component reads a rect,
+     * not a scalar: an entry carrying only `top` is not the shape a real
+     * IntersectionObserver hands it. The value is derived rather than another
+     * parameter -- no assertion here turns on a section's height, and a second
+     * record to keep in step would be one more thing to get wrong.
      */
     intersect(ids: string[], tops: Record<string, number> = {}) {
-      const records = observed.map((target) => ({
-        target,
-        isIntersecting: ids.includes(target.id),
-        boundingClientRect: { top: tops[target.id] ?? 0 } as DOMRectReadOnly,
-      })) as unknown as IntersectionObserverEntry[];
+      const records = observed.map((target) => {
+        const top = tops[target.id] ?? 0;
+        return {
+          target,
+          isIntersecting: ids.includes(target.id),
+          boundingClientRect: { top, bottom: top + 200 } as DOMRectReadOnly,
+        };
+      }) as unknown as IntersectionObserverEntry[];
       // act() is required, not decorative: the callback drives a setState from
       // outside React's event system, so without it the re-render has not been
       // flushed when the next assertion reads the DOM. A test that only ever
@@ -83,6 +92,21 @@ function stubObserver() {
       });
     },
   };
+}
+
+/**
+ * Stubs the nav's own rect, which is how the component learns where the sticky
+ * strip ends (arb-9b42). jsdom performs no layout, so every
+ * getBoundingClientRect is the all-zero rect by default -- that default is
+ * itself the "band at the scrollport top" case the other tests assume, since a
+ * zero-height nav flush at 0 ends at 0.
+ *
+ * `top` defaults to 0 because that is what makes the nav the sticky STRIP: the
+ * component treats a nav flush with the scrollport top as occluding it, and a
+ * nav below that (the wide-layout rail at `top: 20px`) as covering nothing.
+ */
+function stubNavRect(nav: HTMLElement, { top = 0, bottom }: { top?: number; bottom: number }) {
+  nav.getBoundingClientRect = () => ({ top, bottom }) as DOMRect;
 }
 
 describe('SectionNav', () => {
@@ -175,6 +199,72 @@ describe('SectionNav', () => {
     // reached" the band, so the nearest-from-above fallback applies, and
     // Sources -- the larger (less negative) top -- wins.
     observer.intersect(['account', 'sources'], { account: -800, sources: -50 });
+
+    expect(screen.getByRole('link', { current: true })).toHaveTextContent('Sources');
+  });
+
+  it('includes a section resting exactly at the band top', () => {
+    const observer = stubObserver();
+    renderNav();
+    const nav = screen.getByRole('navigation');
+    stubNavRect(nav, { bottom: 68 });
+
+    // Sources sits at exactly 68, the strip's bottom edge -- where a clicked
+    // section comes to rest, since Settings.module.css gives .section the
+    // matching scroll-margin-top. Caching is further down at 200, strictly
+    // inside the band either way.
+    //
+    // The competitor is what makes this bite. With `>` Sources alone is
+    // excluded from the band and Caching -- a section most of a screen lower
+    // -- takes the highlight. Pairing Sources only against a section ABOVE the
+    // band would not: the nearest-from-above fallback would hand the
+    // highlight straight back to Sources and a `>` mutant would survive.
+    observer.intersect(['sources', 'caching'], { sources: 68, caching: 200 });
+
+    expect(screen.getByRole('link', { current: true })).toHaveTextContent('Sources');
+  });
+
+  it('does not let a section hidden under the sticky strip beat the first visible one', () => {
+    const observer = stubObserver();
+    renderNav();
+    const nav = screen.getByRole('navigation');
+    stubNavRect(nav, { bottom: 68 });
+
+    // The narrow case this bead exists for. Account's top (20) is past the
+    // scrollport's top edge (0) but still behind the 68px strip, so the
+    // operator cannot see it; Sources (80) is the first section actually
+    // visible below the strip. Measuring the band from the scrollport top
+    // instead of the strip's bottom picks Account -- the smaller top -- and
+    // highlights a section that is not on screen.
+    observer.intersect(['account', 'sources'], { account: 20, sources: 80 });
+
+    expect(screen.getByRole('link', { current: true })).toHaveTextContent('Sources');
+  });
+
+  it('measures the band from the scrollport top when the nav is the wide-layout rail', () => {
+    const observer = stubObserver();
+    renderNav();
+    const nav = screen.getByRole('navigation');
+    // The rail: stuck at `top: 20px` in its own grid column, and as tall as
+    // its entry list. It occludes no panel, so its bottom must NOT become the
+    // band -- taking it would put the band below every section on the page and
+    // leave the fallback branch permanently in charge.
+    stubNavRect(nav, { top: 20, bottom: 400 });
+
+    observer.intersect(['account', 'sources'], { account: -400, sources: 10 });
+
+    expect(screen.getByRole('link', { current: true })).toHaveTextContent('Sources');
+  });
+
+  it('keeps the earlier entry in document order when two sections share a top', () => {
+    const observer = stubObserver();
+    renderNav();
+
+    // Equal tops are the documented tie-break of last resort: both reduces use
+    // strict comparisons, so the incumbent is kept and the first candidate the
+    // callback reports wins. Reported in document order here, which is what a
+    // real observer does for two elements that became visible together.
+    observer.intersect(['sources', 'caching'], { sources: 40, caching: 40 });
 
     expect(screen.getByRole('link', { current: true })).toHaveTextContent('Sources');
   });

@@ -67,6 +67,14 @@ only persistent cue that a container scrolls; pair it with one — SectionNav's 
 precedent — or do not hide the bar. Decided twice: SectionNav.module.css hides the bar; PageToolbar
 rejects overflow-x and wraps instead.
 
+**An observer-derived active state needs a non-observer path for the states the observer cannot
+reach.** An `IntersectionObserver` reports only what geometry produces, so any state the layout
+never produces is a state the highlight can never enter — and the entry stays wrong indefinitely
+rather than briefly. Pair the observer with the authoritative signal for those states. Decided
+twice: SectionNav treats a click as authoritative, because a section below the last scrollable
+position is never reported as intersecting at all; SidebarNav derives its active entry from the
+route rather than from what is on screen.
+
 ---
 
 ## Status badges

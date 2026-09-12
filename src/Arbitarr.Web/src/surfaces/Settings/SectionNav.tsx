@@ -161,27 +161,57 @@ export function SectionNav({ entries }: SectionNavProps) {
           }
         }
 
-        // The band's top edge in viewport coordinates. rootMargin's bottom
-        // component ('-70%') shrinks the *effective* intersection rectangle by
-        // that fraction of the root's height, which moves its bottom edge up
-        // -- the top edge (what "the band" means here) is simply the root's
-        // own top, whether root is the scrolling <main> or (its fallback) the
-        // viewport.
-        const bandTop = (root ?? document.documentElement).getBoundingClientRect().top;
-
-        // Among sections at or past the scrollport's top edge (their own top
-        // is >= bandTop, i.e. not above it), the one closest to that edge --
-        // the smallest such top -- wins. A tall preceding section can still be
-        // "intersecting" (its bottom is still inside the band) while its own
-        // top sits well above bandTop; comparing tops rather than
-        // document-array order is what excludes it in favour of whichever
-        // section has actually reached the edge.
+        // The band's top edge in viewport coordinates: the first VISIBLE edge
+        // of the scrollport, not merely its geometric one (arb-9b42).
         //
-        // "At the scrollport's top edge" is NOT the same as "what the operator
-        // is looking at": below 1100px the sticky strip covers the first 68px
-        // of the pane (Settings.module.css's scroll-margin-top), so a section
-        // level with bandTop is behind it. Compensating for that offset is
-        // arb-9b42's job, not this comparison's.
+        // rootMargin's bottom component ('-70%') shrinks the *effective*
+        // intersection rectangle by that fraction of the root's height, which
+        // moves its bottom edge up -- the top edge is untouched by it and is
+        // simply the root's own top, whether root is the scrolling <main> or
+        // (its fallback) the viewport.
+        //
+        // That geometric edge is not what the operator can see. Below 1100px
+        // this nav is a sticky strip at the pane's top edge and the panels
+        // scroll UNDER it (SectionNav.module.css: `top: 0`, opaque
+        // background), so a section level with the scrollport top is hidden
+        // behind the strip -- which is the whole reason Settings.module.css
+        // gives .section a 68px scroll-margin-top there. A clicked section
+        // therefore comes to rest at the strip's BOTTOM, and counting it as
+        // "reached the band" at the scrollport top highlights the section
+        // before it.
+        //
+        // The strip's own measured `bottom` is used rather than a second copy
+        // of that 68px: the constant is pinned once, in Settings.module.css,
+        // and a measurement cannot drift away from it.
+        //
+        // Occlusion is detected by measurement too, not by re-testing the
+        // 1100px breakpoint in JS. The nav occludes the scrollport's top edge
+        // exactly when it is flush against it -- true for the strip (`top: 0`)
+        // and false for the wide-layout rail, which is stuck at `top: 20px`
+        // in its own grid column and covers no panel at all. A rail's bottom
+        // is most of the pane's height, so using it unconditionally would put
+        // the band below every section.
+        //
+        // Read from the ref on every callback rather than captured once when
+        // the effect ran: the strip's height changes with the entry count and
+        // a resize can swap strip for rail without this effect re-running.
+        const scrollportTop = (root ?? document.documentElement).getBoundingClientRect().top;
+        const navRect = navRef.current?.getBoundingClientRect();
+        const bandTop =
+          navRect !== undefined && navRect.top <= scrollportTop ? navRect.bottom : scrollportTop;
+
+        // Among sections at or past that edge (their own top is >= bandTop,
+        // i.e. not above it), the one closest to the edge -- the smallest such
+        // top -- wins. A tall preceding section can still be "intersecting"
+        // (its bottom is still inside the band) while its own top sits well
+        // above bandTop; comparing tops rather than document-array order is
+        // what excludes it in favour of whichever section has actually reached
+        // the edge.
+        //
+        // `>=`, not `>`: a section resting exactly at bandTop is the one the
+        // operator is looking at, and after a click it comes to rest exactly
+        // there. A strict comparison would drop it out of the band entirely
+        // and fall through to the nearest-from-above branch.
         //
         // On equal tops both reduces below keep the incumbent (their
         // comparisons are strict), so the first candidate encountered wins and
@@ -217,9 +247,14 @@ export function SectionNav({ entries }: SectionNavProps) {
         root,
         // Biased to the top: the band is anchored at the pane's own top edge,
         // so the highlighted entry is the section that has reached that edge
-        // rather than whichever occupies the most pixels. See the bandTop
-        // comment above for why that edge is not the same as what is visible
-        // below 1100px.
+        // rather than whichever occupies the most pixels.
+        //
+        // Deliberately NOT narrowed to compensate for the sticky strip. This
+        // margin only decides which sections are REPORTED; which of them wins
+        // is the bandTop comparison above, and that is where the strip's
+        // height is accounted for. Moving the correction here would also stop
+        // the strip-occluded section being reported at all, taking the
+        // nearest-from-above fallback's input with it.
         rootMargin: '0px 0px -70% 0px',
       },
     );
