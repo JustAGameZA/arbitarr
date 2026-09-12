@@ -242,14 +242,20 @@ public sealed class AdminBackupEndpointsTests : IClassFixture<ArbitarrWebApplica
         using var client = AuthorizedClient();
         var state = _factory.Services.GetRequiredService<BackupStateStore>();
 
-        // arb-lzf5: MaintenanceHostedService takes its first automatic backup pass BEFORE its
-        // first Task.Delay, on host startup, and CreateClient() above is what triggers that
-        // startup for this shared IClassFixture host. On a loaded runner that startup pass can
-        // fail and call RecordBackupFailure before this test ever reads the status, which makes
-        // the positive control below false on a machine slow enough to lose the race — not a
-        // change in behaviour. Force a healthy state explicitly rather than assume a fresh host
-        // has none: this keeps the control meaningful (it still proves a PLANTED failure below is
-        // visible, then that recovery clears it) without depending on that startup pass's outcome.
+        // arb-lzf5: MaintenanceHostedService's ExecuteAsync starts its first automatic backup
+        // pass on host startup, before its first Task.Delay. That startup was triggered by
+        // SeedAdminKeyAsync()'s own CreateClient() call above (via SeedAsync), not by
+        // AuthorizedClient(). Because BackgroundService.StartAsync returns at ExecuteAsync's
+        // first await (ResolveIntervalAsync reads settings asynchronously), that startup pass
+        // runs concurrently with this test body rather than strictly before it. This line does
+        // not close that race, only narrow it: it forces a healthy state immediately before the
+        // read below, rather than assuming a fresh host has none, so a startup failure landing in
+        // the gap between this line and the read can still make the positive control false on a
+        // slow enough runner — not a change in behaviour. A durable fix needs a completion seam
+        // on MaintenanceHostedService (tracked on arb-lzf5/arb-hjp). This keeps the control
+        // meaningful in the meantime: it still proves a PLANTED failure below is visible, then
+        // that recovery clears it, without depending on the startup pass's outcome — see the
+        // comment inside RecordBackup for why it unconditionally clears the recorded failure.
         state.RecordBackup(DateTimeOffset.UtcNow, automatic: true);
 
         // POSITIVE CONTROL: healthy first. If the field were always set, the next assertion would
