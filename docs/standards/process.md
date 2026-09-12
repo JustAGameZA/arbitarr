@@ -239,8 +239,10 @@ Nine other test classes in the same project fall outside the Cecil IL scans abov
 not IL bodies, so they do not need to see inside a method. The other four — `SourceTreeNamingTests`,
 `SecretReaderSingleCallerTests`, `StandardsQuoteSourceTests`, and `DemotedDocCrefResolutionTests` —
 scan the source tree as text (`.csproj`/`.sln` contents, call-site line matches, a doc-to-comment
-citation match, and every `<c>Arbitarr.…</c>` doc-comment name respectively), not compiled output at
-all. None of the nine are Cecil scans and none are listed above.
+citation match, and every `<c>Arbitarr.…</c>` doc-comment name respectively) rather than compiled
+IL — though `DemotedDocCrefResolutionTests` also loads the built assemblies with
+`Assembly.LoadFrom` to resolve each name it finds, so it is not purely a source-text scan. None of
+the nine are Cecil scans and none are listed above.
 
 `DemotedDocCrefResolutionTests` ratchets the demotions from #203 (arb-ul4): a cref that could not be
 made to resolve was rewritten as plain `<c>Name</c>` text rather than left broken, per the
