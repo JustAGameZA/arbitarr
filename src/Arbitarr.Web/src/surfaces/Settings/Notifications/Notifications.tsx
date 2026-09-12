@@ -394,9 +394,10 @@ function NotificationForm({
           </p>
 
           <p className={local.hint}>
-            A burst of identical failures folded into one repeated row counts as a single
-            occurrence toward the consecutive-failure count above, so the threshold can trip later
-            than the raw failure count would suggest — never earlier.
+            Once a failure row has already been counted, any repeats that fold onto it before the
+            next poll add only one more occurrence, however many there were. The
+            consecutive-failure threshold can therefore trip later than the raw failure count
+            suggests, never earlier.
           </p>
         </div>
 
