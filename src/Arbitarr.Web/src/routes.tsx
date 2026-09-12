@@ -9,6 +9,7 @@ import SearchPage from './surfaces/Search/Search';
 import RulesPage from './surfaces/Rules/Rules';
 import SuppressionsPage from './surfaces/Suppressions/Suppressions';
 import ActivityPage from './surfaces/Activity/Activity';
+import LibraryPage from './surfaces/Library/Library';
 import SettingsPage from './surfaces/Settings/Settings';
 import SystemPage from './surfaces/System/System';
 import NotFoundPage from './pages/NotFound';
@@ -21,7 +22,7 @@ import NotFoundPage from './pages/NotFound';
  * swaps only the <Outlet /> content, so the sidebar never remounts and a 404
  * still renders with navigation available.
  *
- * The paths here are the same seven the sidebar links to (SidebarNav.NAV_ENTRIES);
+ * The paths here are the same eight the sidebar links to (SidebarNav.NAV_ENTRIES);
  * routing.test.tsx walks the nav and asserts each destination resolves to
  * something other than the not-found page, so a nav entry pointing at a path
  * with no route fails rather than silently rendering the 404.
@@ -40,7 +41,7 @@ import NotFoundPage from './pages/NotFound';
  *     for the three properties this depends on.
  *
  * They are deliberately NOT in routes.titles.ts's ROUTES table either: that table
- * is the sidebar's seven surfaces, and SidebarNav's count comment says seven.
+ * is the sidebar's eight surfaces, and SidebarNav's count comment says eight.
  */
 export function AppRoutes() {
   return (
@@ -60,6 +61,7 @@ export function AppRoutes() {
         <Route path="rules" element={<RulesPage />} />
         <Route path="suppressions" element={<SuppressionsPage />} />
         <Route path="activity" element={<ActivityPage />} />
+        <Route path="library" element={<LibraryPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="system" element={<SystemPage />} />
         <Route path="*" element={<NotFoundPage />} />

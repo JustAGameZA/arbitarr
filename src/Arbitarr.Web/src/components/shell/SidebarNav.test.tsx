@@ -16,6 +16,7 @@ const EXPECTED = [
   'Rules',
   'Suppressions',
   'Activity',
+  'Library',
   'Settings',
   'System',
 ];
@@ -31,19 +32,19 @@ describe('SidebarNav', () => {
     vi.unstubAllGlobals();
   });
 
-  it('renders exactly seven nav entries in AC5 order', async () => {
+  it('renders exactly eight nav entries in AC5 order', async () => {
     renderApp('/');
 
     const nav = await screen.findByRole('navigation', { name: 'Main' });
     const links = within(nav).getAllByRole('link');
 
     // Exact count, not `>=`: a dropped entry and a smuggled-in one must both
-    // fail. `toHaveLength(7)` catches the first; comparing the whole ordered
+    // fail. `toHaveLength(8)` catches the first; comparing the whole ordered
     // array catches the second and the reordering case as well.
     //
-    // Seven since #55 added Activity -- see NAV_ENTRIES' comment for why that is
-    // a product surface rather than a section.
-    expect(links).toHaveLength(7);
+    // Eight since arb-6l9b.5 added Library -- see NAV_ENTRIES' comment for why
+    // that is a product surface rather than a section.
+    expect(links).toHaveLength(8);
     expect(links.map((link) => link.textContent?.trim())).toEqual(EXPECTED);
   });
 
@@ -59,6 +60,7 @@ describe('SidebarNav', () => {
       '/rules',
       '/suppressions',
       '/activity',
+      '/library',
       '/settings',
       '/system',
     ]);
