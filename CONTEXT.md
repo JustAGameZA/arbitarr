@@ -73,6 +73,19 @@ confidence, which source resolved the identity, and flags.
 the *arr instance itself is authoritative, then TheXEM, then the Anime-Lists
 dataset (fetched at runtime, rate-limited, never vendored).
 
+**Inactive tier.** A tier that is **registered but performs no work**, because the
+configuration that would make it useful is unset. Distinct from a broken or absent
+one: it resolves from the container, so a missing registration still fails at
+startup, but every lookup returns `NotConfigured` without touching the network or
+the filesystem. `SeriesTitleResolver`'s Anime-Lists tier is the case in point —
+`Arbitarr:AnimeLists:SourceUrl` (an `appsettings`/environment value, **not** a
+`Settings` row and never in `SettingsCatalog`: it is neither a secret nor an admin-UI
+setting) has **no default**, because choosing the third-party mapping document and
+its licence is the operator's decision and a committed default would also put a
+first-run fetch on the search path of an install that never asked for one. Unset,
+the tier contributes nothing and an unresolved title degrades to the id-only
+upstream request; startup says so once, at Information.
+
 ---
 
 **Protocol answer vs infrastructure error.** A **protocol answer** means the request was
@@ -182,6 +195,46 @@ connectivity half healthy and the working half not. **`OkNoModelConfigured`** is
 `/api/tags` answering with no model configured, so the `/api/chat` half was never
 attempted; it is its own outcome rather than folded into `Ok` so the button
 cannot claim more than it tested.
+
+---
+
+## Arr section status
+
+`ArrSectionStatus` (`src/Arbitarr.Core/Media/ArrQueue.cs`) is the verdict carried
+by each Library section's read — `GET /api/admin/arr/{sonarr,radarr}/queue`, and
+the series/movies reads that follow. Like the probe outcomes it is a **closed**
+enum with no free-text field, so no failure can carry key-derived text into a
+response; the envelope's `Message` is fixed wording chosen from this value alone.
+
+**It is a READ verdict, not a connectivity verdict**, and that is the whole
+distinction. A probe is triggered by an operator who has just entered an address
+and is asking "does what I saved work". A section status answers "could this
+section be filled just now", on a surface that is read on a schedule and may be
+looking at an instance nobody has configured yet.
+
+| Status | Means | Distinct from |
+|---|---|---|
+| `Ok` | The instance answered with a queue document that parsed | A reachable instance — an empty queue is still `Ok` |
+| `NotConfigured` | No address, or an address with no key | `Unreachable` — nothing was attempted, so the instance is not being accused of anything |
+| `Unreachable` | No usable connection, or past the timeout — including a failed TLS handshake | `NotConfigured` — an address was stored and tried |
+| `AuthenticationFailed` | Reached and answered, but rejected the key | `NotConfigured` — a key was sent and refused, rather than absent |
+| `UnexpectedResponse` | Answered, but not with a queue document — a login page, a 5xx, a redirect | `AuthenticationFailed` — the instance never said the key was wrong |
+
+**Not to be confused with `SourceProbeOutcome`.** Four names are shared (`Ok`,
+`Unreachable`, `AuthenticationFailed`, `UnexpectedResponse`) but the set differs
+at both ends, and each difference is load-bearing:
+
+- **No `TlsFailure`.** A failed handshake is simply "we could not read the
+  section"; telling it apart from a refused connection is the question the
+  *probe* exists to answer, and it already has a button and an outcome for it.
+  Carrying a member this surface would never act on differently would put a value
+  on the wire contract that nothing consumes — the mirror of the mistake
+  `OllamaProbeOutcome` avoids by omitting `AuthenticationFailed`.
+- **Plus `NotConfigured`**, covering **both** "no address" and "an address with
+  no key". They are one value because the operator's next action is identical —
+  finish configuring the section — and because the credential providers already
+  report that half-configured state as null. Attempting the call instead would
+  report `AuthenticationFailed` against an instance that is not actually broken.
 
 ---
 
@@ -297,6 +350,22 @@ letting the first key be set at all.
 
 **Write-only.** Said of a key with a write path and no read path anywhere — true
 of both the admin key and source API keys.
+
+**Secret family.** One stored secret and its reader, taken together: one
+repository `ReadApiKeyForUpstreamRequestAsync`, one credential provider, N
+consumers. The source API key is one family; the Sonarr instance key is another.
+The unit matters because the single-caller rule is counted per family — adding a
+consumer is free, adding a *reader* is a new family that needs its own provider.
+
+**Credential provider.** The single type that turns one secret family's stored
+key into a value a consumer may send upstream, and the only caller of that
+family's reader (`SourceCredentialProvider`, `SonarrCredentialProvider`).
+Strictly **outbound**: it produces a credential Arbitarr presents *to* an
+upstream. Do not read it as the inbound counterpart — `CredentialResolution`
+above answers "which caller is this, and at what scope", which is the opposite
+direction and an unrelated type. A provider returns `null` for a
+half-configured family rather than a credential with an empty key.
+See [ADR 0018](docs/adr/0018-one-credential-provider-per-secret-family.md).
 
 **Account / operator.** A human sign-in identity: a username and a password hash.
 "Operator" is the person; "account" is the row. Arbitarr is single-operator by
@@ -694,6 +763,34 @@ title from Newznab attributes (no such field exists); fetching the NZB to
 read segment subjects (a second caller of
 `ReadApiKeyForUpstreamRequestAsync`, forbidden by CLAUDE.md §1, and would
 break Sonarr's grab-history match).
+
+---
+
+## Dedup group
+
+Once Arbitarr fronts more than one source, the same release arrives more than
+once — most often from NZBHydra2 and a directly configured indexer at the same
+time. A **dedup group** is the set of copies the dedup stage judged to be one
+release. Two copies join a group only on **exact evidence, all three conditions
+together**: equal normalised title (equality, never similarity — no edit
+distance, no threshold), sizes within a tight tolerance, and the same
+`ProtocolKind`, where **`Unknown` matches nothing, including another `Unknown`**
+— two copies that both failed to report a protocol share only a missing field.
+**A group retains every member**, ordered by source priority (higher wins), with
+the first as its representative; the losers are never discarded, because a failed
+grab from the first member falls back to the next, which is only possible if the
+group still holds it — [ADR
+0003](docs/adr/0003-siblings-are-deranked-not-discarded.md)'s
+de-rank-never-discard on a different axis. Consumers therefore see a group of N
+members and must not assume N is 1. It lives in the pipeline, not in any source
+adapter (`DedupStage`, `src/Arbitarr.Api/Search/`, over `DedupNormalizer` in
+`src/Arbitarr.Core/Pipeline/`), because an adapter sees only its own indexer and
+could collapse only that indexer's duplicates of itself — the case that does not
+arise. **Two rows for one release is the expected failure mode and must not be
+"fixed" by loosening the match**: a false split is a visible duplicate row, while
+a false merge silently hides one release behind another. The full reasoning is in
+[ADR
+0019](docs/adr/0019-dedup-is-a-pipeline-stage-with-conservative-exact-merge.md).
 
 ---
 

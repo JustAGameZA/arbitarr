@@ -4,6 +4,7 @@ using System.Text.Json;
 using Arbitarr.Api.Rendering;
 using Arbitarr.Core.Caching;
 using Arbitarr.Core.Identity;
+using Arbitarr.Core.Pipeline;
 using Arbitarr.Core.Sources;
 
 namespace Arbitarr.Api.Search;
@@ -57,6 +58,7 @@ public sealed class PaginationSnapshotService
 
     private readonly UpstreamMergeStage _mergeStage;
     private readonly SearchResultCacheStage _cacheStage;
+    private readonly DedupStage _dedupStage;
     private readonly IQuerySnapshotStore _snapshotStore;
     private readonly TimeProvider _timeProvider;
     private readonly ISnapshotTtlSource _ttlSource;
@@ -73,6 +75,15 @@ public sealed class PaginationSnapshotService
     /// pre-existing call site (all fourteen of them, across the golden/rendering/pagination test
     /// files) keeps compiling and behaving exactly as before — a caller that never told this type
     /// about a source set gets the pre-arb-b5z token shape verbatim.</para>
+    ///
+    /// <para>arb-x7w8.8: <paramref name="dedupStage"/> likewise defaults, to a stage over
+    /// <see cref="AllEqualSourcePriority"/>. <b>Dedup is never skipped when it is omitted</b> —
+    /// only the ORDERING within a group falls back to the source-name/position tiebreaks, which is
+    /// the same ordering the Host itself produces until the source registry (arb-x7w8.4) supplies
+    /// real priorities. Defaulting it rather than requiring it keeps every pre-existing call site
+    /// compiling, and none of them can observe a difference: they configure one source, and a
+    /// single source's results cannot merge with themselves unless it returns the same release
+    /// twice.</para>
     /// </summary>
     public PaginationSnapshotService(
         UpstreamMergeStage mergeStage,
@@ -80,14 +91,16 @@ public sealed class PaginationSnapshotService
         IQuerySnapshotStore snapshotStore,
         TimeProvider timeProvider,
         TimeSpan? ttl = null,
-        ISourceSetFingerprintSource? sourceSetFingerprintSource = null)
+        ISourceSetFingerprintSource? sourceSetFingerprintSource = null,
+        DedupStage? dedupStage = null)
         : this(
             mergeStage,
             cacheStage,
             snapshotStore,
             timeProvider,
             new StaticSnapshotTtlSource(ttl ?? DefaultTtl),
-            sourceSetFingerprintSource)
+            sourceSetFingerprintSource,
+            dedupStage)
     {
     }
 
@@ -105,7 +118,8 @@ public sealed class PaginationSnapshotService
         IQuerySnapshotStore snapshotStore,
         TimeProvider timeProvider,
         ISnapshotTtlSource ttlSource,
-        ISourceSetFingerprintSource? sourceSetFingerprintSource = null)
+        ISourceSetFingerprintSource? sourceSetFingerprintSource = null,
+        DedupStage? dedupStage = null)
     {
         _mergeStage = mergeStage ?? throw new ArgumentNullException(nameof(mergeStage));
         _cacheStage = cacheStage ?? throw new ArgumentNullException(nameof(cacheStage));
@@ -113,6 +127,7 @@ public sealed class PaginationSnapshotService
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         _ttlSource = ttlSource ?? throw new ArgumentNullException(nameof(ttlSource));
         _sourceSetFingerprintSource = sourceSetFingerprintSource ?? StaticSourceSetFingerprintSource.Empty;
+        _dedupStage = dedupStage ?? new DedupStage(AllEqualSourcePriority.Instance);
     }
 
     /// <summary>
@@ -160,7 +175,24 @@ public sealed class PaginationSnapshotService
             {
                 var merged = await _mergeStage.MergeAsync(query, ct).ConfigureAwait(false);
                 rateLimitedSources.AddRange(merged.RateLimitedSources);
-                return new UpstreamFetchResult(merged.Releases, Degraded: merged.RateLimitedSources.Count > 0);
+
+                // arb-x7w8.8: dedup sits BETWEEN the merge and the cache, so what the two-age cache
+                // stores is already grouped. Deduplicating on the way IN rather than on the way out
+                // means the work happens once per fetch instead of once per served request, and —
+                // more importantly — it means a cache hit and a fresh fetch return the SAME shape.
+                // Dedup after the cache would leave already-cached entries ungrouped for the
+                // remainder of their serve age, so the same query would group or not depending on
+                // when it was last fetched.
+                //
+                // Neither the two-age cache key nor the snapshot token is affected, and both are
+                // deliberately left unchanged: they are computed from the QUERY (and, for the
+                // snapshot, the source-set fingerprint), never from the result set, so grouping the
+                // results cannot move either key. Grouping does change the number of entries a
+                // snapshot holds, which is what offset/limit slices — correctly, since a group is
+                // one result.
+                var deduplicated = _dedupStage.Deduplicate(merged.Releases);
+
+                return new UpstreamFetchResult(deduplicated, Degraded: merged.RateLimitedSources.Count > 0);
             },
             cancellationToken: cancellationToken).ConfigureAwait(false);
 

@@ -50,14 +50,25 @@ public class AnimeListsProviderRuntimeFetchTests
         TimeSpan? minimumRequestSpacing = null)
     {
         var options = new AnimeListsProviderOptions(
-            SourceUrl: new Uri("https://raw.githubusercontent.com/example/anime-lists/master/anime-list-full.xml"),
+            SourceUrl: new Uri(SourceUrl),
             ConfigDirectory: configDirectory,
             MinimumRefetchInterval: minimumRefetchInterval,
             MinimumRequestSpacing: minimumRequestSpacing);
 
-        var httpClient = new HttpClient(handler);
+        // arb-5uw: the TEST owns the timeout now, because AnimeListsProvider no longer assigns it —
+        // it holds a POOLED client in production and HttpClient.Timeout throws once a request has
+        // started on the instance. Production sets it at the named-client registration in
+        // Program.cs; here the caller that constructs the client sets it, from the same option.
+        var httpClient = new HttpClient(handler) { Timeout = options.EffectiveRequestTimeout };
         return new AnimeListsProvider(options, httpClient);
     }
+
+    /// <summary>
+    /// A documentation-only <c>.example</c> host, never a real one: arb-5uw makes the upstream an
+    /// operator-set value with no default, so no anime-lists host is named anywhere in this
+    /// repository.
+    /// </summary>
+    private const string SourceUrl = "https://anime-lists.example/anime-list-full.xml";
 
     // ---- AC21: runtime fetch into a configurable directory, never vendored ----
 
@@ -92,7 +103,62 @@ public class AnimeListsProviderRuntimeFetchTests
         await provider.GetByAniDbIdAsync(69);
 
         Assert.Single(handler.RequestedUris);
-        Assert.Equal("raw.githubusercontent.com", handler.RequestedUris[0].Host);
+        Assert.Equal(new Uri(SourceUrl), handler.RequestedUris[0]);
+    }
+
+    /// <summary>
+    /// arb-5uw: with no source URL configured the tier is INACTIVE — the lookup reports
+    /// <see cref="AnimeListsOutcomeKind.NotConfigured"/> and touches neither the network nor the
+    /// filesystem, which is what lets the provider be registered unconditionally without admitting a
+    /// first-run fetch nobody opted into.
+    /// </summary>
+    /// <remarks>
+    /// The zero-request assertion is meaningful only because every other fact in this class shows
+    /// the same handler shape DOES record a request when a source URL is configured — the very first
+    /// one asserts <c>Assert.Single(handler.RequestedUris)</c> against it.
+    /// </remarks>
+    [Fact]
+    public async Task GetByAniDbIdAsync_NoSourceUrlConfigured_ReportsNotConfigured_AndTouchesNothing()
+    {
+        var configDir = CreateTempConfigDirectory();
+        var handler = new FakeHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(SampleXml),
+        });
+
+        var provider = new AnimeListsProvider(
+            new AnimeListsProviderOptions(SourceUrl: null, ConfigDirectory: configDir),
+            new HttpClient(handler));
+
+        Assert.False(provider.IsConfigured);
+
+        var result = await provider.GetByAniDbIdAsync(69);
+
+        Assert.Equal(AnimeListsOutcomeKind.NotConfigured, result.Kind);
+        Assert.Empty(handler.RequestedUris);
+        Assert.False(File.Exists(Path.Combine(configDir, "anime-list-full.xml")));
+    }
+
+    /// <summary>
+    /// The same inactive state on the TVDB entry point, which is the one
+    /// <see cref="SeriesTitleResolver"/>'s fallback tier actually calls.
+    /// </summary>
+    [Fact]
+    public async Task GetByTvdbIdAsync_NoSourceUrlConfigured_ReportsNotConfigured_AndIssuesNoRequest()
+    {
+        var handler = new FakeHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(SampleXml),
+        });
+
+        var provider = new AnimeListsProvider(
+            new AnimeListsProviderOptions(SourceUrl: null, ConfigDirectory: CreateTempConfigDirectory()),
+            new HttpClient(handler));
+
+        var result = await provider.GetByTvdbIdAsync(74796);
+
+        Assert.Equal(AnimeListsOutcomeKind.NotConfigured, result.Kind);
+        Assert.Empty(handler.RequestedUris);
     }
 
     [Fact]

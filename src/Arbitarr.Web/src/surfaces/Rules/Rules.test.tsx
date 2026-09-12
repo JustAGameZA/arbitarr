@@ -106,6 +106,29 @@ describe('Rules', () => {
     expect(del.path).toBe('/api/admin/rules/1');
   });
 
+  // arb-d66: the field's width used to come from a `.testTitleField` literal;
+  // it now relies on the shared `.input` convention instead. This exercises
+  // the behaviour that literal was never actually needed for -- the field
+  // renders, is labelled, and accepts input that reaches the request.
+  it('renders the "Test a rule" field and sends the typed title', async () => {
+    const user = userEvent.setup();
+    const api = mockApi({
+      '/api/admin/rules': { body: rules },
+      '/api/admin/rules/test': { body: { verdict: 'Denied by block-cam' } },
+    });
+    renderSurface(<RulesPage />);
+    await screen.findByText('block-cam');
+
+    const testPanel = screen.getByRole('heading', { name: 'Test a rule' }).closest('section')!;
+    const titleField = within(testPanel).getByLabelText('Release title');
+    await user.type(titleField, 'Some.Movie.2024.CAM.x264');
+    await user.click(within(testPanel).getByRole('button', { name: 'Test' }));
+
+    const posted = await findCall(api, 'POST');
+    expect(posted.path).toBe('/api/admin/rules/test');
+    expect(JSON.parse(posted.body!)).toMatchObject({ title: 'Some.Movie.2024.CAM.x264' });
+  });
+
   it('renders the server rejection verbatim and clamps nothing', async () => {
     const user = userEvent.setup();
     const api = mockApi({

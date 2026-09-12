@@ -26,10 +26,19 @@ namespace Arbitarr.Media.Tests;
 /// </para>
 ///
 /// <para>
-/// The AnimeLists fallback tier is deliberately NOT tested here, because it is deliberately not
-/// wired — see the type's own remarks and bead arb-5uw. Its previous tests passed only by
-/// constructing the provider directly while DI left the parameter null, so they asserted about a
-/// path no request could reach.
+/// arb-5uw: ADR 0002's AnimeLists fallback tier IS exercised here now that it is wired as a REQUIRED
+/// dependency and reachable from the real container (<c>IdentityResolverWiringTests</c> is what pins
+/// that half; these facts are about behaviour). They cover what the tier may admit — several
+/// distinct names admit nothing and flag the ambiguity, exactly one name resolves — and the two
+/// ways it must cost nothing: an *arr answer means it is never consulted, and an unconfigured
+/// source URL means it performs no I/O at all.
+/// </para>
+///
+/// <para>
+/// Both "cost nothing" facts assert that a request-COUNTING handler saw zero requests, which is
+/// vacuous on its own: a handler wired to nothing also sees zero. Each is therefore preceded by a
+/// positive control proving the same handler DOES record a request when the tier really runs — see
+/// <see cref="Positive_control_the_anime_lists_handler_records_a_request_when_the_tier_actually_runs"/>.
 /// </para>
 /// </summary>
 public sealed class SeriesTitleResolverTests : IDisposable
@@ -79,16 +88,74 @@ public sealed class SeriesTitleResolverTests : IDisposable
         HttpMessageHandler handler,
         IMemoryCache? memo = null,
         TimeSpan? lookupBudget = null,
-        IArrInstanceEpoch? epoch = null) =>
+        IArrInstanceEpoch? epoch = null,
+        AnimeListsProvider? animeLists = null) =>
         new(
             new SonarrCredentialProvider(new ArrInstanceRepository(context)),
             new StubHttpClientFactory(new HttpClient(handler)),
             new StubCircuitBreaker(),
             memo ?? NewMemo(),
             epoch ?? new ArrInstanceEpoch(),
+            animeLists ?? UnconfiguredAnimeLists(),
             lookupBudget);
 
     private static IdentityResolutionHints Hints(int? tvdbId = TvdbId) => new(tvdbId, TmdbId: null, Year: null);
+
+    // ---- arb-5uw: ADR 0002's AnimeLists fallback tier ----
+
+    /// <summary>
+    /// The example URL every test here configures. A documentation-only <c>.example</c> host, never a
+    /// real one: the repository names no anime-lists upstream anywhere, because choosing one is the
+    /// operator's decision (see <see cref="AnimeListsProviderOptions.SourceUrl"/>).
+    /// </summary>
+    private const string AnimeListsSourceUrl = "https://anime-lists.example/anime-list-full.xml";
+
+    /// <summary>An anime-lists document mapping <see cref="TvdbId"/> to the given names.</summary>
+    private static string AnimeListsXml(params string[] names) =>
+        "<anime-list><anime anidbid=\"69\" tvdbid=\"" + TvdbId + "\">"
+        + string.Concat(names.Select(n => "<name>" + System.Security.SecurityElement.Escape(n) + "</name>"))
+        + "</anime></anime-list>";
+
+    /// <summary>
+    /// The STOCK state: registered but with no source URL, so the provider reports NotConfigured and
+    /// performs no I/O. Used by every test that is not about the tier itself, which is why the tier
+    /// being wired changes none of their expectations.
+    /// </summary>
+    private static AnimeListsProvider UnconfiguredAnimeLists() =>
+        new(
+            new AnimeListsProviderOptions(SourceUrl: null, ConfigDirectory: CreateTempConfigDirectory()),
+            new HttpClient(new CountingAnimeListsHandler("<anime-list />")));
+
+    private static string CreateTempConfigDirectory()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "arbitarr-resolver-animelists", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        return dir;
+    }
+
+    /// <summary>
+    /// A handler that serves one anime-lists document and COUNTS the requests it was asked for, so
+    /// "the tier never ran" can be asserted as zero rather than inferred.
+    /// </summary>
+    private sealed class CountingAnimeListsHandler : HttpMessageHandler
+    {
+        private readonly string _xml;
+
+        public CountingAnimeListsHandler(string xml) => _xml = xml;
+
+        public int RequestCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            RequestCount++;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(_xml, Encoding.UTF8, "application/xml"),
+            });
+        }
+    }
 
     [Fact]
     public async Task Resolves_the_series_title_from_a_configured_sonarr()
@@ -659,5 +726,272 @@ public sealed class SeriesTitleResolverTests : IDisposable
             await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
             throw new UnreachableException();
         }
+    }
+
+    // ================= arb-5uw: ADR 0002's AnimeLists fallback tier =================
+
+    /// <summary>
+    /// THE POSITIVE CONTROL for the two zero-request assertions below. It establishes that this
+    /// handler, this provider and this resolver really do produce a counted request when the tier
+    /// runs — so a later <c>Assert.Equal(0, handler.RequestCount)</c> is evidence the tier was
+    /// skipped, rather than evidence the handler was never reachable in the first place.
+    /// </summary>
+    [Fact]
+    public async Task Positive_control_the_anime_lists_handler_records_a_request_when_the_tier_actually_runs()
+    {
+        await using var context = CreateContext();
+        await new ArrInstanceRepository(context).SetAsync(BaseUrl, ApiKey, CancellationToken.None);
+
+        var handler = new CountingAnimeListsHandler(AnimeListsXml("One Piece"));
+        var animeLists = new AnimeListsProvider(
+            new AnimeListsProviderOptions(new Uri(AnimeListsSourceUrl), CreateTempConfigDirectory()),
+            new HttpClient(handler));
+
+        // Sonarr answers with no series object, so the *arr tier admits nothing and the fallback runs.
+        var resolver = BuildWithHandler(
+            context,
+            new FakeHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(EpisodeFeed(seriesTitle: null), Encoding.UTF8, "application/json"),
+            }),
+            animeLists: animeLists);
+
+        var identity = await resolver.ResolveAsync("92", Hints(), CancellationToken.None);
+
+        Assert.Equal(1, handler.RequestCount);
+        Assert.NotNull(identity);
+        Assert.Equal("One Piece", identity.PrimaryTitle);
+    }
+
+    /// <summary>
+    /// ADR 0002: several DISTINCT names claim the series, nothing can separate them, so NONE is
+    /// admitted and the ambiguity is reported as an inspectable flag rather than left to be inferred
+    /// from the null.
+    /// </summary>
+    [Fact]
+    public async Task Several_distinct_anime_lists_names_admit_nothing_and_flag_the_ambiguity()
+    {
+        await using var context = CreateContext();
+        await new ArrInstanceRepository(context).SetAsync(BaseUrl, ApiKey, CancellationToken.None);
+
+        var handler = new CountingAnimeListsHandler(AnimeListsXml("One Piece", "Wan Pisu"));
+        var animeLists = new AnimeListsProvider(
+            new AnimeListsProviderOptions(new Uri(AnimeListsSourceUrl), CreateTempConfigDirectory()),
+            new HttpClient(handler));
+
+        var resolver = BuildWithHandler(
+            context,
+            new FakeHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(EpisodeFeed(seriesTitle: null), Encoding.UTF8, "application/json"),
+            }),
+            animeLists: animeLists);
+
+        var identity = await resolver.ResolveAsync("92", Hints(), CancellationToken.None);
+
+        Assert.Null(identity);
+        Assert.Equal(MatchProvenanceFlags.AmbiguousMapping, resolver.LastAnimeListsFlags);
+
+        // The tier really was consulted — otherwise the null above would prove nothing about ADR
+        // 0002's withholding, only that the fallback never ran.
+        Assert.Equal(1, handler.RequestCount);
+    }
+
+    /// <summary>
+    /// The other half of ADR 0002: exactly one name is not ambiguous, so it resolves, and no
+    /// ambiguity is reported.
+    /// </summary>
+    [Fact]
+    public async Task Exactly_one_anime_lists_name_resolves_and_flags_no_ambiguity()
+    {
+        await using var context = CreateContext();
+        await new ArrInstanceRepository(context).SetAsync(BaseUrl, ApiKey, CancellationToken.None);
+
+        var animeLists = new AnimeListsProvider(
+            new AnimeListsProviderOptions(new Uri(AnimeListsSourceUrl), CreateTempConfigDirectory()),
+            new HttpClient(new CountingAnimeListsHandler(AnimeListsXml("One Piece"))));
+
+        var resolver = BuildWithHandler(
+            context,
+            new FakeHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(EpisodeFeed(seriesTitle: null), Encoding.UTF8, "application/json"),
+            }),
+            animeLists: animeLists);
+
+        var identity = await resolver.ResolveAsync("92", Hints(), CancellationToken.None);
+
+        Assert.NotNull(identity);
+        Assert.Equal("One Piece", identity.PrimaryTitle);
+        Assert.Equal(MatchProvenanceFlags.None, resolver.LastAnimeListsFlags);
+    }
+
+    /// <summary>
+    /// The *arr instance is authoritative, so when it answers the fallback tier is NOT consulted at
+    /// all — asserted as zero counted requests on the handler the positive control above proves does
+    /// count them.
+    /// </summary>
+    [Fact]
+    public async Task An_arr_api_answer_means_the_anime_lists_tier_is_never_consulted()
+    {
+        await using var context = CreateContext();
+        await new ArrInstanceRepository(context).SetAsync(BaseUrl, ApiKey, CancellationToken.None);
+
+        var handler = new CountingAnimeListsHandler(AnimeListsXml("Wrong Title From The Static Map"));
+        var animeLists = new AnimeListsProvider(
+            new AnimeListsProviderOptions(new Uri(AnimeListsSourceUrl), CreateTempConfigDirectory()),
+            new HttpClient(handler));
+
+        var resolver = BuildWithHandler(
+            context,
+            new FakeHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(EpisodeFeed("One Piece"), Encoding.UTF8, "application/json"),
+            }),
+            animeLists: animeLists);
+
+        var identity = await resolver.ResolveAsync("92", Hints(), CancellationToken.None);
+
+        Assert.NotNull(identity);
+        Assert.Equal("One Piece", identity.PrimaryTitle);
+        Assert.Equal(0, handler.RequestCount);
+    }
+
+    /// <summary>
+    /// The INACTIVE state: no source URL configured, so the tier contributes nothing and — the
+    /// property the whole registration rests on — issues no request. Zero is meaningful here only
+    /// because the positive control above shows the same handler counts one when the tier runs.
+    /// </summary>
+    [Fact]
+    public async Task An_unconfigured_source_url_leaves_the_tier_inactive_and_issues_no_request()
+    {
+        await using var context = CreateContext();
+        await new ArrInstanceRepository(context).SetAsync(BaseUrl, ApiKey, CancellationToken.None);
+
+        var handler = new CountingAnimeListsHandler(AnimeListsXml("One Piece"));
+        var animeLists = new AnimeListsProvider(
+            new AnimeListsProviderOptions(SourceUrl: null, ConfigDirectory: CreateTempConfigDirectory()),
+            new HttpClient(handler));
+
+        Assert.False(animeLists.IsConfigured);
+
+        var resolver = BuildWithHandler(
+            context,
+            new FakeHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(EpisodeFeed(seriesTitle: null), Encoding.UTF8, "application/json"),
+            }),
+            animeLists: animeLists);
+
+        var identity = await resolver.ResolveAsync("92", Hints(), CancellationToken.None);
+
+        Assert.Null(identity);
+        Assert.Equal(0, handler.RequestCount);
+        Assert.Equal(MatchProvenanceFlags.None, resolver.LastAnimeListsFlags);
+    }
+
+    /// <summary>
+    /// The echo guard applies to the fallback tier too: a static-map name equal to the bare episode
+    /// number the caller sent would put "92 92" on the wire, which is the exact failure this
+    /// resolver exists to prevent.
+    /// </summary>
+    [Fact]
+    public async Task An_anime_lists_name_equal_to_the_episode_number_is_not_echoed_back()
+    {
+        await using var context = CreateContext();
+        await new ArrInstanceRepository(context).SetAsync(BaseUrl, ApiKey, CancellationToken.None);
+
+        var animeLists = new AnimeListsProvider(
+            new AnimeListsProviderOptions(new Uri(AnimeListsSourceUrl), CreateTempConfigDirectory()),
+            new HttpClient(new CountingAnimeListsHandler(AnimeListsXml("092"))));
+
+        var resolver = BuildWithHandler(
+            context,
+            new FakeHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(EpisodeFeed(seriesTitle: null), Encoding.UTF8, "application/json"),
+            }),
+            animeLists: animeLists);
+
+        var identity = await resolver.ResolveAsync("92", Hints(), CancellationToken.None);
+
+        Assert.Null(identity);
+    }
+
+    /// <summary>
+    /// One name spelled two ways is ONE name, not a manufactured ambiguity: admitting nothing here
+    /// would withhold a title that nothing actually competes with, which is a cost ADR 0002 does not
+    /// ask anyone to pay.
+    /// </summary>
+    [Fact]
+    public async Task The_same_anime_lists_name_in_two_spellings_is_not_ambiguous()
+    {
+        await using var context = CreateContext();
+        await new ArrInstanceRepository(context).SetAsync(BaseUrl, ApiKey, CancellationToken.None);
+
+        var animeLists = new AnimeListsProvider(
+            new AnimeListsProviderOptions(new Uri(AnimeListsSourceUrl), CreateTempConfigDirectory()),
+            new HttpClient(new CountingAnimeListsHandler(AnimeListsXml("One Piece", " one piece "))));
+
+        var resolver = BuildWithHandler(
+            context,
+            new FakeHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(EpisodeFeed(seriesTitle: null), Encoding.UTF8, "application/json"),
+            }),
+            animeLists: animeLists);
+
+        var identity = await resolver.ResolveAsync("92", Hints(), CancellationToken.None);
+
+        Assert.NotNull(identity);
+        Assert.Equal("One Piece", identity.PrimaryTitle);
+        Assert.Equal(MatchProvenanceFlags.None, resolver.LastAnimeListsFlags);
+    }
+
+    /// <summary>
+    /// arb-5uw: the provider must NOT assign <see cref="HttpClient.Timeout"/> in its constructor.
+    /// Constructing it over a client that already has a request in flight throws if the assignment
+    /// is restored, which is exactly the shape a pooled singleton produces in production.
+    /// </summary>
+    [Fact]
+    public async Task Constructing_the_provider_over_a_client_with_a_started_request_does_not_throw()
+    {
+        using var handler = new NeverAnswersHandler();
+        using var client = new HttpClient(handler);
+        using var cancel = new CancellationTokenSource();
+
+        // Start a request and leave it in flight: HttpClient.Timeout throws once this has happened,
+        // so a constructor that assigned it would fail here rather than in production.
+        var inFlight = client.GetAsync(new Uri(AnimeListsSourceUrl), cancel.Token);
+        await Task.Yield();
+
+        var provider = new AnimeListsProvider(
+            new AnimeListsProviderOptions(new Uri(AnimeListsSourceUrl), CreateTempConfigDirectory()),
+            client);
+
+        Assert.True(provider.IsConfigured);
+
+        await cancel.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => inFlight);
+    }
+
+    /// <summary>
+    /// The required dependency, asserted directly: null is rejected rather than quietly disabling
+    /// the tier the way the previous optional parameter did.
+    /// </summary>
+    [Fact]
+    public void The_anime_lists_provider_is_a_required_dependency()
+    {
+        using var context = CreateContext();
+
+        var exception = Assert.Throws<ArgumentNullException>(() => new SeriesTitleResolver(
+            new SonarrCredentialProvider(new ArrInstanceRepository(context)),
+            new StubHttpClientFactory(new HttpClient(new FakeHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)))),
+            new StubCircuitBreaker(),
+            NewMemo(),
+            new ArrInstanceEpoch(),
+            animeLists: null!));
+
+        Assert.Equal("animeLists", exception.ParamName);
     }
 }

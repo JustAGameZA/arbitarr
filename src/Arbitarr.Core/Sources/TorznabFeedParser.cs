@@ -41,6 +41,16 @@ public static class TorznabFeedParser
     /// added source is another origin whose feed is trusted to name fetch targets, and each is
     /// pinned to its own <paramref name="allowedOrigin"/> so one indexer's feed can never name
     /// another's host — let alone an arbitrary one.</para>
+    ///
+    /// <para><b>Scheme and userinfo (arb-07ei).</b> "scheme + host + port" above was what this
+    /// method was always meant to do; until arb-07ei the code compared only host and port, so an
+    /// <c>https</c> origin accepted an <c>http</c> link and a hostile feed could downgrade the
+    /// download fetch — which carries the indexer key — to cleartext. A link carrying USERINFO
+    /// passed for a quieter reason: <see cref="Uri.Host"/> excludes it, so
+    /// <c>http://user:pw@indexer.example:9117/x</c> looked same-origin while injecting a Basic-auth
+    /// credential into a URL Arbitarr would then fetch. Both rules now live in
+    /// <see cref="UpstreamOrigin.IsAtOrigin"/>, which the write boundary calls too, so the two can
+    /// never disagree about what an origin is again.</para>
     /// </summary>
     public static bool TryValidateOriginPinnedLink(string? link, Uri allowedOrigin, out Uri validated)
     {
@@ -51,13 +61,7 @@ public static class TorznabFeedParser
             return false;
         }
 
-        if (parsedLink.Scheme != Uri.UriSchemeHttp && parsedLink.Scheme != Uri.UriSchemeHttps)
-        {
-            return false;
-        }
-
-        if (!string.Equals(parsedLink.Host, allowedOrigin.Host, StringComparison.OrdinalIgnoreCase)
-            || parsedLink.Port != allowedOrigin.Port)
+        if (!UpstreamOrigin.IsAtOrigin(parsedLink, allowedOrigin))
         {
             return false;
         }
@@ -87,6 +91,16 @@ public static class TorznabFeedParser
             {
                 // Drop the item rather than defaulting to a placeholder URI: a placeholder would
                 // still be a well-formed, fetchable target, defeating the point of the check.
+                //
+                // arb-iub9: dropping is silent, and it stays silent — this is a static parser with
+                // no logger, and threading one in would change the signature of a method both
+                // adapters call. The "source configured, search returns nothing, nothing says why"
+                // shape that bead describes is closed at the OTHER end instead: a trailing-dot host
+                // was the one accepted BaseUrl that could fail its own pin, and ValidateBaseUrl now
+                // refuses it, so no stored origin can reach this line for every item it is sent.
+                // UpstreamOrigin's doc states that agreement property; SourceRepositoryTests asserts
+                // it over the shared corpus. Reaching here now means the UPSTREAM named a foreign
+                // target, which is the case this drop exists for.
                 continue;
             }
 

@@ -88,6 +88,12 @@ public sealed class VerdictCacheKeyTests
     /// Updating the pinned literal is only correct when the key inputs deliberately changed (as
     /// #244 did) — never repaste a fresh digest just to make this test green, because a changed
     /// digest means every cached verdict misses once on deploy.
+    ///
+    /// arb-a7ll updated it for exactly that reason: poster and Usenet group became key components,
+    /// so every key changed and the whole verdict cache is invalidated once on that deploy. This
+    /// candidate reports no poster and no groups, so the two appended components are their
+    /// "absent" encodings — which is the point, since even a release carrying neither metadata
+    /// field re-keys.
     /// </summary>
     [Fact]
     public void Compute_FixedInputs_MatchesKnownDigest()
@@ -96,6 +102,6 @@ public sealed class VerdictCacheKeyTests
 
         var key = VerdictCacheKey.Compute(candidate, "indexer-1", "gpt-x", "digest-1", "prompt-v1", "t0-s42");
 
-        Assert.Equal("F2203F5F62E5B63953CCF77C2051937214CC3B920739A8CB859C829E79F5AB71", key);
+        Assert.Equal("FEB371C1ECC23CEFCFE37CB863D6469D0380419B253860700C1BFAC7CE8D5325", key);
     }
 }
