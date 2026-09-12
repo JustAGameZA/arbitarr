@@ -62,6 +62,11 @@ shell's.
 **Bare element selectors appear only in `theme.css`'s reset.** Component styles are scoped through
 CSS modules.
 
+**A hidden scrollbar needs a replacement overflow affordance.** `scrollbar-width: none` removes the
+only persistent cue that a container scrolls; pair it with one — SectionNav's edge fade is the
+precedent — or do not hide the bar. Decided twice: SectionNav.module.css hides the bar; PageToolbar
+rejects overflow-x and wraps instead.
+
 ---
 
 ## Status badges

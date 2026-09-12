@@ -168,10 +168,6 @@ describe('SectionNav', () => {
 });
 
 describe('SectionNav edge fade', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
   /**
    * Stubs the nav element's scroll geometry, since jsdom performs no layout
    * and scrollWidth/clientWidth/scrollLeft are always 0 there. `scrollLeft`
@@ -247,6 +243,17 @@ describe('SectionNav edge fade', () => {
 
     expect(nav).toHaveAttribute('data-fade-left', 'true');
     expect(nav).toHaveAttribute('data-fade-right', 'true');
+  });
+
+  it('absorbs a sub-pixel short end state within the 1px slack (no right fade)', () => {
+    renderNav();
+    const nav = screen.getByRole('navigation');
+    stubScrollGeometry(nav, { scrollWidth: 600.5, clientWidth: 300, scrollLeft: 0 });
+
+    fireScroll(nav, 300);
+
+    expect(nav).toHaveAttribute('data-fade-left', 'true');
+    expect(nav).not.toHaveAttribute('data-fade-right');
   });
 });
 
