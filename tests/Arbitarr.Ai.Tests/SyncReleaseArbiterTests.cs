@@ -257,4 +257,57 @@ public class SyncReleaseArbiterTests
             throw new InvalidOperationException("unreachable");
         }
     }
+
+    // ---- arb-0nw3: the candidate loop is strictly sequential, not fanned out ------------------
+    //
+    // Records the maximum number of concurrent in-flight ClassifyAsync calls it observed. If the
+    // loop in ArbitrateAsync ever switched to Task.WhenAll/Parallel, this would read > 1; a
+    // throwaway console project outside the repo confirmed a Task.WhenAll stand-in over the same
+    // candidates does read > 1 with this exact fake (see commit body for the 2-line result), so
+    // this test is a genuine, non-vacuous positive control for the loop shape.
+    private sealed class ConcurrencyTrackingOllamaClient : IOllamaClient
+    {
+        private int _inFlight;
+        private int _maxInFlight;
+
+        public int MaxInFlight => Volatile.Read(ref _maxInFlight);
+
+        public async Task<OllamaVerdict> ClassifyAsync(ReleaseCandidate candidate, CancellationToken cancellationToken = default)
+        {
+            var current = Interlocked.Increment(ref _inFlight);
+            InterlockedMax(ref _maxInFlight, current);
+            try
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(20), cancellationToken).ConfigureAwait(false);
+                return new OllamaVerdict("accept", 0.5);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _inFlight);
+            }
+        }
+
+        private static void InterlockedMax(ref int target, int candidate)
+        {
+            int initial;
+            do
+            {
+                initial = Volatile.Read(ref target);
+                if (candidate <= initial) return;
+            }
+            while (Interlocked.CompareExchange(ref target, candidate, initial) != initial);
+        }
+    }
+
+    [Fact]
+    public async Task ArbitrateAsync_MultipleCandidates_NeverArbitratesMoreThanOneConcurrently()
+    {
+        var trackingClient = new ConcurrencyTrackingOllamaClient();
+        var arbiter = new SyncReleaseArbiter(trackingClient);
+        var candidates = Enumerable.Range(0, 4).Select(i => Candidate($"guid-{i}")).ToArray();
+
+        await arbiter.ArbitrateAsync(candidates, Context(), CancellationToken.None);
+
+        Assert.Equal(1, trackingClient.MaxInFlight);
+    }
 }
