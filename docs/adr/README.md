@@ -63,6 +63,7 @@ of a superseded ADR is what stops the same rejected option being proposed again.
 | [0009](0009-lockout-free-login-rate-limiting.md) | Login is rate-limited but never locks an account out |
 | [0010](0010-secrets-clear-route.md) | A secret is never readable and omission never clears it; clearing means deleting the owning thing |
 | [0011](0011-test-strategy-lanes-isolation-quarantine.md) | PR lane runs the full suite parallelised; affected-test selection stays local-only; quarantine (with a bead) replaces retries |
+| [0012](0012-lan-passthrough-optional-login.md) | LAN passthrough admits a trusted local-network peer as a full-scope operator without a session or API key, on by default |
 | [0013](0013-backup-staging-under-config-directory.md) | Backup staging lives under the config directory, not the OS temp directory |
 | [0014](0014-refuse-upstream-download-redirects.md) | Refuse the whole 3xx range on upstream downloads; refuse origin-violating redirects |
 | [0015](0015-persist-release-lookup.md) | The release lookup is two tiers: in-memory first, a persisted row on a miss, so a link survives a restart and outlives 30 minutes |
