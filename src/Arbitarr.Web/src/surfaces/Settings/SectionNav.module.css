@@ -57,6 +57,61 @@
   display: none;
 }
 
+/*
+ * Edge fade: the only cue left that the strip scrolls once its scrollbar is
+ * hidden above (arb-2vu, from #199 arch review). `position: relative` on
+ * `.nav` plus absolutely-positioned pseudo-elements rather than a gradient on
+ * `.nav` itself, because the strip's own background must stay solid under
+ * the links -- painting the fade directly on `.nav` would show through the
+ * link backgrounds too.
+ *
+ * `pointer-events: none`: the fade sits on top of the strip's right/left end
+ * but must never intercept a click or drag meant for the link underneath it.
+ *
+ * The gradient runs from `--bg-app` (the strip's own opaque background, see
+ * the rule above) to transparent, not a literal colour -- AC3.
+ */
+.nav {
+  position: relative;
+}
+
+.nav::before,
+.nav::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 24px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.nav::before {
+  left: 0;
+  background: linear-gradient(to right, var(--bg-app), transparent);
+}
+
+.nav::after {
+  right: 0;
+  background: linear-gradient(to left, var(--bg-app), transparent);
+}
+
+.nav[data-fade-left='true']::before {
+  opacity: 1;
+}
+
+.nav[data-fade-right='true']::after {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav::before,
+  .nav::after {
+    transition: none;
+  }
+}
+
 .list {
   display: flex;
   flex-wrap: nowrap;
@@ -118,6 +173,17 @@
     background: transparent;
     border-bottom: none;
     overflow-x: visible;
+  }
+
+  /*
+   * The vertical rail never scrolls horizontally (overflow-x: visible
+   * above), so the fade would otherwise sit fixed at 1 or both edges
+   * whenever fadeLeft/fadeRight happened to be true from a stale strip
+   * measurement taken before the breakpoint was crossed.
+   */
+  .nav::before,
+  .nav::after {
+    display: none;
   }
 
   .list {
