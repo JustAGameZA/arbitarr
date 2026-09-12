@@ -497,22 +497,10 @@ drifting parser copy fails silently, since both copies keep returning plausible 
 
 ---
 
-## Dedup, budget and backoff vocabulary
+## Budget and backoff vocabulary
 
-Terms introduced normatively by [ADR 0019](docs/adr/0019-dedup-is-a-pipeline-stage-with-conservative-exact-merge.md)
-and [ADR 0020](docs/adr/0020-api-hit-budget-and-durable-backoff.md); implemented by
-arb-x7w8.8 and arb-x7w8.10 respectively.
-
-**Dedup group.** The set of candidates the dedup pipeline stage judges to be the same
-release, per ADR 0019: members merge only on exact evidence (normalised title equality,
-size within a tight tolerance, and the same `ProtocolKind`), **all members are retained**,
-ordered by source priority, and the first is the representative. A **false split** (two
-rows for one release) is a visible, self-correcting duplicate; a **false merge** hides one
-release behind another and is a wrong answer under
-[ADR 0002](docs/adr/0002-admit-no-match-when-ambiguous.md) — the asymmetry the equality
-rule exists to preserve. **Not to be confused with** a release group or a Usenet posting
-group (the "Obfuscated title" section above) — this is Arbitarr's own merge unit, unrelated
-to either sense of "group" a release name or a Newznab attribute carries.
+Terms introduced normatively by [ADR 0020](docs/adr/0020-api-hit-budget-and-durable-backoff.md);
+implemented by arb-x7w8.10.
 
 **API-hit budget.** The per-source daily or hourly cap on queries and grabs, derived from
 the events store rather than a purpose-built counter table (ADR 0020). A source at its
@@ -788,9 +776,14 @@ adapter (`DedupStage`, `src/Arbitarr.Api/Search/`, over `DedupNormalizer` in
 could collapse only that indexer's duplicates of itself — the case that does not
 arise. **Two rows for one release is the expected failure mode and must not be
 "fixed" by loosening the match**: a false split is a visible duplicate row, while
-a false merge silently hides one release behind another. The full reasoning is in
+a false merge silently hides one release behind another and is a wrong answer under
+[ADR 0002](docs/adr/0002-admit-no-match-when-ambiguous.md). The full reasoning is in
 [ADR
 0019](docs/adr/0019-dedup-is-a-pipeline-stage-with-conservative-exact-merge.md).
+
+**Not to be confused with** a release group or a Usenet posting group (the
+"Obfuscated title" section above) — this is Arbitarr's own merge unit, unrelated
+to either sense of "group" a release name or a Newznab attribute carries.
 
 ---
 
