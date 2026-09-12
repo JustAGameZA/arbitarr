@@ -56,14 +56,17 @@ export function useStalenessQuery() {
 }
 
 /**
- * The levels the filter offers, newest-first in severity order.
+ * The levels the filter offers, least severe first.
+ *
+ * Each selects that level AND EVERYTHING ABOVE IT: since arb-pw7r the server's `level`
+ * parameter is a minimum severity, so "Warning" serves Warning, Error and Critical.
  *
  * These are Microsoft.Extensions.Logging.LogLevel NAMES and must match the server's
- * spelling exactly — LogStore matches `Level = $level COLLATE NOCASE`, an EXACT
- * comparison and not a prefix, so "Info" would silently match nothing rather than
- * erroring. Trace and Debug are absent because SqliteLoggerProvider's minimum level is
- * Information (plan §4.3): offering a filter that can only ever return zero rows would
- * teach the operator that the log store is broken.
+ * spelling exactly — LogStore resolves the name against its own SeverityOrder list and
+ * falls back to an exact match for anything it does not recognise, so "Info" would
+ * silently match nothing rather than erroring. Trace and Debug are absent because
+ * SqliteLoggerProvider's minimum level is Information (plan §4.3): offering a filter that
+ * can only ever return zero rows would teach the operator that the log store is broken.
  */
 export const LOG_LEVELS = ['Information', 'Warning', 'Error', 'Critical'] as const;
 

@@ -78,6 +78,14 @@ public static class LogsEndpoint
     public static IEndpointConventionBuilder Map(IEndpointRouteBuilder endpoints) =>
         endpoints.MapGet("/api/admin/logs", HandleAsync).RequireAdminApiKey();
 
+    /// <param name="level">
+    /// MINIMUM severity, not an exact level (arb-pw7r): <c>?level=Warning</c> serves Warning, Error
+    /// and Critical. The meaning of the existing parameter changed rather than a second
+    /// <c>minLevel</c> being added beside it, because every caller — the System &gt; Logs filter and
+    /// the tests — wants "and above", and two parameters with overlapping meaning would leave the
+    /// question of what <c>?level=Error&amp;minLevel=Warning</c> means answerable only by reading the
+    /// handler. Unrecognised names still match exactly; see <see cref="LogStore.ResolveLevelsAtOrAbove"/>.
+    /// </param>
     public static async Task<IResult> HandleAsync(
         string? level,
         string? logger,

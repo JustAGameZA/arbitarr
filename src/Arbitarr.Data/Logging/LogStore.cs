@@ -150,8 +150,17 @@ public sealed class LogStore
 
     /// <summary>
     /// Reads one page of rows, newest first, optionally filtered by level and/or logger.
+    ///
+    /// <para>The level filter is a MINIMUM SEVERITY (arb-pw7r): asking for Warning returns Warning,
+    /// Error and Critical. An exact match hid Error and Critical from an operator who selected the
+    /// level that "usually needs attention", which is the opposite of what the filter is for.</para>
     /// </summary>
-    /// <param name="level">Exact level name to match, case-insensitively; null for all levels.</param>
+    /// <param name="level">
+    /// Minimum level name, matched case-insensitively; null for all levels. A name that is not one
+    /// of <see cref="SeverityOrder"/> falls back to an exact match, so an unrecognised value keeps
+    /// today's behaviour instead of silently widening the filter to everything — the failure mode
+    /// that a "no rows at that level" answer and a "the filter was ignored" answer must not share.
+    /// </param>
     /// <param name="logger">Substring of the logger category to match; null for all loggers.</param>
     /// <param name="page">1-based page number.</param>
     /// <param name="pageSize">Rows per page.</param>
@@ -165,10 +174,22 @@ public sealed class LogStore
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, MaxPageSize);
 
+        // Resolved ONCE and handed to both commands below, so the WHERE text and the parameters
+        // bound into it cannot drift between the COUNT and the page query — a mismatch there shows
+        // the operator a total that disagrees with the rows beside it.
+        var levelNames = ResolveLevelsAtOrAbove(level);
+
         var filters = new List<string>();
-        if (!string.IsNullOrWhiteSpace(level))
+        if (levelNames.Count > 0)
         {
-            filters.Add("Level = $level COLLATE NOCASE");
+            // An IN-list of the names at or above the requested severity, each bound as its own
+            // parameter. Deliberately NOT a string comparison (`Level >= $level`): the stored value
+            // is a LogLevel NAME, and alphabetically "Error" < "Information" < "Warning", so string
+            // ordering would make "Warning and above" return nothing but Warning.
+            // COLLATE goes on the LEFT operand: for `x IN (...)` SQLite takes the comparison
+            // collation from the left-hand expression, so a trailing COLLATE after the list would
+            // not apply to the membership test and the case-insensitive match would quietly be lost.
+            filters.Add("Level COLLATE NOCASE IN (" + string.Join(", ", levelNames.Select((_, i) => $"$level{i}")) + ")");
         }
 
         if (!string.IsNullOrWhiteSpace(logger))
@@ -184,7 +205,7 @@ public sealed class LogStore
         await using (var countCommand = connection.CreateCommand())
         {
             countCommand.CommandText = $"SELECT COUNT(*) FROM Logs {where};";
-            BindFilters(countCommand, level, logger);
+            BindFilters(countCommand, levelNames, logger);
             var scalar = await countCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             total = Convert.ToInt32(scalar, System.Globalization.CultureInfo.InvariantCulture);
         }
@@ -202,7 +223,7 @@ public sealed class LogStore
                 ORDER BY Id DESC
                 LIMIT $limit OFFSET $offset;
                 """;
-            BindFilters(command, level, logger);
+            BindFilters(command, levelNames, logger);
             command.Parameters.AddWithValue("$limit", pageSize);
             command.Parameters.AddWithValue("$offset", (long)(page - 1) * pageSize);
 
@@ -302,11 +323,92 @@ public sealed class LogStore
     /// <summary>The page size used when the caller does not specify one.</summary>
     public const int DefaultPageSize = 50;
 
-    private static void BindFilters(SqliteCommand command, string? level, string? logger)
+    /// <summary>
+    /// The level names this store can hold, least severe first.
+    ///
+    /// <para>These are <c>Microsoft.Extensions.Logging.LogLevel.ToString()</c> values, because that
+    /// is literally what <see cref="SqliteLoggerProvider"/> writes into the Level column — so the
+    /// list is the spelling of the data, not a parallel vocabulary that could drift from it.
+    /// Serilog's own names for the two ends (Verbose, Fatal) are accepted as aliases by
+    /// <see cref="ResolveLevelsAtOrAbove"/> so a row written through a Serilog-shaped sink still
+    /// sorts, but they are not offered here as canonical.</para>
+    ///
+    /// <para><c>None</c> is absent deliberately: it is a "log nothing" sentinel, never a severity a
+    /// row can carry, and including it would make "None and above" mean "everything".</para>
+    /// </summary>
+    public static readonly IReadOnlyList<string> SeverityOrder = new[]
     {
-        if (!string.IsNullOrWhiteSpace(level))
+        "Trace", "Debug", "Information", "Warning", "Error", "Critical",
+    };
+
+    /// <summary>Serilog's spellings for the levels whose MEL name differs, mapped onto the MEL one.</summary>
+    private static readonly Dictionary<string, string> SeverityAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Verbose"] = "Trace",
+        ["Fatal"] = "Critical",
+    };
+
+    /// <summary>
+    /// Expands a requested level into every level name at or above it in severity.
+    ///
+    /// <para>Returns an empty list for a null/blank request (no level filter at all), and a
+    /// single-element list holding the request verbatim when the name is not recognised — an
+    /// unknown name then behaves exactly as it did before this became a minimum-severity filter
+    /// (exact match, almost certainly zero rows) rather than widening to the whole store, which is
+    /// the one wrong answer a security-relevant surface must not give silently.</para>
+    ///
+    /// <para><c>public</c> rather than <c>internal</c>: the test assembly has no
+    /// <c>InternalsVisibleTo</c> here (same reason as <see cref="WriteAsync(IReadOnlyList{PendingLogEntry}, Func{string?, string?}?, CancellationToken)"/>'s
+    /// test seam), and <c>LogsEndpoint</c>'s documentation refers to it across the project boundary.</para>
+    /// </summary>
+    public static IReadOnlyList<string> ResolveLevelsAtOrAbove(string? level)
+    {
+        if (string.IsNullOrWhiteSpace(level))
         {
-            command.Parameters.AddWithValue("$level", level);
+            return Array.Empty<string>();
+        }
+
+        var name = level.Trim();
+        if (SeverityAliases.TryGetValue(name, out var canonical))
+        {
+            name = canonical;
+        }
+
+        var index = -1;
+        for (var i = 0; i < SeverityOrder.Count; i++)
+        {
+            if (string.Equals(SeverityOrder[i], name, StringComparison.OrdinalIgnoreCase))
+            {
+                index = i;
+                break;
+            }
+        }
+
+        if (index < 0)
+        {
+            return new[] { level };
+        }
+
+        // Every canonical name at or above the match, PLUS the aliases of those names, so a store
+        // that happens to hold "Fatal" rows is still covered by a Warning request.
+        var names = new List<string>();
+        for (var i = index; i < SeverityOrder.Count; i++)
+        {
+            names.Add(SeverityOrder[i]);
+            foreach (var alias in SeverityAliases.Where(pair => pair.Value == SeverityOrder[i]))
+            {
+                names.Add(alias.Key);
+            }
+        }
+
+        return names;
+    }
+
+    private static void BindFilters(SqliteCommand command, IReadOnlyList<string> levelNames, string? logger)
+    {
+        for (var i = 0; i < levelNames.Count; i++)
+        {
+            command.Parameters.AddWithValue($"$level{i}", levelNames[i]);
         }
 
         if (!string.IsNullOrWhiteSpace(logger))

@@ -318,9 +318,9 @@ describe('System logs filtering', () => {
   });
 
   it('defaults the first request to the Warning level', async () => {
-    // LogStore matches Level as an exact string with no minimum-severity semantic
-    // (LogsEndpoint.cs), so "Warning and above" is not achievable without a backend
-    // change; exact "Warning" is the closest useful default (arb-kz8).
+    // The server applies `level` as a MINIMUM severity (arb-pw7r), so this one parameter
+    // is the whole "Warning and above" default -- the wire value stays the bare level
+    // name, and widening it here would ask for something the API does not accept.
     const api = mockApi(allRoutes);
     const user = userEvent.setup();
     renderSurface(<SystemPage />);
@@ -329,6 +329,29 @@ describe('System logs filtering', () => {
     const request = api.callsTo('/api/admin/logs').at(0);
     expect(request?.url.searchParams.get('level')).toBe('Warning');
     expect(screen.getByLabelText('Level')).toHaveValue('Warning');
+  });
+
+  it('labels each level as "and above", except Critical which has nothing above it', async () => {
+    // The label is the only place the minimum-severity semantic is visible to an
+    // operator. A bare "Warning" reads as an exact filter, which is the misreading that
+    // made the previous behaviour hide Error and Critical from the default view.
+    mockApi(allRoutes);
+    const user = userEvent.setup();
+    renderSurface(<SystemPage />);
+    await openLogsTab(user);
+
+    const select = screen.getByLabelText('Level');
+    const labels = within(select)
+      .getAllByRole('option')
+      .map((option) => option.textContent);
+
+    expect(labels).toEqual([
+      'All levels',
+      'Information and above',
+      'Warning and above',
+      'Error and above',
+      'Critical',
+    ]);
   });
 
   it('re-issues without the level filter when All levels is chosen', async () => {

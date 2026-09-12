@@ -74,7 +74,7 @@ public sealed class LogStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task Level_filter_returns_only_that_level()
+    public async Task Level_filter_excludes_levels_below_the_requested_one()
     {
         await _store.WriteAsync(new[]
         {
@@ -87,6 +87,104 @@ public sealed class LogStoreTests : IDisposable
 
         Assert.Equal(1, warnings.Total);
         Assert.Equal("a warning", Assert.Single(warnings.Entries).Message);
+    }
+
+    [Fact]
+    public async Task Level_filter_is_a_minimum_severity_and_includes_everything_above_it()
+    {
+        // arb-pw7r. The Information row is the POSITIVE CONTROL: without a row BELOW the requested
+        // level in the fixture, "Information is absent from the result" would pass just as happily
+        // against a store that had no Information row to exclude, and would prove nothing about
+        // the filter.
+        await _store.WriteAsync(new[]
+        {
+            Entry("an info", level: "Information"),
+            Entry("a warning", level: "Warning"),
+            Entry("an error", level: "Error"),
+            Entry("a critical", level: "Critical"),
+        });
+
+        var page = await _store.ReadAsync(level: "Warning", logger: null, page: 1, pageSize: 10);
+
+        // Total comes from the COUNT statement and Entries from the page statement -- two queries
+        // sharing one WHERE string. Asserting both against the same expectation is what catches
+        // them drifting apart, which surfaces as a total that disagrees with the rows beside it.
+        Assert.Equal(3, page.Total);
+        Assert.Equal(new[] { "Critical", "Error", "Warning" }, page.Entries.Select(e => e.Level));
+        Assert.DoesNotContain("an info", page.Entries.Select(e => e.Message));
+    }
+
+    [Fact]
+    public async Task Level_filter_orders_by_severity_and_not_alphabetically()
+    {
+        // As strings, "Critical" < "Error" < "Warning", so a `Level >= $level` implementation would
+        // return only the Warning row here and silently drop Error and Critical -- the very bug
+        // this filter exists to fix, wearing a query that looks entirely reasonable.
+        await _store.WriteAsync(new[]
+        {
+            Entry("an error", level: "Error"),
+            Entry("a critical", level: "Critical"),
+            Entry("a warning", level: "Warning"),
+        });
+
+        var page = await _store.ReadAsync(level: "Warning", logger: null, page: 1, pageSize: 10);
+
+        Assert.Equal(3, page.Total);
+    }
+
+    [Fact]
+    public async Task An_unrecognised_level_name_matches_exactly_rather_than_widening_to_everything()
+    {
+        // "Info" is not a LogLevel name. The dangerous answer here is not zero rows, it is ALL
+        // rows: a filter that silently stops filtering on a surface serving raw application logs
+        // shows an operator more than they asked for while looking like it worked.
+        await _store.WriteAsync(new[]
+        {
+            Entry("an info", level: "Information"),
+            Entry("an error", level: "Error"),
+        });
+
+        var page = await _store.ReadAsync(level: "Info", logger: null, page: 1, pageSize: 10);
+
+        Assert.Equal(0, page.Total);
+        Assert.Empty(page.Entries);
+    }
+
+    [Fact]
+    public async Task Serilog_spellings_resolve_onto_the_matching_severity()
+    {
+        // The store's own writer emits MEL names, but Level is free text, so a row written through
+        // a Serilog-shaped sink can carry "Fatal". A Warning request must not step over it purely
+        // because it is spelled differently from "Critical".
+        await _store.WriteAsync(new[]
+        {
+            Entry("a fatal", level: "Fatal"),
+            Entry("an info", level: "Information"),
+        });
+
+        var page = await _store.ReadAsync(level: "Warning", logger: null, page: 1, pageSize: 10);
+
+        Assert.Equal(1, page.Total);
+        Assert.Equal("a fatal", Assert.Single(page.Entries).Message);
+    }
+
+    [Fact]
+    public async Task Level_and_logger_filters_still_combine()
+    {
+        // The level filter grew from one bound parameter to an IN-list of them. The risk in that
+        // change is the OTHER filter's parameter being dropped or renumbered alongside it, which
+        // would widen the query while the level filter still looked correct.
+        await _store.WriteAsync(new[]
+        {
+            Entry("wanted", level: "Error", logger: "Api.Search"),
+            Entry("wrong logger", level: "Error", logger: "Api.Other"),
+            Entry("wrong level", level: "Information", logger: "Api.Search"),
+        });
+
+        var page = await _store.ReadAsync(level: "Warning", logger: "Search", page: 1, pageSize: 10);
+
+        Assert.Equal(1, page.Total);
+        Assert.Equal("wanted", Assert.Single(page.Entries).Message);
     }
 
     [Fact]
