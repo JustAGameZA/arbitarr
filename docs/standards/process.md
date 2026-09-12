@@ -131,13 +131,48 @@ See [ADR 0011](../adr/0011-test-strategy-lanes-isolation-quarantine.md).
 
 ---
 
+## A class that creates a config directory owns the host
+
+A test class that creates a `/config` directory **must own the host that writes into it**. That
+means three things together, and each is load-bearing:
+
+- The root factory is the class's own — `ArbitarrWebApplicationFactory.OverConfigDirectory(dir)`,
+  or an owning factory it constructs — never a `WebApplicationFactory<Program>` handed to it as a
+  shared `IClassFixture`.
+- The class implements xunit's `IAsyncLifetime`, **never a bare `System.IAsyncDisposable`**: xunit
+  v2 awaits the former and silently ignores the latter, so the second spelling means the teardown
+  simply never runs and says nothing about it.
+- Its `DisposeAsync` **awaits the factory's own `DisposeAsync` first**, draining the host's
+  background work and returning its pooled handles, and only then calls
+  `ConfigDirectoryTeardown.Delete`. Both halves of that delete — the pool clear and the delete
+  itself — are required; see the remarks on
+  [`ConfigDirectoryTeardown`](../../tests/Arbitarr.Integration.Tests/TestSupport/ConfigDirectoryTeardown.cs)
+  for why, rather than a copy of them here.
+
+The shape this rules out is the one that looks harmless: deriving a host with `WithWebHostBuilder`
+from a shared `IClassFixture<WebApplicationFactory<Program>>`. **A derived host belongs to the
+root**, and xunit disposes a shared fixture when the whole assembly finishes — so the derived host
+is still running, still holding files open under the config directory, while the deriving class's
+disposal deletes it. `ConfigDirectoryTeardown.Delete` then throws by design, failing whichever test
+happened to be disposing rather than the one that caused it. That is a teardown fault, not a flaky
+test, and switching to the non-throwing `TryDelete` makes it silent rather than fixing it.
+
+**Per-test `WithWebHostBuilder` on a root the class OWNS is fine** — indeed it is the normal way to
+vary configuration per `[Fact]`. The rule is about where the root came from, not about deriving from
+it. `CategoryParamCapTests` is the worked example: own root over its own directory, `IAsyncLifetime`,
+drain, delete; per-test derived hosts throughout. #281 (arb-gphi) converted the last eight classes
+that had it the other way round, and `ConfigDirectoryHostOwnershipTests` (below) now fails the build
+on a ninth.
+
+---
+
 ## Cecil IL scans in Architecture.Tests
 
-`tests/Arbitarr.Architecture.Tests` carries four test classes that read compiled IL with Mono.Cecil
+`tests/Arbitarr.Architecture.Tests` carries five test classes that read compiled IL with Mono.Cecil
 rather than reflecting over a loaded assembly or grepping source — grep is defeated by an alias, a
 fully-qualified name, or a wrapper, and reflection can see the types a method mentions but not the
 calls or constructions its body makes. Reading the IL sees the actual `call`/`callvirt`/`newobj`
-instruction whatever the source spelled it as. All four open their target assemblies' build output
+instruction whatever the source spelled it as. All five open their target assemblies' build output
 directly by file path (`BuiltAssemblies.ResolvePath`, arb-hxa) rather than via `ProjectReference`,
 because at least one target (`Arbitarr.Host`) fails to reference that way (NU1605); that makes every
 scan depend on the solution having been **built first**, so a missing assembly fails the scan loudly
@@ -167,6 +202,13 @@ below.
   `Bead=arb-xxx` trait, per [Quarantine](#quarantine) above. It reads attribute rows rather than
   using xunit's own test discovery so that a quarantined test in an assembly that fails to load, or
   one hidden behind a custom discoverer, still cannot escape the check by simply not appearing.
+- **`ConfigDirectoryHostOwnershipTests`** scans `Arbitarr.Integration.Tests` only and fails any type
+  that BOTH takes the shared `WebApplicationFactory<Program>` fixture (by `IClassFixture<>` row or by
+  constructor parameter) and calls `ConfigDirectoryTeardown.Delete`/`TryDelete`, per
+  [A class that creates a config directory owns the host](#a-class-that-creates-a-config-directory-owns-the-host)
+  above. It keys on where the root came from and never on `WithWebHostBuilder`, so the legal
+  per-test-derived-host shape is not caught. No allow-list: the fix is to give the class its own
+  root, not to exempt it.
 
 Seven other test classes in the same project fall outside the Cecil IL scans above. Five —
 `AiMediaIsolationTests`, `CoreIsolationTests`,
