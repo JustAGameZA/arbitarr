@@ -199,6 +199,15 @@ public class ProductionProcessGlobalStateTests
         /// fails if that blanket skip ever returns.
         /// </summary>
         internal static int Setting { get; set; }
+
+        /// <summary>
+        /// The negative control for arb-foaj: a get-only static auto-property. The compiler emits
+        /// its backing field as <c>&lt;Constant&gt;k__BackingField</c> — the same mangled shape as
+        /// <see cref="Setting"/>'s — but marks it <c>initonly</c>, so it is not mutable static state
+        /// and must NOT be reported. Pinned by
+        /// <see cref="The_mutable_static_scan_ignores_a_get_only_static_auto_property"/>.
+        /// </summary>
+        internal static int Constant { get; } = 1;
     }
 
     /// <summary>
@@ -227,6 +236,38 @@ public class ProductionProcessGlobalStateTests
     }
 
     /// <summary>
+    /// arb-foaj: the negative control that keeps arb-02cc's widening HONEST. Admitting
+    /// <c>&lt;Name&gt;k__BackingField</c> to the scan made the mangled name no longer
+    /// disqualifying, so what now excludes a get-only static auto-property is solely its
+    /// <c>initonly</c> flag — the ordinary <c>IsInitOnly</c> test every field goes through.
+    ///
+    /// <para>Without this, the widening's other half is unpinned. A future edit that admitted
+    /// backing fields by NAME shape while dropping or weakening the <c>IsInitOnly</c> check would
+    /// start reporting every get-only static auto-property in production as mutable state, and
+    /// <see cref="The_mutable_static_scan_detects_a_settable_static_auto_property"/> would keep
+    /// passing throughout: it only asserts that a settable one IS found. Over-reporting fails
+    /// toward noise rather than silence, which is why it survives review — the allow-list grows a
+    /// line for something that was never mutable, and the entry reads exactly like a real one.</para>
+    ///
+    /// <para>The control is a sibling of the positive bait in the same type, so the two differ in
+    /// the setter alone.</para>
+    /// </summary>
+    [Fact]
+    public void The_mutable_static_scan_ignores_a_get_only_static_auto_property()
+    {
+        var baitAssembly = TestProcessGlobalStateTests.ResolveAssemblyPath("tests", "Arbitarr.Architecture.Tests");
+        Assert.NotNull(baitAssembly);
+
+        var found = FindMutableStatics(baitAssembly!).ToArray();
+
+        // Non-vacuity: this assertion is only meaningful if the scan was in fact looking at this
+        // type and would have reported a mutable member of it. The settable sibling proves it was.
+        Assert.Contains(found, f => f.EndsWith("MutableStaticBait.Setting", StringComparison.Ordinal));
+
+        Assert.DoesNotContain(found, f => f.EndsWith("MutableStaticBait.Constant", StringComparison.Ordinal));
+    }
+
+    /// <summary>
     /// Mutable statics in production that are known and accepted, each with the reason concurrent
     /// mutation is safe. The value is documentation for a human reading a failure, not an assertion.
     /// </summary>
@@ -252,6 +293,13 @@ public class ProductionProcessGlobalStateTests
     /// someone who thought a property was safer than a field completely invisible to this scan.
     /// Such fields are reported under the PROPERTY name, which is what the author wrote and what the
     /// allow-list should name.</para>
+    ///
+    /// <para>Because the mangled name is no longer disqualifying, a GET-ONLY static auto-property is
+    /// excluded by nothing but its <c>initonly</c> flag, on the ordinary <c>IsInitOnly</c> test
+    /// below — it is not mutable state and must not be reported. That is the whole of the
+    /// distinction between the two, so it is pinned by
+    /// <see cref="The_mutable_static_scan_ignores_a_get_only_static_auto_property"/> (arb-foaj)
+    /// rather than left to follow from the reading of this paragraph.</para>
     ///
     /// <para><b>What is still skipped, and why each is not a decision anyone made.</b> Compiler
     /// caches on the closure types the compiler owns outright: <c>&lt;&gt;c</c> (the cached
