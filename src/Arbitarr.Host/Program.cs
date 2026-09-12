@@ -740,6 +740,14 @@ builder.Services.AddScoped(sp => new SettingsRepository(
 // admin CRUD surface (AdminSourceEndpoints).
 builder.Services.AddScoped<SourceRepository>();
 
+// arb-x7w8.3: the SINGLE production reader of a stored per-source API key (ADR 0018). The admin
+// connectivity probe takes a SourceCredential from this type rather than reading the key itself,
+// and the direct-indexer search path will be its second consumer -- which is the whole point:
+// SourceRepository.ReadApiKeyForUpstreamRequestAsync stays at exactly one call site, which is the
+// form that guarantee takes (CLAUDE.md section 1, docs/standards/architecture.md). Same shape, and
+// same reason, as SonarrCredentialProvider below.
+builder.Services.AddScoped<Arbitarr.Data.Sources.SourceCredentialProvider>();
+
 
 // #53 stage 53c: the §3.3 connectivity test's HTTP client. AllowAutoRedirect is disabled for the
 // same SSRF reason as the NzbHydraSource client above — a probed source could otherwise 30x us to
@@ -880,6 +888,46 @@ builder.Services.AddHttpClient<Arbitarr.Core.Media.SonarrQueueClient>(
 
 builder.Services.AddHttpClient<Arbitarr.Core.Media.RadarrQueueClient>(
         client => client.Timeout = Arbitarr.Core.Media.ArrQueueReader.DefaultTimeout)
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+
+// arb-6l9b.4: the two library readers behind GET /api/admin/arr/sonarr/series and
+// /api/admin/arr/radarr/movies. TWO typed clients rather than one, for exactly the reasons the queue
+// registrations above state: each kind gets its own primary handler, its own timeout, and -- the part
+// that is load-bearing for the tests -- its own LOGGER CATEGORY, which is how
+// ArrLibraryKeyIsScrubbedFromLogsTests finds the rows a given client's requests produced and asserts
+// per row that the key is absent from them.
+//
+// AllowAutoRedirect is disabled for the same SSRF reason as every *arr client above: a misconfigured
+// address answering 30x must not make this process reissue a request CARRYING THE INSTANCE'S API KEY
+// at a host nobody configured. With redirects off the 3xx comes back as a non-success status the
+// reader classifies as UnexpectedResponse. AdminArrLibraryEndpointsTests asserts both the status and
+// that exactly ONE request is issued.
+//
+// THE TIMEOUT IS SET HERE, ONCE, and ArrLibraryReader must never assign HttpClient.Timeout itself:
+// the client is POOLED through IHttpClientFactory, and HttpClient throws on that assignment once a
+// request has started on the instance -- two concurrent reads are enough to produce it, which is the
+// failure ArrApiProvider's remarks record happening. A caller wanting a shorter bound uses a linked
+// CancellationTokenSource, which is what ArrLibraryReader.ReadLibraryAsync does per call. The bound
+// is LONGER than the queue clients' because the work is different: these fetch a WHOLE library (the
+// upstream endpoints are unpaged), not one page of active downloads.
+//
+// NO .RemoveAllLoggers() ON EITHER, DELIBERATELY, for exactly the measured reason the
+// SonarrConnectivityProber registration above sets out at length -- read that comment rather than a
+// summary of it. In short: these clients' keys ride in the QUERY STRING
+// (ArrLibraryReader.BuildLibraryUri puts them there, matching the queue readers, both connectivity
+// probers and ArrApiProvider), and .NET's logging handler collapses the whole query string to "?*"
+// before the message is formatted, so the key never reaches the log store. RemoveAllLoggers() would
+// be needed only if a key ever moved into a URL PATH segment, which LogMessageCleanser does NOT scrub
+// (CLAUDE.md section 1) -- it does not here. Do not move these keys to an X-Api-Key header either:
+// that would split the codebase's one placement convention and invalidate the comment above. The same
+// process-wide System.Net.Http.DisableUriRedaction dependency the Sonarr comment documents applies to
+// both clients unchanged.
+builder.Services.AddHttpClient<Arbitarr.Core.Media.SonarrLibraryClient>(
+        client => client.Timeout = Arbitarr.Core.Media.ArrLibraryReader<Arbitarr.Core.Media.ArrSeriesItem>.DefaultTimeout)
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+
+builder.Services.AddHttpClient<Arbitarr.Core.Media.RadarrLibraryClient>(
+        client => client.Timeout = Arbitarr.Core.Media.ArrLibraryReader<Arbitarr.Core.Media.ArrMovieItem>.DefaultTimeout)
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 
 // arb-u1c: the identity resolver that turns Sonarr's tvdbid into the series title the search path
@@ -1407,6 +1455,11 @@ AdminRadarrEndpoints.Map(app);
 // query-string) so AdminApiKeyRouteEnumerationTests' sweep covers them; it skips every
 // {-containing route by design.
 AdminArrQueueEndpoints.Map(app);
+// arb-6l9b.4: the library reads for both kinds -- GET .../sonarr/series and .../radarr/movies. One
+// surface for both for the same reason the queue reads are, and CONCRETE rather than templated for
+// the same reason: filtering and paging are query-string, so AdminApiKeyRouteEnumerationTests' sweep
+// (which skips every {-containing route by design) covers them.
+AdminArrLibraryEndpoints.Map(app);
 AdminRuleEndpoints.Map(app);
 AdHocSearchEndpoint.Map(app);
 MatchExplanationEndpoint.Map(app);

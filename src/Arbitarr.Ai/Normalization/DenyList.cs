@@ -1,7 +1,7 @@
 namespace Arbitarr.Ai.Normalization;
 
 /// <summary>
-/// Tokens that title normalization is explicitly permitted to strip/rewrite (e.g. noisy
+/// Tokens that title normalization is explicitly permitted to remove (e.g. noisy
 /// bracketed uploader tags, tracker signatures, promotional boilerplate) — the inverse
 /// control of <see cref="AllowList"/>. Checked case-insensitively as whole tokens.
 /// </summary>
@@ -20,6 +20,6 @@ public sealed class DenyList
         "RARBG", "YIFY", "YTS", "EZTV",
     };
 
-    /// <summary>Whether <paramref name="token"/> is explicitly permitted to be removed/rewritten.</summary>
+    /// <summary>Whether <paramref name="token"/> is explicitly permitted to be removed.</summary>
     public bool Contains(string token) => _tokens.Contains(token);
 }

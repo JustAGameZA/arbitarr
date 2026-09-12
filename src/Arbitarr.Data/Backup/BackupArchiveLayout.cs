@@ -1,10 +1,11 @@
 namespace Arbitarr.Data.Backup;
 
 /// <summary>
-/// The names of the two entries inside a backup archive, and the rule for what a backup covers.
+/// The names of the three entries inside a backup archive, and the rule for what a backup covers.
 ///
-/// <para><b>WHAT IS IN THE ARCHIVE, AND WHY NOT MORE (#56).</b> Exactly two entries: a consistent
-/// snapshot of <c>arbitarr.db</c> and the raw <c>release-guid-secret.key</c>. The plan's §2 settles
+/// <para><b>WHAT IS IN THE ARCHIVE, AND WHY NOT MORE (#56).</b> Three entries: a consistent
+/// snapshot of <c>arbitarr.db</c>, the raw <c>release-guid-secret.key</c>, and a manifest recording
+/// the EF Core migration the snapshot was taken at. The plan's §2 settles
 /// the second: a database restored onto a box with a different HMAC secret is a working
 /// configuration with a broken GUID history, so a database-only backup would look like a complete
 /// safety net and would not be one.</para>

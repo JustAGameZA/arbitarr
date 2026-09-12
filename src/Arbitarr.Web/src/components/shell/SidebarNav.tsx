@@ -44,8 +44,9 @@ interface NavEntry {
  *
  * SidebarNav.test.tsx asserts the count exactly -- not `>=` -- so a dropped
  * entry and a smuggled-in one both fail. A new surface means updating that test,
- * routes.tsx and routes.titles.ts in the same change; this comment exists to
- * catch the case where someone adds an entry here and nowhere else.
+ * routes.tsx and routes.titles.ts in the same change; routes.titles.test.ts
+ * cross-pins NAV_ENTRIES, ROUTES and routes.tsx, so an entry added here and
+ * nowhere else fails there.
  */
 export const NAV_ENTRIES: readonly NavEntry[] = [
   { label: 'Dashboard', to: '/', icon: faGauge },
