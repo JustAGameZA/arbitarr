@@ -619,6 +619,120 @@ public sealed class AdminNotificationEndpointsTests : IClassFixture<ArbitarrWebA
     }
 
     /// <summary>
+    /// arb-4xna fix-up: <c>knownTriggers</c> must be validated as a SET of real trigger names, not
+    /// merely counted. Six strings that are not trigger names at all have the right COUNT to satisfy
+    /// the old <c>&lt;</c>-on-length guard while covering zero real triggers, and would have silently
+    /// let the save through to disable whichever triggers the client did not actually know about.
+    /// </summary>
+    [Fact]
+    public async Task Junk_strings_of_the_right_count_do_not_satisfy_knownTriggers()
+    {
+        await SeedAdminKeyAsync();
+        using var client = _factory.CreateClient();
+
+        using var before = await SendAsync(client, HttpMethod.Get, NotificationsRoute);
+        var beforeConfig = await before.Content.ReadFromJsonAsync<NotificationConfigResponse>();
+        Assert.NotNull(beforeConfig);
+
+        var junkCount = Enum.GetValues<NotificationTrigger>().Length;
+        var junkNames = Enumerable.Range(0, junkCount).Select(i => $"NotARealTrigger{i}").ToArray();
+
+        using var response = await SendAsync(client, HttpMethod.Put, NotificationsRoute, new
+        {
+            enabledTriggers = new[] { nameof(NotificationTrigger.SourceFailing) },
+            knownTriggers = junkNames,
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        // Nothing changed as a result of this rejected save: the prior enabled set is untouched,
+        // rather than being narrowed to the single trigger the (rejected) request named.
+        using var after = await SendAsync(client, HttpMethod.Get, NotificationsRoute);
+        var afterConfig = await after.Content.ReadFromJsonAsync<NotificationConfigResponse>();
+        Assert.NotNull(afterConfig);
+        Assert.Equal(
+            beforeConfig!.EnabledTriggers.OrderBy(t => t, StringComparer.Ordinal),
+            afterConfig!.EnabledTriggers.OrderBy(t => t, StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// arb-4xna fix-up: one valid trigger name repeated enough times to match the enum's member
+    /// count must not satisfy <c>knownTriggers</c> either — duplicates collapse to one element in the
+    /// set the server actually checks against, so a repeated-name count-match still leaves the set
+    /// short of full coverage.
+    /// </summary>
+    [Fact]
+    public async Task A_single_name_repeated_to_match_the_count_does_not_satisfy_knownTriggers()
+    {
+        await SeedAdminKeyAsync();
+        using var client = _factory.CreateClient();
+
+        var repeatCount = Enum.GetValues<NotificationTrigger>().Length;
+        var repeatedName = Enumerable.Repeat(nameof(NotificationTrigger.SourceFailing), repeatCount).ToArray();
+
+        using var response = await SendAsync(client, HttpMethod.Put, NotificationsRoute, new
+        {
+            enabledTriggers = new[] { nameof(NotificationTrigger.SourceFailing) },
+            knownTriggers = repeatedName,
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    /// <summary>
+    /// arb-4xna fix-up (CLAUDE.md §3): a numeric wire value must never select a trigger by the enum's
+    /// underlying value. <c>Enum.TryParse</c> would accept "0".."5" here; explicit name matching must
+    /// not.
+    /// </summary>
+    [Theory]
+    [InlineData("0")]
+    [InlineData("1")]
+    [InlineData("2")]
+    [InlineData("3")]
+    [InlineData("4")]
+    [InlineData("5")]
+    public async Task A_numeric_form_in_enabledTriggers_is_rejected(string numericValue)
+    {
+        await SeedAdminKeyAsync();
+        using var client = _factory.CreateClient();
+
+        var allTriggerNames = Enum.GetValues<NotificationTrigger>().Select(t => t.ToString()).ToArray();
+
+        using var response = await SendAsync(client, HttpMethod.Put, NotificationsRoute, new
+        {
+            enabledTriggers = new[] { numericValue },
+            knownTriggers = allTriggerNames,
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    /// <summary>
+    /// arb-4xna fix-up: the full set of trigger names, sent in a different order than the enum's
+    /// declaration order, is still accepted — the check is set membership, not sequence.
+    /// </summary>
+    [Fact]
+    public async Task The_full_set_in_a_different_order_is_still_accepted()
+    {
+        await SeedAdminKeyAsync();
+        using var client = _factory.CreateClient();
+
+        var allTriggerNames = Enum.GetValues<NotificationTrigger>()
+            .Select(t => t.ToString())
+            .OrderBy(t => t, StringComparer.Ordinal)
+            .ToArray();
+
+        using var response = await SendAsync(client, HttpMethod.Put, NotificationsRoute, new
+        {
+            enabled = true,
+            enabledTriggers = allTriggerNames,
+            knownTriggers = allTriggerNames,
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    /// <summary>
     /// Confirms the URL is genuinely in the store, so the absence assertions that follow are
     /// testing a real presence rather than passing on an empty configuration.
     /// </summary>

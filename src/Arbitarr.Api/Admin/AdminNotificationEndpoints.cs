@@ -52,8 +52,12 @@ public sealed record NotificationConfigResponse(
 /// <param name="KnownTriggers">
 /// arb-4xna: the full set of trigger names the CLIENT believes exist — not which are enabled,
 /// <paramref name="EnabledTriggers"/> is that. Required whenever <paramref name="EnabledTriggers"/>
-/// is sent, and checked only for its COUNT against the server's current
-/// <see cref="NotificationTrigger"/> member count.
+/// is sent, and checked as a SET: every entry is matched by explicit name against
+/// <see cref="NotificationTrigger"/>'s members (ordinal, case-insensitive; CLAUDE.md §3 forbids
+/// <c>Enum.TryParse</c> here since it also accepts numeric and padded forms), collected into a
+/// <see cref="HashSet{T}"/>, and the request is rejected unless that set covers every current
+/// member. A COUNT check alone is not enough: six junk strings, or one valid name repeated six
+/// times, would satisfy a count comparison while covering none or only one real trigger.
 ///
 /// <para><see cref="NotificationRepository.SetSettingsAsync"/> persists the DISABLED set as the
 /// complement of <paramref name="EnabledTriggers"/>, precisely so a trigger added to the enum after
@@ -61,9 +65,9 @@ public sealed record NotificationConfigResponse(
 /// save actually knowing about every current trigger: a client built before a trigger existed has no
 /// way to include it in <paramref name="EnabledTriggers"/>, and without this field the very save
 /// meant to leave it alone would instead compute it into the complement and disable it — silently,
-/// with no error. Comparing <paramref name="EnabledTriggers"/>'s own count against the enum would not
+/// with no error. Comparing <paramref name="EnabledTriggers"/>'s own set against the enum would not
 /// catch this, because an operator legitimately unchecking every box produces exactly that same
-/// short count; only a count the client asserts is "everything I know about", separate from "what I
+/// small set; only a set the client asserts is "everything I know about", separate from "what I
 /// have enabled", tells the two apart.</para>
 /// </param>
 public sealed record UpdateNotificationConfigRequest(
@@ -180,10 +184,12 @@ public static class AdminNotificationEndpoints
         }
         else
         {
+            var allTriggers = Enum.GetValues<NotificationTrigger>();
+
             var parsed = new HashSet<NotificationTrigger>();
             foreach (var name in request.EnabledTriggers)
             {
-                if (!Enum.TryParse<NotificationTrigger>(name, ignoreCase: true, out var trigger))
+                if (!TryMatchTriggerName(allTriggers, name, out var trigger))
                 {
                     // The rejected NAME is echoed, which is safe and useful: trigger names are a
                     // fixed, public vocabulary, not operator secrets. The URL is the only value on
@@ -195,18 +201,29 @@ public static class AdminNotificationEndpoints
                 parsed.Add(trigger);
             }
 
-            // arb-4xna: see UpdateNotificationConfigRequest.KnownTriggers. A save that names any
-            // EnabledTriggers at all must also declare the full universe it believes exists, and that
-            // universe's COUNT must cover every trigger the server currently has — otherwise the
-            // repository's complement-of-enabled storage would silently disable whichever trigger the
-            // client did not know to name. Checked by count alone: no trigger NAME beyond what the
-            // per-name loop above already allows is required to explain the rejection.
-            var knownTriggerCount = Enum.GetValues<NotificationTrigger>().Length;
-            if (request.KnownTriggers is null || request.KnownTriggers.Count < knownTriggerCount)
+            // arb-4xna fix-up: see UpdateNotificationConfigRequest.KnownTriggers. A save that names
+            // any EnabledTriggers at all must also declare the full universe it believes exists, and
+            // that universe — as a SET of real trigger names, not a count — must cover every trigger
+            // the server currently has. Unrecognised strings and duplicates are simply not counted
+            // toward that coverage rather than rejected separately, so a count comparison alone (six
+            // junk strings, or one name repeated six times) can no longer pass.
+            var known = new HashSet<NotificationTrigger>();
+            if (request.KnownTriggers is not null)
+            {
+                foreach (var name in request.KnownTriggers)
+                {
+                    if (TryMatchTriggerName(allTriggers, name, out var trigger))
+                    {
+                        known.Add(trigger);
+                    }
+                }
+            }
+
+            if (known.Count < allTriggers.Length)
             {
                 return Results.BadRequest(new
                 {
-                    error = $"A request that sets enabledTriggers must also send knownTriggers naming all {knownTriggerCount} " +
+                    error = $"A request that sets enabledTriggers must also send knownTriggers naming all {allTriggers.Length} " +
                         "current triggers, so the server can tell an operator's real choice from a client that predates a newer trigger.",
                 });
             }
@@ -304,6 +321,29 @@ public static class AdminNotificationEndpoints
     };
 
     /// <summary>
+    /// arb-4xna fix-up: explicit name matching, never <c>Enum.TryParse</c> (CLAUDE.md §3) — that
+    /// accepts the numeric underlying value and padded/prefixed numeric forms ("0", " 3 ", "+3"),
+    /// which would let a wire value select a trigger by number instead of by the fixed public name
+    /// vocabulary this surface is documented to accept. A name matches iff it equals some
+    /// <paramref name="allTriggers"/> member's <c>ToString()</c> under
+    /// <see cref="StringComparison.OrdinalIgnoreCase"/>.
+    /// </summary>
+    private static bool TryMatchTriggerName(NotificationTrigger[] allTriggers, string name, out NotificationTrigger trigger)
+    {
+        foreach (var candidate in allTriggers)
+        {
+            if (string.Equals(candidate.ToString(), name, StringComparison.OrdinalIgnoreCase))
+            {
+                trigger = candidate;
+                return true;
+            }
+        }
+
+        trigger = default;
+        return false;
+    }
+
+    /// <summary>
     /// The SINGLE projection to the wire. Every read path goes through here, so the "no URL ever
     /// leaves" property is enforced in one place: the URL is represented only by the boolean from
     /// <see cref="NotificationRepository.HasWebhookUrlAsync"/>, and
@@ -324,6 +364,9 @@ public static class AdminNotificationEndpoints
             SuppressionRateThreshold: settings.SuppressionRateThreshold,
             SuppressionRateWindow: settings.SuppressionRateWindow.ToString(),
             EnabledTriggers: settings.EnabledTriggers.Select(t => t.ToString()).OrderBy(t => t, StringComparer.Ordinal).ToList(),
+            // Deliberately in enum DECLARATION order, not sorted like EnabledTriggers above: the
+            // client renders its checkbox list from this order, pairing each failing-condition
+            // trigger with its clearing edge (e.g. SourceFailing / SourceRecovered) adjacently.
             AvailableTriggers: Enum.GetValues<NotificationTrigger>().Select(t => t.ToString()).ToList(),
             LastDeliveryOutcome: lastDelivery?.Outcome.ToString(),
             LastDeliveryAt: lastDelivery?.At);
