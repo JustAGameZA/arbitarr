@@ -345,8 +345,8 @@ export function SourcesSection() {
 
   return (
     <section className={styles.panel}>
-      <div className={`${styles.panelHeading} ${local.headingRow}`}>
-        <h2 className={local.headingText}>Sources</h2>
+      <div className={local.headingRow}>
+        <h2 className={styles.panelHeading}>Sources</h2>
         {/* Same convention as the Maintenance interval setting's badge
             (Settings.tsx's SettingRow, entry.requiresRestart): sources are
             edited here but only take effect on the next restart, so the
