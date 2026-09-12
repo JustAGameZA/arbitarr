@@ -1,4 +1,5 @@
 using System.Net;
+using Arbitarr.Integration.Tests.TestSupport;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Xunit;
 
@@ -63,18 +64,11 @@ public sealed class NoNetworkFirstRunTests : IDisposable
         Assert.DoesNotContain("<item", body, StringComparison.OrdinalIgnoreCase);
     }
 
-    public void Dispose()
-    {
-        try
-        {
-            if (Directory.Exists(_configDirectory))
-            {
-                Directory.Delete(_configDirectory, recursive: true);
-            }
-        }
-        catch (IOException)
-        {
-            // Best-effort cleanup; a locked SQLite file on Windows shouldn't fail the test run.
-        }
-    }
+    /// <summary>
+    /// The delete used to run bare, with no pool clear, inside an empty <c>catch (IOException)</c> —
+    /// it lost to a pooled handle and said nothing (arb-gphi).
+    /// <see cref="ConfigDirectoryTeardown"/> clears both databases' pools first and THROWS if the
+    /// delete still fails.
+    /// </summary>
+    public void Dispose() => ConfigDirectoryTeardown.Delete(_configDirectory);
 }

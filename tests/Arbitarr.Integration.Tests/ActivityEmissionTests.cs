@@ -3,6 +3,7 @@ using Arbitarr.Api.Dashboard;
 using Arbitarr.Core.Releases;
 using Arbitarr.Core.Sources;
 using Arbitarr.Data.Logging;
+using Arbitarr.Integration.Tests.TestSupport;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,20 +24,22 @@ namespace Arbitarr.Integration.Tests;
 /// would be PERSISTED to the SQLite file in the config bind mount and then served un-gated over
 /// <c>/api/activity</c> for the whole retention window. Plan §9 forbids it; this proves it.
 /// </summary>
-public sealed class ActivityEmissionTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class ActivityEmissionTests : IAsyncLifetime
 {
     private const string ApiKey = "secret-api-key";
 
+    private readonly ArbitarrWebApplicationFactory _root;
     private readonly WebApplicationFactory<Program> _factory;
+    private readonly string _configDirectory;
 
-    public ActivityEmissionTests(WebApplicationFactory<Program> factory)
+    public ActivityEmissionTests()
     {
-        var configDirectory = Path.Combine(Path.GetTempPath(), "arbitarr-activity-emission-tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(configDirectory);
+        _configDirectory = Path.Combine(Path.GetTempPath(), "arbitarr-activity-emission-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_configDirectory);
 
-        _factory = factory.WithWebHostBuilder(builder =>
+        _root = ArbitarrWebApplicationFactory.OverConfigDirectory(_configDirectory);
+        _factory = _root.WithWebHostBuilder(builder =>
         {
-            builder.UseSetting("Arbitarr:ConfigDir", configDirectory);
             builder.UseSetting("Arbitarr:ApiKey", ApiKey);
 
             builder.ConfigureServices(services =>
@@ -63,6 +66,19 @@ public sealed class ActivityEmissionTests : IClassFixture<WebApplicationFactory<
                 services.AddSingleton<IReadOnlyList<IUpstreamSource>>(sp => sp.GetServices<IUpstreamSource>().ToArray());
             });
         });
+    }
+
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    /// <summary>
+    /// This class OWNS its host so disposal drains it before the delete — see
+    /// <see cref="CategoryParamCapTests.DisposeAsync"/> for the full account of why the shared
+    /// <c>IClassFixture</c> this class used to inject made the delete throw (arb-gphi fix-up).
+    /// </summary>
+    public async Task DisposeAsync()
+    {
+        await _root.DisposeAsync();
+        ConfigDirectoryTeardown.Delete(_configDirectory);
     }
 
     [Fact]

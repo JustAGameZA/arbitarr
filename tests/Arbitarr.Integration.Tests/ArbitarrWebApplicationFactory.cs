@@ -1,6 +1,5 @@
 using Arbitarr.Data;
-using Arbitarr.Data.Backup;
-using Arbitarr.TestSupport;
+using Arbitarr.Integration.Tests.TestSupport;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -246,80 +245,28 @@ public sealed class ArbitarrWebApplicationFactory : WebApplicationFactory<Progra
     /// </summary>
     private void DeleteConfigDirectory()
     {
-        // WHY THE POOL CLEARS ARE HERE, AND WHY THEY ARE HALF OF WHAT IS NEEDED (arb-dhua).
+        // The pool-clear-then-delete sequence, and the full account of WHY BOTH HALVES ARE REQUIRED
+        // (arb-dhua) and why ClearAllPools is banned regardless, now live on
+        // ConfigDirectoryTeardown. It is one implementation shared with the other factory and with
+        // every test class that builds its own config directory, because for as long as the block
+        // was copied per caller most callers carried only one half of it or neither (arb-gphi).
         //
-        // Draining the host stops the WORK; these two calls close the pooled FILE HANDLES. Both
-        // halves are required, and each is useless without the other:
-        //
-        //   ClearPool closes only the connections a pool HOLDS. Until arb-dhua every
-        //   ArbitarrDbContext's connection was never returned to the pool at all -- EF was handed
-        //   an already-open connection without being given ownership of it, so disposing the
-        //   context left it open forever. A connection that never came back is not the pool's to
-        //   close, which is why widening the clear failed twice (first
-        //   SqlitePools.ClearPoolsForDirectory, then SqlitePoolCleaner.ClearPoolsFor walking
-        //   DatabaseConnectionStrings.ForDatabase). The inventory was never the problem; ownership
-        //   was. It is fixed in ArbitarrDbContextOptionsFactory.Create.
-        //
-        //   Conversely, ownership alone does not delete the directory either: disposal only RETURNS
-        //   the handle to the pool, and a pooled handle still holds a share lock on Windows. That is
-        //   measured, not assumed -- with ownership transferred but no clear, the delete still
-        //   fails. Hence both.
-        //
-        // Never SqliteConnection.ClearAllPools() regardless: the process-global form force-closes
-        // pooled connections belonging to test classes running in parallel (arb-cbc/arb-5ba) and is
-        // banned from test IL with no allow-list by
-        // Arbitarr.Architecture.Tests.TestProcessGlobalStateTests.
-        //
-        // Via BackupPaths rather than a literal "arbitarr.db": that type owns where the database
-        // lives, and a second spelling of the name is exactly what CLAUDE.md §1 warns silently
-        // stops covering the file when it moves.
-        SqlitePoolCleaner.ClearPoolsFor(new BackupPaths(_configDirectory).DatabasePath);
-
-        // The log store is a SECOND database (arbitarr-logs.db) with its own connection shape, and
-        // it sits under the same directory — so clearing only the main one leaves the delete losing
-        // to a log handle instead. ClearPoolsForDirectory covers it and anything a test restored
-        // beside them.
-        SqlitePools.ClearPoolsForDirectory(_configDirectory);
-
-        // The pool clears above run for EVERY host, owned directory or not: releasing this host's
-        // file handles is what lets a SECOND host (or the caller's own cleanup) open the same
-        // database afterwards. Only the delete below is ownership-gated — see _ownsConfigDirectory.
+        // THE POOL CLEARS RUN FOR EVERY HOST, owned directory or not (arb-v3w): releasing this
+        // host's file handles is what lets a SECOND host -- or the caller's own cleanup -- open the
+        // same database afterwards. Only the DELETE is ownership-gated. The two halves come apart
+        // here for the one legitimate reason they ever do: a non-owning host's caller deletes later,
+        // so this is a complete operation with a later partner, not the half-implemented pairing
+        // arb-gphi removed (which deleted WITHOUT clearing, and so silently could not work).
         if (!_ownsConfigDirectory)
         {
+            ConfigDirectoryTeardown.ClearPools(_configDirectory);
             return;
         }
 
-        const int attempts = 10;
-
-        for (var attempt = 1; attempt <= attempts; attempt++)
-        {
-            try
-            {
-                if (!Directory.Exists(_configDirectory))
-                {
-                    return;
-                }
-
-                Directory.Delete(_configDirectory, recursive: true);
-                return;
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                // UnauthorizedAccessException as well as IOException: Windows raises that one for a
-                // file another handle still has open, and catching only IOException let it escape.
-                if (attempt == attempts)
-                {
-                    // Recorded rather than swallowed. Since arb-dhua this arm is an ANOMALY, not
-                    // the normal path: the delete succeeds. It is still tolerated here -- throwing
-                    // from inside Dispose would fault whichever unrelated test is in flight rather
-                    // than the one that owns this factory -- and ConfigDirectoryIsDeletedOnDisposalTests
-                    // is what turns it into a visible failure.
-                    LastDeleteFailure = ex;
-                    return;
-                }
-
-                Thread.Sleep(100);
-            }
-        }
+        // TryDelete rather than Delete: this runs from Dispose, where a throw would fault whichever
+        // unrelated test is in flight rather than the one that owns this factory. The failure is
+        // RECORDED instead and ConfigDirectoryIsDeletedOnDisposalTests turns it into a visible
+        // failure. Since arb-dhua a non-null result here is an ANOMALY, not the normal path.
+        LastDeleteFailure = ConfigDirectoryTeardown.TryDelete(_configDirectory);
     }
 }

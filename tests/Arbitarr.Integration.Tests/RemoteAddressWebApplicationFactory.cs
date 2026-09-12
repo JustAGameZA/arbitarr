@@ -1,7 +1,6 @@
 using System.Net;
 using Arbitarr.Data;
-using Arbitarr.Data.Backup;
-using Arbitarr.TestSupport;
+using Arbitarr.Integration.Tests.TestSupport;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -129,40 +128,17 @@ public sealed class RemoteAddressWebApplicationFactory : WebApplicationFactory<P
     /// </summary>
     private void DeleteConfigDirectory()
     {
-        // Closes the pooled handles on this instance's databases. This is HALF of what the delete
-        // needs: the other half is that a disposed ArbitarrDbContext actually returns its connection
-        // to the pool, which it did not do until ArbitarrDbContextOptionsFactory.Create was given
-        // ownership of the connection it opens (arb-dhua -- the pool inventory was never the
-        // problem). Never ClearAllPools: banned from test IL, and process-global (arb-cbc/arb-5ba).
-        // See ArbitarrWebApplicationFactory for the full account.
-        SqlitePoolCleaner.ClearPoolsFor(new BackupPaths(_configDirectory).DatabasePath);
-        SqlitePools.ClearPoolsForDirectory(_configDirectory);
-
-        const int attempts = 10;
-
-        for (var attempt = 1; attempt <= attempts; attempt++)
-        {
-            try
-            {
-                if (!Directory.Exists(_configDirectory))
-                {
-                    return;
-                }
-
-                Directory.Delete(_configDirectory, recursive: true);
-                return;
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                if (attempt == attempts)
-                {
-                    LastDeleteFailure = ex;
-                    return;
-                }
-
-                Thread.Sleep(100);
-            }
-        }
+        // Closes the pooled handles on this instance's databases and then deletes. That is HALF of
+        // what the delete needs: the other half is that a disposed ArbitarrDbContext actually
+        // returns its connection to the pool, which it did not do until
+        // ArbitarrDbContextOptionsFactory.Create was given ownership of the connection it opens
+        // (arb-dhua -- the pool inventory was never the problem). Never ClearAllPools: banned from
+        // test IL, and process-global (arb-cbc/arb-5ba). ConfigDirectoryTeardown carries the full
+        // account; sharing the one implementation with the other factory is what the KEEP IN STEP
+        // note above used to ask of a reader and now no longer has to (arb-gphi).
+        //
+        // TryDelete rather than Delete because this runs from Dispose -- see ConfigDirectoryTeardown.
+        LastDeleteFailure = ConfigDirectoryTeardown.TryDelete(_configDirectory);
     }
 
     private sealed class RemoteAddressStartupFilter : IStartupFilter
