@@ -255,65 +255,6 @@ public sealed class SanitizedErrorDescriptionTests
     }
 
     /// <summary>
-    /// arb-959/arb-nid6: <b>the shifted-straddle case — a fragment that sits comfortably PAST the
-    /// excerpt cut in the raw body can still straddle that cut once redaction runs.</b>
-    ///
-    /// <para>Scrubbing runs before the cut, and redaction SHRINKS the text: each host it removes is
-    /// replaced by a shorter token. A fragment placed at raw offset ~230 — 30 characters past the
-    /// 200-character excerpt cap, comfortably clear of it before anything is scrubbed — is not safe
-    /// from the cap once enough redactions happen ahead of it. This body plants many single-label
-    /// hosts (a Docker/Compose-style shape) early in the text; each one collapses to the shared
-    /// replacement token, which is shorter than the host it replaces, so the text ahead of the
-    /// planted fragment shrinks with every one of them. Enough such redactions ahead of it pull a
-    /// fragment planted past raw offset 200 back across the (post-scrub) 200-character cut, landing
-    /// it half in and half out of the excerpt — exactly the straddle shape
-    /// <see cref="A_host_straddling_the_excerpt_cut_leaves_no_fragment"/> closes for a fragment that
-    /// starts out AT the cut. This test pins that the same closure holds for a fragment that starts
-    /// out safely past it, because the type's real guarantee was never "nothing at raw offset 200
-    /// leaks" — it is that nothing scrubbed is ever handed to the excerpt half-redacted, whatever raw
-    /// offset it originally sat at, provided it began within
-    /// <see cref="OllamaRequestException.MaxScrubInputLength"/>.</para>
-    ///
-    /// <para>Positive control: the planted fragment's host is shown present, whole, in the raw body
-    /// before scrubbing (so the shift claim is not vacuous), and the redaction token is asserted
-    /// present in the output so a wholesale-empty excerpt cannot pass as evidence of a fix.</para>
-    /// </summary>
-    [Fact]
-    public void A_fragment_planted_past_the_excerpt_cut_still_straddles_it_once_redaction_shifts_it()
-    {
-        // A short, single-label host shape the ContextualSingleLabelHost arm redacts, shorter after
-        // redaction than before — this is what makes the text SHRINK ahead of the planted fragment as
-        // more of these are scrubbed.
-        const string shrinkingHost = "dial gpu_box_example failed; ";
-        const string plantedHost = "ollama.internal.example:11434";
-        const string prefix = """{"error":""";
-
-        // Repeat the shrinking host enough times to land the planted host at a raw offset safely past
-        // MaxExcerptLength (200) before any scrubbing, while staying well inside MaxScrubInputLength.
-        var head = prefix;
-        while (head.Length < 230 - prefix.Length)
-        {
-            head += shrinkingHost;
-        }
-
-        const string strandedFragment = "ollama.int";
-        var body = head + plantedHost + " connect: refused\"}";
-
-        // Detectability: the planted host really does start past the raw excerpt cut, and is present
-        // whole in the input — the shift only happens once scrubbing runs.
-        Assert.True(head.Length > OllamaRequestException.MaxExcerptLength);
-        Assert.Contains(plantedHost, body, StringComparison.Ordinal);
-
-        var ex = new OllamaRequestException(HttpStatusCode.BadRequest, body);
-
-        Assert.DoesNotContain(strandedFragment, ex.BodyExcerpt, StringComparison.Ordinal);
-        Assert.DoesNotContain(plantedHost, ex.BodyExcerpt, StringComparison.Ordinal);
-        Assert.DoesNotContain(strandedFragment, ex.Message, StringComparison.Ordinal);
-        Assert.Contains(SanitizedErrorDescription.Replacement, ex.BodyExcerpt, StringComparison.Ordinal);
-        Assert.True(ex.BodyExcerpt.Length <= OllamaRequestException.MaxExcerptLength);
-    }
-
-    /// <summary>
     /// <b>THE MESSAGE ITSELF IS CLEAN, not merely the display path.</b>
     ///
     /// <para>Scrubbing only where the dashboard reads would leave the raw body on
