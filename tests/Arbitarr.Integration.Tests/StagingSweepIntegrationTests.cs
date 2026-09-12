@@ -19,11 +19,36 @@ namespace Arbitarr.Integration.Tests;
 /// <c>WebApplicationFactory{T}</c>'s lazy build-and-start (which happen together; there is no
 /// public seam between "host built" and "host started").</para>
 /// </summary>
-public sealed class StagingSweepIntegrationTests : IDisposable
+public sealed class StagingSweepIntegrationTests : IAsyncLifetime
 {
     private readonly ArbitarrWebApplicationFactory _factory = new();
 
-    public void Dispose() => _factory.Dispose();
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    /// <summary>
+    /// DRAIN, not delete (arb-yt7j). This class already deleted its config directory correctly: the
+    /// factory it builds is the OWNING kind, so its disposal runs
+    /// <see cref="TestSupport.ConfigDirectoryTeardown.TryDelete"/>, and since arb-dhua fixed the
+    /// connection ownership that had made that delete impossible, it succeeds. Measured — this class
+    /// run alone leaked no config directory before this change and leaks none after. The property
+    /// fixed here is therefore the OTHER one, and the residue count is not evidence for it.
+    ///
+    /// <para>It disposed SYNCHRONOUSLY, and <c>base.Dispose</c> cannot await the host's hosted
+    /// services the way <c>base.DisposeAsync</c> does. That is the gap
+    /// <see cref="HostDisposalDrainsBackgroundWorkTests"/> pins, and it names the synchronous path
+    /// as the sensitive one: <c>MaintenanceHostedService</c> begins an automatic backup immediately
+    /// on startup, on a detached <c>BackgroundService</c> task nothing awaited, so a synchronous
+    /// disposal can return while that copy is still reading the database. The orphaned continuation
+    /// then resolves from a disposed provider and faults whichever UNRELATED test is in flight
+    /// rather than this one — which is what makes the defect worth fixing despite leaking nothing.
+    /// </para>
+    ///
+    /// <para><see cref="IAsyncLifetime"/>, never bare <c>System.IAsyncDisposable</c>: xunit v2
+    /// awaits the former and silently ignores the latter. Awaiting the factory's own
+    /// <c>DisposeAsync</c> is what drains the host; the delete that follows inside the factory is
+    /// unchanged and remains the factory's own.</para>
+    /// </summary>
+    public async Task DisposeAsync() => await _factory.DisposeAsync();
 
     [Fact]
     public async Task An_orphan_planted_before_startup_is_gone_once_the_host_is_up()

@@ -22,16 +22,46 @@ namespace Arbitarr.Integration.Tests;
 /// model binding run before the gate. Those are by-name properties, so they are asserted by name
 /// here — the sweep passing is not evidence for them.</para>
 /// </summary>
-public sealed class AdminBackupEndpointsTests : IClassFixture<ArbitarrWebApplicationFactory>
+public sealed class AdminBackupEndpointsTests : IAsyncLifetime
 {
     private const string AdminKey = "the-real-admin-key";
 
-    private readonly ArbitarrWebApplicationFactory _factory;
+    private readonly ArbitarrWebApplicationFactory _factory = new();
 
-    public AdminBackupEndpointsTests(ArbitarrWebApplicationFactory factory)
-    {
-        _factory = factory;
-    }
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    /// <summary>
+    /// DRAIN, not delete (arb-yt7j). The delete was never broken here: this class's factory is the
+    /// OWNING kind, so its disposal already ran
+    /// <see cref="TestSupport.ConfigDirectoryTeardown.TryDelete"/> and, since arb-dhua fixed the
+    /// connection ownership, that delete succeeded. Measured — this class run alone leaked no config
+    /// directory before this change and leaks none after, so the residue count is NOT the evidence
+    /// for this change.
+    ///
+    /// <para><b>What was missing is the drain, and the injected class fixture is why.</b> This class
+    /// took the factory as an <c>IClassFixture&lt;ArbitarrWebApplicationFactory&gt;</c>, and xunit
+    /// v2 disposes a class fixture that implements <see cref="IAsyncDisposable"/> — which
+    /// <c>WebApplicationFactory</c> does — through its SYNCHRONOUS <c>Dispose</c> ONLY. Measured
+    /// directly, in a throwaway project outside this repository: a fixture exposing both paths
+    /// recorded <c>async=0 sync=1</c>, and the same fixture rewritten to implement xunit's
+    /// <see cref="IAsyncLifetime"/> recorded <c>async=1 sync=1</c>. So the factory's carefully
+    /// ordered <c>DisposeAsync</c> override — the one whose whole purpose is to await the host's
+    /// hosted services before touching the directory — was never called for this class at all.</para>
+    ///
+    /// <para>That matters because <c>MaintenanceHostedService</c> begins an automatic backup
+    /// immediately on startup on a detached <c>BackgroundService</c> task nothing awaited;
+    /// <c>base.Dispose</c> cannot await it, so disposal could return with a
+    /// <c>SqliteConnection.BackupDatabase</c> still reading. The orphaned continuation then faults
+    /// whichever UNRELATED test is in flight — see
+    /// <see cref="HostDisposalDrainsBackgroundWorkTests"/>, which pins this property and names the
+    /// synchronous path as the sensitive one.</para>
+    ///
+    /// <para>Owning the factory here (rather than teaching <c>ArbitarrWebApplicationFactory</c> to
+    /// implement <see cref="IAsyncLifetime"/>) keeps the change to this class: that type is injected
+    /// as a class fixture by ~30 classes in this assembly, so changing its lifetime interface would
+    /// alter all of them at once.</para>
+    /// </summary>
+    public async Task DisposeAsync() => await _factory.DisposeAsync();
 
     [Theory]
     [InlineData("GET", AdminBackupEndpoints.DownloadRoute)]
@@ -290,9 +320,12 @@ public sealed class AdminBackupEndpointsTests : IClassFixture<ArbitarrWebApplica
     /// credential the instance holds - which is not something a fresh install needs before its key
     /// is set.</para>
     ///
-    /// <para>Uses its own unseeded factory: the shared class fixture has an admin key seeded by
-    /// other cases here, so the unconfigured state has to be built deliberately rather than depended
-    /// on by test ordering.</para>
+    /// <para>Uses its own unseeded factory, and still should. The original reason was that a shared
+    /// class fixture carried an admin key seeded by other cases here; since arb-yt7j the host is
+    /// per test, so this class's own factory is already unseeded. Building the factory explicitly
+    /// remains the right shape because the unconfigured state is the PRECONDITION under test — it
+    /// must be constructed deliberately rather than inherited from whatever the enclosing class
+    /// happens not to have done, which is the kind of dependency that decays silently.</para>
     /// </summary>
     [Fact]
     public async Task Restore_is_refused_during_the_bootstrap_window_and_reads_no_form()
@@ -481,9 +514,16 @@ public sealed class AdminBackupEndpointsTests : IClassFixture<ArbitarrWebApplica
         return content;
     }
 
-    // Upsert rather than Add: the factory's SQLite database is shared across every [Fact] in this
-    // IClassFixture-scoped class (Name is the SettingEntry primary key), so a second test seeding
-    // the same key would collide with a unique-constraint violation instead of overwriting.
+    // Upsert rather than Add. This was load-bearing when the factory was an IClassFixture: one
+    // SQLite database was shared across every [Fact] here, so the second test to seed this key
+    // (Name is the SettingEntry primary key) would hit a unique-constraint violation rather than
+    // overwrite. Owning the factory made the class instance — and therefore the database — per
+    // test, so that collision is no longer reachable: every test calls this exactly once against a
+    // fresh database (arb-yt7j).
+    //
+    // It stays an upsert anyway, deliberately. The find-then-branch is correct under either
+    // lifetime, whereas an Add is correct only under the current one — so leaving it alone keeps
+    // this method from becoming a landmine for a future change that reintroduces a shared host.
     /// <summary>
     /// How many restore staging files exist in the GIVEN FACTORY'S OWN instance staging directory
     /// (<c>BackupPaths.StagingDirectory</c>, resolved from its service provider) — not the
