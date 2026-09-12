@@ -1,21 +1,14 @@
 /* Sources-section layout. Colour comes from var(--token) only (AC3). */
 
-/* Sources is the only panel whose heading also carries a badge, so this row
-   opts panelHeading into flex layout locally rather than changing the shared
-   class for every other panel's single-text heading. */
+/* Sources is the only panel whose heading also carries a badge. panelHeading
+   stays on the <h2> itself (its margin/font/border rules are unchanged for
+   every other panel's single-text heading); this wrapper is a plain flex row
+   that just places the badge beside it, carrying no heading styling of its
+   own. */
 .headingRow {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-/* The <h2> loses panelHeading's own margin/font rules once they move to the
-   flex wrapper above, so it needs the same reset applied directly -- an
-   unstyled <h2> would otherwise add the browser's default heading margin. */
-.headingText {
-  margin: 0;
-  font: inherit;
-  color: inherit;
 }
 
 .url {

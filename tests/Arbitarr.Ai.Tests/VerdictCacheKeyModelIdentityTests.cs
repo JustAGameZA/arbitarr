@@ -185,3 +185,103 @@ public class VerdictCacheKeyModelIdentityTests
         Assert.NotEqual(keyA, keyB);
     }
 }
+
+/// <summary>
+/// arb-a7ll: the prompt renders the Usenet poster and newsgroup (arb-458f), so a verdict was formed
+/// under a specific pair of them and must not be served for a release carrying different ones. These
+/// pin that the key varies with each, and that the encoding keeps apart the two pairs of inputs a
+/// shorter implementation would fold together: a null poster versus an empty one, and a single group
+/// containing a separator versus two groups.
+/// </summary>
+public class VerdictCacheKeyMetadataTests
+{
+    private static ReleaseCandidate Candidate(string? poster = null, params string[] groups) => new()
+    {
+        Title = "Show.S01E01.1080p.WEB-DL",
+        Guid = "guid-1",
+        PubDate = DateTimeOffset.UtcNow,
+        Link = new Uri("https://example.invalid/r"),
+        Size = 123456789,
+        Protocol = ProtocolKind.Usenet,
+        Poster = poster,
+        UsenetGroup = groups,
+    };
+
+    private static string Key(ReleaseCandidate candidate) =>
+        VerdictCacheKey.Compute(candidate, "TestSource", "model-a", "digest-1", "v1", "t0-s42");
+
+    [Fact]
+    public void Compute_DifferentPoster_ProducesDifferentKey()
+    {
+        Assert.NotEqual(Key(Candidate("poster-a@example.invalid")), Key(Candidate("poster-b@example.invalid")));
+    }
+
+    /// <summary>
+    /// <see cref="ReleaseCandidate.Poster"/> documents null ("the indexer reported no poster") and ""
+    /// ("the poster is blank") as different claims, and only the second is shown to the classifier, so
+    /// the key must tell them apart. The positive control is below: coercing null to "" — the obvious
+    /// implementation — WOULD collide these, which is what makes this assertion evidence.
+    /// </summary>
+    [Fact]
+    public void Compute_NullPosterVersusEmptyPoster_ProducesDifferentKey()
+    {
+        Assert.NotEqual(Key(Candidate(poster: null)), Key(Candidate(poster: string.Empty)));
+    }
+
+    [Fact]
+    public void Compute_NullVersusEmptyPoster_WouldCollideUnderNullCoercion()
+    {
+        // Positive control for the test above, held here rather than in the repository: the naive
+        // encoding coerces null to "" and hands both candidates an identical component, so the
+        // assertion above would pass vacuously if Compute did the same.
+        static string NaiveEncodePoster(string? poster) => poster ?? string.Empty;
+
+        Assert.Equal(NaiveEncodePoster(null), NaiveEncodePoster(string.Empty));
+    }
+
+    [Fact]
+    public void Compute_DifferentGroupMembership_ProducesDifferentKey()
+    {
+        Assert.NotEqual(
+            Key(Candidate(null, "alt.binaries.tv")),
+            Key(Candidate(null, "alt.binaries.movies")));
+    }
+
+    /// <summary>
+    /// The boundary the length-prefixed encoding exists for: one group whose name contains the
+    /// separator versus two groups whose names are its halves. Any join collapses these, and the
+    /// list is indexer-supplied, so the separator's absence cannot be assumed.
+    /// </summary>
+    [Fact]
+    public void Compute_SingleGroupContainingSeparatorVersusTwoGroups_ProducesDifferentKey()
+    {
+        Assert.NotEqual(
+            Key(Candidate(null, "alt.binaries.a,alt.binaries.b")),
+            Key(Candidate(null, "alt.binaries.a", "alt.binaries.b")));
+    }
+
+    [Fact]
+    public void Compute_SingleGroupContainingSeparator_WouldCollideUnderNaiveJoin()
+    {
+        // Positive control for the test above: the naive encoding joins on a comma, so both group
+        // lists flatten to one identical string. Without this, NotEqual above would not be evidence
+        // that the encoding is what keeps them apart.
+        static string NaiveEncodeGroups(IReadOnlyList<string> groups) => string.Join(",", groups);
+
+        Assert.Equal(
+            NaiveEncodeGroups(new[] { "alt.binaries.a,alt.binaries.b" }),
+            NaiveEncodeGroups(new[] { "alt.binaries.a", "alt.binaries.b" }));
+    }
+
+    /// <summary>
+    /// Positive control for all of the above: with poster and group held equal the key is stable, so
+    /// the NotEqual assertions are about the varied field and not about some other component drifting.
+    /// </summary>
+    [Fact]
+    public void Compute_SameMetadata_ProducesStableKey()
+    {
+        Assert.Equal(
+            Key(Candidate("poster-a@example.invalid", "alt.binaries.tv")),
+            Key(Candidate("poster-a@example.invalid", "alt.binaries.tv")));
+    }
+}
