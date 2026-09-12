@@ -9,6 +9,27 @@ namespace Arbitarr.Data.Entities;
 ///
 /// Stage 53a writes these rows but nothing reads them yet — env vars remain authoritative until
 /// 53b adds the DB-first, env-var-fallback resolution path described in the plan's §3.2.
+///
+/// <para><b>WHAT DELIBERATELY DOES NOT BELONG ON THIS ENTITY.</b> This row is an operator's
+/// CONFIGURATION of a source — what they typed, and what they would expect to get back after a
+/// restore. Three things the direct-indexer work needs are therefore NOT columns here, and adding
+/// them would be a mistake rather than a convenience:
+/// <list type="bullet">
+/// <item><description>The <b>caps/capabilities cache</b> (arb-x7w8.2) — what the indexer answered
+/// when asked what it supports. Fetched from upstream, refreshed on a TTL, and reconstructible by
+/// asking again; it is cached upstream state, not configuration.</description></item>
+/// <item><description>The <b>per-source query and grab counters, and their rolling window start</b>
+/// (arb-x7w8.5) — the running tallies <see cref="QueryLimit"/>/<see cref="GrabLimit"/> are compared
+/// against. These change on every search, so putting them here would rewrite the config row
+/// constantly and make a restored backup silently re-assert a stale window.</description></item>
+/// <item><description>The <b>last error and health state</b> (arb-x7w8.6) — transient runtime
+/// observation, already modelled that way by <see cref="SourceHealthRecord"/>.</description></item>
+/// </list>
+/// Each belongs in its own table, following the <see cref="DownloadRefusalEntry"/> precedent for
+/// runtime state that references a source by name rather than living on it. The concrete harm in
+/// collapsing them into this row: they would ride into every configuration backup (which #56 scopes
+/// to config, not telemetry), and a restore would reinstate counters and cached capabilities that
+/// were true at backup time and are not true now.</para>
 /// </summary>
 public sealed class Source
 {
@@ -95,10 +116,17 @@ public sealed class Source
     /// <c>"Redirect"</c> (Arbitarr answers with a <c>Location</c> pointing at the upstream URL,
     /// which carries the key to the client).
     ///
-    /// <para>Defaults to <c>"Proxy"</c> so a newly added source never silently exposes its key: the
-    /// exposing mode is an explicit per-indexer opt-in, owner-gated separately in arb-x7w8.14, where
-    /// the UI must warn about that exposure. A default of <c>"Redirect"</c> would leak a key on the
-    /// first download after an operator did nothing but add a source.</para>
+    /// <para><b>Today the only writable value is <c>"Proxy"</c>.</b> <c>"Redirect"</c> is described
+    /// here because it is the mode this column exists to eventually carry, but it is NOT accepted
+    /// yet: <c>SourceRepository.KnownNzbAccessModes</c> deliberately omits it, so a write of
+    /// <c>"Redirect"</c> is rejected with a 400 by construction rather than by an operator
+    /// remembering not to. arb-x7w8.14 is the bead that admits it, together with the Settings UI
+    /// warning that the key is exposed to the client in that mode — the warning and the capability
+    /// ship in the same change, so neither can arrive without the other.</para>
+    ///
+    /// <para>Defaults to <c>"Proxy"</c> so a newly added source never silently exposes its key. A
+    /// default of <c>"Redirect"</c> would leak a key on the first download after an operator did
+    /// nothing but add a source.</para>
     /// </summary>
     public string NzbAccessMode { get; set; } = "Proxy";
 

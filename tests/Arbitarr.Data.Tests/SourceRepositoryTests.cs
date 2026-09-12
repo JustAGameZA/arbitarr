@@ -447,7 +447,9 @@ public sealed class SourceRepositoryTests : IDisposable
                 GrabLimit = 10,
                 SetGrabLimit = true,
                 LimitsUnit = "Hour",
-                NzbAccessMode = "Redirect",
+                // Proxy is the only accepted mode until arb-x7w8.14 — see
+                // Redirect_access_mode_is_rejected_until_arb_x7w8_14_ships_its_warning.
+                NzbAccessMode = SourceRepository.ProxyAccessMode,
             });
 
         context.ChangeTracker.Clear();
@@ -460,7 +462,7 @@ public sealed class SourceRepositoryTests : IDisposable
         Assert.Equal(100, stored.QueryLimit);
         Assert.Equal(10, stored.GrabLimit);
         Assert.Equal("Hour", stored.LimitsUnit);
-        Assert.Equal("Redirect", stored.NzbAccessMode);
+        Assert.Equal(SourceRepository.ProxyAccessMode, stored.NzbAccessMode);
     }
 
     /// <summary>
@@ -474,6 +476,11 @@ public sealed class SourceRepositoryTests : IDisposable
     [InlineData("hour")]
     [InlineData("Week")]
     [InlineData(" Day ")]
+    // CLAUDE.md §3's numeric-form trap, asserted for a closed string set. An Enum.TryParse-style
+    // reader accepts the ordinal ("1"), and neither Enum.IsDefined nor trimming closes it, since
+    // 1 IS defined and "+1" parses too. Matching by name closes it by construction; these pin that.
+    [InlineData("1")]
+    [InlineData("+1")]
     public async Task AddAsync_rejects_a_limits_unit_outside_the_known_set(string limitsUnit)
     {
         using var context = CreateContext();
@@ -502,6 +509,10 @@ public sealed class SourceRepositoryTests : IDisposable
     [InlineData("redirect")]
     [InlineData("REDIRECT")]
     [InlineData("Passthrough")]
+    // The numeric forms, per CLAUDE.md §3: "1" is exactly how an Enum.TryParse-style reader would
+    // mint the second member of a two-value set — here, the key-exposing one.
+    [InlineData("1")]
+    [InlineData("+1")]
     public async Task AddAsync_rejects_an_nzb_access_mode_outside_the_known_set(string accessMode)
     {
         using var context = CreateContext();
@@ -517,6 +528,241 @@ public sealed class SourceRepositoryTests : IDisposable
             new SourceOptions { NzbAccessMode = accessMode }));
 
         Assert.Empty(await repository.GetAllAsync(CancellationToken.None));
+    }
+
+    /// <summary>
+    /// The correctly-spelled <c>"Redirect"</c> is rejected too, and that is the POINT rather than an
+    /// oversight: Redirect ships OFF until arb-x7w8.14 brings the Settings UI warning that the key is
+    /// exposed to the client in that mode. Leaving it out of <c>KnownNzbAccessModes</c> makes the
+    /// owner's ship-OFF ruling a mechanism — a write is a 400 by construction — rather than a note
+    /// somebody has to remember, the same posture <c>ValidateBaseUrl</c> takes toward <c>.invalid</c>.
+    ///
+    /// <para>Asserted for both write paths, since either one storing it would produce a source that
+    /// exposes its key. When arb-x7w8.14 admits the value, THIS test is what must be changed
+    /// deliberately — which is exactly the review step the omission is there to force.</para>
+    /// </summary>
+    [Fact]
+    public async Task Redirect_access_mode_is_rejected_until_arb_x7w8_14_ships_its_warning()
+    {
+        using var context = CreateContext();
+        var repository = new SourceRepository(context);
+
+        // It is not in the accepted set, by construction.
+        Assert.DoesNotContain(SourceRepository.RedirectAccessMode, SourceRepository.KnownNzbAccessModes);
+
+        await Assert.ThrowsAsync<SourceValidationException>(() => repository.AddAsync(
+            kind: SourceRepository.NewznabKind,
+            displayName: "Redirect on create",
+            baseUrl: "http://indexer.example/",
+            apiKey: null,
+            enabled: true,
+            CancellationToken.None,
+            new SourceOptions { NzbAccessMode = SourceRepository.RedirectAccessMode }));
+
+        Assert.Empty(await repository.GetAllAsync(CancellationToken.None));
+
+        // And the update path cannot smuggle it in either: a source created legitimately as Proxy
+        // must not be rewritable to Redirect while the warning does not exist.
+        var existing = await repository.AddAsync(
+            kind: SourceRepository.NewznabKind,
+            displayName: "Proxy source",
+            baseUrl: "http://indexer.example/",
+            apiKey: null,
+            enabled: true,
+            CancellationToken.None);
+
+        await Assert.ThrowsAsync<SourceValidationException>(() => repository.UpdateAsync(
+            existing.Id,
+            kind: SourceRepository.NewznabKind,
+            displayName: "Proxy source",
+            baseUrl: "http://indexer.example/",
+            apiKey: null,
+            enabled: true,
+            CancellationToken.None,
+            new SourceOptions { NzbAccessMode = SourceRepository.RedirectAccessMode }));
+
+        context.ChangeTracker.Clear();
+        var unchanged = await repository.GetAsync(existing.Id, CancellationToken.None);
+        Assert.Equal(SourceRepository.ProxyAccessMode, unchanged!.NzbAccessMode);
+    }
+
+    /// <summary>
+    /// The unpinned half of the Set/Clear design: that an update carrying NO opinion about the
+    /// tuning columns leaves every one of them exactly as stored.
+    ///
+    /// <para>Asserted PER FIELD, and for both ways a caller can express "no opinion" — an all-null
+    /// <see cref="SourceOptions"/> and a null <see cref="SourceOptions"/>. Without this, an
+    /// implementation that reset a column to its default on every update would pass the whole suite:
+    /// the create-path tests would still see the right values, because on create the default IS the
+    /// right value. Only an update over a non-default row can tell the two apart.</para>
+    /// </summary>
+    [Fact]
+    public async Task UpdateAsync_without_an_opinion_leaves_every_tuning_column_unchanged()
+    {
+        using var context = CreateContext();
+        var repository = new SourceRepository(context);
+
+        var source = await repository.AddAsync(
+            kind: SourceRepository.NewznabKind,
+            displayName: "Fully tuned",
+            baseUrl: "http://indexer.example/",
+            apiKey: null,
+            enabled: true,
+            CancellationToken.None,
+            new SourceOptions
+            {
+                ApiPath = "/api/v2.0/indexers/example/results/torznab",
+                Priority = 40,
+                TimeoutSeconds = 90,
+                SetTimeoutSeconds = true,
+                QueryLimit = 250,
+                SetQueryLimit = true,
+                GrabLimit = 25,
+                SetGrabLimit = true,
+                LimitsUnit = "Hour",
+                NzbAccessMode = SourceRepository.ProxyAccessMode,
+            });
+
+        // (a) An all-null options object: every Set/Clear flag false, every value null.
+        await repository.UpdateAsync(
+            source.Id,
+            kind: SourceRepository.NewznabKind,
+            displayName: "Fully tuned",
+            baseUrl: "http://indexer.example/",
+            apiKey: null,
+            enabled: true,
+            CancellationToken.None,
+            new SourceOptions());
+
+        context.ChangeTracker.Clear();
+        AssertStillTuned(await repository.GetAsync(source.Id, CancellationToken.None));
+
+        // (b) No options object at all — the shape every pre-existing caller uses.
+        await repository.UpdateAsync(
+            source.Id,
+            kind: SourceRepository.NewznabKind,
+            displayName: "Fully tuned",
+            baseUrl: "http://indexer.example/",
+            apiKey: null,
+            enabled: true,
+            CancellationToken.None,
+            options: null);
+
+        context.ChangeTracker.Clear();
+        AssertStillTuned(await repository.GetAsync(source.Id, CancellationToken.None));
+
+        static void AssertStillTuned(Entities.Source? stored)
+        {
+            Assert.NotNull(stored);
+            Assert.Equal("/api/v2.0/indexers/example/results/torznab", stored!.ApiPath);
+            Assert.Equal(40, stored.Priority);
+            Assert.Equal(90, stored.TimeoutSeconds);
+            Assert.Equal(250, stored.QueryLimit);
+            Assert.Equal(25, stored.GrabLimit);
+            Assert.Equal("Hour", stored.LimitsUnit);
+            Assert.Equal(SourceRepository.ProxyAccessMode, stored.NzbAccessMode);
+        }
+    }
+
+    /// <summary>
+    /// The three update outcomes for a nullable limit must be three DIFFERENT outcomes: clear it to
+    /// null (unlimited), set it to 0 (a cap of zero), or leave it alone. Asserted against each other
+    /// rather than only against expected constants, so an implementation that collapsed any pair
+    /// into one is caught — which is the whole reason the Clear flags exist rather than a plain
+    /// null-check.
+    /// </summary>
+    [Fact]
+    public async Task UpdateAsync_distinguishes_clearing_a_limit_from_zeroing_it_and_from_leaving_it()
+    {
+        using var context = CreateContext();
+        var repository = new SourceRepository(context);
+
+        async Task<Entities.Source> TunedAsync(string name)
+        {
+            var created = await repository.AddAsync(
+                kind: SourceRepository.NewznabKind,
+                displayName: name,
+                baseUrl: "http://indexer.example/",
+                apiKey: null,
+                enabled: true,
+                CancellationToken.None,
+                new SourceOptions { QueryLimit = 500, SetQueryLimit = true });
+
+            Assert.Equal(500, created.QueryLimit);
+            return created;
+        }
+
+        Task UpdateAsync(Entities.Source s, SourceOptions options) => repository.UpdateAsync(
+            s.Id,
+            kind: SourceRepository.NewznabKind,
+            displayName: s.DisplayName,
+            baseUrl: "http://indexer.example/",
+            apiKey: null,
+            enabled: true,
+            CancellationToken.None,
+            options);
+
+        var cleared = await TunedAsync("Cleared limit");
+        var zeroed = await TunedAsync("Zeroed limit");
+        var left = await TunedAsync("Untouched limit");
+
+        // At this layer "clear" is SetQueryLimit with a null value; the endpoint's ClearQueryLimit
+        // flag is the wire spelling of exactly this, since JSON cannot distinguish an omitted field
+        // from an explicit null.
+        await UpdateAsync(cleared, new SourceOptions { SetQueryLimit = true, QueryLimit = null });
+        await UpdateAsync(zeroed, new SourceOptions { QueryLimit = 0, SetQueryLimit = true });
+        await UpdateAsync(left, new SourceOptions());
+
+        context.ChangeTracker.Clear();
+        var storedCleared = await repository.GetAsync(cleared.Id, CancellationToken.None);
+        var storedZeroed = await repository.GetAsync(zeroed.Id, CancellationToken.None);
+        var storedLeft = await repository.GetAsync(left.Id, CancellationToken.None);
+
+        Assert.Null(storedCleared!.QueryLimit);
+        Assert.Equal(0, storedZeroed!.QueryLimit);
+        Assert.Equal(500, storedLeft!.QueryLimit);
+
+        // The three outcomes are pairwise different — no pair collapsed into one.
+        Assert.NotEqual(storedCleared.QueryLimit, storedZeroed.QueryLimit);
+        Assert.NotEqual(storedCleared.QueryLimit, storedLeft.QueryLimit);
+        Assert.NotEqual(storedZeroed.QueryLimit, storedLeft.QueryLimit);
+    }
+
+    /// <summary>
+    /// The timeout is the third nullable column and now carries the same Clear affordance: null
+    /// means "fall back to the global default", a state an operator must be able to return to after
+    /// setting an override.
+    /// </summary>
+    [Fact]
+    public async Task UpdateAsync_can_clear_a_timeout_back_to_the_global_default()
+    {
+        using var context = CreateContext();
+        var repository = new SourceRepository(context);
+
+        var source = await repository.AddAsync(
+            kind: SourceRepository.NewznabKind,
+            displayName: "Timeout override",
+            baseUrl: "http://indexer.example/",
+            apiKey: null,
+            enabled: true,
+            CancellationToken.None,
+            new SourceOptions { TimeoutSeconds = 30, SetTimeoutSeconds = true });
+
+        Assert.Equal(30, source.TimeoutSeconds);
+
+        await repository.UpdateAsync(
+            source.Id,
+            kind: SourceRepository.NewznabKind,
+            displayName: "Timeout override",
+            baseUrl: "http://indexer.example/",
+            apiKey: null,
+            enabled: true,
+            CancellationToken.None,
+            new SourceOptions { SetTimeoutSeconds = true, TimeoutSeconds = null });
+
+        context.ChangeTracker.Clear();
+        var stored = await repository.GetAsync(source.Id, CancellationToken.None);
+        Assert.Null(stored!.TimeoutSeconds);
     }
 
     /// <summary>

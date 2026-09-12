@@ -65,10 +65,14 @@ public sealed record CreateSourceRequest(
 /// stored key untouched; a non-empty one REPLACES it. There is deliberately no way to express
 /// "give me back what is stored" — the write-only contract means the client never had it.
 ///
-/// <para>An omitted tuning field likewise leaves the stored value alone. The two limits cannot use
-/// that convention, because for them <c>null</c> is a real value (unlimited) rather than an absence —
-/// so clearing a limit is expressed by <paramref name="ClearQueryLimit"/> /
-/// <paramref name="ClearGrabLimit"/>, keeping "set to unlimited" distinct from "do not touch".</para>
+/// <para>An omitted tuning field likewise leaves the stored value alone. The three NULLABLE columns
+/// cannot use that convention, because for them <c>null</c> is a real stored value rather than an
+/// absence — unlimited for the two limits, "fall back to the global default" for the timeout.
+/// Clearing one is therefore expressed by <paramref name="ClearQueryLimit"/>,
+/// <paramref name="ClearGrabLimit"/> or <paramref name="ClearTimeoutSeconds"/>, which keeps "set
+/// back to the null state" distinct from "do not touch". <paramref name="Priority"/> needs no such
+/// flag: it is non-nullable and <c>0</c> is an ordinary weight, so it has no unset state to
+/// express.</para>
 /// </summary>
 public sealed record UpdateSourceRequest(
     string? Kind,
@@ -84,7 +88,8 @@ public sealed record UpdateSourceRequest(
     string? LimitsUnit = null,
     string? NzbAccessMode = null,
     bool ClearQueryLimit = false,
-    bool ClearGrabLimit = false);
+    bool ClearGrabLimit = false,
+    bool ClearTimeoutSeconds = false);
 
 /// <summary>The outcome of <c>POST /api/admin/sources/{id}/test</c>, per §3.3.</summary>
 /// <param name="Outcome">
@@ -255,11 +260,13 @@ public static class AdminSourceEndpoints
                 {
                     ApiPath = request.ApiPath,
                     Priority = request.Priority,
-                    TimeoutSeconds = request.TimeoutSeconds,
-                    SetTimeoutSeconds = request.TimeoutSeconds is not null,
-                    // A value sets the cap; the explicit Clear flag sets it to null (unlimited).
-                    // Omitting both leaves the stored value alone — the three cases stay distinct
-                    // because null-as-unlimited is a real state, not an absence (see Source.cs).
+                    // A value sets the column; the explicit Clear flag sets it back to null. Omitting
+                    // both leaves the stored value alone — the three cases stay distinct because for
+                    // each of these columns null is a real state, not an absence (see Source.cs).
+                    // The timeout follows the same rule as the limits: null there means "fall back
+                    // to the global default", which an operator must be able to return to.
+                    TimeoutSeconds = request.ClearTimeoutSeconds ? null : request.TimeoutSeconds,
+                    SetTimeoutSeconds = request.ClearTimeoutSeconds || request.TimeoutSeconds is not null,
                     QueryLimit = request.ClearQueryLimit ? null : request.QueryLimit,
                     SetQueryLimit = request.ClearQueryLimit || request.QueryLimit is not null,
                     GrabLimit = request.ClearGrabLimit ? null : request.GrabLimit,

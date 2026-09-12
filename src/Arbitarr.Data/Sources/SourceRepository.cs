@@ -20,7 +20,16 @@ public sealed record SourceOptions
     /// <summary>New <see cref="Entities.Source.ApiPath"/>, or null to leave it at its current value.</summary>
     public string? ApiPath { get; init; }
 
-    /// <summary>New <see cref="Entities.Source.Priority"/>, or null to leave it unchanged.</summary>
+    /// <summary>
+    /// New <see cref="Entities.Source.Priority"/>, or null to leave it unchanged.
+    ///
+    /// <para>This one may safely use the null-check convention, unlike the two limits, because
+    /// <see cref="Entities.Source.Priority"/> is a non-nullable <c>int</c> whose every value —
+    /// including <c>0</c> — is an ordinary weight with no sentinel meaning. "Unset" is therefore not
+    /// a state the column can hold, so <c>null</c> here is free to mean "leave alone" without
+    /// colliding with anything storable. The limits cannot do this precisely because <c>null</c> IS
+    /// storable there and means unlimited.</para>
+    /// </summary>
     public int? Priority { get; init; }
 
     /// <summary>New <see cref="Entities.Source.TimeoutSeconds"/>. Only applied when <see cref="SetTimeoutSeconds"/> is true.</summary>
@@ -128,11 +137,40 @@ public sealed class SourceRepository
     public static readonly IReadOnlyCollection<string> KnownLimitsUnits = new[] { "Hour", "Day" };
 
     /// <summary>
-    /// The accepted <see cref="Entities.Source.NzbAccessMode"/> values. Matched exactly and ordinally
-    /// by <see cref="ValidateNzbAccessMode"/>; see that entity property for why <c>"Proxy"</c> is the
-    /// default and <c>"Redirect"</c> is an explicit opt-in.
+    /// The <see cref="Entities.Source.NzbAccessMode"/> value for serving a download through Arbitarr,
+    /// so the indexer key never leaves the server. The default, and currently the only accepted value.
     /// </summary>
-    public static readonly IReadOnlyCollection<string> KnownNzbAccessModes = new[] { "Proxy", "Redirect" };
+    public const string ProxyAccessMode = "Proxy";
+
+    /// <summary>
+    /// The <see cref="Entities.Source.NzbAccessMode"/> value for answering with a <c>Location</c>
+    /// header pointing at the upstream URL — which carries the indexer key to the client.
+    ///
+    /// <para>Named here, but deliberately ABSENT from <see cref="KnownNzbAccessModes"/>, so a write
+    /// of it is a 400 by construction. See that field for why.</para>
+    /// </summary>
+    public const string RedirectAccessMode = "Redirect";
+
+    /// <summary>
+    /// The accepted <see cref="Entities.Source.NzbAccessMode"/> values. Matched exactly and ordinally
+    /// by <see cref="ValidateNzbAccessMode"/>.
+    ///
+    /// <para><b><see cref="RedirectAccessMode"/> is deliberately omitted.</b> The owner's ruling is
+    /// that Redirect ships OFF and per-indexer opt-in, and that the Settings UI must warn the key is
+    /// exposed to the client in that mode. Until that warning exists there is nothing to opt in
+    /// through — so this makes the ruling a MECHANISM rather than a note somebody has to remember:
+    /// with the value outside this set, storing it is rejected with a 400 at the repository boundary
+    /// and no code path can produce a source that exposes its key. Same posture
+    /// <see cref="ValidateBaseUrl"/> takes toward the reserved <c>.invalid</c> placeholder — refuse
+    /// the value that would quietly do the wrong thing rather than storing it and relying on every
+    /// later reader to notice.</para>
+    ///
+    /// <para><b>arb-x7w8.14 is the bead that adds <see cref="RedirectAccessMode"/> to this array</b>,
+    /// in the same change as the Settings UI exposure warning and the positive-control test proving
+    /// the <c>Location</c> header (and the key inside it) never reaches logs or events. Adding it
+    /// here on its own, ahead of that, re-opens exactly the hole this omission closes.</para>
+    /// </summary>
+    public static readonly IReadOnlyCollection<string> KnownNzbAccessModes = new[] { ProxyAccessMode };
 
     /// <summary>
     /// Validates and inserts a new source. Rejects a non-absolute/non-http(s) <paramref name="baseUrl"/>

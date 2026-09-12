@@ -304,6 +304,13 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
     [InlineData("limitsUnit", "Week")]
     [InlineData("nzbAccessMode", "redirect")]
     [InlineData("nzbAccessMode", "Passthrough")]
+    // The numeric forms CLAUDE.md §3 names: Enum.TryParse would mint the second member of a
+    // two-value set from "1", and neither Enum.IsDefined nor trimming closes that ("1" IS defined,
+    // "+1" parses). Matching by exact name is what closes it; these pin that it stays closed.
+    [InlineData("limitsUnit", "1")]
+    [InlineData("limitsUnit", "+1")]
+    [InlineData("nzbAccessMode", "1")]
+    [InlineData("nzbAccessMode", "+1")]
     public async Task A_closed_set_column_outside_its_known_values_is_rejected_with_400(string field, string value)
     {
         // CLAUDE.md §3 at the wire boundary, per field and per value. nzbAccessMode matters most:
@@ -322,6 +329,218 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
         using var response = await client.PostAsJsonAsync(SourcesRoute, body);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    /// <summary>
+    /// arb-x7w8.14's ship-OFF ruling, enforced at the wire. The correctly-spelled <c>"Redirect"</c>
+    /// is refused on BOTH write paths, so no request shape produces a source that exposes its key to
+    /// the client. When arb-x7w8.14 lands the Settings UI warning, this test changes deliberately.
+    /// </summary>
+    [Fact]
+    public async Task Setting_the_redirect_access_mode_is_rejected_with_400_on_both_write_paths()
+    {
+        await SeedAdminKeyAsync();
+        using var client = CreateAdminClient();
+
+        using var createResponse = await client.PostAsJsonAsync(SourcesRoute, new
+        {
+            kind = SourceRepository.NewznabKind,
+            displayName = "Redirect create " + Guid.NewGuid().ToString("N"),
+            baseUrl = "http://192.0.2.39:9117",
+            nzbAccessMode = SourceRepository.RedirectAccessMode,
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, createResponse.StatusCode);
+
+        // And a legitimately-created Proxy source cannot be rewritten to Redirect.
+        var created = await CreateSourceAsync(client, "Redirect update " + Guid.NewGuid().ToString("N"), SecretApiKey);
+        Assert.Equal(SourceRepository.ProxyAccessMode, created.NzbAccessMode);
+
+        using var updateResponse = await client.PutAsJsonAsync($"{SourcesRoute}/{created.Id}", new
+        {
+            kind = created.Kind,
+            displayName = created.DisplayName,
+            baseUrl = created.BaseUrl,
+            enabled = true,
+            nzbAccessMode = SourceRepository.RedirectAccessMode,
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, updateResponse.StatusCode);
+
+        // The stored source is still Proxy — the rejected update changed nothing.
+        using var readBack = await client.GetAsync(SourcesRoute);
+        var sources = await readBack.Content.ReadFromJsonAsync<List<SourceResponse>>();
+        Assert.Equal(
+            SourceRepository.ProxyAccessMode,
+            sources!.Single(s => s.Id == created.Id).NzbAccessMode);
+    }
+
+    /// <summary>
+    /// The update path's "no opinion" contract over the wire: a PUT that omits the tuning fields
+    /// must leave every one of them as stored. This is precisely the body the EXISTING Sources UI
+    /// sends — it knows nothing about these columns — so an implementation that reset them on every
+    /// update would silently wipe an operator's tuning the next time they renamed a source.
+    /// </summary>
+    [Fact]
+    public async Task A_put_omitting_the_tuning_fields_preserves_them()
+    {
+        await SeedAdminKeyAsync();
+        using var client = CreateAdminClient();
+
+        var name = "Tuned over the wire " + Guid.NewGuid().ToString("N");
+        using var createResponse = await client.PostAsJsonAsync(SourcesRoute, new
+        {
+            kind = SourceRepository.NewznabKind,
+            displayName = name,
+            baseUrl = "http://192.0.2.40:9117",
+            apiPath = "/api/v2.0/indexers/example/results/torznab",
+            priority = 15,
+            timeoutSeconds = 60,
+            queryLimit = 200,
+            grabLimit = 20,
+            limitsUnit = "Hour",
+        });
+        Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
+        var created = await createResponse.Content.ReadFromJsonAsync<SourceResponse>();
+
+        // The body the current UI sends: identity fields only, no tuning fields at all.
+        using var updateResponse = await client.PutAsJsonAsync($"{SourcesRoute}/{created!.Id}", new
+        {
+            kind = created.Kind,
+            displayName = created.DisplayName,
+            baseUrl = created.BaseUrl,
+            enabled = false,
+        });
+        Assert.Equal(HttpStatusCode.OK, updateResponse.StatusCode);
+
+        var updated = await updateResponse.Content.ReadFromJsonAsync<SourceResponse>();
+        Assert.NotNull(updated);
+
+        // The field the PUT DID carry changed...
+        Assert.False(updated!.Enabled);
+
+        // ...and every tuning field it did not carry is untouched, asserted per field.
+        Assert.Equal("/api/v2.0/indexers/example/results/torznab", updated.ApiPath);
+        Assert.Equal(15, updated.Priority);
+        Assert.Equal(60, updated.TimeoutSeconds);
+        Assert.Equal(200, updated.QueryLimit);
+        Assert.Equal(20, updated.GrabLimit);
+        Assert.Equal("Hour", updated.LimitsUnit);
+        Assert.Equal(SourceRepository.ProxyAccessMode, updated.NzbAccessMode);
+    }
+
+    /// <summary>
+    /// The limits' Clear affordance over the wire, and the reason it cannot be expressed by sending
+    /// <c>null</c>: JSON gives the handler no way to tell an omitted field from an explicit null, so
+    /// without the flag "set this back to unlimited" and "leave it alone" arrive identically.
+    ///
+    /// <para>Asserted against the OTHER two outcomes in the same test — a cleared limit, a zeroed
+    /// limit and an untouched limit must be three different stored values. Dropping the
+    /// <c>ClearQueryLimit ||</c> term from the handler makes the clear silently behave as
+    /// "leave alone", which only a test that distinguishes those two can catch.</para>
+    /// </summary>
+    [Fact]
+    public async Task Clearing_a_limit_over_the_wire_differs_from_zeroing_it_and_from_omitting_it()
+    {
+        await SeedAdminKeyAsync();
+        using var client = CreateAdminClient();
+
+        async Task<SourceResponse> CappedAsync(string label)
+        {
+            using var response = await client.PostAsJsonAsync(SourcesRoute, new
+            {
+                kind = SourceRepository.NewznabKind,
+                displayName = $"{label} " + Guid.NewGuid().ToString("N"),
+                baseUrl = "http://192.0.2.42:9117",
+                queryLimit = 500,
+            });
+            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+            var created = await response.Content.ReadFromJsonAsync<SourceResponse>();
+            Assert.Equal(500, created!.QueryLimit);
+            return created;
+        }
+
+        async Task<SourceResponse> PutAsync(SourceResponse s, object body)
+        {
+            using var response = await client.PutAsJsonAsync($"{SourcesRoute}/{s.Id}", body);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            return (await response.Content.ReadFromJsonAsync<SourceResponse>())!;
+        }
+
+        var toClear = await CappedAsync("Wire cleared");
+        var toZero = await CappedAsync("Wire zeroed");
+        var toLeave = await CappedAsync("Wire untouched");
+
+        var cleared = await PutAsync(toClear, new
+        {
+            kind = toClear.Kind,
+            displayName = toClear.DisplayName,
+            baseUrl = toClear.BaseUrl,
+            enabled = true,
+            clearQueryLimit = true,
+        });
+
+        var zeroed = await PutAsync(toZero, new
+        {
+            kind = toZero.Kind,
+            displayName = toZero.DisplayName,
+            baseUrl = toZero.BaseUrl,
+            enabled = true,
+            queryLimit = 0,
+        });
+
+        var left = await PutAsync(toLeave, new
+        {
+            kind = toLeave.Kind,
+            displayName = toLeave.DisplayName,
+            baseUrl = toLeave.BaseUrl,
+            enabled = true,
+        });
+
+        Assert.Null(cleared.QueryLimit);
+        Assert.Equal(0, zeroed.QueryLimit);
+        Assert.Equal(500, left.QueryLimit);
+
+        // Pairwise distinct: no outcome collapsed into another.
+        Assert.NotEqual(cleared.QueryLimit, zeroed.QueryLimit);
+        Assert.NotEqual(cleared.QueryLimit, left.QueryLimit);
+        Assert.NotEqual(zeroed.QueryLimit, left.QueryLimit);
+    }
+
+    /// <summary>
+    /// The timeout's Clear affordance over the wire: null means "fall back to the global default",
+    /// so an operator who set an override must be able to return to it. Omitting the field cannot
+    /// express that — omission means "leave alone" — which is why the explicit flag exists.
+    /// </summary>
+    [Fact]
+    public async Task A_timeout_override_can_be_set_and_then_cleared_back_to_null()
+    {
+        await SeedAdminKeyAsync();
+        using var client = CreateAdminClient();
+
+        var name = "Clearable timeout " + Guid.NewGuid().ToString("N");
+        using var createResponse = await client.PostAsJsonAsync(SourcesRoute, new
+        {
+            kind = SourceRepository.NewznabKind,
+            displayName = name,
+            baseUrl = "http://192.0.2.41:9117",
+            timeoutSeconds = 30,
+        });
+        Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
+
+        var created = await createResponse.Content.ReadFromJsonAsync<SourceResponse>();
+        Assert.Equal(30, created!.TimeoutSeconds);
+
+        using var clearResponse = await client.PutAsJsonAsync($"{SourcesRoute}/{created.Id}", new
+        {
+            kind = created.Kind,
+            displayName = created.DisplayName,
+            baseUrl = created.BaseUrl,
+            enabled = true,
+            clearTimeoutSeconds = true,
+        });
+        Assert.Equal(HttpStatusCode.OK, clearResponse.StatusCode);
+
+        var cleared = await clearResponse.Content.ReadFromJsonAsync<SourceResponse>();
+        Assert.Null(cleared!.TimeoutSeconds);
     }
 
     [Fact]
