@@ -75,6 +75,13 @@ dataset (fetched at runtime, rate-limited, never vendored).
 
 ---
 
+**Protocol answer vs infrastructure error.** A **protocol answer** means the request was
+understood: delivered with HTTP 200 as Torznab/Newznab code 100 (bad or missing API key)
+or code 500 (rate limit). An empty result set is not an error at all — just a results
+element with no items. An **infrastructure error** means the pipeline failed to produce an answer at
+all: code 900, HTTP 5xx. See `SearchEndpoint.InfrastructureErrorResult`'s remarks
+(`src/Arbitarr.Api`) for the full reasoning behind keeping these two outcomes distinct.
+
 ## Degradation vocabulary
 
 `MatchProvenanceFlags` are `[Flags]` — more than one can hold at once — and are
