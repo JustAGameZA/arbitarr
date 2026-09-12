@@ -108,6 +108,36 @@ namespace Arbitarr.Data.Migrations
                     b.ToTable("CapsCacheEntries");
                 });
 
+            modelBuilder.Entity("Arbitarr.Data.Entities.DownloadRefusalEntry", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("LastObservedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("ObservedSinceUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourceName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SourceName")
+                        .IsUnique();
+
+                    b.ToTable("DownloadRefusalEntries");
+                });
+
             modelBuilder.Entity("Arbitarr.Data.Entities.EventEntry", b =>
                 {
                     b.Property<long>("Id")

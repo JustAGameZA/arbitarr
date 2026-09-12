@@ -10,7 +10,10 @@ namespace Arbitarr.Core.Diagnostics;
 /// is <c>RouteClassification.PublicRead</c>, so anything placed here is un-gated; see
 /// <c>DownloadProxyEndpoint</c>'s catch block, which states the same rule for the activity event.
 /// </param>
-/// <param name="ObservedSinceUtc">When this source first refused, counting from process start.</param>
+/// <param name="ObservedSinceUtc">
+/// When this source first refused. arb-v3w: this survives a restart — it is persisted and rehydrated
+/// — so it means "when the condition began", not "since this process started".
+/// </param>
 /// <param name="LastObservedUtc">When this source most recently refused.</param>
 public sealed record DownloadRefusal(
     string SourceName,
@@ -33,10 +36,18 @@ public sealed record DownloadRefusal(
 /// still fails. That is precisely the invisibility ADR 0014 records as the original defect.
 /// </para>
 /// <para>
-/// Process-lifetime and in-memory by design at this stage: nothing is persisted (persistence is
-/// tracked separately as arb-v3w) and nothing is notified (arb-apj). A restart therefore clears
-/// every health item, which the status payload states rather than hides — <see cref="DownloadRefusal.ObservedSinceUtc"/>
-/// is "since this process started", not "since the condition began".
+/// arb-v3w: entries are now PERSISTED and rehydrated at startup, because the NZBHydra2
+/// misconfiguration that causes them outlives the process while the old in-memory-only tracker did
+/// not — a restart hid a condition that was still fully in force.
+/// <see cref="DownloadRefusal.ObservedSinceUtc"/> therefore means "since the condition began".
+/// Nothing is notified yet (arb-apj).
+/// </para>
+/// <para>
+/// The write methods are asynchronous SO THAT persistence can be awaited on the caller's own path
+/// rather than detached. <see cref="DownloadRefusalTracker"/> itself completes synchronously and
+/// touches no I/O; only the persisting decorator does any work worth awaiting. The download proxy
+/// already awaits an <c>IEventSink</c> write at exactly these two points, so this adds no new shape
+/// to that call site.
 /// </para>
 /// </remarks>
 public interface IDownloadRefusalTracker
@@ -47,13 +58,13 @@ public interface IDownloadRefusalTracker
     /// advance only <see cref="DownloadRefusal.LastObservedUtc"/> and the reason, so the operator
     /// keeps seeing how long the condition has been running.
     /// </summary>
-    void RecordRefusal(string sourceName, string reason, DateTimeOffset at);
+    ValueTask RecordRefusalAsync(string sourceName, string reason, DateTimeOffset at, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Clears <paramref name="sourceName"/>'s refusal, if any. Called ONLY from a genuinely
     /// successful download of a payload from that source.
     /// </summary>
-    void RecordSuccessfulGrab(string sourceName);
+    ValueTask RecordSuccessfulGrabAsync(string sourceName, CancellationToken cancellationToken = default);
 
     /// <summary>Every outstanding refusal, ordered by source name. Empty when nothing is refused.</summary>
     IReadOnlyList<DownloadRefusal> Snapshot();
@@ -69,6 +80,24 @@ public sealed class DownloadRefusalTracker : IDownloadRefusalTracker
     private readonly object _gate = new();
     private readonly Dictionary<string, DownloadRefusal> _refusals = new(StringComparer.Ordinal);
 
+    public ValueTask RecordRefusalAsync(string sourceName, string reason, DateTimeOffset at, CancellationToken cancellationToken = default)
+    {
+        RecordRefusal(sourceName, reason, at);
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask RecordSuccessfulGrabAsync(string sourceName, CancellationToken cancellationToken = default)
+    {
+        RecordSuccessfulGrab(sourceName);
+        return ValueTask.CompletedTask;
+    }
+
+    /// <summary>
+    /// The synchronous in-memory primitive behind <see cref="RecordRefusalAsync"/>. Public so
+    /// <see cref="PersistentDownloadRefusalTracker"/> can apply the entry semantics — in particular
+    /// the preserve-<c>ObservedSinceUtc</c> rule — without going back through an async wrapper that
+    /// would only re-enter here.
+    /// </summary>
     public void RecordRefusal(string sourceName, string reason, DateTimeOffset at)
     {
         ArgumentNullException.ThrowIfNull(sourceName);
@@ -86,6 +115,7 @@ public sealed class DownloadRefusalTracker : IDownloadRefusalTracker
         }
     }
 
+    /// <summary>The synchronous in-memory primitive behind <see cref="RecordSuccessfulGrabAsync"/>.</summary>
     public void RecordSuccessfulGrab(string sourceName)
     {
         ArgumentNullException.ThrowIfNull(sourceName);
@@ -115,13 +145,11 @@ public sealed class NullDownloadRefusalTracker : IDownloadRefusalTracker
 {
     public static readonly NullDownloadRefusalTracker Instance = new();
 
-    public void RecordRefusal(string sourceName, string reason, DateTimeOffset at)
-    {
-    }
+    public ValueTask RecordRefusalAsync(string sourceName, string reason, DateTimeOffset at, CancellationToken cancellationToken = default) =>
+        ValueTask.CompletedTask;
 
-    public void RecordSuccessfulGrab(string sourceName)
-    {
-    }
+    public ValueTask RecordSuccessfulGrabAsync(string sourceName, CancellationToken cancellationToken = default) =>
+        ValueTask.CompletedTask;
 
     public IReadOnlyList<DownloadRefusal> Snapshot() => Array.Empty<DownloadRefusal>();
 }

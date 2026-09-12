@@ -281,17 +281,42 @@ builder.Services.AddSingleton<IRefreshWorkerHealth>(sp => sp.GetRequiredService<
 
 // arb-ln0: sticky per-source download-refusal health, singleton for the same reason the worker
 // health above is — the download proxy (writer) and StatusEndpoint (reader) must see one instance
-// for the app's lifetime. In-memory and process-lifetime by design: nothing is persisted (arb-v3w),
-// so a restart clears every item.
+// for the app's lifetime.
+//
+// arb-v3w: the tracker is now TWO-TIER — the in-memory holder below still owns the entry semantics
+// (in particular that a repeat preserves ObservedSinceUtc), and PersistentDownloadRefusalTracker
+// mirrors each write to the DownloadRefusalEntry table so the item survives a restart. The
+// misconfiguration behind it does, and before this a fresh process showed a clean dashboard while
+// every download still failed.
+//
+// The store is SCOPED (it holds the scoped ArbitarrDbContext, which is not thread-safe), so this
+// singleton reaches it through a scope factory — one scope created and disposed per operation,
+// exactly as PersistentReleaseLookup and ScopedEventSink do. The connection string is NEVER
+// formatted here: the context's options come from DatabaseConnectionStrings, which is also what
+// pins this to arbitarr.db rather than the logs database.
+builder.Services.AddScoped<Arbitarr.Core.Diagnostics.IDownloadRefusalStore>(sp =>
+    new Arbitarr.Data.Diagnostics.DownloadRefusalStore(sp.GetRequiredService<ArbitarrDbContext>()));
+
 builder.Services.AddSingleton<Arbitarr.Core.Diagnostics.DownloadRefusalTracker>();
+builder.Services.AddSingleton(sp => new Arbitarr.Core.Diagnostics.PersistentDownloadRefusalTracker(
+    sp.GetRequiredService<Arbitarr.Core.Diagnostics.DownloadRefusalTracker>(),
+    async (operation, cancellationToken) =>
+    {
+        using var scope = sp.GetRequiredService<IServiceScopeFactory>().CreateScope();
+        await operation(
+                scope.ServiceProvider.GetRequiredService<Arbitarr.Core.Diagnostics.IDownloadRefusalStore>(),
+                cancellationToken)
+            .ConfigureAwait(false);
+    },
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(Arbitarr.Core.Diagnostics.PersistentDownloadRefusalTracker).FullName!)));
 
 // arb-apj: what the rest of the app resolves is that state holder WRAPPED in a transition observer,
 // so one notification goes out when a source's health item appears and one when it clears — and
 // nothing at all while it merely persists, which is the whole requirement.
 //
 // A decorator rather than a callback inside DownloadRefusalTracker: the tracker stays a plain state
-// holder with no notification concept in it, and arb-v3w (which replaces its backing store) touches
-// no line this feature owns — swapping the inner registration above is all that change needs.
+// holder with no notification concept in it, and arb-v3w (which replaced its backing store) touched
+// no line this feature owns — swapping the inner registration is all that change needed.
 //
 // DownloadRefusalNotifier holds the scope FACTORY, not a scope: this fires from the download proxy's
 // request path, whose scope is gone by the time the delivery completes. The callback returns
@@ -305,8 +330,14 @@ builder.Services.AddSingleton<Arbitarr.Host.Notifications.DownloadRefusalNotifie
 
 builder.Services.AddSingleton<Arbitarr.Core.Diagnostics.IDownloadRefusalTracker>(sp =>
     new Arbitarr.Core.Diagnostics.NotifyingDownloadRefusalTracker(
-        sp.GetRequiredService<Arbitarr.Core.Diagnostics.DownloadRefusalTracker>(),
+        sp.GetRequiredService<Arbitarr.Core.Diagnostics.PersistentDownloadRefusalTracker>(),
         sp.GetRequiredService<Arbitarr.Host.Notifications.DownloadRefusalNotifier>().NotifyInBackground));
+
+// arb-v3w: loads the persisted refusals into the tracker once at startup. See the service's own doc
+// for why this is a hosted one-shot rather than a lazy first read.
+builder.Services.AddHostedService(sp => new Arbitarr.Host.Diagnostics.DownloadRefusalRehydrationService(
+    sp.GetRequiredService<Arbitarr.Core.Diagnostics.PersistentDownloadRefusalTracker>(),
+    sp.GetRequiredService<ILogger<Arbitarr.Host.Diagnostics.DownloadRefusalRehydrationService>>()));
 
 // M7-8b/AC24: options are re-read from the settings store on every cycle (see
 // SettingsRefreshWorkerOptionsSource), not captured once at startup from RefreshWorkerDefaults.

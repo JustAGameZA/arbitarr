@@ -17,8 +17,59 @@ namespace Arbitarr.Integration.Tests;
 /// </summary>
 public sealed class ArbitarrWebApplicationFactory : WebApplicationFactory<Program>
 {
-    private readonly string _configDirectory =
-        Path.Combine(Path.GetTempPath(), "arbitarr-m2-tests", Guid.NewGuid().ToString("N"));
+    private readonly string _configDirectory;
+
+    /// <summary>
+    /// Whether this factory DELETES <see cref="ConfigDirectory"/> on disposal. True for the
+    /// per-instance directory the parameterless constructor invents (nobody else can be using it);
+    /// false for a caller-supplied one, which the caller owns and outlives this host — see
+    /// <see cref="OverConfigDirectory"/>.
+    /// </summary>
+    private readonly bool _ownsConfigDirectory;
+
+    /// <summary>
+    /// A host over a FRESH, per-instance config directory — the default, and what every test that
+    /// does not explicitly need otherwise should use.
+    ///
+    /// <para><b>THIS MUST REMAIN THE ONLY PUBLIC CONSTRUCTOR.</b> xUnit rejects a class fixture type
+    /// that declares more than one ("may only define a single public constructor"), and ~29 classes
+    /// in this assembly inject this type as an <c>IClassFixture</c> — so adding a second public
+    /// constructor fails all of them at once rather than anything local to the change. That is why
+    /// the caller-supplied-directory overload is private behind
+    /// <see cref="OverConfigDirectory"/>.</para>
+    /// </summary>
+    public ArbitarrWebApplicationFactory()
+        : this(Path.Combine(Path.GetTempPath(), "arbitarr-m2-tests", Guid.NewGuid().ToString("N")), ownsConfigDirectory: true)
+    {
+    }
+
+    private ArbitarrWebApplicationFactory(string configDirectory, bool ownsConfigDirectory)
+    {
+        _configDirectory = configDirectory ?? throw new ArgumentNullException(nameof(configDirectory));
+        _ownsConfigDirectory = ownsConfigDirectory;
+    }
+
+    /// <summary>
+    /// A host over a CALLER-SUPPLIED config directory, so a test can build a second host over the
+    /// SAME database file and assert what survives a restart (arb-v3w).
+    ///
+    /// <para>A static factory rather than a constructor for the reason stated on the parameterless
+    /// constructor above: a second PUBLIC constructor breaks every class-fixture consumer in this
+    /// assembly.</para>
+    ///
+    /// <para><b>Such a host does NOT delete the directory on disposal, and that is load-bearing.</b>
+    /// The whole point is that a SECOND host reads what the first one wrote, so a first host that
+    /// took the database with it on the way out would make the restart assertion test nothing —
+    /// the second host would rehydrate from an empty database and report no items for the same
+    /// reason a correct implementation would have reported them. Disposal still stops the host and
+    /// clears the connection pools; only the delete is skipped. THE CALLER MUST DELETE IT.</para>
+    ///
+    /// <para>The derived <c>Arbitarr:ReleaseGuidSecret</c> is a function of this path, so two hosts
+    /// over one directory agree on it — which is what makes a restart test meaningful rather than
+    /// one that silently changes the secret under itself.</para>
+    /// </summary>
+    public static ArbitarrWebApplicationFactory OverConfigDirectory(string configDirectory) =>
+        new(configDirectory, ownsConfigDirectory: false);
 
     /// <summary>The per-instance <c>/config</c> directory this host was given.</summary>
     public string ConfigDirectory => _configDirectory;
@@ -229,6 +280,14 @@ public sealed class ArbitarrWebApplicationFactory : WebApplicationFactory<Progra
         // to a log handle instead. ClearPoolsForDirectory covers it and anything a test restored
         // beside them.
         SqlitePools.ClearPoolsForDirectory(_configDirectory);
+
+        // The pool clears above run for EVERY host, owned directory or not: releasing this host's
+        // file handles is what lets a SECOND host (or the caller's own cleanup) open the same
+        // database afterwards. Only the delete below is ownership-gated — see _ownsConfigDirectory.
+        if (!_ownsConfigDirectory)
+        {
+            return;
+        }
 
         const int attempts = 10;
 

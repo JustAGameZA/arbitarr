@@ -47,7 +47,7 @@ public sealed class StatusHealthItemsTests : IDisposable
         // Positive control for the absence test above: this proves a health item WOULD be detected
         // on this payload if one existed, so `Assert.Empty` there is not vacuously satisfied by a
         // Health property the endpoint never populates at all.
-        tracker.RecordRefusal("nzbhydra2", "Refused HTTP 302: the source redirected instead of serving the file.", at);
+        await tracker.RecordRefusalAsync("nzbhydra2", "Refused HTTP 302: the source redirected instead of serving the file.", at);
 
         var response = await client.GetFromJsonAsync<StatusResponse>("/api/status");
 
@@ -69,12 +69,12 @@ public sealed class StatusHealthItemsTests : IDisposable
     {
         using var client = _factory.CreateClient();
         var tracker = _factory.Services.GetRequiredService<IDownloadRefusalTracker>();
-        tracker.RecordRefusal("nzbhydra2", "refused", DateTimeOffset.UtcNow);
+        await tracker.RecordRefusalAsync("nzbhydra2", "refused", DateTimeOffset.UtcNow);
 
         var beforeGrab = await client.GetFromJsonAsync<StatusResponse>("/api/status");
         Assert.Single(beforeGrab!.Health);
 
-        tracker.RecordSuccessfulGrab("nzbhydra2");
+        await tracker.RecordSuccessfulGrabAsync("nzbhydra2");
 
         var afterGrab = await client.GetFromJsonAsync<StatusResponse>("/api/status");
         Assert.Empty(afterGrab!.Health);
