@@ -1,3 +1,4 @@
+using System.Globalization;
 using Arbitarr.Core.Releases;
 
 namespace Arbitarr.Ai;
@@ -55,11 +56,47 @@ public static class ClassificationPrompt
         var truncatedTitle = Truncate(candidate.OriginalTitle);
         var truncatedCategories = Truncate(string.Join(",", candidate.Category));
 
-        var userMessage =
-            $"Title: {truncatedTitle}\n" +
-            $"Protocol: {candidate.Protocol}\n" +
-            $"Size (bytes): {candidate.Size}\n" +
-            $"Categories: {truncatedCategories}";
+        var lines = new List<string>
+        {
+            $"Title: {truncatedTitle}",
+            $"Protocol: {candidate.Protocol}",
+            $"Size (bytes): {candidate.Size}",
+            $"Categories: {truncatedCategories}",
+        };
+
+        // arb-458f: the Usenet metadata signals UsenetGuidance above directs the model to judge on.
+        // Each line is emitted ONLY when the indexer actually reported the field. A blank or zeroed
+        // line would not be neutral: "Files: 0" or "Poster: " reads to the model as a positive
+        // claim about the release (an empty archive, an anonymous poster) rather than as the
+        // absence of information it really is — exactly the wrong nudge on a prompt whose purpose
+        // is to stop obfuscated-but-genuine releases being scored as junk. Truncated on the same
+        // M5 basis as title/categories: none of these are attacker-bounded upstream.
+        if (!string.IsNullOrWhiteSpace(candidate.Poster))
+        {
+            lines.Add($"Poster: {Truncate(candidate.Poster)}");
+        }
+
+        if (candidate.UsenetGroup.Count > 0)
+        {
+            lines.Add($"Usenet group: {Truncate(string.Join(",", candidate.UsenetGroup))}");
+        }
+
+        if (candidate.Files is { } files)
+        {
+            lines.Add($"Files: {files.ToString(CultureInfo.InvariantCulture)}");
+        }
+
+        if (candidate.PasswordProtected is { } passwordProtected)
+        {
+            lines.Add($"Password protected: {(passwordProtected ? "yes" : "no")}");
+        }
+
+        if (candidate.Grabs is { } grabs)
+        {
+            lines.Add($"Grabs: {grabs.ToString(CultureInfo.InvariantCulture)}");
+        }
+
+        var userMessage = string.Join("\n", lines);
 
         return new[]
         {
