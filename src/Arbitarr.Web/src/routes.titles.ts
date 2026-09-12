@@ -9,7 +9,17 @@
  *  - Login.tsx, which sets `document.title` to `LOGIN_TITLE` on mount.
  *  - Setup.tsx, which sets `document.title` to `SETUP_TITLE` on mount.
  *
- * Adding a surface means adding a row here -- nowhere else.
+ * "Must never drift apart" is an assertion, not a mechanism: the two test suites
+ * listed above are both `it.each(ROUTES)`, deriving their cases from this very
+ * table, so deleting a row deletes its own check and each shrinks by a case with
+ * 0 failed. routing.test.tsx is not a third instance of that -- it sweeps
+ * NAV_ENTRIES, so it is the check on the other table, and it stays green too. The
+ * mechanism that actually catches a missing row is routes.titles.test.ts, which
+ * cross-pins this table to NAV_ENTRIES -- a table it does NOT derive its cases
+ * from. Do not replace that suite with another `it.each(ROUTES)` one (arb-139r).
+ *
+ * Adding a surface means adding a row here -- and the matching NAV_ENTRIES row,
+ * which is the pair routes.titles.test.ts holds together.
  */
 export const ROUTES: ReadonlyArray<[string, string]> = [
   ['/', 'Dashboard'],

@@ -44,6 +44,14 @@ public class SecretReaderSingleCallerTests
         ("src/Arbitarr.Data/Media/SonarrCredentialProvider.cs", "ArrInstanceRepository",
             "the single owner that hands a SonarrCredential to the probe and the resolver"),
 
+        // arb-6l9b.1: the Radarr instance key. Its sole caller is RadarrCredentialProvider, which
+        // exists at the FIRST consumer rather than waiting for the second — Sonarr's history above is
+        // that the obvious wiring at the second consumer produces two callers, which is precisely the
+        // count this guard is made of. The queue and movie-library readers that follow take a
+        // RadarrCredential from the provider; none of them reads the key itself.
+        ("src/Arbitarr.Data/Media/RadarrCredentialProvider.cs", "RadarrInstanceRepository",
+            "the single owner that hands a RadarrCredential to the probe and the library readers"),
+
         // The per-source upstream key. Since arb-x7w8.3 the sole caller is SourceCredentialProvider,
         // not the connectivity probe that used to read it directly: N runtime-added indexers mean
         // the search path needs a per-source key too, and the startup-resolved

@@ -75,6 +75,19 @@ this as raw material to select/curate from, not as the finished corpus — see N
   follows directly from the torrent-only result above (obfuscation is a Usenet-indexer
   convention). AC10's ≥30 obfuscated-Usenet-name requirement is **not met by this capture** and
   needs a separate source.
+- **No Usenet `attr` names appear in any capture** (arb-458f). The only `attr` names present across
+  all eight fixtures are `category`, `guid`, `seeders`, `peers`, `infohash`, `magneturl`,
+  `downloadvolumefactor` and `uploadvolumefactor` — all torrent-side, which follows from the
+  torrent-only result above. `poster`, `group`, `files`, `password` and `grabs` are therefore
+  **unattested by this corpus**: the parser reads them per the Newznab attr spec, but no captured
+  response here demonstrates NZBHydra2 forwarding them, and the tests that cover them are
+  hand-built rather than capture-driven. Confirming them needs a capture against an instance with
+  a working Usenet indexer. Note also that every fixture declares only the `torznab:` prefix — the
+  `newznab:` prefix is unattested here too, though it binds the same namespace URI (see below).
+- **Both families share one namespace URI.** A Newznab feed reuses `http://torznab.com/schemas/2015/feed`
+  and differs only in the prefix it binds to it (this repo's own renderer does the same — see
+  `IndexerXmlWriter.SchemaNs`). Anything parsing these attrs must therefore match on the namespace
+  URI, not on the literal `torznab:`/`newznab:` prefix.
 - **No `PROPER`/`REPACK` tags were observed**; `REMUX` and multi-audio-style tags (e.g. `DTS-HD
   MA2 0`) do appear in `ac10-sweep-anime.xml`, so that stratum is partially represented.
 - Titles observed are all English/Romanized-English release-scene naming; no clearly non-English

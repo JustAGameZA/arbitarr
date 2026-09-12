@@ -216,10 +216,12 @@ separate because they change for different reasons.
 
 The **prompt version** is the version tag of the classification prompt
 **template**, and only the template — `Arbitarr:Ai:PromptVersion`, defaulting to
-`v2`. It answers "what were we asking?". It is not a general-purpose cache-buster:
+`v3`. It answers "what were we asking?". It is not a general-purpose cache-buster:
 arb-p4r briefly used a bump of it to invalidate verdicts after a *decoding* change,
 which both stretched the term and could be defeated by an operator who pinned the
-setting explicitly.
+setting explicitly. The `v2` → `v3` bump (arb-458f) is the term used as documented:
+the user message gained the Usenet poster/group/files/password/grabs lines, so the
+template genuinely asks a different question of the same release.
 
 The **decoding identity** is the token naming the sampling constants a verdict was
 decoded under — `t0-s42` for temperature 0, seed 42 (`OllamaOptions.DecodingIdentity`,
@@ -488,6 +490,16 @@ tells the model this is not junk; Sonarr matches a grab on history, not
 filename; and SABnzbd already deobfuscates post-download via
 par2/`Deobfuscate.py`. The operator lever for one indexer's titles is an
 **NZBHydra2 custom title mapping**, upstream of Arbitarr.
+
+That guidance directs the model to the **metadata signals instead of the title**,
+and since arb-458f those signals are actually in the prompt: the user message
+carries `Poster`, `Usenet group`, `Files`, `Password protected` and `Grabs`
+whenever the indexer reported them (each omitted entirely when it did not, since
+a blank or zeroed line reads as a claim rather than as absence). This narrows
+what "judge it on structure, not readability" asks of the model — it is no
+longer an instruction pointing at fields the prompt never carried. Note the
+signals travel **beside** the verbatim title; none of them rewrites it, so the
+verbatim-passthrough rule above is untouched.
 
 Normalization (`TitleNormalizer`/`DenyList`,
 `src/Arbitarr.Ai/Normalization/`, default OFF) only **removes** tokens from a
