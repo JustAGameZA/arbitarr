@@ -590,6 +590,18 @@ export interface NotificationConfig {
   /** A TimeSpan on the wire: "01:00:00". Sent back in the same form. */
   suppressionRateWindow: string;
   enabledTriggers: NotificationTrigger[];
+  /**
+   * arb-4xna: every trigger the server's enum currently has, unfiltered by
+   * which are enabled. The client renders its checkbox list from this rather
+   * than a hand-maintained local array, so a trigger the server ships in
+   * future is offered — and therefore included in the next save's
+   * `enabledTriggers` — instead of silently landing in the persisted disabled
+   * set the way the repository's complement-of-enabled storage would
+   * otherwise do to a client that has not caught up. Typed as `string[]`
+   * rather than `NotificationTrigger[]`: the whole point is that this array
+   * can contain a name the client's own union does not yet know about.
+   */
+  availableTriggers: string[];
   /** A NotificationDeliveryOutcome name, or null when nothing has been attempted. */
   lastDeliveryOutcome: NotificationDeliveryOutcome | null;
   lastDeliveryAt: string | null;
@@ -599,6 +611,12 @@ export interface NotificationConfig {
  * NotificationTrigger.cs — projected with `.ToString()`, so these arrive as
  * NAMES rather than numbers (the same split types.ts's header describes for
  * `aiVerdict` versus `cacheBand`).
+ *
+ * This union is a LABELS LOOKUP KEY, not the source of truth for which
+ * triggers exist — `NotificationConfig.availableTriggers` is that, and it can
+ * legitimately contain a name not listed here yet (arb-4xna). Add a member
+ * here only to pick up a friendlier label; the checkbox list itself renders
+ * from `availableTriggers` regardless.
  */
 export type NotificationTrigger =
   | 'SourceFailing'
@@ -639,7 +657,22 @@ export interface UpdateNotificationConfigRequest {
   consecutiveFailureThreshold?: number;
   suppressionRateThreshold?: number;
   suppressionRateWindow?: string;
-  enabledTriggers?: NotificationTrigger[];
+  /**
+   * Sent as `string[]`, not `NotificationTrigger[]`: a checkbox rendered for a
+   * server-catalogue entry outside the client's local union (arb-4xna) must be
+   * able to round-trip its exact name back in the save, not be coerced into
+   * one of the six names this file already knows.
+   */
+  enabledTriggers?: string[];
+  /**
+   * arb-4xna: required by the server whenever `enabledTriggers` is sent — the
+   * full universe of trigger names this page believes exist, always
+   * `config.availableTriggers` verbatim, never a hand-maintained list. The
+   * server checks only its COUNT against its own current enum, so a client
+   * that has not caught up with a newly added trigger gets a 400 instead of
+   * silently disabling the trigger it never knew to include.
+   */
+  knownTriggers?: string[];
 }
 
 /** AdminNotificationEndpoints.cs — NotificationTestResponse. */

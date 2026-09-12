@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using Arbitarr.Api.Admin;
+using Arbitarr.Core.Notifications;
 using Arbitarr.Core.Settings;
 using Arbitarr.Data.Entities;
 using Arbitarr.Data.Notifications;
@@ -495,6 +496,126 @@ public sealed class AdminNotificationEndpointsTests : IClassFixture<ArbitarrWebA
         });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    /// <summary>
+    /// arb-4xna: the GET response's trigger catalogue names every current
+    /// <see cref="NotificationTrigger"/> member, not merely the enabled ones. This is what the
+    /// client is meant to render its checkbox list from, so a member the client's own bundled code
+    /// predates still appears on the page rather than being invisible and therefore never sent back
+    /// as enabled.
+    /// </summary>
+    [Fact]
+    public async Task The_config_response_lists_every_enum_member_as_available_regardless_of_enablement()
+    {
+        await SeedAdminKeyAsync();
+        using var client = _factory.CreateClient();
+
+        using var response = await SendAsync(client, HttpMethod.Get, NotificationsRoute);
+        var config = await response.Content.ReadFromJsonAsync<NotificationConfigResponse>();
+
+        Assert.NotNull(config);
+        var expected = Enum.GetValues<NotificationTrigger>().Select(t => t.ToString()).ToArray();
+        Assert.Equal(expected.OrderBy(t => t, StringComparer.Ordinal), config!.AvailableTriggers.OrderBy(t => t, StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// arb-4xna: the hazard this task closes. <see cref="NotificationRepository.SetSettingsAsync"/>
+    /// persists the DISABLED set as the complement of whatever <c>EnabledTriggers</c> a save carries
+    /// — so a save whose trigger universe is smaller than the full enum (an old client that predates
+    /// a new trigger) silently disables the trigger it never knew to include.
+    ///
+    /// <para>POSITIVE CONTROL, per CLAUDE.md §4: this first demonstrates that a save naming only a
+    /// SUBSET of the enum (omitting <see cref="NotificationTrigger.DownloadRefused"/> and its closing
+    /// edge, exactly as an old client's hand-maintained trigger list would) DOES flip those two to
+    /// disabled under the repository's plain complement-of-enabled storage — proving the old
+    /// behaviour is real and this test could catch it. It then asserts the endpoint's guard rejects
+    /// that same request instead of persisting it, so the enum's newer members survive an
+    /// old client's save untouched.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_save_naming_fewer_triggers_than_the_full_enum_does_not_silently_disable_the_rest()
+    {
+        await SeedAdminKeyAsync();
+        using var client = _factory.CreateClient();
+
+        // Establish every trigger as enabled first, mirroring an operator who has already turned
+        // everything on.
+        var allTriggerNames = Enum.GetValues<NotificationTrigger>().Select(t => t.ToString()).ToArray();
+        using var configure = await SendAsync(client, HttpMethod.Put, NotificationsRoute, new
+        {
+            enabled = true,
+            enabledTriggers = allTriggerNames,
+            knownTriggers = allTriggerNames,
+        });
+        Assert.Equal(HttpStatusCode.OK, configure.StatusCode);
+
+        var configured = await configure.Content.ReadFromJsonAsync<NotificationConfigResponse>();
+        Assert.NotNull(configured);
+        Assert.Contains(nameof(NotificationTrigger.DownloadRefused), configured!.EnabledTriggers);
+        Assert.Contains(nameof(NotificationTrigger.DownloadRefusalCleared), configured.EnabledTriggers);
+
+        // HALF ONE — EXISTENCE/BEHAVIOUR DEMONSTRATED DIRECTLY AGAINST THE REPOSITORY: an old
+        // client's subset save, applied through the plain complement-of-enabled write the repository
+        // uses, really does flip the omitted members to disabled. Built without going through the
+        // endpoint's guard, so this proves the underlying storage hazard is real rather than merely
+        // asserting on the guarded surface under test.
+        using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<Arbitarr.Data.ArbitarrDbContext>();
+            var repository = new NotificationRepository(db);
+            var subsetOnlyTheOldClientKnew = new HashSet<NotificationTrigger>
+            {
+                NotificationTrigger.SourceFailing,
+                NotificationTrigger.SourceRecovered,
+                NotificationTrigger.SuppressionRateHigh,
+                NotificationTrigger.SuppressionRateNormal,
+            };
+            var settingsBeforeGuard = new Arbitarr.Core.Notifications.NotificationSettings(
+                Enabled: true,
+                ConsecutiveFailureThreshold: 3,
+                SuppressionRateThreshold: 0.5,
+                SuppressionRateWindow: TimeSpan.FromHours(1),
+                EnabledTriggers: subsetOnlyTheOldClientKnew);
+            await repository.SetSettingsAsync(settingsBeforeGuard, webhookUrl: null, CancellationToken.None);
+
+            var afterUnguardedWrite = await repository.GetSettingsAsync(CancellationToken.None);
+            Assert.DoesNotContain(NotificationTrigger.DownloadRefused, afterUnguardedWrite.EnabledTriggers);
+            Assert.DoesNotContain(NotificationTrigger.DownloadRefusalCleared, afterUnguardedWrite.EnabledTriggers);
+
+            // Restore full enablement before exercising the guarded endpoint below, so this test's
+            // second half starts from the same known-good state the first half started from.
+            await repository.SetSettingsAsync(
+                new Arbitarr.Core.Notifications.NotificationSettings(
+                    Enabled: true,
+                    ConsecutiveFailureThreshold: 3,
+                    SuppressionRateThreshold: 0.5,
+                    SuppressionRateWindow: TimeSpan.FromHours(1),
+                    EnabledTriggers: Arbitarr.Core.Notifications.NotificationSettings.AllTriggers),
+                webhookUrl: null,
+                CancellationToken.None);
+        }
+
+        // HALF TWO — THE REAL ASSERTION: the same subset, sent through the guarded endpoint, must
+        // not reach the repository at all.
+        using var subsetSave = await SendAsync(client, HttpMethod.Put, NotificationsRoute, new
+        {
+            enabledTriggers = new[]
+            {
+                nameof(NotificationTrigger.SourceFailing),
+                nameof(NotificationTrigger.SourceRecovered),
+                nameof(NotificationTrigger.SuppressionRateHigh),
+                nameof(NotificationTrigger.SuppressionRateNormal),
+            },
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, subsetSave.StatusCode);
+
+        using var after = await SendAsync(client, HttpMethod.Get, NotificationsRoute);
+        var afterConfig = await after.Content.ReadFromJsonAsync<NotificationConfigResponse>();
+        Assert.NotNull(afterConfig);
+        Assert.Contains(nameof(NotificationTrigger.DownloadRefused), afterConfig!.EnabledTriggers);
+        Assert.Contains(nameof(NotificationTrigger.DownloadRefusalCleared), afterConfig.EnabledTriggers);
     }
 
     /// <summary>
