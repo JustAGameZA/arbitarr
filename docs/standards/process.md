@@ -305,7 +305,7 @@ implementation writes one value to all of them.
   `IAsyncDisposable.DisposeAsync`, so teardown on such a class silently never runs.
   `InitializeAsync` may return `Task.CompletedTask` when there is nothing to set up. Four
   integration test classes shipped with bare `IAsyncDisposable` teardown that never ran until
-  arb-gphi caught it (PR #264, open at time of writing); the claim was verified out of repo, per
+  arb-gphi caught it; the claim was verified out of repo, per
   [CLAUDE.md §4](../../CLAUDE.md#4-tests).
 
 ---
