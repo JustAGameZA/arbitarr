@@ -19,8 +19,8 @@ import {
 } from './queries';
 
 /**
- * The four triggers #57 ships, in the order an operator reads them: each
- * failing condition immediately followed by its closing edge.
+ * The six triggers #57 and #247 ship, in the order an operator reads them:
+ * each failing condition immediately followed by its closing edge.
  *
  * Enumerated here rather than derived from the server's `enabledTriggers`,
  * which lists only the ones currently ON — deriving the checkbox list from it
@@ -53,6 +53,18 @@ const TRIGGERS: { name: NotificationTrigger; label: string; description: string 
     label: 'Suppression rate back to normal',
     description:
       'The rate fell back under the threshold. Without this one, a rate reported as high and never reported as recovered cannot be told from a still-broken rule.',
+  },
+  {
+    name: 'DownloadRefused',
+    label: 'Source refusing downloads',
+    description:
+      'A source started refusing downloads with a redirect. Fires once when the refusal is first seen, never again per retry.',
+  },
+  {
+    name: 'DownloadRefusalCleared',
+    label: 'Download refusal cleared',
+    description:
+      'A source that had been refusing downloads served one successfully again. Fires once when the refusal clears, the closing edge of the trigger above.',
   },
 ];
 
