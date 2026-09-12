@@ -4,7 +4,7 @@ namespace Arbitarr.Architecture.Tests;
 /// arb-hxa: the single definition of "which assemblies this project's IL scans read", shared by
 /// <see cref="TestProcessGlobalStateTests"/>, <see cref="QuarantineTraitTests"/>,
 /// <see cref="ProductionProcessGlobalStateTests"/> and <see cref="NoInlineDatabaseConnectionStringsTests"/>.
-/// Before this class, the ten-name test-assembly list was spelled out twice
+/// Before this class, the test-assembly list was spelled out twice
 /// (<see cref="TestProcessGlobalStateTests"/> and <see cref="QuarantineTraitTests"/>) and the
 /// path-resolution walk lived on <see cref="TestProcessGlobalStateTests"/> with four out-of-class
 /// consumers — two things that could silently drift apart instead of one definition each.
@@ -54,6 +54,7 @@ internal static class BuiltAssemblies
         "Arbitarr.Host.Tests",
         "Arbitarr.Integration.Tests",
         "Arbitarr.Media.Tests",
+        "Arbitarr.Sources.Newznab.Tests",
         "Arbitarr.Sources.NzbHydra.Tests",
     ];
 
@@ -69,7 +70,7 @@ internal static class BuiltAssemblies
     /// <c>];</c> line, reading only <c>"Name",</c> entries in between. Do not reformat this
     /// declaration (a different indent, a trailing comment, an inline initializer, an
     /// <c>ImmutableArray</c>, a visibility change, etc.) without also checking that guards step
-    /// still finds all eight names — a shape change makes the extraction find ZERO names, which
+    /// still finds all nine names — a shape change makes the extraction find ZERO names, which
     /// fails the guard loudly rather than silently, but still blocks CI until the extraction is
     /// updated to match.</para>
     /// </summary>
@@ -82,6 +83,7 @@ internal static class BuiltAssemblies
         "Arbitarr.Data",
         "Arbitarr.Host",
         "Arbitarr.Media",
+        "Arbitarr.Sources.Newznab",
         "Arbitarr.Sources.NzbHydra",
     ];
 

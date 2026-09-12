@@ -1,9 +1,19 @@
-namespace Arbitarr.Sources.NzbHydra;
+namespace Arbitarr.Core.Sources;
 
 /// <summary>
 /// Simple per-instance token-bucket rate limiter used to throttle outbound calls to a single
 /// upstream source. Configured via constructor parameters (not hardcoded) so callers can tune
 /// it per source instance.
+///
+/// <para><b>Moved from Arbitarr.Sources.NzbHydra to Core in arb-x7w8.2</b>, unchanged apart from
+/// its namespace. Nothing in it was ever NZBHydra2-specific, and the direct-indexer adapter needs
+/// the same throttle — the alternatives were a second copy (which would drift) or one source
+/// project referencing another, which the dependency rules forbid and which would make every
+/// future adapter depend on the aggregator's project.</para>
+///
+/// <para>Distinct from <c>LoginRateLimiter</c> in Arbitarr.Api, which limits INBOUND sign-in
+/// attempts per identity. This one limits OUTBOUND calls per upstream source; they share nothing
+/// but the word.</para>
 /// </summary>
 public sealed class RateLimiter
 {
