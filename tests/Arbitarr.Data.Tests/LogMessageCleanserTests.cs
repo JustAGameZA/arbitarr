@@ -18,6 +18,12 @@ public sealed class LogMessageCleanserTests
 {
     private const string SecretValue = "secret-api-key-abcdef123456";
 
+    /// <summary>
+    /// arb-7j5x: a distinct value of the SAME shape as <see cref="SecretValue"/>, for the
+    /// second-occurrence theory. Distinct so an assertion cannot pass on the first value's redaction.
+    /// </summary>
+    private const string SecondSecretValue = "secret-api-key-second99887";
+
     [Theory]
     [InlineData("GET http://192.0.2.10:5076/api?apikey=" + SecretValue + " failed")]
     [InlineData("GET http://192.0.2.10:5076/api?t=search&api_key=" + SecretValue + "&q=x failed")]
@@ -68,6 +74,42 @@ public sealed class LogMessageCleanserTests
 
         Assert.DoesNotContain(SecretValue, cleansed);
         Assert.Contains(LogMessageCleanser.Replacement, cleansed);
+    }
+
+    /// <summary>
+    /// arb-7j5x: every arm redacts a SECOND occurrence of the same shape, including the
+    /// cleanser-only <c>WebhookUrl</c> arm that the shared corpus cannot cover.
+    ///
+    /// <para>Each test above plants exactly one value per shape, so a mutant in which each arm
+    /// replaces only its FIRST match passed this entire file — measured. The planted secret in each
+    /// row below is the fragment MEASURED to survive that mutant. Note the query row uses two
+    /// SEPARATE urls rather than two parameters of one url: in <c>?apikey=A&amp;token=B</c> the
+    /// later <c>NamedCredential</c> arm redacts <c>B</c> on its own first match, so that shape
+    /// passes under the mutant and would be a vacuous plant.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(
+        "GET http://192.0.2.10/a?apikey=" + SecretValue + " then GET http://192.0.2.10/b?apikey=" + SecondSecretValue + " failed",
+        SecondSecretValue)]
+    [InlineData(
+        "Authorization: Bearer " + SecretValue + " retried as Bearer " + SecondSecretValue,
+        SecondSecretValue)]
+    [InlineData(
+        "X-Admin-Api-Key: " + SecretValue + " and client_secret=" + SecondSecretValue + " expired",
+        SecondSecretValue)]
+    [InlineData(
+        "posted to https://discord.com/api/webhooks/123456789/" + SecretValue
+            + " and https://api.telegram.org/bot" + SecondSecretValue + "/sendMessage",
+        SecondSecretValue)]
+    public void A_second_occurrence_of_the_same_shape_is_redacted_too(string message, string secret)
+    {
+        // POSITIVE CONTROL: the second occurrence really is in the input.
+        Assert.Contains(secret, message, StringComparison.Ordinal);
+
+        var cleansed = LogMessageCleanser.Cleanse(message);
+
+        Assert.Contains(LogMessageCleanser.Replacement, cleansed!, StringComparison.Ordinal);
+        Assert.DoesNotContain(secret, cleansed!, StringComparison.Ordinal);
     }
 
     [Fact]

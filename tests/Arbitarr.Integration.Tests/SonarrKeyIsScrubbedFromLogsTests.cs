@@ -50,6 +50,12 @@ public sealed class SonarrKeyIsScrubbedFromLogsTests : IClassFixture<ArbitarrWeb
     /// </summary>
     private const string SonarrKey = "placeholder-sonarr-key-a71d3e90";
 
+    /// <summary>
+    /// arb-7j5x: a distinct key of the SAME shape as <see cref="SonarrKey"/>, so the
+    /// second-occurrence test cannot pass on the first key's redaction. Same allowlisted prefix.
+    /// </summary>
+    private const string SecondSonarrKey = "placeholder-sonarr-key-b82e4f01";
+
     private const string AdminKey = "the-real-admin-key";
 
     private readonly ArbitarrWebApplicationFactory _factory;
@@ -81,6 +87,31 @@ public sealed class SonarrKeyIsScrubbedFromLogsTests : IClassFixture<ArbitarrWeb
         Assert.Contains(LogMessageCleanser.Replacement, cleansed, StringComparison.Ordinal);
         // ...therefore this absence is a real scrub, not a vacuous match.
         Assert.DoesNotContain(SonarrKey, cleansed, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// arb-7j5x: a SECOND key-bearing URI in the same logged line is scrubbed too.
+    ///
+    /// <para>The test above plants exactly one key, so a mutant in which each cleanser arm redacts
+    /// only its FIRST match passed it — measured. A retry logged alongside its original is the
+    /// realistic shape that produces two, and the second key is what this asserts on. Two separate
+    /// URIs rather than two parameters of one: in <c>?apikey=A&amp;token=B</c> the cleanser's later
+    /// <c>NamedCredential</c> arm redacts <c>B</c> on its own first match, so that shape survives
+    /// the mutant only accidentally and would be a vacuous plant.</para>
+    /// </summary>
+    [Fact]
+    public void A_second_key_bearing_uri_in_the_same_line_is_scrubbed_too()
+    {
+        var line = $"Sending HTTP request GET http://192.0.2.80:8989/api/v3/system/status?apikey={SonarrKey}"
+            + $" ; retry GET http://192.0.2.80:8989/api/v3/series?apikey={SecondSonarrKey}";
+
+        // POSITIVE CONTROL: the second key really is in the line before Cleanse runs.
+        Assert.Contains(SecondSonarrKey, line, StringComparison.Ordinal);
+
+        var cleansed = LogMessageCleanser.Cleanse(line) ?? string.Empty;
+
+        Assert.Contains(LogMessageCleanser.Replacement, cleansed, StringComparison.Ordinal);
+        Assert.DoesNotContain(SecondSonarrKey, cleansed, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

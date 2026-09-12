@@ -66,6 +66,34 @@ public class CredentialPatternsCrossSinkTests
     }
 
     /// <summary>
+    /// arb-7j5x: the cross-sink guarantee extends to a SECOND occurrence of the same shape.
+    ///
+    /// <para>Shares <see cref="CredentialPatternsTests.SecondOccurrenceCorpus"/> for the same reason
+    /// the theory above shares <see cref="CredentialCorpus"/> — a hand-kept second copy is the drift
+    /// this bead's parent removed. See that corpus's remarks for why the planted value is a fragment
+    /// measured to survive a first-match-only mutant rather than simply "the second value".</para>
+    /// </summary>
+    public static TheoryData<string, string> SecondOccurrenceCorpus() =>
+        CredentialPatternsTests.SecondOccurrenceCorpus();
+
+    [Theory]
+    [MemberData(nameof(SecondOccurrenceCorpus))]
+    public void Both_sinks_redact_a_second_occurrence_of_the_same_shape(string input, string secret)
+    {
+        // POSITIVE CONTROL: the second occurrence really is in the input.
+        Assert.Contains(secret, input, StringComparison.Ordinal);
+
+        var cleansed = LogMessageCleanser.Cleanse(input);
+        var scrubbed = Publish(input);
+
+        Assert.Contains(LogMessageCleanser.Replacement, cleansed!, StringComparison.Ordinal);
+        Assert.DoesNotContain(secret, cleansed!, StringComparison.Ordinal);
+
+        Assert.Contains(SanitizedErrorDescription.Replacement, scrubbed, StringComparison.Ordinal);
+        Assert.DoesNotContain(secret, scrubbed, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// The two sinks agree on the replacement token. A divergence here would mean an operator
     /// reading a log and a dashboard sees two different vocabularies for the same event, and it is
     /// the cheapest possible detector for the consts having been un-aliased.
