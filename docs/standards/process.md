@@ -374,6 +374,16 @@ rather than one that parsed the YAML around it.
 **Assert per row** where a flag is written per row. "Some row has it" still passes when an
 implementation writes one value to all of them.
 
+**A fixed-point / idempotence property needs its own per-row non-vacuity assertion.**
+`f(f(x)) == f(x)` is a different vacuity shape from the absence-assertion one above (an empty set
+contains nothing; here it is `x == x` for any `x`) — see
+[CLAUDE.md §4](../../CLAUDE.md#4-tests) for that shape, linked rather than repeated. An identity
+function satisfies the bare property on every row, so each row also needs `f(x) != x` and, where a
+scrubber is involved, that the marker it is expected to insert is present. Worked instance:
+`SanitizedErrorDescriptionTests`' fixed-point `Theory` before #310, where a throwaway identity
+scrubber passed 36/36 rows against the bare property; the `Assert.NotEqual` #310 added is what
+closes it (arb-19r3).
+
 ---
 
 ## Coverage expectations
