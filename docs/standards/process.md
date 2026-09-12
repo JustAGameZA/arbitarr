@@ -232,14 +232,22 @@ below.
   argument entirely (which silently selects a caller-owned overload) — a defect that compiles clean,
   passes on Linux, and only shows up as a Windows-specific file-handle-survives-disposal symptom.
 
-Eight other test classes in the same project fall outside the Cecil IL scans above. Five —
+Nine other test classes in the same project fall outside the Cecil IL scans above. Five —
 `AiMediaIsolationTests`, `CoreIsolationTests`,
 `AssemblyNamingTests`, `DependencyDirectionTests` and `HostIsolationTests` — load assemblies with
 `System.Reflection` (`Assembly.LoadFrom`) instead of Cecil; they check reference graphs and naming,
-not IL bodies, so they do not need to see inside a method. The other three — `SourceTreeNamingTests`,
-`SecretReaderSingleCallerTests`, and `StandardsQuoteSourceTests` — scan the source tree as text
-(`.csproj`/`.sln` contents, call-site line matches, and a doc-to-comment citation match respectively),
-not compiled output at all. None of the eight are Cecil scans and none are listed above.
+not IL bodies, so they do not need to see inside a method. The other four — `SourceTreeNamingTests`,
+`SecretReaderSingleCallerTests`, `StandardsQuoteSourceTests`, and `DemotedDocCrefResolutionTests` —
+scan the source tree as text (`.csproj`/`.sln` contents, call-site line matches, a doc-to-comment
+citation match, and every `<c>Arbitarr.…</c>` doc-comment name respectively), not compiled output at
+all. None of the nine are Cecil scans and none are listed above.
+
+`DemotedDocCrefResolutionTests` ratchets the demotions from #203 (arb-ul4): a cref that could not be
+made to resolve was rewritten as plain `<c>Name</c>` text rather than left broken, per the
+repoint-vs-demote rule in the root `Directory.Build.props` comment. Plain text is not checked by the
+compiler, so this test re-checks by reflection, over the loaded assemblies, that each demoted name
+still names a real type or member — the one property `<c>` text can still promise once CS1574 can no
+longer watch it.
 
 ---
 
