@@ -21,10 +21,11 @@ public enum DownloadRefusalTransition
 /// <para><b>Why a decorator rather than a callback on <see cref="DownloadRefusalTracker"/>.</b> Two
 /// reasons, and the second is the load-bearing one. First, it keeps the tracker a plain state
 /// holder with no notification concept in it at all: the tracker answers "what is refused", this
-/// answers "what just changed", and neither has to know the other's job. Second, arb-v3w replaces
-/// the tracker's backing store; confining the transition logic to a wrapper means that change and
-/// this one touch disjoint code. Register the decorator around whatever
-/// <see cref="IDownloadRefusalTracker"/> the Host composes and this keeps working unchanged.</para>
+/// answers "what just changed", and neither has to know the other's job. Second, arb-v3w replaced
+/// the tracker's backing store; confining the transition logic to a wrapper meant that change and
+/// this one touched disjoint code. The Host now composes
+/// <c>Notifying( Persistent( DownloadRefusalTracker ) )</c> — this decorator OUTERMOST, so the edge
+/// it reports is read from state that has already been persisted.</para>
 ///
 /// <para><b>The edges are computed from the INNER tracker's own state, never from a duplicate set
 /// held here.</b> Before each mutation this asks the inner tracker whether the source is currently
@@ -51,11 +52,17 @@ public sealed class NotifyingDownloadRefusalTracker : IDownloadRefusalTracker
     /// <summary>
     /// Serialises each method's read-mutate-read triple so two concurrent calls for the same source
     /// (Sonarr retrying a refused `/download` in parallel) cannot both observe the pre-mutation state
-    /// and either double-raise an edge or drop one. The inner tracker's own lock is always taken
+    /// and either double-raise an edge or drop one. Any lock the inner tracker takes is always taken
     /// INSIDE this one (via <see cref="IsRefused"/> and the inner call), never the reverse, so there
     /// is no lock-order inversion.
+    ///
+    /// <para>A <see cref="SemaphoreSlim"/> rather than a <c>lock</c> because arb-v3w made the inner
+    /// write asynchronous — the persisting tracker awaits a SQLite round-trip — and <c>await</c> is
+    /// not permitted inside a <c>lock</c>. The semantics the gate has to provide are unchanged: one
+    /// caller at a time through read-mutate-read. It must therefore be held ACROSS the inner await,
+    /// which is exactly why the synchronous primitive cannot be used here.</para>
     /// </summary>
-    private readonly object _gate = new();
+    private readonly SemaphoreSlim _gate = new(1, 1);
 
     /// <param name="inner">The tracker that actually holds the state.</param>
     /// <param name="onTransition">
@@ -70,34 +77,46 @@ public sealed class NotifyingDownloadRefusalTracker : IDownloadRefusalTracker
         _onTransition = onTransition ?? throw new ArgumentNullException(nameof(onTransition));
     }
 
-    public void RecordRefusal(string sourceName, string reason, DateTimeOffset at)
+    public async ValueTask RecordRefusalAsync(string sourceName, string reason, DateTimeOffset at, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(sourceName);
 
         bool appeared;
-        lock (_gate)
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
             var wasPresent = IsRefused(sourceName);
-            _inner.RecordRefusal(sourceName, reason, at);
+            await _inner.RecordRefusalAsync(sourceName, reason, at, cancellationToken).ConfigureAwait(false);
             appeared = !wasPresent && IsRefused(sourceName);
         }
+        finally
+        {
+            _gate.Release();
+        }
 
+        // Raised AFTER the gate is released, deliberately: the callback is the app's, and holding the
+        // serialising gate across it would let a slow notifier stall every other source's refusal.
         if (appeared)
         {
             Raise(sourceName, DownloadRefusalTransition.Appeared);
         }
     }
 
-    public void RecordSuccessfulGrab(string sourceName)
+    public async ValueTask RecordSuccessfulGrabAsync(string sourceName, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(sourceName);
 
         bool cleared;
-        lock (_gate)
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
             var wasPresent = IsRefused(sourceName);
-            _inner.RecordSuccessfulGrab(sourceName);
+            await _inner.RecordSuccessfulGrabAsync(sourceName, cancellationToken).ConfigureAwait(false);
             cleared = wasPresent && !IsRefused(sourceName);
+        }
+        finally
+        {
+            _gate.Release();
         }
 
         if (cleared)

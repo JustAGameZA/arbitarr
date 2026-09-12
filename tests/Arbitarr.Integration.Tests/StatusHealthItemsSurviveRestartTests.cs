@@ -1,9 +1,13 @@
+using System.Net;
 using System.Net.Http.Json;
 using Arbitarr.Api.Dashboard;
 using Arbitarr.Core.Diagnostics;
+using Arbitarr.Core.Notifications;
 using Arbitarr.Data.Backup;
+using Arbitarr.Data.Notifications;
 using Arbitarr.TestSupport;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Xunit;
 
 namespace Arbitarr.Integration.Tests;
@@ -69,33 +73,21 @@ public sealed class StatusHealthItemsSurviveRestartTests : IDisposable
     }
 
     /// <summary>
-    /// Reads <c>/api/status</c>, retrying briefly while the health block is empty.
+    /// Reads <c>/api/status</c> ONCE.
     ///
-    /// <para><b>Why a poll and not a single read.</b> Rehydration runs in a
-    /// <c>BackgroundService.ExecuteAsync</c>, which is NOT awaited before the host reports started —
-    /// the same property <c>StagingSweepIntegrationTests</c> polls for. So a request can legitimately
-    /// arrive before the load has finished. The poll is bounded and the FAILURE mode is the
-    /// interesting one: if rehydration never happens, this returns an empty block and the caller's
-    /// assertion fails, which is the regression being guarded.</para>
+    /// <para><b>A single read, deliberately, and it must stay one.</b>
+    /// <c>DownloadRefusalRehydrationService</c> is a plain <c>IHostedService</c> whose
+    /// <c>StartAsync</c> is awaited before the host serves anything, so by the time this request is
+    /// answered the load has necessarily finished. This used to poll 50×100ms, back when rehydration
+    /// ran in a not-awaited <c>BackgroundService</c>. Restoring any retry here would re-hide exactly
+    /// the window that change closed: a regression that pushed rehydration back off the startup path
+    /// would be papered over by the wait instead of failing.</para>
     /// </summary>
-    private static async Task<IReadOnlyList<HealthItem>> ReadHealthAsync(HttpClient client, bool expectItems)
+    private static async Task<IReadOnlyList<HealthItem>> ReadHealthAsync(HttpClient client)
     {
-        for (var attempt = 0; attempt < 50; attempt++)
-        {
-            var response = await client.GetFromJsonAsync<StatusResponse>("/api/status");
-            Assert.NotNull(response);
-
-            if (!expectItems || response!.Health.Count > 0)
-            {
-                return response!.Health;
-            }
-
-            await Task.Delay(100);
-        }
-
-        // One last read so the caller asserts against a real response rather than a timeout.
-        var final = await client.GetFromJsonAsync<StatusResponse>("/api/status");
-        return final!.Health;
+        var response = await client.GetFromJsonAsync<StatusResponse>("/api/status");
+        Assert.NotNull(response);
+        return response!.Health;
     }
 
     [Fact]
@@ -114,7 +106,7 @@ public sealed class StatusHealthItemsSurviveRestartTests : IDisposable
             // The first host shows it — the pre-existing arb-ln0 behaviour, asserted here so a
             // failure in the second host below is attributable to REHYDRATION rather than to the
             // refusal never having been recorded at all.
-            var item = Assert.Single(await ReadHealthAsync(client, expectItems: true));
+            var item = Assert.Single(await ReadHealthAsync(client));
             Assert.Equal("nzbhydra2", item.SourceName);
         }
 
@@ -123,7 +115,7 @@ public sealed class StatusHealthItemsSurviveRestartTests : IDisposable
         await using var second = ArbitarrWebApplicationFactory.OverConfigDirectory(_sharedConfigDirectory);
         using var secondClient = second.CreateClient();
 
-        var rehydrated = Assert.Single(await ReadHealthAsync(secondClient, expectItems: true));
+        var rehydrated = Assert.Single(await ReadHealthAsync(secondClient));
         Assert.Equal("download-refused-redirect", rehydrated.Key);
         Assert.Equal("blocking", rehydrated.Severity);
         Assert.Equal("nzbhydra2", rehydrated.SourceName);
@@ -152,14 +144,14 @@ public sealed class StatusHealthItemsSurviveRestartTests : IDisposable
 
             // Proves the refusal WAS recorded and IS detectable — without which the emptiness
             // asserted below would pass just as happily on a refusal that never happened.
-            Assert.Single(await ReadHealthAsync(client, expectItems: true));
+            Assert.Single(await ReadHealthAsync(client));
         }
 
         // A default factory: its own fresh, GUID-distinct config directory.
         await using var unrelated = new ArbitarrWebApplicationFactory();
         using var unrelatedClient = unrelated.CreateClient();
 
-        Assert.Empty(await ReadHealthAsync(unrelatedClient, expectItems: false));
+        Assert.Empty(await ReadHealthAsync(unrelatedClient));
     }
 
     [Fact]
@@ -173,15 +165,125 @@ public sealed class StatusHealthItemsSurviveRestartTests : IDisposable
             var tracker = first.Services.GetRequiredService<IDownloadRefusalTracker>();
 
             await tracker.RecordRefusalAsync("nzbhydra2", "refused", First);
-            Assert.Single(await ReadHealthAsync(client, expectItems: true));
+            Assert.Single(await ReadHealthAsync(client));
 
             await tracker.RecordSuccessfulGrabAsync("nzbhydra2");
-            Assert.Empty(await ReadHealthAsync(client, expectItems: false));
+            Assert.Empty(await ReadHealthAsync(client));
         }
 
         await using var second = ArbitarrWebApplicationFactory.OverConfigDirectory(_sharedConfigDirectory);
         using var secondClient = second.CreateClient();
 
-        Assert.Empty(await ReadHealthAsync(secondClient, expectItems: false));
+        Assert.Empty(await ReadHealthAsync(secondClient));
+    }
+
+    /// <summary>
+    /// arb-v3w × arb-apj: restoring a persisted refusal at startup raises NO notification.
+    ///
+    /// <para>This is the interaction between the two features, and it is the one a naive composition
+    /// gets wrong. Rehydration replays into the INNER concrete tracker, not through
+    /// <c>NotifyingDownloadRefusalTracker</c>, so the decorator never sees a none-&gt;present edge for
+    /// a condition that did not just begin. Had rehydration been pushed through the outer decorator
+    /// instead, every restart would re-page the operator about a refusal they already know about —
+    /// and a service that restarts on a crash loop would do it repeatedly.</para>
+    ///
+    /// <para><b>The positive control is the second half</b>, and it is what makes the silence mean
+    /// anything. A bare "zero notices after restart" passes just as happily when the webhook was
+    /// never wired, the settings gate was off, or the handler was never reached. So the SAME host,
+    /// through the SAME capturing handler, is then made to record a genuinely new refusal — and that
+    /// one MUST deliver. Only then is the preceding zero real silence rather than a dead path.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_rehydrated_refusal_raises_no_notification_while_a_fresh_one_still_does()
+    {
+        await using (var first = ArbitarrWebApplicationFactory.OverConfigDirectory(_sharedConfigDirectory))
+        {
+            using var client = first.CreateClient();
+            var tracker = first.Services.GetRequiredService<IDownloadRefusalTracker>();
+
+            await tracker.RecordRefusalAsync("nzbhydra2", "refused", First);
+            Assert.Single(await ReadHealthAsync(client));
+        }
+
+        // The restarted host, with only its webhook HTTP handler replaced so the notifier, the
+        // settings gate and the tracker composition are all the real registered ones.
+        var handler = new CapturingHandler();
+        await using var restarted = ArbitarrWebApplicationFactory
+            .OverConfigDirectory(_sharedConfigDirectory)
+            .WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<WebhookNotificationTransport>();
+                services.AddSingleton(new WebhookNotificationTransport(new HttpClient(handler)));
+            }));
+
+        using var restartedClient = restarted.CreateClient();
+
+        using (var scope = restarted.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<NotificationRepository>().SetSettingsAsync(
+                NotificationSettings.Default with { Enabled = true },
+                "https://hooks.example.invalid/arb-v3w-restart-probe",
+                CancellationToken.None);
+        }
+
+        // The item IS back — so the zero below is about the notification, not about rehydration
+        // having failed and left nothing to notify about.
+        Assert.Single(await ReadHealthAsync(restartedClient));
+
+        // Long enough that a delivery raised by rehydration would have landed; the notifier posts
+        // from a fire-and-forget task, so reading immediately could pass by reading too early.
+        await Task.Delay(TimeSpan.FromMilliseconds(750));
+        Assert.Empty(handler.Bodies);
+
+        // THE CONTROL: a genuinely new edge, on a source that was NOT rehydrated, through this same
+        // host and handler. This must deliver, or the emptiness above proved nothing.
+        var restartedTracker = restarted.Services.GetRequiredService<IDownloadRefusalTracker>();
+        await restartedTracker.RecordRefusalAsync("other-source", "refused", First.AddHours(1));
+
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (handler.Bodies.Count == 0 && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(25);
+        }
+
+        var delivered = Assert.Single(handler.Bodies);
+        Assert.Contains("other-source", delivered, StringComparison.Ordinal);
+
+        // And the rehydrated source is still not among what was posted.
+        Assert.DoesNotContain("nzbhydra2", delivered, StringComparison.Ordinal);
+    }
+
+    /// <summary>Records the real serialized bodies the transport posted.</summary>
+    private sealed class CapturingHandler : HttpMessageHandler
+    {
+        private readonly List<string> _bodies = [];
+        private readonly object _gate = new();
+
+        public IReadOnlyList<string> Bodies
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _bodies.ToArray();
+                }
+            }
+        }
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            var body = request.Content is null
+                ? string.Empty
+                : await request.Content.ReadAsStringAsync(cancellationToken);
+
+            lock (_gate)
+            {
+                _bodies.Add(body);
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NoContent);
+        }
     }
 }

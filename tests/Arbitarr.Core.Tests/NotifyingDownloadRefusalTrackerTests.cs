@@ -41,11 +41,11 @@ public class NotifyingDownloadRefusalTrackerTests
     }
 
     [Fact]
-    public void The_first_refusal_for_a_source_raises_one_appeared_transition()
+    public async Task The_first_refusal_for_a_source_raises_one_appeared_transition()
     {
         var (tracker, sink) = Build();
 
-        tracker.RecordRefusal("nzbhydra2", Reason, At);
+        await tracker.RecordRefusalAsync("nzbhydra2", Reason, At);
 
         var transition = Assert.Single(sink.Transitions);
         Assert.Equal("nzbhydra2", transition.Source);
@@ -53,7 +53,7 @@ public class NotifyingDownloadRefusalTrackerTests
     }
 
     [Fact]
-    public void A_repeated_refusal_while_the_item_is_present_raises_nothing_further()
+    public async Task A_repeated_refusal_while_the_item_is_present_raises_nothing_further()
     {
         // THE POSITIVE CONTROL IS THE FIRST ASSERTION, and it is why the second one bites. A
         // redirect-mode upstream refuses on every one of Sonarr's retries, so "nothing further"
@@ -62,25 +62,25 @@ public class NotifyingDownloadRefusalTrackerTests
         // proves the sink is live, so the unchanged count afterwards is real silence.
         var (tracker, sink) = Build();
 
-        tracker.RecordRefusal("nzbhydra2", Reason, At);
+        await tracker.RecordRefusalAsync("nzbhydra2", Reason, At);
         Assert.Single(sink.Transitions);
 
-        tracker.RecordRefusal("nzbhydra2", Reason, At.AddMinutes(1));
-        tracker.RecordRefusal("nzbhydra2", Reason, At.AddMinutes(2));
-        tracker.RecordRefusal("nzbhydra2", Reason, At.AddMinutes(3));
+        await tracker.RecordRefusalAsync("nzbhydra2", Reason, At.AddMinutes(1));
+        await tracker.RecordRefusalAsync("nzbhydra2", Reason, At.AddMinutes(2));
+        await tracker.RecordRefusalAsync("nzbhydra2", Reason, At.AddMinutes(3));
 
         var transition = Assert.Single(sink.Transitions);
         Assert.Equal(DownloadRefusalTransition.Appeared, transition.Transition);
     }
 
     [Fact]
-    public void A_successful_grab_after_a_refusal_raises_one_cleared_transition()
+    public async Task A_successful_grab_after_a_refusal_raises_one_cleared_transition()
     {
         var (tracker, sink) = Build();
-        tracker.RecordRefusal("nzbhydra2", Reason, At);
+        await tracker.RecordRefusalAsync("nzbhydra2", Reason, At);
         Assert.Single(sink.Transitions);
 
-        tracker.RecordSuccessfulGrab("nzbhydra2");
+        await tracker.RecordSuccessfulGrabAsync("nzbhydra2");
 
         Assert.Equal(2, sink.Transitions.Count);
         Assert.Equal(DownloadRefusalTransition.Appeared, sink.Transitions[0].Transition);
@@ -89,47 +89,47 @@ public class NotifyingDownloadRefusalTrackerTests
     }
 
     [Fact]
-    public void A_successful_grab_with_no_outstanding_refusal_raises_nothing()
+    public async Task A_successful_grab_with_no_outstanding_refusal_raises_nothing()
     {
         // Every ordinary download calls RecordSuccessfulGrab. Raising a "cleared" notice for a
         // source that was never refused would mean one notification per successful grab, which is
         // the noise that gets a feature muted.
         var (tracker, sink) = Build();
 
-        tracker.RecordSuccessfulGrab("nzbhydra2");
+        await tracker.RecordSuccessfulGrabAsync("nzbhydra2");
 
         Assert.Empty(sink.Transitions);
 
         // The control: the same sink, same tracker, DOES record when a real edge is crossed — so
         // the emptiness above is the decorator staying silent, not the sink being disconnected.
-        tracker.RecordRefusal("nzbhydra2", Reason, At);
+        await tracker.RecordRefusalAsync("nzbhydra2", Reason, At);
         Assert.Single(sink.Transitions);
     }
 
     [Fact]
-    public void Repeated_successful_grabs_after_a_clear_raise_nothing_further()
+    public async Task Repeated_successful_grabs_after_a_clear_raise_nothing_further()
     {
         var (tracker, sink) = Build();
-        tracker.RecordRefusal("nzbhydra2", Reason, At);
-        tracker.RecordSuccessfulGrab("nzbhydra2");
+        await tracker.RecordRefusalAsync("nzbhydra2", Reason, At);
+        await tracker.RecordSuccessfulGrabAsync("nzbhydra2");
         Assert.Equal(2, sink.Transitions.Count);
 
-        tracker.RecordSuccessfulGrab("nzbhydra2");
-        tracker.RecordSuccessfulGrab("nzbhydra2");
+        await tracker.RecordSuccessfulGrabAsync("nzbhydra2");
+        await tracker.RecordSuccessfulGrabAsync("nzbhydra2");
 
         Assert.Equal(2, sink.Transitions.Count);
     }
 
     [Fact]
-    public void A_refusal_after_a_clear_raises_a_second_appeared_transition()
+    public async Task A_refusal_after_a_clear_raises_a_second_appeared_transition()
     {
         // The condition genuinely recurring is a new edge, not a repeat: the operator fixed the
         // setting, it was reverted, and they need to hear about it again.
         var (tracker, sink) = Build();
-        tracker.RecordRefusal("nzbhydra2", Reason, At);
-        tracker.RecordSuccessfulGrab("nzbhydra2");
+        await tracker.RecordRefusalAsync("nzbhydra2", Reason, At);
+        await tracker.RecordSuccessfulGrabAsync("nzbhydra2");
 
-        tracker.RecordRefusal("nzbhydra2", Reason, At.AddHours(1));
+        await tracker.RecordRefusalAsync("nzbhydra2", Reason, At.AddHours(1));
 
         Assert.Equal(3, sink.Transitions.Count);
         Assert.Equal(DownloadRefusalTransition.Appeared, sink.Transitions[0].Transition);
@@ -138,21 +138,21 @@ public class NotifyingDownloadRefusalTrackerTests
     }
 
     [Fact]
-    public void Two_sources_transition_independently()
+    public async Task Two_sources_transition_independently()
     {
         // Per source, like the tracker itself. One source refusing must not suppress the other's
         // notice, and one source recovering must not clear the other's.
         var (tracker, sink) = Build();
 
-        tracker.RecordRefusal("nzbhydra2", Reason, At);
-        tracker.RecordRefusal("other-source", Reason, At);
+        await tracker.RecordRefusalAsync("nzbhydra2", Reason, At);
+        await tracker.RecordRefusalAsync("other-source", Reason, At);
         Assert.Equal(2, sink.Transitions.Count);
 
         // A repeat for one while the other is also present: still nothing.
-        tracker.RecordRefusal("nzbhydra2", Reason, At.AddMinutes(1));
+        await tracker.RecordRefusalAsync("nzbhydra2", Reason, At.AddMinutes(1));
         Assert.Equal(2, sink.Transitions.Count);
 
-        tracker.RecordSuccessfulGrab("other-source");
+        await tracker.RecordSuccessfulGrabAsync("other-source");
 
         Assert.Equal(3, sink.Transitions.Count);
         Assert.Equal("other-source", sink.Transitions[2].Source);
@@ -164,7 +164,7 @@ public class NotifyingDownloadRefusalTrackerTests
     }
 
     [Fact]
-    public void The_snapshot_passes_through_to_the_inner_tracker_unchanged()
+    public async Task The_snapshot_passes_through_to_the_inner_tracker_unchanged()
     {
         // The decorator adds an observation, never a second copy of the state. /api/status reads
         // through it, so a divergence here would show the operator a different set of health items
@@ -172,7 +172,7 @@ public class NotifyingDownloadRefusalTrackerTests
         var inner = new DownloadRefusalTracker();
         var tracker = new NotifyingDownloadRefusalTracker(inner, (_, _) => { });
 
-        tracker.RecordRefusal("nzbhydra2", Reason, At);
+        await tracker.RecordRefusalAsync("nzbhydra2", Reason, At);
 
         var throughDecorator = Assert.Single(tracker.Snapshot());
         var throughInner = Assert.Single(inner.Snapshot());
@@ -181,7 +181,7 @@ public class NotifyingDownloadRefusalTrackerTests
     }
 
     [Fact]
-    public void A_transition_raised_against_an_inner_tracker_that_already_holds_the_source_is_not_re_raised()
+    public async Task A_transition_raised_against_an_inner_tracker_that_already_holds_the_source_is_not_re_raised()
     {
         // The edges are read from the INNER tracker's state, not from a private copy — so a tracker
         // that already holds a refusal (arb-v3w rehydrating a persisted one, say) is correctly seen
@@ -189,23 +189,23 @@ public class NotifyingDownloadRefusalTrackerTests
         // already told about. A decorator keeping its own set would have an empty one here and
         // would announce the refusal a second time.
         var inner = new DownloadRefusalTracker();
-        inner.RecordRefusal("nzbhydra2", Reason, At);
+        await inner.RecordRefusalAsync("nzbhydra2", Reason, At);
 
         var sink = new RecordingSink();
         var tracker = new NotifyingDownloadRefusalTracker(inner, sink.Record);
 
-        tracker.RecordRefusal("nzbhydra2", Reason, At.AddMinutes(1));
+        await tracker.RecordRefusalAsync("nzbhydra2", Reason, At.AddMinutes(1));
 
         Assert.Empty(sink.Transitions);
 
         // Control: the same freshly-wrapped tracker does raise for a source it has NOT already got.
-        tracker.RecordRefusal("other-source", Reason, At.AddMinutes(2));
+        await tracker.RecordRefusalAsync("other-source", Reason, At.AddMinutes(2));
         var raised = Assert.Single(sink.Transitions);
         Assert.Equal("other-source", raised.Source);
     }
 
     [Fact]
-    public void A_callback_that_throws_does_not_fail_the_recording()
+    public async Task A_callback_that_throws_does_not_fail_the_recording()
     {
         // The callback runs inline on the download path. A broken notifier must cost a notification
         // and nothing else — if this propagated, a misconfigured webhook would turn the refused
@@ -214,13 +214,13 @@ public class NotifyingDownloadRefusalTrackerTests
             new DownloadRefusalTracker(),
             (_, _) => throw new InvalidOperationException("the notifier is broken"));
 
-        tracker.RecordRefusal("nzbhydra2", Reason, At);
+        await tracker.RecordRefusalAsync("nzbhydra2", Reason, At);
 
         // The state was still recorded, so the health item appears even though the notice did not.
         var refusal = Assert.Single(tracker.Snapshot());
         Assert.Equal("nzbhydra2", refusal.SourceName);
 
-        tracker.RecordSuccessfulGrab("nzbhydra2");
+        await tracker.RecordSuccessfulGrabAsync("nzbhydra2");
         Assert.Empty(tracker.Snapshot());
     }
 
@@ -251,14 +251,14 @@ public class NotifyingDownloadRefusalTrackerTests
             });
 
         var refusalTasks = Enumerable.Range(0, 32)
-            .Select(_ => Task.Run(() => tracker.RecordRefusal("nzbhydra2", Reason, At)));
+            .Select(_ => Task.Run(async () => await tracker.RecordRefusalAsync("nzbhydra2", Reason, At)));
         await Task.WhenAll(refusalTasks);
 
         Assert.Equal(1, appeared);
         Assert.Equal(0, cleared);
 
         var grabTasks = Enumerable.Range(0, 32)
-            .Select(_ => Task.Run(() => tracker.RecordSuccessfulGrab("nzbhydra2")));
+            .Select(_ => Task.Run(async () => await tracker.RecordSuccessfulGrabAsync("nzbhydra2")));
         await Task.WhenAll(grabTasks);
 
         Assert.Equal(1, appeared);

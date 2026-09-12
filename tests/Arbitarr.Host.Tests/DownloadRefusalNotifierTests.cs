@@ -243,19 +243,19 @@ public sealed class DownloadRefusalNotifierTests : IDisposable
             (source, transition) => pending.Add(notifier.NotifyAsync(source, transition)));
 
         var at = _time.GetUtcNow();
-        tracker.RecordRefusal(SourceName, "Refused HTTP 302: the source redirected instead of serving the file.", at);
+        await tracker.RecordRefusalAsync(SourceName, "Refused HTTP 302: the source redirected instead of serving the file.", at);
         await Task.WhenAll(pending);
 
         // Control: the first edge really did post, so the silence asserted next is real.
         Assert.Single(_handler.Bodies);
 
-        tracker.RecordRefusal(SourceName, "Refused HTTP 302: the source redirected instead of serving the file.", at.AddMinutes(1));
-        tracker.RecordRefusal(SourceName, "Refused HTTP 302: the source redirected instead of serving the file.", at.AddMinutes(2));
+        await tracker.RecordRefusalAsync(SourceName, "Refused HTTP 302: the source redirected instead of serving the file.", at.AddMinutes(1));
+        await tracker.RecordRefusalAsync(SourceName, "Refused HTTP 302: the source redirected instead of serving the file.", at.AddMinutes(2));
         await Task.WhenAll(pending);
 
         Assert.Single(_handler.Bodies);
 
-        tracker.RecordSuccessfulGrab(SourceName);
+        await tracker.RecordSuccessfulGrabAsync(SourceName);
         await Task.WhenAll(pending);
 
         Assert.Equal(2, _handler.Bodies.Count);
