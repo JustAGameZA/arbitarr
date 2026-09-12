@@ -139,6 +139,11 @@ public sealed class ArrInstanceRepository
     /// written, so nothing has gone stale. The bump lives here rather than at the admin endpoint
     /// because this is the single write path for the instance, and a second write site added later
     /// would otherwise have to remember to invalidate.</para>
+    ///
+    /// <para>This bump fires for ANY accepted write, including one that only rotates the API key and
+    /// leaves the base URL unchanged: the memo it evicts stays correct for the instance that answers
+    /// next, and a refill costs one more HTTP call, so bumping unconditionally is harmless rather than
+    /// merely tolerated.</para>
     /// </summary>
     public async Task SetAsync(string baseUrl, string? apiKey, CancellationToken cancellationToken)
     {
