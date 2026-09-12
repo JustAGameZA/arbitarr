@@ -315,6 +315,15 @@ not prove it would be **detectable if it leaked**. Only the second makes the ass
 
 Non-vacuity discipline alone missed all three; only mutation caught them.
 
+- A redaction or replacement arm that handles only its FIRST match is its own known mutant class,
+  not specific to any one consumer: it passes every test that plants one value per shape.
+  #280/arb-pjxs found it in `SanitizedErrorDescriptionTests`; #286/arb-7j5x found it survived all
+  140 assertions across the other four `CredentialPatterns` consumers. Sweep for it by planting a
+  SECOND value of the same shape and measuring that the plant survives the mutant — a later arm in
+  the chain can mop up a naive plant and make it vacuous too, so measure, don't assume. See the
+  `SecondOccurrenceCorpus` comment in `tests/Arbitarr.Core.Tests/CredentialPatternsTests.cs` for the
+  worked example of a plant that looked right and wasn't.
+
 Prove it **without putting vulnerable code in the repository**: a throwaway console project outside
 the repo holding both implementations side by side gives the same evidence and leaves nothing
 behind. Never mutate files in place, and never leave a mutation uncommitted in a worktree.
