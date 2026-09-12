@@ -88,6 +88,14 @@ public sealed class ReleaseCandidate
 
     // --- Usenet-specific attributes ---
 
+    /// <summary>
+    /// Usenet poster (the <c>poster</c> attr) — the From header the release was posted under,
+    /// itself routinely obfuscated by the posting tool. Nullable rather than defaulted to empty:
+    /// "the indexer did not report a poster" and "the poster is blank" are different claims, and
+    /// only the second should ever be shown to the classifier.
+    /// </summary>
+    public string? Poster { get; init; }
+
     /// <summary>Usenet newsgroup(s) the release was posted to.</summary>
     public IReadOnlyList<string> UsenetGroup { get; init; } = Array.Empty<string>();
 

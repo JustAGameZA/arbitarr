@@ -495,9 +495,7 @@ public sealed class NzbHydraSource : IUpstreamSource
                 .Select(v => v!.Value)
                 .ToArray();
 
-            var protocolAttr = item.Elements(TorznabNs + "attr")
-                .FirstOrDefault(a => string.Equals(a.Attribute("name")?.Value, "protocol", StringComparison.OrdinalIgnoreCase))
-                ?.Attribute("value")?.Value;
+            var protocolAttr = ReadAttr(item, "protocol");
 
             var protocol = protocolAttr?.ToLowerInvariant() switch
             {
@@ -508,6 +506,32 @@ public sealed class NzbHydraSource : IUpstreamSource
                     : ProtocolKind.Usenet,
             };
 
+            // arb-458f: the Usenet-side attrs. ClassificationPrompt tells the model to judge an
+            // obfuscated Usenet title on "structural and metadata signals" instead of readability,
+            // so these are the signals that sentence refers to — dropping them here left that
+            // instruction pointing at nothing. Each is independently optional: an attr the upstream
+            // indexer does not carry leaves its field null/empty rather than defaulting, because a
+            // fabricated zero ("0 files", "not password-protected") is a claim the wire never made
+            // and the model would read it as one.
+            var poster = ReadAttr(item, "poster");
+
+            // "group" is multi-valued: a crosspost lists one attr per newsgroup, so taking only the
+            // first would silently narrow a crossposted release to a single group.
+            var usenetGroup = item.Elements(TorznabNs + "attr")
+                .Where(a => string.Equals(a.Attribute("name")?.Value, "group", StringComparison.OrdinalIgnoreCase))
+                .Select(a => a.Attribute("value")?.Value)
+                .Where(v => !string.IsNullOrWhiteSpace(v))
+                .Select(v => v!)
+                .ToArray();
+
+            var files = int.TryParse(ReadAttr(item, "files"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedFiles)
+                ? parsedFiles
+                : (int?)null;
+
+            var grabs = int.TryParse(ReadAttr(item, "grabs"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedGrabs)
+                ? parsedGrabs
+                : (int?)null;
+
             results.Add(new ReleaseCandidate
             {
                 Title = title,
@@ -517,13 +541,54 @@ public sealed class NzbHydraSource : IUpstreamSource
                 Link = linkUri,
                 Category = categories,
                 Protocol = protocol,
+                Poster = poster,
+                UsenetGroup = usenetGroup,
+                PasswordProtected = TryParsePasswordProtected(ReadAttr(item, "password")),
+                Files = files,
+                Grabs = grabs,
             });
         }
 
         return results;
     }
 
+    /// <summary>
+    /// The schema namespace is shared by both families — a Newznab feed reuses the Torznab schema
+    /// URI and differs only in its prefix (see <c>IndexerXmlWriter.SchemaNs</c>, which renders our
+    /// own feeds on the same basis). Matching on the namespace URI rather than the literal prefix
+    /// is therefore what makes a <c>newznab:attr</c> from NZBHydra2's <c>/api</c> endpoint read
+    /// identically to a <c>torznab:attr</c> from <c>/torznab/api</c>; there is no second namespace
+    /// to register.
+    /// </summary>
     private static readonly XNamespace TorznabNs = "http://torznab.com/schemas/2015/feed";
+
+    /// <summary>
+    /// Reads the first single-valued <c>attr</c> with <paramref name="name"/>, or null when absent.
+    /// </summary>
+    private static string? ReadAttr(XElement item, string name) =>
+        item.Elements(TorznabNs + "attr")
+            .FirstOrDefault(a => string.Equals(a.Attribute("name")?.Value, name, StringComparison.OrdinalIgnoreCase))
+            ?.Attribute("value")?.Value;
+
+    /// <summary>
+    /// Newznab reports <c>password</c> as an integer severity (0 = none, non-zero = protected),
+    /// not a boolean, so <c>bool.TryParse</c> would reject every real value and silently yield
+    /// null. "true"/"false" are still accepted because some indexers emit them.
+    /// </summary>
+    private static bool? TryParsePasswordProtected(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        if (int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var numeric))
+        {
+            return numeric != 0;
+        }
+
+        return bool.TryParse(raw, out var flag) ? flag : null;
+    }
 
     private static DateTimeOffset? TryParseDate(string? raw)
     {
