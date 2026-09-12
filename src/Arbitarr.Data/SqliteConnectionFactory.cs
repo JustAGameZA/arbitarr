@@ -23,6 +23,9 @@ namespace Arbitarr.Data;
 /// when its eventual opener opens it — that is what EF Core is given, so a resolved-but-unused
 /// <c>DbContext</c> cannot leak a handle it never adopted (arb-auam). Both route the pragmas
 /// through the same private <c>Configure</c>, so neither path can drift from the other.</para>
+///
+/// <para>The connection lifetime EF Core is given, and the alternatives it beat, are recorded in
+/// <c>docs/adr/0017-sqlite-connection-lifetime-for-ef-contexts.md</c>.</para>
 /// </summary>
 public sealed class SqliteConnectionFactory
 {

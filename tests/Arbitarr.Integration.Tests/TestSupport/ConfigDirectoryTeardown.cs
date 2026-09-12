@@ -17,32 +17,17 @@ namespace Arbitarr.Integration.Tests.TestSupport;
 /// caller can no longer get the clear and the delete out of step because it no longer writes
 /// either.</para>
 ///
-/// <para><b>WHY THE POOL CLEARS ARE HERE, AND WHY THEY ARE HALF OF WHAT IS NEEDED (arb-dhua).</b>
-/// Draining the host stops the WORK; these two calls close the pooled FILE HANDLES. Both halves are
-/// required, and each is useless without the other:</para>
-///
-/// <para><c>ClearPool</c> closes only the connections a pool HOLDS. Until arb-dhua every
-/// <c>ArbitarrDbContext</c>'s connection was never returned to the pool at all — EF was handed an
-/// already-open connection without being given ownership of it, so disposing the context left it
-/// open forever. A connection that never came back is not the pool's to close, which is why widening
-/// the clear failed twice (first <see cref="SqlitePools.ClearPoolsForDirectory"/>, then
-/// <c>SqlitePoolCleaner.ClearPoolsFor</c> walking <c>DatabaseConnectionStrings.ForDatabase</c>). The
-/// inventory was never the problem; ownership was. It is fixed in
-/// <c>ArbitarrDbContextOptionsFactory.Create</c>.</para>
-///
-/// <para><b>Ownership was only HALF of that fix, and the other half took until arb-auam.</b> The
-/// connection was still opened EAGERLY before being handed over, and EF adopts a connection lazily —
-/// on the context's first real use. A context resolved and disposed WITHOUT being used therefore
-/// never adopted its handle, so the ownership flag had nothing to act on and the connection was once
-/// again never returned to the pool: same invisible residue, same immunity to every pool clear, now
-/// confined to unused contexts. That is why ~3-4 directories per Integration run survived this
-/// helper long after arb-dhua was closed, and why the survivors looked like a property of particular
-/// test classes — the leak vanishes the instant anything reads from the context. <c>Create</c> now
-/// hands EF a CLOSED connection, so there is no window in which the handle is open but unowned.</para>
-///
-/// <para>Conversely, ownership alone does not delete the directory either: disposal only RETURNS the
-/// handle to the pool, and a pooled handle still holds a share lock on Windows. That is measured,
-/// not assumed — with ownership transferred but no clear, the delete still fails. Hence both.</para>
+/// <para><b>WHY THE POOL CLEARS ARE HERE, AND WHY THEY ARE ONLY ONE THIRD OF WHAT IS NEEDED.</b>
+/// Draining the host stops the WORK; these two calls close the pooled FILE HANDLES. But a clear
+/// closes only the connections a pool HOLDS, so it depends on the other two halves of the hand-over
+/// in <c>ArbitarrDbContextOptionsFactory.Create</c> — <c>contextOwnsConnection: true</c> (arb-dhua),
+/// so a disposed context RETURNS its connection to the pool, and that connection being handed over
+/// CLOSED (arb-auam), so EF owns it even when the context is never used. Conversely ownership alone
+/// does not delete the directory either: disposal only RETURNS the handle to the pool, and a pooled
+/// handle still holds a share lock on Windows — measured, not assumed. All three are required, and
+/// each hides the others' absence. The full history, the two widenings of the pool-clear inventory
+/// that failed before the cause was found, and the alternatives beaten are in
+/// <c>docs/adr/0017-sqlite-connection-lifetime-for-ef-contexts.md</c>.</para>
 ///
 /// <para><b>Never <c>SqliteConnection.ClearAllPools()</c> regardless</b>: the process-global form
 /// force-closes pooled connections belonging to test classes running in parallel (arb-cbc/arb-5ba)
