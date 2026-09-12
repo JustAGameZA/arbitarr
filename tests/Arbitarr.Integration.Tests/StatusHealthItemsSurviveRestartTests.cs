@@ -3,9 +3,8 @@ using System.Net.Http.Json;
 using Arbitarr.Api.Dashboard;
 using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Notifications;
-using Arbitarr.Data.Backup;
 using Arbitarr.Data.Notifications;
-using Arbitarr.TestSupport;
+using Arbitarr.Integration.Tests.TestSupport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Xunit;
@@ -37,40 +36,21 @@ public sealed class StatusHealthItemsSurviveRestartTests : IDisposable
     /// <see cref="ArbitarrWebApplicationFactory.OverConfigDirectory"/> deliberately does not delete
     /// it — a first host that took the database with it would leave the second host rehydrating from
     /// nothing, and the restart assertion would pass for the wrong reason.
+    ///
+    /// <para>Routed through <see cref="ConfigDirectoryTeardown"/> (arb-gphi) rather than carrying its
+    /// own copy of the clear-then-delete block, which is what this class was written with. The helper
+    /// does the same two clears for the same reason — a pooled handle holds a share lock on Windows,
+    /// so the delete loses to it without them, and never <c>ClearAllPools</c>, which is process-global
+    /// and banned from test IL (docs/standards/data.md).</para>
+    ///
+    /// <para><b>Delete rather than TryDelete, so a failure is not swallowed.</b> This class OWNS the
+    /// directory, so a teardown that stops working is this class's defect and should fail it — the
+    /// point of arb-gphi being that a swallowed cleanup failure is indistinguishable from a working
+    /// one and stayed invisible for ~22,000 directories. The factories use <c>TryDelete</c> instead
+    /// because xunit disposes them as class fixtures, where a throw lands on whichever unrelated test
+    /// is in flight; a test class disposing its own directory has no such problem.</para>
     /// </summary>
-    public void Dispose()
-    {
-        if (!Directory.Exists(_sharedConfigDirectory))
-        {
-            return;
-        }
-
-        // The same two clears the factory does, for the same reason: a pooled handle still holds a
-        // share lock on Windows, so the delete loses to it without them. Never ClearAllPools —
-        // it is process-global and banned from test IL (docs/standards/data.md).
-        SqlitePoolCleaner.ClearPoolsFor(new BackupPaths(_sharedConfigDirectory).DatabasePath);
-        SqlitePools.ClearPoolsForDirectory(_sharedConfigDirectory);
-
-        for (var attempt = 1; attempt <= 10; attempt++)
-        {
-            try
-            {
-                Directory.Delete(_sharedConfigDirectory, recursive: true);
-                return;
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                if (attempt == 10)
-                {
-                    // Swallowed rather than thrown: faulting from Dispose would surface on whichever
-                    // unrelated test is in flight rather than on this one.
-                    return;
-                }
-
-                Thread.Sleep(50);
-            }
-        }
-    }
+    public void Dispose() => ConfigDirectoryTeardown.Delete(_sharedConfigDirectory);
 
     /// <summary>
     /// Reads <c>/api/status</c> ONCE.

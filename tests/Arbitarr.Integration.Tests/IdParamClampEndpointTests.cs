@@ -1,4 +1,5 @@
 using Arbitarr.Core.Sources;
+using Arbitarr.Integration.Tests.TestSupport;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,23 +15,31 @@ namespace Arbitarr.Integration.Tests;
 /// dropped to null (falling back to the query's other identity signals) instead of being kept
 /// verbatim. A valid, in-range id is preserved unchanged.
 /// </summary>
-public sealed class IdParamClampEndpointTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class IdParamClampEndpointTests : IClassFixture<WebApplicationFactory<Program>>, IDisposable
 {
     private const string ApiKey = "secret-api-key";
 
     private readonly WebApplicationFactory<Program> _factory;
+    private readonly string _configDirectory;
 
     public IdParamClampEndpointTests(WebApplicationFactory<Program> factory)
     {
-        var configDirectory = Path.Combine(Path.GetTempPath(), "arbitarr-m3-idclamp-tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(configDirectory);
+        _configDirectory = Path.Combine(Path.GetTempPath(), "arbitarr-m3-idclamp-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_configDirectory);
 
         _factory = factory.WithWebHostBuilder(builder =>
         {
-            builder.UseSetting("Arbitarr:ConfigDir", configDirectory);
+            builder.UseSetting("Arbitarr:ConfigDir", _configDirectory);
             builder.UseSetting("Arbitarr:ApiKey", ApiKey);
         });
     }
+
+    /// <summary>
+    /// This class builds its own config directory, so it owns deleting it (arb-gphi).
+    /// <see cref="ConfigDirectoryTeardown"/> carries why the pool clear and the delete are both
+    /// required.
+    /// </summary>
+    public void Dispose() => ConfigDirectoryTeardown.Delete(_configDirectory);
 
     [Fact]
     public async Task Out_of_range_tvdbid_falls_back_to_null_before_reaching_the_upstream_query()

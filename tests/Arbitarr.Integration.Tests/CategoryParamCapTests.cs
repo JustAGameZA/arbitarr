@@ -1,4 +1,5 @@
 using Arbitarr.Core.Sources;
+using Arbitarr.Integration.Tests.TestSupport;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,23 +15,31 @@ namespace Arbitarr.Integration.Tests;
 /// <see cref="SearchQuery"/> is ever built, independent of what any downstream component does
 /// with it.
 /// </summary>
-public sealed class CategoryParamCapTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class CategoryParamCapTests : IClassFixture<WebApplicationFactory<Program>>, IDisposable
 {
     private const string ApiKey = "secret-api-key";
 
     private readonly WebApplicationFactory<Program> _factory;
+    private readonly string _configDirectory;
 
     public CategoryParamCapTests(WebApplicationFactory<Program> factory)
     {
-        var configDirectory = Path.Combine(Path.GetTempPath(), "arbitarr-m3-category-cap-tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(configDirectory);
+        _configDirectory = Path.Combine(Path.GetTempPath(), "arbitarr-m3-category-cap-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_configDirectory);
 
         _factory = factory.WithWebHostBuilder(builder =>
         {
-            builder.UseSetting("Arbitarr:ConfigDir", configDirectory);
+            builder.UseSetting("Arbitarr:ConfigDir", _configDirectory);
             builder.UseSetting("Arbitarr:ApiKey", ApiKey);
         });
     }
+
+    /// <summary>
+    /// This class builds its own config directory, so it owns deleting it (arb-gphi — it never did,
+    /// and the directories accumulated one per run). <see cref="ConfigDirectoryTeardown"/> carries
+    /// why the pool clear and the delete are both required.
+    /// </summary>
+    public void Dispose() => ConfigDirectoryTeardown.Delete(_configDirectory);
 
     [Fact]
     public async Task A_200_category_query_string_is_capped_at_64_distinct_categories()

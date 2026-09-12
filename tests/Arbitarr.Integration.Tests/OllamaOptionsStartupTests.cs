@@ -1,5 +1,5 @@
 using Arbitarr.Ai;
-using Arbitarr.TestSupport;
+using Arbitarr.Integration.Tests.TestSupport;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -51,26 +51,21 @@ public sealed class OllamaOptionsStartupTests
     private static string NewConfigDirectory() =>
         Path.Combine(Path.GetTempPath(), "arbitarr-6u6-ollama-options", Guid.NewGuid().ToString("N"));
 
-    private static void Cleanup(string configDirectory)
-    {
-        // Scoped to the databases the host created under THIS test's own config directory rather
-        // than ClearAllPools(), which would also close pooled connections belonging to test classes
-        // running in parallel (arb-rga.3). The host owns these files (it was given the directory
-        // via Arbitarr:ConfigDir and has been disposed by now), so they are NOT wrapped in a
-        // SqliteTestDatabase — that fixture is only for a database the test itself opens.
-        SqlitePools.ClearPoolsForDirectory(configDirectory);
-        try
-        {
-            if (Directory.Exists(configDirectory))
-            {
-                Directory.Delete(configDirectory, recursive: true);
-            }
-        }
-        catch (IOException)
-        {
-            // Best-effort; a locked SQLite file on Windows shouldn't fail the run.
-        }
-    }
+    /// <summary>
+    /// Scoped to the databases the host created under THIS test's own config directory rather than
+    /// ClearAllPools(), which would also close pooled connections belonging to test classes running
+    /// in parallel (arb-rga.3). The host owns these files (it was given the directory via
+    /// <c>Arbitarr:ConfigDir</c> and has been disposed by now), so they are NOT wrapped in a
+    /// <c>SqliteTestDatabase</c> — that fixture is only for a database the test itself opens.
+    ///
+    /// <para>This used to clear only <c>SqlitePools.ClearPoolsForDirectory</c> and then swallow the
+    /// failure in an empty <c>catch (IOException)</c> — half the teardown and no report, so the
+    /// delete lost to a pooled handle on the main database every time and nothing said so (16
+    /// directories per run, arb-gphi). <see cref="ConfigDirectoryTeardown"/> does both halves and
+    /// THROWS.</para>
+    /// </summary>
+    private static void Cleanup(string configDirectory) =>
+        ConfigDirectoryTeardown.Delete(configDirectory);
 
     /// <summary>
     /// THE regression test: a malformed <c>Arbitarr:Ai:Ollama:BaseUrl</c> must not throw during

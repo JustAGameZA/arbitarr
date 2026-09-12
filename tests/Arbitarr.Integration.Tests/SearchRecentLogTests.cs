@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Releases;
 using Arbitarr.Core.Sources;
+using Arbitarr.Integration.Tests.TestSupport;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,20 +19,21 @@ namespace Arbitarr.Integration.Tests;
 /// query text lands in the recent-searches log, and (2) the client's apikey — which travels on
 /// the request's raw query string — never appears anywhere in that response body.
 /// </summary>
-public sealed class SearchRecentLogTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class SearchRecentLogTests : IClassFixture<WebApplicationFactory<Program>>, IDisposable
 {
     private const string ApiKey = "secret-api-key";
 
     private readonly WebApplicationFactory<Program> _factory;
+    private readonly string _configDirectory;
 
     public SearchRecentLogTests(WebApplicationFactory<Program> factory)
     {
-        var configDirectory = Path.Combine(Path.GetTempPath(), "arbitarr-m2-search-tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(configDirectory);
+        _configDirectory = Path.Combine(Path.GetTempPath(), "arbitarr-m2-search-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_configDirectory);
 
         _factory = factory.WithWebHostBuilder(builder =>
         {
-            builder.UseSetting("Arbitarr:ConfigDir", configDirectory);
+            builder.UseSetting("Arbitarr:ConfigDir", _configDirectory);
             builder.UseSetting("Arbitarr:ApiKey", ApiKey);
 
             builder.ConfigureServices(services =>
@@ -60,6 +62,13 @@ public sealed class SearchRecentLogTests : IClassFixture<WebApplicationFactory<P
             });
         });
     }
+
+    /// <summary>
+    /// This class builds its own config directory, so it owns deleting it (arb-gphi).
+    /// <see cref="ConfigDirectoryTeardown"/> carries why the pool clear and the delete are both
+    /// required.
+    /// </summary>
+    public void Dispose() => ConfigDirectoryTeardown.Delete(_configDirectory);
 
     [Fact]
     public async Task Real_torznab_search_records_query_in_recent_searches_and_never_leaks_apikey()

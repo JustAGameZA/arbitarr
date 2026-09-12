@@ -4,6 +4,7 @@ using Arbitarr.Core.Releases;
 using Arbitarr.Core.Sources;
 using Arbitarr.Data;
 using Arbitarr.Data.Logging;
+using Arbitarr.Integration.Tests.TestSupport;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -29,7 +30,7 @@ namespace Arbitarr.Integration.Tests;
 /// would not prove it is DETECTABLE if it leaked. Reference shape:
 /// <see cref="LogSecretInjectionTests"/>.</para>
 /// </summary>
-public sealed class ReleaseLookupPayloadSecretTests : IAsyncDisposable
+public sealed class ReleaseLookupPayloadSecretTests : IAsyncLifetime
 {
     // "secret-api-key" is the prefix the pre-commit secret guard allowlists.
     private const string ClientKey = "secret-api-key-release-lookup-payload";
@@ -291,20 +292,18 @@ public sealed class ReleaseLookupPayloadSecretTests : IAsyncDisposable
     private static async Task FlushLogSinkAsync() =>
         await Task.Delay(SqliteLoggerProvider.FlushInterval + TimeSpan.FromMilliseconds(750));
 
-    public async ValueTask DisposeAsync()
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public async Task DisposeAsync()
     {
         foreach (var factory in _factories)
         {
             await factory.DisposeAsync();
         }
 
-        try
-        {
-            Directory.Delete(_configDirectory, recursive: true);
-        }
-        catch (IOException)
-        {
-            // Best-effort cleanup; a locked SQLite file on Windows must not fail the run.
-        }
+        // The delete used to run bare inside an empty catch (IOException): no pool clear, so it lost
+        // to a pooled handle and said nothing (arb-gphi). ConfigDirectoryTeardown does both halves
+        // and throws if the delete still fails.
+        ConfigDirectoryTeardown.Delete(_configDirectory);
     }
 }
