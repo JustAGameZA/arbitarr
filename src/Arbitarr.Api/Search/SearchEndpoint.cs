@@ -23,11 +23,45 @@ namespace Arbitarr.Api.Search;
 /// only when every contributing source is either rate-limited or empty does this render the
 /// Torznab/Newznab rate-limit error element instead of an empty (but successful-looking) result
 /// set — this is never surfaced as a 5xx.
+///
+/// <para>arb-bgg9: an INFRASTRUCTURE exception escaping the pipeline is likewise answered in the
+/// protocol's own XML — see <see cref="InfrastructureErrorCode"/> — rather than escaping to a bare
+/// 500 with no body at all.</para>
 /// </summary>
 public static class SearchEndpoint
 {
     /// <summary>Torznab/Newznab error code for "request limit reached" per M1-9.</summary>
     public const int RateLimitErrorCode = 500;
+
+    /// <summary>
+    /// arb-bgg9: the Torznab/Newznab error code rendered when an infrastructure exception escapes
+    /// the search pipeline. 900 ("Unknown error" in the protocol's published code table) rather
+    /// than <see cref="RateLimitErrorCode"/>, which is already spoken for by a DIFFERENT and much
+    /// more specific condition — reusing it would tell an *arr "the indexer is rate-limiting you",
+    /// which is advice to back off rather than to retry, and would be wrong about the cause.
+    /// </summary>
+    public const int InfrastructureErrorCode = 900;
+
+    /// <summary>
+    /// arb-bgg9: the description rendered with <see cref="InfrastructureErrorCode"/>. FIXED WORDING,
+    /// and it must stay fixed.
+    ///
+    /// <para><b>The exception's own message must never reach here</b> (CLAUDE.md §1). This body goes
+    /// to a caller that has authenticated with a Torznab client key, not with the admin key, so it
+    /// is a broad surface by any measure; a <c>SqliteException</c> message carries the config-
+    /// directory path, and an <c>HttpRequestException</c> raised against an upstream carries the
+    /// host. The unredacted detail still reaches the operator — the same exception is logged at
+    /// Error and lands in the store served at <c>/api/admin/logs</c>, which IS admin-gated.</para>
+    ///
+    /// <para><b><c>SanitizedErrorDescription</c> was considered and is deliberately NOT used.</b> It
+    /// is the right tool for <c>/api/status</c>, where an operator reads the dashboard and needs
+    /// SOME signal about what failed, so it trades a little detail (the exception type name, and a
+    /// status code when one exists) for usefulness. Neither of those helps here: an *arr does
+    /// nothing differently for a <c>SqliteException</c> than for an <c>IOException</c>, so the type
+    /// name is pure implementation disclosure with no client value. Fixed wording is strictly
+    /// stronger and costs nothing on this surface.</para>
+    /// </summary>
+    public const string InfrastructureErrorDescription = "The indexer encountered an internal error";
 
     public static async Task<IResult> HandleTorznabAsync(
         string? searchType,
@@ -62,15 +96,27 @@ public static class SearchEndpoint
         // degraded store write is still degraded, it just goes unrecorded where nothing observes it.
         ILogger? logger = null)
     {
-        var (result, rateLimited) = await ExecuteAsync(SearchProtocol.Torznab, searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, eventSink, identityResolver, clientName, releaseLookupStore, logger, cancellationToken).ConfigureAwait(false);
-        if (rateLimited)
+        try
         {
-            var errorXml = TorznabXmlWriter.WriteError(RateLimitErrorCode, "Request limit reached");
-            return Results.Text(XmlDocumentRendering.ToXmlString(errorXml), TorznabXmlWriter.ContentType);
-        }
+            var (result, rateLimited) = await ExecuteAsync(SearchProtocol.Torznab, searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, eventSink, identityResolver, clientName, releaseLookupStore, logger, cancellationToken).ConfigureAwait(false);
+            if (rateLimited)
+            {
+                var errorXml = TorznabXmlWriter.WriteError(RateLimitErrorCode, "Request limit reached");
+                return Results.Text(XmlDocumentRendering.ToXmlString(errorXml), TorznabXmlWriter.ContentType);
+            }
 
-        var xml = TorznabXmlWriter.WriteSearchResults(result!.Releases, r => DownloadLink(request, r, callerApiKey), result.CacheAge, result.CacheBand);
-        return Results.Text(XmlDocumentRendering.ToXmlString(xml), TorznabXmlWriter.ContentType);
+            var xml = TorznabXmlWriter.WriteSearchResults(result!.Releases, r => DownloadLink(request, r, callerApiKey), result.CacheAge, result.CacheBand);
+            return Results.Text(XmlDocumentRendering.ToXmlString(xml), TorznabXmlWriter.ContentType);
+        }
+        catch (OperationCanceledException)
+        {
+            // NOT converted — see InfrastructureErrorResult's remarks.
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return InfrastructureErrorResult(ex, SearchProtocol.Torznab, logger);
+        }
     }
 
     public static async Task<IResult> HandleNewznabAsync(
@@ -102,15 +148,90 @@ public static class SearchEndpoint
         // arb-zwk: see HandleTorznabAsync's note on this parameter.
         ILogger? logger = null)
     {
-        var (result, rateLimited) = await ExecuteAsync(SearchProtocol.Newznab, searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, eventSink, identityResolver, clientName, releaseLookupStore, logger, cancellationToken).ConfigureAwait(false);
-        if (rateLimited)
+        try
         {
-            var errorXml = NewznabXmlWriter.WriteError(RateLimitErrorCode, "Request limit reached");
-            return Results.Text(XmlDocumentRendering.ToXmlString(errorXml), NewznabXmlWriter.ContentType);
-        }
+            var (result, rateLimited) = await ExecuteAsync(SearchProtocol.Newznab, searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, eventSink, identityResolver, clientName, releaseLookupStore, logger, cancellationToken).ConfigureAwait(false);
+            if (rateLimited)
+            {
+                var errorXml = NewznabXmlWriter.WriteError(RateLimitErrorCode, "Request limit reached");
+                return Results.Text(XmlDocumentRendering.ToXmlString(errorXml), NewznabXmlWriter.ContentType);
+            }
 
-        var xml = NewznabXmlWriter.WriteSearchResults(result!.Releases, r => DownloadLink(request, r, callerApiKey), result.CacheAge, result.CacheBand);
-        return Results.Text(XmlDocumentRendering.ToXmlString(xml), NewznabXmlWriter.ContentType);
+            var xml = NewznabXmlWriter.WriteSearchResults(result!.Releases, r => DownloadLink(request, r, callerApiKey), result.CacheAge, result.CacheBand);
+            return Results.Text(XmlDocumentRendering.ToXmlString(xml), NewznabXmlWriter.ContentType);
+        }
+        catch (OperationCanceledException)
+        {
+            // NOT converted — see InfrastructureErrorResult's remarks.
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return InfrastructureErrorResult(ex, SearchProtocol.Newznab, logger);
+        }
+    }
+
+    /// <summary>
+    /// arb-bgg9: renders an escaping infrastructure exception as the requesting protocol family's
+    /// own <c>&lt;error&gt;</c> element with a 5xx status, and records the exception at Error.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>WHY THIS IS HERE AND NOT IN MIDDLEWARE.</b> A blanket <c>UseExceptionHandler</c>
+    /// would cover these two routes and every other one at the same time, and the admin routes'
+    /// 400-vs-503 route-existence leak (CLAUDE.md §2) means a global handler needs its own analysis
+    /// before it can be added safely. This guard is scoped to the two routes whose contract is
+    /// "always answer in Torznab/Newznab XML" (the #104 note at the route registrations), so it
+    /// changes nothing anywhere else. Do not promote it to middleware without that analysis.</para>
+    ///
+    /// <para><b>WHY IT CATCHES EVERYTHING RATHER THAN A NAMED SET.</b> Naming the types seen so far
+    /// — <c>SqliteException</c>, <c>IOException</c>, <c>InvalidOperationException</c> — would leave
+    /// the NEXT unanticipated type reproducing exactly the defect this exists to close: a bare 500
+    /// with no XML body, which an *arr reports to its user as an unreachable indexer rather than as
+    /// a failed search. An allowlist would have to be correct in advance about a set whose whole
+    /// defining property is that it surprised us. Catching broadly and excluding cancellation is
+    /// also what the two guards already in this file do (the release-lookup store write, and
+    /// <see cref="ResolveAnimeIdentityAsync"/>), so this is the file's existing policy applied once
+    /// more rather than a third, different one.</para>
+    ///
+    /// <para><b>WHY <see cref="OperationCanceledException"/> IS EXCLUDED.</b> It is not a fault: it
+    /// means the caller went away or the host is shutting down. Rendering an error element for it
+    /// would write a response nobody is reading, and — the part that actually costs something —
+    /// would log a shutdown at Error on every in-flight search, burying real faults in the store
+    /// served at <c>/api/admin/logs</c> under noise from every restart. The same exclusion, for the
+    /// same reason, guards the store write in <see cref="ExecuteAsync"/>.</para>
+    ///
+    /// <para><b>THE STATUS IS 5xx, AND THAT IS A DEPARTURE FROM THE OTHER TWO ERROR PATHS.</b> Both
+    /// <see cref="RateLimitErrorCode"/> and <c>ApiKeyValidator</c>'s code 100 render with HTTP 200,
+    /// deliberately and with tests pinning it: those are well-formed protocol ANSWERS — the request
+    /// was understood and the response says what happened. This is not an answer, it is a failure to
+    /// produce one, and an *arr must be able to tell the difference: a 200 here would have it record
+    /// "0 results" as a legitimate outcome and move on, silently missing releases. The XML body is
+    /// added so a client that reads it gets a reason; the 5xx is kept so a client that only checks
+    /// the status still learns the search did not happen.</para>
+    /// </remarks>
+    private static IResult InfrastructureErrorResult(Exception ex, SearchProtocol protocol, ILogger? logger)
+    {
+        // Exception object only — no query text, no caller key, no release payload. The logger here
+        // is the same one the store-write degradation path uses, so this lands in the persistent
+        // store served at /api/admin/logs (CLAUDE.md §1), which is admin-gated and is where the
+        // unredacted detail belongs. The RESPONSE gets fixed wording instead; see
+        // InfrastructureErrorDescription.
+        logger?.LogError(
+            ex,
+            "The {Protocol} search pipeline failed with an infrastructure exception; the request was answered with the protocol's error element rather than a bare 500.",
+            protocol);
+
+        var errorXml = protocol == SearchProtocol.Torznab
+            ? TorznabXmlWriter.WriteError(InfrastructureErrorCode, InfrastructureErrorDescription)
+            : NewznabXmlWriter.WriteError(InfrastructureErrorCode, InfrastructureErrorDescription);
+        var contentType = protocol == SearchProtocol.Torznab
+            ? TorznabXmlWriter.ContentType
+            : NewznabXmlWriter.ContentType;
+
+        return Results.Text(
+            XmlDocumentRendering.ToXmlString(errorXml),
+            contentType,
+            statusCode: StatusCodes.Status500InternalServerError);
     }
 
     private static async Task<(PagedMergeResult? Result, bool RateLimited)> ExecuteAsync(

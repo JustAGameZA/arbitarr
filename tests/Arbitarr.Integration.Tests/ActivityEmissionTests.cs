@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using Arbitarr.Api.Dashboard;
 using Arbitarr.Core.Releases;
 using Arbitarr.Core.Sources;
+using Arbitarr.Data.Logging;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -161,7 +162,21 @@ public sealed class ActivityEmissionTests : IClassFixture<WebApplicationFactory<
 
         var searchResponse = await client.GetAsync(
             $"/torznab/api?t=search&q=durability-probe&apikey={Uri.EscapeDataString(ApiKey)}");
-        searchResponse.EnsureSuccessStatusCode();
+
+        // arb-bgg9 / arb-qjvg: this line is where an intermittent 500 was once observed and then
+        // could not be reproduced, leaving nothing to diagnose — EnsureSuccessStatusCode reports
+        // only the status, and the server-side exception that caused it was never captured. The
+        // Error rows ARE written (an unhandled request exception logs at Error, and LoggingSetup
+        // demotes the Microsoft category to Warning rather than suppressing it, so Error clears the
+        // threshold); they were simply never read. On the next occurrence they arrive with the
+        // failure instead of being lost with the run.
+        //
+        // Confined to the FAILURE path on purpose: a green run does exactly what it did before,
+        // paying neither the flush wait nor the read.
+        if (!searchResponse.IsSuccessStatusCode)
+        {
+            Assert.Fail(await DescribeFailureWithErrorLogsAsync(searchResponse));
+        }
 
         using var scope = _factory.Services.CreateScope();
         var repository = scope.ServiceProvider.GetRequiredService<Arbitarr.Data.Events.EventRepository>();
@@ -298,5 +313,68 @@ public sealed class ActivityEmissionTests : IClassFixture<WebApplicationFactory<
         // substring would pass for the wrong reason the moment a query text happened to contain
         // one, and equality is what actually pins "nothing per-occurrence was appended".
         Assert.Equal($"Query '{queryText}' (search)", cacheServed.Reason);
+    }
+
+    /// <summary>
+    /// arb-bgg9 / arb-qjvg: builds the assertion message for a search that did not succeed, with the
+    /// Error-level log rows the server wrote while failing it.
+    ///
+    /// <para><b>Read from <see cref="LogStore"/> rather than over <c>GET /api/admin/logs</c>.</b> The
+    /// two serve the same rows, and the HTTP route would additionally depend on the admin gate: this
+    /// fixture seeds NO admin key, so the request would be admitted only via the #43 unconfigured-key
+    /// bootstrap bypass, which is also scoped to local-network callers. That is a working but
+    /// incidental reason for a diagnostic to succeed, and it would start returning 401 the day
+    /// anything seeds a key into this fixture — silently turning the capture back off, which is the
+    /// exact failure this exists to prevent. The store is the same data with none of that coupling.
+    /// <see cref="LogSecretInjectionTests"/> reads it the same way.</para>
+    ///
+    /// <para><b>The flush wait is not optional.</b> The sink batches on
+    /// <see cref="SqliteLoggerProvider.FlushInterval"/> and never writes on the request thread (#65
+    /// AC5), so a read taken immediately after the failing request would usually find nothing and
+    /// report "no Error rows" for a run that had in fact logged one — a diagnostic that lies about
+    /// its own subject. Paid only on the failure path, so it costs a green run nothing.</para>
+    ///
+    /// <para>The message says explicitly when the set is EMPTY. "No rows" and "rows not read yet"
+    /// are different diagnoses and the next reader must not have to guess which they are holding.</para>
+    /// </summary>
+    private async Task<string> DescribeFailureWithErrorLogsAsync(HttpResponseMessage response)
+    {
+        await Task.Delay(SqliteLoggerProvider.FlushInterval + TimeSpan.FromMilliseconds(750));
+
+        var body = await response.Content.ReadAsStringAsync();
+        var lines = new List<string>
+        {
+            $"The torznab search returned {(int)response.StatusCode} ({response.StatusCode}) rather than a success status.",
+            $"Response body: {body}",
+        };
+
+        // The store read is itself best-effort: a failure to fetch the diagnostic must report the
+        // ORIGINAL failure plus why the diagnostic is missing, never replace one with the other.
+        try
+        {
+            var store = _factory.Services.GetRequiredService<LogStore>();
+            var page = await store.ReadAsync(level: "Error", logger: null, page: 1, pageSize: 50);
+
+            if (page.Entries.Count == 0)
+            {
+                lines.Add(
+                    "No Error-level log rows were present in the store (arb-qjvg: the failure left no "
+                    + "server-side Error row, so the cause is NOT an unhandled request exception).");
+            }
+            else
+            {
+                lines.Add($"{page.Entries.Count} Error-level log row(s) of {page.Total} total (arb-qjvg capture):");
+                lines.AddRange(page.Entries.Select(e =>
+                    $"  [{e.Time:O}] {e.Logger}: {e.Message}"
+                    + (e.ExceptionType is null ? string.Empty : $" | {e.ExceptionType}")
+                    + (e.Exception is null ? string.Empty : $" | {e.Exception}")));
+            }
+        }
+        catch (Exception ex)
+        {
+            lines.Add($"The Error-level log rows could not be read for this failure: {ex}");
+        }
+
+        return string.Join(Environment.NewLine, lines);
     }
 }
