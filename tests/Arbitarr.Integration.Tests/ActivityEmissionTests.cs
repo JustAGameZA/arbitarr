@@ -24,21 +24,22 @@ namespace Arbitarr.Integration.Tests;
 /// would be PERSISTED to the SQLite file in the config bind mount and then served un-gated over
 /// <c>/api/activity</c> for the whole retention window. Plan §9 forbids it; this proves it.
 /// </summary>
-public sealed class ActivityEmissionTests : IClassFixture<WebApplicationFactory<Program>>, IDisposable
+public sealed class ActivityEmissionTests : IAsyncLifetime
 {
     private const string ApiKey = "secret-api-key";
 
+    private readonly ArbitarrWebApplicationFactory _root;
     private readonly WebApplicationFactory<Program> _factory;
     private readonly string _configDirectory;
 
-    public ActivityEmissionTests(WebApplicationFactory<Program> factory)
+    public ActivityEmissionTests()
     {
         _configDirectory = Path.Combine(Path.GetTempPath(), "arbitarr-activity-emission-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_configDirectory);
 
-        _factory = factory.WithWebHostBuilder(builder =>
+        _root = ArbitarrWebApplicationFactory.OverConfigDirectory(_configDirectory);
+        _factory = _root.WithWebHostBuilder(builder =>
         {
-            builder.UseSetting("Arbitarr:ConfigDir", _configDirectory);
             builder.UseSetting("Arbitarr:ApiKey", ApiKey);
 
             builder.ConfigureServices(services =>
@@ -67,12 +68,18 @@ public sealed class ActivityEmissionTests : IClassFixture<WebApplicationFactory<
         });
     }
 
+    public Task InitializeAsync() => Task.CompletedTask;
+
     /// <summary>
-    /// This class builds its own config directory, so it owns deleting it (arb-gphi).
-    /// <see cref="ConfigDirectoryTeardown"/> carries why the pool clear and the delete are both
-    /// required.
+    /// This class OWNS its host so disposal drains it before the delete — see
+    /// <see cref="CategoryParamCapTests.DisposeAsync"/> for the full account of why the shared
+    /// <c>IClassFixture</c> this class used to inject made the delete throw (arb-gphi fix-up).
     /// </summary>
-    public void Dispose() => ConfigDirectoryTeardown.Delete(_configDirectory);
+    public async Task DisposeAsync()
+    {
+        await _root.DisposeAsync();
+        ConfigDirectoryTeardown.Delete(_configDirectory);
+    }
 
     [Fact]
     public async Task A_real_search_records_a_searchServed_event_that_says_how_it_was_served()

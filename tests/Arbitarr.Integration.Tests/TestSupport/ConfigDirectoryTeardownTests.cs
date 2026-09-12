@@ -31,8 +31,16 @@ public sealed class ConfigDirectoryTeardownTests
 
         var databasePath = new BackupPaths(directory).DatabasePath;
 
-        using (var connection = new SqliteConnectionFactory(
-                   new SqliteConnectionOptions { DatabasePath = databasePath }).OpenConnection())
+        var connectionFactory = new SqliteConnectionFactory(
+            new SqliteConnectionOptions { DatabasePath = databasePath });
+
+        // arb-itmm: since the WAL work OpenConnection only VERIFIES the journal mode and refuses a
+        // database still in 'delete' mode, so the one-time conversion Program.cs runs at startup has
+        // to run here too — this helper opens the database without a host. It is not incidental
+        // setup: without it every test in this class fails before reaching its assertion.
+        connectionFactory.ConvertToWalOnce();
+
+        using (var connection = connectionFactory.OpenConnection())
         {
             using var command = connection.CreateCommand();
             command.CommandText = "CREATE TABLE probe (id INTEGER PRIMARY KEY);";

@@ -32,24 +32,25 @@ namespace Arbitarr.Integration.Tests;
 /// verbatim by request-logging middleware — so this exercises the realistic leak path, not a
 /// hypothetical one. If a future change starts logging request URLs, THIS TEST is what fails.
 /// </summary>
-public sealed class LogSecretInjectionTests : IClassFixture<WebApplicationFactory<Program>>, IDisposable
+public sealed class LogSecretInjectionTests : IAsyncLifetime
 {
     // "secret-api-key" is the value the pre-commit secret guard allowlists (and the one
     // SearchRecentLogTests already uses); the suffix keeps it distinctive when searching log rows.
     private const string ApiKey = "secret-api-key-injection-probe";
 
+    private readonly ArbitarrWebApplicationFactory _root;
     private readonly WebApplicationFactory<Program> _factory;
     private readonly string _configDirectory;
 
-    public LogSecretInjectionTests(WebApplicationFactory<Program> factory)
+    public LogSecretInjectionTests()
     {
         _configDirectory = Path.Combine(
             Path.GetTempPath(), "arbitarr-log-injection-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_configDirectory);
 
-        _factory = factory.WithWebHostBuilder(builder =>
+        _root = ArbitarrWebApplicationFactory.OverConfigDirectory(_configDirectory);
+        _factory = _root.WithWebHostBuilder(builder =>
         {
-            builder.UseSetting("Arbitarr:ConfigDir", _configDirectory);
             builder.UseSetting("Arbitarr:ApiKey", ApiKey);
 
             builder.ConfigureServices(services =>
@@ -76,13 +77,22 @@ public sealed class LogSecretInjectionTests : IClassFixture<WebApplicationFactor
         });
     }
 
+    public Task InitializeAsync() => Task.CompletedTask;
+
     /// <summary>
-    /// This class builds its own config directory, so it owns deleting it (arb-gphi).
-    /// <see cref="ConfigDirectoryTeardown"/> carries why the pool clear and the delete are both
-    /// required — and this class's directory holds the LOG database the assertions read, so the
-    /// clear has to cover that second database too.
+    /// This class OWNS its host so disposal drains it before the delete — see
+    /// <see cref="CategoryParamCapTests.DisposeAsync"/> for the full account of why the shared
+    /// <c>IClassFixture</c> this class used to inject made the delete throw (arb-gphi fix-up).
+    ///
+    /// <para>This class's directory holds the LOG database its assertions read, so the clear has to
+    /// cover that second database too — <see cref="ConfigDirectoryTeardown"/> does, and that is why
+    /// draining this host before the delete matters more here than anywhere else.</para>
     /// </summary>
-    public void Dispose() => ConfigDirectoryTeardown.Delete(_configDirectory);
+    public async Task DisposeAsync()
+    {
+        await _root.DisposeAsync();
+        ConfigDirectoryTeardown.Delete(_configDirectory);
+    }
 
     [Fact]
     public async Task An_apikey_driven_through_the_search_pipeline_appears_in_no_log_row()

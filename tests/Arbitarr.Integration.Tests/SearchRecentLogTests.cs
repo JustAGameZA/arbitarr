@@ -19,21 +19,22 @@ namespace Arbitarr.Integration.Tests;
 /// query text lands in the recent-searches log, and (2) the client's apikey — which travels on
 /// the request's raw query string — never appears anywhere in that response body.
 /// </summary>
-public sealed class SearchRecentLogTests : IClassFixture<WebApplicationFactory<Program>>, IDisposable
+public sealed class SearchRecentLogTests : IAsyncLifetime
 {
     private const string ApiKey = "secret-api-key";
 
+    private readonly ArbitarrWebApplicationFactory _root;
     private readonly WebApplicationFactory<Program> _factory;
     private readonly string _configDirectory;
 
-    public SearchRecentLogTests(WebApplicationFactory<Program> factory)
+    public SearchRecentLogTests()
     {
         _configDirectory = Path.Combine(Path.GetTempPath(), "arbitarr-m2-search-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_configDirectory);
 
-        _factory = factory.WithWebHostBuilder(builder =>
+        _root = ArbitarrWebApplicationFactory.OverConfigDirectory(_configDirectory);
+        _factory = _root.WithWebHostBuilder(builder =>
         {
-            builder.UseSetting("Arbitarr:ConfigDir", _configDirectory);
             builder.UseSetting("Arbitarr:ApiKey", ApiKey);
 
             builder.ConfigureServices(services =>
@@ -63,12 +64,18 @@ public sealed class SearchRecentLogTests : IClassFixture<WebApplicationFactory<P
         });
     }
 
+    public Task InitializeAsync() => Task.CompletedTask;
+
     /// <summary>
-    /// This class builds its own config directory, so it owns deleting it (arb-gphi).
-    /// <see cref="ConfigDirectoryTeardown"/> carries why the pool clear and the delete are both
-    /// required.
+    /// This class OWNS its host so disposal drains it before the delete — see
+    /// <see cref="CategoryParamCapTests.DisposeAsync"/> for the full account of why the shared
+    /// <c>IClassFixture</c> this class used to inject made the delete throw (arb-gphi fix-up).
     /// </summary>
-    public void Dispose() => ConfigDirectoryTeardown.Delete(_configDirectory);
+    public async Task DisposeAsync()
+    {
+        await _root.DisposeAsync();
+        ConfigDirectoryTeardown.Delete(_configDirectory);
+    }
 
     [Fact]
     public async Task Real_torznab_search_records_query_in_recent_searches_and_never_leaks_apikey()

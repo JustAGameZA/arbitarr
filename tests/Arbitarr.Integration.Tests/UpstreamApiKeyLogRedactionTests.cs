@@ -60,7 +60,7 @@ namespace Arbitarr.Integration.Tests;
 /// rather than never arriving.
 /// </para>
 /// </summary>
-public sealed class UpstreamApiKeyLogRedactionTests : IClassFixture<WebApplicationFactory<Program>>, IDisposable
+public sealed class UpstreamApiKeyLogRedactionTests : IAsyncLifetime
 {
     // Distinctive enough to find in a log row, and prefixed with the value the pre-commit secret
     // guard allowlists (the convention LogSecretInjectionTests already follows).
@@ -71,25 +71,32 @@ public sealed class UpstreamApiKeyLogRedactionTests : IClassFixture<WebApplicati
     // Never a real host or an RFC1918 address.
     private const string UnreachableUpstream = "http://192.0.2.99:5076/";
 
-    private readonly WebApplicationFactory<Program> _factory;
+    private readonly ArbitarrWebApplicationFactory _factory;
     private readonly string _configDirectory;
 
-    public UpstreamApiKeyLogRedactionTests(WebApplicationFactory<Program> factory)
+    public UpstreamApiKeyLogRedactionTests()
     {
         _configDirectory = Path.Combine(
             Path.GetTempPath(), "arbitarr-upstream-key-log-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_configDirectory);
 
-        _factory = factory.WithWebHostBuilder(
-            builder => builder.UseSetting("Arbitarr:ConfigDir", _configDirectory));
+        // The factory sets Arbitarr:ConfigDir to this directory itself, so there is nothing left for
+        // a WithWebHostBuilder callback to customise here and the owned host is used directly.
+        _factory = ArbitarrWebApplicationFactory.OverConfigDirectory(_configDirectory);
     }
 
+    public Task InitializeAsync() => Task.CompletedTask;
+
     /// <summary>
-    /// This class builds its own config directory, so it owns deleting it (arb-gphi).
-    /// <see cref="ConfigDirectoryTeardown"/> carries why the pool clear and the delete are both
-    /// required.
+    /// This class OWNS its host so disposal drains it before the delete — see
+    /// <see cref="CategoryParamCapTests.DisposeAsync"/> for the full account of why the shared
+    /// <c>IClassFixture</c> this class used to inject made the delete throw (arb-gphi fix-up).
     /// </summary>
-    public void Dispose() => ConfigDirectoryTeardown.Delete(_configDirectory);
+    public async Task DisposeAsync()
+    {
+        await _factory.DisposeAsync();
+        ConfigDirectoryTeardown.Delete(_configDirectory);
+    }
 
     [Theory]
     [InlineData(SearchProtocol.Torznab)]
