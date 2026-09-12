@@ -43,6 +43,8 @@ public sealed class NewznabSource : IUpstreamSource
         _circuitBreaker = circuitBreaker ?? throw new ArgumentNullException(nameof(circuitBreaker));
         _rateLimiter = rateLimiter ?? new RateLimiter(options.RateLimitMaxCalls, options.EffectiveRateLimitInterval);
 
+        EnsureEndpointIsOnBaseOrigin();
+
         // The per-source TimeoutSeconds override is honoured HERE, on the client this instance owns,
         // because IUpstreamSource has no per-call timeout in its shape. That works while each source
         // gets its own HttpClient. When the registry (arb-x7w8.4) resolves N sources it must keep
@@ -218,6 +220,60 @@ public sealed class NewznabSource : IUpstreamSource
     /// host root.
     /// </summary>
     private Uri EndpointUri => new(_options.BaseUrl, _options.ApiPath.TrimStart('/'));
+
+    /// <summary>
+    /// Refuses an <see cref="NewznabSourceOptions.ApiPath"/> whose RESOLVED endpoint leaves the
+    /// origin of <see cref="NewznabSourceOptions.BaseUrl"/>, because
+    /// <see cref="AppendApiKey"/> puts the indexer's key in that endpoint's query string: an
+    /// endpoint on another origin means the operator's key is handed to a host they never
+    /// configured.
+    ///
+    /// <para><b>The trim in <see cref="EndpointUri"/> is NOT this defence, and assuming it is is
+    /// exactly what produced the bug.</b> <c>TrimStart('/')</c> does neutralise the
+    /// protocol-relative <c>//host/api</c> and <c>///host/api</c> forms, and <see cref="Uri"/>'s own
+    /// normalisation flattens <c>../../api</c> back under the base — but
+    /// <c>new Uri(base, relativeOrAbsolute)</c> REPLACES the base outright when the second argument
+    /// parses as absolute, and a leading slash is not what makes it absolute. So
+    /// <c>http://attacker.example/api</c> survives the trim untouched, as do its scheme-upgraded
+    /// (<c>https://</c>), whitespace-prefixed (<see cref="Uri"/> strips leading whitespace),
+    /// uppercase-scheme and scheme-downgraded (<c>file:///…</c>) variants.</para>
+    ///
+    /// <para><b>Asserted on the resolved endpoint, not on the ApiPath string.</b> Comparing scheme,
+    /// host and port against the base closes every one of those variants under a single check,
+    /// including ones nobody enumerated: there is no list of dangerous prefixes to keep current, and
+    /// a form that resolves back onto the base origin is harmless by definition. A string-shape
+    /// blacklist would have to be re-derived each time <see cref="Uri"/>'s parsing changes.</para>
+    ///
+    /// <para><b>The constructor, not <see cref="EndpointUri"/>'s getter</b>, so the source fails at
+    /// CONSTRUCTION and can never be handed to a caller in a state where a later search would leak.
+    /// That also covers the registry (arb-x7w8.4) as a second producer of
+    /// <see cref="NewznabSourceOptions"/> without it having to know this rule exists.</para>
+    ///
+    /// <para>The message interpolates <see cref="NewznabSourceOptions.SourceName"/> and nothing
+    /// else. Rendering the offending endpoint or ApiPath would print an attacker-chosen host into
+    /// the persistent log store at <c>/api/admin/logs</c>, and the ApiPath may itself be shaped to
+    /// carry text there.</para>
+    /// </summary>
+    /// <exception cref="ArgumentException">The resolved endpoint is not on the base URL's origin.</exception>
+    private void EnsureEndpointIsOnBaseOrigin()
+    {
+        var endpoint = EndpointUri;
+        var baseUrl = _options.BaseUrl;
+
+        var sameOrigin =
+            string.Equals(endpoint.Scheme, baseUrl.Scheme, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(endpoint.Host, baseUrl.Host, StringComparison.OrdinalIgnoreCase)
+            && endpoint.Port == baseUrl.Port;
+
+        if (!sameOrigin)
+        {
+            throw new ArgumentException(
+                $"Source '{_options.SourceName}': the configured {nameof(NewznabSourceOptions.ApiPath)} resolves to an endpoint " +
+                $"outside the scheme, host or port of {nameof(NewznabSourceOptions.BaseUrl)}. The indexer's API key is sent to " +
+                "that endpoint, so it must stay on the configured origin. Configure a path relative to the base URL.",
+                "options");
+        }
+    }
 
     private static string SearchMode(SearchQuery query) => query switch
     {
