@@ -105,4 +105,47 @@ public class ReleaseCandidateTests
         Assert.Equal(12, candidate.Files);
         Assert.Equal(3, candidate.Grabs);
     }
+
+    /// <summary>
+    /// <see cref="ReleaseCandidate.WithTitle"/> is documented as the single clone site for title
+    /// rewrites precisely so callers "cannot drift on which attributes survive a rewrite" — but
+    /// nothing asserted that, and <c>Poster</c> was added to the parser and the prompt while the
+    /// clone kept dropping it. Since every classification path rewrites the title first
+    /// (<c>ClassifierPollingWorker</c>, <c>TitleNormalizer</c>, <c>FilterStage</c>), the field was
+    /// silently absent in production while direct-construction tests passed.
+    ///
+    /// <para>
+    /// Asserted PER FIELD rather than as one "the clone kept the Usenet data" check: a single
+    /// assertion passes while four of five fields are dropped, which is the failure mode this
+    /// exists to catch.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void WithTitle_CarriesEveryUsenetFieldThroughTheClone()
+    {
+        var original = new ReleaseCandidate
+        {
+            Title = "Obfuscated.Release.Name",
+            Guid = "guid-usenet",
+            PubDate = DateTimeOffset.UnixEpoch,
+            Link = new Uri("https://example.invalid/release/usenet"),
+            Protocol = ProtocolKind.Usenet,
+            Poster = "a1b2c3@example.invalid",
+            UsenetGroup = new[] { "alt.binaries.example" },
+            PasswordProtected = true,
+            Files = 12,
+            Grabs = 3,
+        };
+
+        var rewritten = original.WithTitle("Rewritten.Title", originalTitleRaw: original.Title);
+
+        Assert.Equal("Rewritten.Title", rewritten.Title);
+        Assert.Equal("Obfuscated.Release.Name", rewritten.OriginalTitle);
+
+        Assert.Equal("a1b2c3@example.invalid", rewritten.Poster);
+        Assert.Equal(new[] { "alt.binaries.example" }, rewritten.UsenetGroup);
+        Assert.True(rewritten.PasswordProtected);
+        Assert.Equal(12, rewritten.Files);
+        Assert.Equal(3, rewritten.Grabs);
+    }
 }
