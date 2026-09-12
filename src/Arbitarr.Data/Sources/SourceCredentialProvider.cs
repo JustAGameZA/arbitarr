@@ -1,3 +1,5 @@
+using Arbitarr.Core.Diagnostics;
+
 namespace Arbitarr.Data.Sources;
 
 /// <summary>
@@ -22,7 +24,35 @@ namespace Arbitarr.Data.Sources;
 /// </remarks>
 /// <param name="BaseUrl">The validated absolute base URL of the configured source.</param>
 /// <param name="ApiKey">The key to send to that source, and to nowhere else.</param>
-public sealed record SourceCredential(string BaseUrl, string ApiKey);
+public sealed record SourceCredential(string BaseUrl, string ApiKey)
+{
+    /// <summary>
+    /// Renders the address in full and the key as <see cref="CredentialPatterns.Replacement"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>THE SYNTHESISED ToString WOULD PRINT THE KEY.</b> A positional record's compiler-
+    /// generated <c>ToString</c> prints every member by name and value, so
+    /// <c>SourceCredential { BaseUrl = …, ApiKey = … }</c> is what any interpolation of this value
+    /// produces — and an interpolation is exactly how a credential reaches a log line by accident:
+    /// <c>$"probe failed for {credential}"</c> compiles, reads as harmless, and is a durable
+    /// disclosure.</para>
+    ///
+    /// <para><b>NOTHING ELSE COVERS IT (CLAUDE.md §1).</b> The two mechanisms that scrub secrets
+    /// here are both scoped to query strings: <c>IHttpClientFactory</c>'s URI redaction collapses
+    /// the query of an outbound request URI, and <see cref="Logging.LogMessageCleanser"/> scrubs
+    /// credentials in query strings. A bare <c>ApiKey = …</c> in a log message is in neither shape,
+    /// so it would land verbatim in the persistent log store served at
+    /// <c>/api/admin/logs</c> — the same gap §1 describes for a secret in a URL path. The override
+    /// is the mechanism; deleting it as redundant reopens the hole silently, which is why the
+    /// marker's PRESENCE is asserted in the tests rather than merely the key's absence.</para>
+    ///
+    /// <para>Scoped to this type on purpose: <see cref="Media.SonarrCredential"/> carries the same
+    /// hazard and is being handled separately under arb-1ox9, so it is deliberately not touched
+    /// here.</para>
+    /// </remarks>
+    public override string ToString() =>
+        $"{nameof(SourceCredential)} {{ {nameof(BaseUrl)} = {BaseUrl}, {nameof(ApiKey)} = {CredentialPatterns.Replacement} }}";
+}
 
 /// <summary>
 /// The single production reader of a stored per-source API key, and the reason

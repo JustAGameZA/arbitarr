@@ -31,9 +31,11 @@ resolver), neither of which reads the key itself.
 
 ## Decision
 
-The single-caller rule is generalised from "one caller" to **exactly one caller per
-credential-provider type**: one provider type per secret family, and that provider is the sole
-caller of its family's reader.
+The single-caller rule is generalised from "one caller" to **exactly one caller per secret family,
+where a family is one repository reader**: each `ReadApiKeyForUpstreamRequestAsync` has exactly one
+credential-provider type, and that provider is its sole caller. Stated against the reader rather
+than against the provider because the reader is what `SecretReaderSingleCallerTests` actually
+counts — a rule phrased per provider type would be satisfied by a provider nobody calls.
 
 Concretely:
 
@@ -67,9 +69,11 @@ state. This was considered as a way to avoid storing per-release rows at all, an
 
 The encrypted-link form puts the upstream URL — *including the indexer API key* — into a value the
 client holds, protected only by a symmetric key. That trades a stored row for a cryptographic
-dependency on the request path, and the dependency has failed in the field: Prowlarr's issue tracker
-carries reports of `Specified key is not a valid size for this algorithm`, which breaks **every**
-search rather than degrading one. Arbitarr's opaque GUID handle carries no upstream material at all,
+dependency on the request path, and that dependency fails in a way a stored row cannot: a key of the
+wrong length surfaces as a `CryptographicException` ("specified key is not a valid size for this
+algorithm") at *encrypt* time, so it breaks **every** link rather than degrading one — a
+configuration mistake becomes a total outage instead of a partial one.
+Arbitarr's opaque GUID handle carries no upstream material at all,
 so a leaked link discloses nothing and revoking one is a row delete rather than a key rotation that
 invalidates every outstanding link at once.
 
@@ -109,8 +113,10 @@ the per-source key from the process entirely, and the reason it loses is a secre
   entry **moved** rather than gaining a sibling; a second row for the same reader would defeat the
   rule the table encodes. The test's positive-control loop asserts each allowed site is actually
   found, so a scan that stopped matching fails loudly instead of passing vacuously.
-- CLAUDE.md §1's single-caller bullet is generalised to state the rule per credential-provider type
-  and to point here. `docs/standards/architecture.md`'s secrets-mechanisms list already stated the
+- CLAUDE.md §1's single-caller bullet is generalised to state the rule per secret family and to
+  point here. It deliberately does **not** enumerate the families — that roster lives in
+  `docs/standards/architecture.md`, so adding a family (arb-6l9b.1's Radarr provider, next) is one
+  edit there rather than two, and CLAUDE.md cannot silently go stale against the test. `docs/standards/architecture.md`'s secrets-mechanisms list already stated the
   rule in the general form ("Every `ReadApiKeyForUpstreamRequestAsync` has exactly one caller") and
   now names the provider for the source key.
 - `SourceRepository.ReadApiKeyForUpstreamRequestAsync`'s "THE RULE THIS DOES NOT RELAX" comment is

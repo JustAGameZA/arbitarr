@@ -245,11 +245,11 @@ public static class AdminSourceEndpoints
         // operator pressing Test on a half-configured source wants to learn whether the ADDRESS is
         // right, and an unauthenticated caps request answers that (Unreachable vs
         // AuthenticationFailed vs UnexpectedResponse) where refusing to probe would answer nothing.
+        // The address comes from the row that was just loaded for the 404 check; the credential is
+        // consulted only for the key, so there is no implied invariant that its BaseUrl and this
+        // source's agree.
         var credential = await credentials.GetAsync(id, cancellationToken);
-        var outcome = await prober.ProbeAsync(
-            credential?.BaseUrl ?? source.BaseUrl,
-            credential?.ApiKey,
-            cancellationToken);
+        var outcome = await prober.ProbeAsync(source.BaseUrl, credential?.ApiKey, cancellationToken);
 
         return Results.Ok(new SourceTestResponse(
             Success: outcome == SourceProbeOutcome.Ok,

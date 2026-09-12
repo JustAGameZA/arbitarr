@@ -1,3 +1,4 @@
+using Arbitarr.Core.Diagnostics;
 using Arbitarr.Data.Sources;
 using Arbitarr.TestSupport;
 using Microsoft.EntityFrameworkCore;
@@ -64,6 +65,41 @@ public sealed class SourceCredentialProviderTests : IDisposable
         Assert.NotNull(credential);
         Assert.Equal(PlantedKey, credential!.ApiKey);
         Assert.Equal(BaseUrl, credential.BaseUrl);
+    }
+
+    [Fact]
+    public async Task The_credentials_ToString_redacts_the_key_rather_than_printing_it()
+    {
+        // A positional record's synthesised ToString prints every member by value, so without the
+        // override this type renders its own ApiKey — and an interpolation like $"probe failed for
+        // {credential}" compiles, reads as harmless, and lands verbatim in the persistent log store.
+        // Neither mechanism that would normally catch this applies: IHttpClientFactory's URI
+        // redaction and LogMessageCleanser both scrub QUERY STRINGS, and a bare "ApiKey = …" is in
+        // neither shape (CLAUDE.md §1).
+        const string PlantedKey = "planted-tostring-key-3e7c05af";
+
+        using var context = CreateContext();
+        var repository = new SourceRepository(context);
+        var source = await repository.AddAsync(
+            SourceRepository.NzbHydraKind, "Rendered source", BaseUrl, PlantedKey, enabled: true, CancellationToken.None);
+
+        var provider = new SourceCredentialProvider(repository);
+        var credential = await provider.GetAsync(source.Id, CancellationToken.None);
+        Assert.NotNull(credential);
+
+        var rendered = credential!.ToString();
+
+        // THE POSITIVE CONTROL, and the assertion that must come first: the redaction marker is
+        // PRESENT. Asserting only that the key is absent would pass just as happily against a
+        // ToString that returned "" or the bare type name — an empty string contains no secret
+        // either — so the marker's presence is what proves the key reached this renderer and was
+        // replaced, rather than never arriving (CLAUDE.md §4, the LogSecretInjectionTests shape).
+        Assert.Contains(CredentialPatterns.Replacement, rendered, StringComparison.Ordinal);
+        Assert.DoesNotContain(PlantedKey, rendered, StringComparison.Ordinal);
+
+        // The address is still rendered in full: a redaction that erased everything would satisfy
+        // both assertions above while making the value useless for telling which source failed.
+        Assert.Contains(BaseUrl, rendered, StringComparison.Ordinal);
     }
 
     [Fact]
