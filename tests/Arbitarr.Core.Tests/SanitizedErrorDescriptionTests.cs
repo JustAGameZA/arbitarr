@@ -451,6 +451,53 @@ public sealed class SanitizedErrorDescriptionTests
     }
 
     /// <summary>
+    /// <b>arb-pjxs: EVERY occurrence of a shape goes, not merely the first.</b>
+    ///
+    /// <para>Found by mutation-sweeping this file. A scrubber whose arms each replace only their
+    /// FIRST match passed all 67 tests here unchanged — no row planted two values of the SAME shape,
+    /// so one replacement per arm was always enough to satisfy every absence assertion. Even
+    /// <c>The_reported_leak_body_publishes_neither_of_its_two_hostnames</c>, the one test that does
+    /// carry two hosts, misses it: its two hosts are different shapes ("ollama.lan" reaches
+    /// <c>DottedHostName</c>, "ollama-gpu-rig" reaches <c>ContextualSingleLabelHost</c>), so each arm
+    /// still only had one match to make. The property "an arm redacts all its matches" was therefore
+    /// never pinned by anything, while a real upstream body naming two peers of one shape is
+    /// ordinary — a fallback that was also refused, a pool of two Ollama hosts.</para>
+    ///
+    /// <para><b>Why the planted value is the SECOND occurrence's surviving fragment, not the whole
+    /// value</b> — the lesson this file already paid for twice. Under the first-match-only scrubber
+    /// the second address is not left untouched: a LATER arm still takes a bite out of it, publishing
+    /// "&lt;redacted&gt;:11434" and "&lt;redacted&gt;::1". Planting the whole second host and
+    /// asserting its absence would therefore pass against that scrubber — the whole literal really is
+    /// gone — while the port and the address suffix sit on the dashboard. Each row plants the exact
+    /// substring measured to survive, which is what makes it bite.</para>
+    ///
+    /// <para>Positive control per row, as everywhere here: the planted fragment is shown findable in
+    /// the input by the same search that then asserts its absence, and the redaction token is
+    /// asserted present so a wholesale-dropped excerpt cannot pass as a scrubbed one.</para>
+    /// </summary>
+    [Theory]
+    // Two host:port peers. The surviving fragment is the second port, stranded beside the token.
+    [InlineData("upstream a.internal.example:11434 then b.internal.example:11434", ":11434")]
+    // Two bare IPv6 peers. The contextual arm eats the second address's leading label, stranding
+    // its compressed suffix.
+    [InlineData("peer fd00::42 and peer fe80::1 gone", "::1")]
+    public void A_second_occurrence_of_the_same_shape_is_redacted_too(
+        string excerptText,
+        string plantedFragment)
+    {
+        var body = $$"""{"error":"{{excerptText}}"}""";
+
+        // Detectability: the fragment is genuinely in the input, found by this very search.
+        Assert.Contains(plantedFragment, body, StringComparison.Ordinal);
+
+        var described = SanitizedErrorDescription.Describe(
+            new OllamaRequestException(HttpStatusCode.BadRequest, body));
+
+        Assert.DoesNotContain(plantedFragment, described, StringComparison.Ordinal);
+        Assert.Contains(SanitizedErrorDescription.Replacement, described, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// <b>Detail an operator needs must NOT be redacted by the widened patterns.</b> Each row is a
     /// shape a plausible-but-wrong widening would have eaten: a version string (why
     /// <c>DottedHostName</c> keeps its alphabetic-final-label guard), the sentence-final "duration."
