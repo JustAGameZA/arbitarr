@@ -1,8 +1,10 @@
-import { screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider, useMutation } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SonarrSection } from './Sonarr';
+import { apiFetch } from '../../../api/client';
 import { useAdminKeyStore } from '../../../state/adminKeyStore';
 import { mockApi } from '../../../test/mockApi';
 import { renderSurface } from '../../../test/renderSurface';
@@ -23,6 +25,72 @@ const TYPED_KEY = 'placeholder-sonarr-key-9d4c';
 
 function probe(outcome: string, message: string) {
   return { success: outcome === 'Ok', outcome, message };
+}
+
+/**
+ * Mounts the section against a client the test can then inspect.
+ *
+ * `renderSurface` builds its own client and does not hand it back, so the cache
+ * assertions below mount their own — with the SAME defaults, and deliberately no
+ * `gcTime` of its own, mirroring `src/api/queryClient.ts`. If the mutation's
+ * `gcTime: 0` were removed, react-query's five-minute default would apply here
+ * exactly as it does in the app, which is what the control below demonstrates.
+ */
+function renderWithClient() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+
+  render(
+    <QueryClientProvider client={client}>
+      <SonarrSection />
+    </QueryClientProvider>,
+  );
+
+  return client;
+}
+
+/**
+ * Serialises everything the MutationCache is holding.
+ *
+ * `state.variables` is where a settled save keeps the typed key, so this is the
+ * sweep an operator with the devtools open would be doing by hand. Whole mutation
+ * objects rather than just `state`, so a copy parked on any other field would be
+ * caught too.
+ */
+function sweepMutationCache(client: QueryClient): string {
+  return JSON.stringify(client.getMutationCache().getAll());
+}
+
+/**
+ * THE POSITIVE CONTROL for the cache assertions, and the reason they bite.
+ *
+ * The same PUT, against the same fetch double, through a mutation differing from
+ * the shipped one in exactly one respect: no `gcTime: 0` and no reset. It
+ * reproduces the retention `gcTime: 0` exists to remove, and proves the sweep
+ * FINDS a key that is really there. Without it, `not.toContain` would pass just as
+ * happily against a cache that never held a save at all — an empty set contains
+ * nothing.
+ *
+ * Driven through a real mutation rather than a hand-planted cache entry, because
+ * a planted object only proves `JSON.stringify` can see a string; this proves the
+ * retention is a property of react-query's defaults, which is the claim the
+ * shipped `gcTime: 0` answers.
+ */
+function LeakySaveHarness() {
+  const mutation = useMutation({
+    mutationFn: (request: { baseUrl: string; apiKey: string }) =>
+      apiFetch<unknown>(ROUTE, { method: 'PUT', body: JSON.stringify(request) }),
+  });
+
+  return (
+    <button
+      type="button"
+      onClick={() => mutation.mutate({ baseUrl: CONFIGURED.baseUrl, apiKey: TYPED_KEY })}
+    >
+      Leaky save
+    </button>
+  );
 }
 
 /** The body of the last PUT the page sent, parsed. */
@@ -322,5 +390,55 @@ describe('Sonarr section', () => {
 
     await screen.findByLabelText('Base URL');
     expect(api.adminKeyOn(ROUTE)).toBe('admin-key-under-test');
+  });
+
+  /**
+   * POSITIVE CONTROL for the test that follows: a mutation carrying this key with
+   * react-query's DEFAULT gcTime and no reset leaves `variables` — the plaintext
+   * key — sitting in the MutationCache after it settles, for five minutes.
+   *
+   * That retention is exactly what `gcTime: 0` on the shipped mutation removes,
+   * and demonstrating it here is what makes the absence assertion below evidence
+   * rather than a search that could never have matched.
+   */
+  it('retains the typed key in the mutation cache without gcTime and reset', async () => {
+    mockApi({ [ROUTE]: { body: CONFIGURED } });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <LeakySaveHarness />
+      </QueryClientProvider>,
+    );
+
+    // Nothing yet — so the retention below cannot be satisfied by a cache that
+    // was already dirty before the save ran.
+    expect(sweepMutationCache(client)).not.toContain(TYPED_KEY);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Leaky save' }));
+
+    await waitFor(() => expect(sweepMutationCache(client)).toContain(TYPED_KEY));
+  });
+
+  /**
+   * ...THEREFORE THIS ABSENCE IS REAL. The shipped mutation sets `gcTime: 0` and
+   * resets on settle, so the same save through the real form leaves no copy of the
+   * key behind — component state alone would not be enough, because the cache is a
+   * second copy. Removing either half of that pairing fails here.
+   */
+  it('leaves no copy of the typed key in the mutation cache after a save', async () => {
+    const api = mockApi({ [ROUTE]: { body: CONFIGURED } });
+    const client = renderWithClient();
+
+    const field = await screen.findByLabelText('Replace API key');
+    await userEvent.type(field, TYPED_KEY);
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    // The save really was made and really did carry the key, so the emptiness
+    // below is an eviction rather than a mutation that never ran.
+    await waitFor(() => expect(lastPutBody(api)).toHaveProperty('apiKey', TYPED_KEY));
+
+    await waitFor(() => expect(sweepMutationCache(client)).not.toContain(TYPED_KEY));
   });
 });
