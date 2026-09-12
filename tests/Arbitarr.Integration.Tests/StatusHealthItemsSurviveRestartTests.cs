@@ -3,8 +3,12 @@ using System.Net.Http.Json;
 using Arbitarr.Api.Dashboard;
 using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Notifications;
+using Arbitarr.Data;
+using Arbitarr.Data.Entities;
 using Arbitarr.Data.Notifications;
+using Arbitarr.Host.Sources;
 using Arbitarr.Integration.Tests.TestSupport;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Xunit;
@@ -27,6 +31,15 @@ namespace Arbitarr.Integration.Tests;
 public sealed class StatusHealthItemsSurviveRestartTests : IDisposable
 {
     private static readonly DateTimeOffset First = new(2026, 9, 11, 10, 0, 0, TimeSpan.Zero);
+
+    /// <summary>arb-pu58: a source that HAS a row in the sources table, so its refusal must survive.</summary>
+    private const string ConfiguredSource = "nzbhydra2";
+
+    /// <summary>
+    /// arb-pu58: a source that has NO row — the state left behind by deleting a source while its
+    /// refusal stands. Named so a failure message says which side of the prune went wrong.
+    /// </summary>
+    private const string RemovedSource = "removed-source";
 
     private readonly string _sharedConfigDirectory =
         Path.Combine(Path.GetTempPath(), "arbitarr-v3w-tests", Guid.NewGuid().ToString("N"));
@@ -70,12 +83,41 @@ public sealed class StatusHealthItemsSurviveRestartTests : IDisposable
         return response!.Health;
     }
 
+    /// <summary>
+    /// Adds a real <c>Sources</c> row for <paramref name="displayName"/>.
+    ///
+    /// <para><b>arb-pu58 made this setup load-bearing rather than incidental.</b> Rehydration now
+    /// prunes refusal rows whose source has no row in that table, so a test that records a refusal
+    /// against a name the sources table has never heard of is describing the GHOST case, not the
+    /// survives-a-restart case. These tests are about durability for a source that still exists, so
+    /// the source has to actually exist — which is also what the production path looks like, since a
+    /// refusal can only be recorded for a source that served a download attempt.</para>
+    /// </summary>
+    private static async Task AddSourceAsync(ArbitarrWebApplicationFactory factory, string displayName)
+    {
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ArbitarrDbContext>();
+
+        dbContext.Sources.Add(new Source
+        {
+            Kind = SourceSeeder.NzbHydraKind,
+            DisplayName = displayName,
+            BaseUrl = "https://nzbhydra.example.invalid",
+            Enabled = true,
+            CreatedAt = First,
+            UpdatedAt = First,
+        });
+
+        await dbContext.SaveChangesAsync();
+    }
+
     [Fact]
     public async Task A_refusal_recorded_by_one_host_is_visible_from_a_fresh_host_over_the_same_database()
     {
         await using (var first = ArbitarrWebApplicationFactory.OverConfigDirectory(_sharedConfigDirectory))
         {
             using var client = first.CreateClient();
+            await AddSourceAsync(first, "nzbhydra2");
             var tracker = first.Services.GetRequiredService<IDownloadRefusalTracker>();
 
             await tracker.RecordRefusalAsync(
@@ -118,6 +160,10 @@ public sealed class StatusHealthItemsSurviveRestartTests : IDisposable
         await using (var first = ArbitarrWebApplicationFactory.OverConfigDirectory(_sharedConfigDirectory))
         {
             using var client = first.CreateClient();
+
+            // arb-pu58: the source must EXIST, or the emptiness below would be the prune's doing
+            // rather than the separate-database's, and this test would stop testing its own subject.
+            await AddSourceAsync(first, "nzbhydra2");
             var tracker = first.Services.GetRequiredService<IDownloadRefusalTracker>();
 
             await tracker.RecordRefusalAsync("nzbhydra2", "Refused HTTP 302: the source redirected instead of serving the file.", First);
@@ -142,6 +188,11 @@ public sealed class StatusHealthItemsSurviveRestartTests : IDisposable
         await using (var first = ArbitarrWebApplicationFactory.OverConfigDirectory(_sharedConfigDirectory))
         {
             using var client = first.CreateClient();
+
+            // arb-pu58: the source must EXIST, or the final assertion would hold because the prune
+            // removed the row rather than because the GRAB did — and this test would silently stop
+            // covering clear-on-success, the thing it is named for.
+            await AddSourceAsync(first, "nzbhydra2");
             var tracker = first.Services.GetRequiredService<IDownloadRefusalTracker>();
 
             await tracker.RecordRefusalAsync("nzbhydra2", "refused", First);
@@ -179,6 +230,7 @@ public sealed class StatusHealthItemsSurviveRestartTests : IDisposable
         await using (var first = ArbitarrWebApplicationFactory.OverConfigDirectory(_sharedConfigDirectory))
         {
             using var client = first.CreateClient();
+            await AddSourceAsync(first, "nzbhydra2");
             var tracker = first.Services.GetRequiredService<IDownloadRefusalTracker>();
 
             await tracker.RecordRefusalAsync("nzbhydra2", "refused", First);
@@ -233,6 +285,72 @@ public sealed class StatusHealthItemsSurviveRestartTests : IDisposable
         // from the same fire-and-forget path on the same host. So the rehydrated source's continued
         // absence here is not "we didn't wait long enough", it is "it was never posted".
         Assert.DoesNotContain("nzbhydra2", delivered, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// arb-pu58: a refusal row for a source that is NO LONGER CONFIGURED is discarded at rehydration
+    /// instead of becoming a permanent blocking item for a source that does not exist.
+    ///
+    /// <para><b>Why this cannot resolve itself without the prune.</b> A row is deleted on exactly one
+    /// event — a successful grab from that source. Remove the source and that event can never happen
+    /// again, so the item is not merely stale, it is unclearable: every restart replays it, and since
+    /// arb-apj a notification goes with it.</para>
+    ///
+    /// <para><b>Both halves are load-bearing and the test asserts both.</b> The unknown source's row
+    /// must go, and a still-configured source's row must SURVIVE the same pass — otherwise a blanket
+    /// "delete everything at startup" would pass the first assertion while destroying the durability
+    /// arb-v3w exists to provide. Asserting only the disappearance would not tell those apart.</para>
+    ///
+    /// <para>The first host asserts BOTH items are present before the restart. That is the positive
+    /// control: without it the post-restart absence of the orphan would pass just as happily had the
+    /// refusal never been recorded, or had the whole health surface been empty for some unrelated
+    /// reason.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_refusal_row_for_a_source_that_is_no_longer_configured_is_pruned_at_restart()
+    {
+        await using (var first = ArbitarrWebApplicationFactory.OverConfigDirectory(_sharedConfigDirectory))
+        {
+            using var client = first.CreateClient();
+
+            // A source that genuinely EXISTS in the sources table, so its refusal is the one the
+            // prune must keep. RemovedSource is deliberately NOT added — that absence is the whole
+            // condition under test.
+            await AddSourceAsync(first, ConfiguredSource);
+
+            var tracker = first.Services.GetRequiredService<IDownloadRefusalTracker>();
+            await tracker.RecordRefusalAsync(ConfiguredSource, "refused", First);
+            await tracker.RecordRefusalAsync(RemovedSource, "refused", First);
+
+            // THE POSITIVE CONTROL: both rows exist and both are visible, so the selective absence
+            // asserted after the restart is genuinely the prune having run.
+            var before = await ReadHealthAsync(client);
+            Assert.Equal(
+                new[] { ConfiguredSource, RemovedSource },
+                before.Select(i => i.SourceName).OrderBy(n => n, StringComparer.Ordinal).ToArray());
+        }
+
+        // The restart. RemovedSource was never in the sources table — the state an operator leaves
+        // behind by deleting a source while its refusal stands.
+        await using var second = ArbitarrWebApplicationFactory.OverConfigDirectory(_sharedConfigDirectory);
+        using var secondClient = second.CreateClient();
+
+        var item = Assert.Single(await ReadHealthAsync(secondClient));
+        Assert.Equal(ConfiguredSource, item.SourceName);
+
+        // AND THE ROW IS GONE FROM THE TABLE, not merely filtered out of this response. Had the fix
+        // filtered at read time instead, this would still hold a row and the item would come back on
+        // any later start whose filter was less careful.
+        using (var scope = second.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ArbitarrDbContext>();
+            var remaining = await dbContext.DownloadRefusalEntries
+                .AsNoTracking()
+                .Select(e => e.SourceName)
+                .ToListAsync();
+
+            Assert.Equal([ConfiguredSource], remaining);
+        }
     }
 
     /// <summary>Records the real serialized bodies the transport posted.</summary>

@@ -81,4 +81,26 @@ public sealed class DownloadRefusalStore : IDownloadRefusalStore
             .Select(e => new DownloadRefusal(e.SourceName, e.Reason, e.ObservedSinceUtc, e.LastObservedUtc))
             .ToArray();
     }
+
+    public async Task<int> PruneUnknownSourcesAsync(
+        IReadOnlyCollection<string> knownSourceNames,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(knownSourceNames);
+
+        // Materialised to an array first because EF translates a Contains over an in-memory
+        // collection into the SQL IN list, and the parameter is an interface whose concrete type
+        // (and therefore whether it can be enumerated more than once) is the caller's choice.
+        //
+        // An empty set is NOT special-cased into a no-op: it means the Sources table is empty, so
+        // every row here IS orphaned and the unconstrained delete below is the correct answer. See
+        // the interface doc — short-circuiting it is the tempting change that reintroduces the bug
+        // for the one install where it matters most.
+        var known = knownSourceNames.ToArray();
+
+        return await _dbContext.DownloadRefusalEntries
+            .Where(e => !known.Contains(e.SourceName))
+            .ExecuteDeleteAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
 }

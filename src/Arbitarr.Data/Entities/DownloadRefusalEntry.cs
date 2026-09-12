@@ -8,11 +8,15 @@ namespace Arbitarr.Data.Entities;
 /// a fresh process showed a clean dashboard while every download still failed — the exact
 /// invisibility ADR 0014 records as the original defect.
 ///
-/// <para><b>This table cannot grow.</b> <see cref="SourceName"/> is uniquely indexed and a row is
-/// deleted the moment the source serves a payload, so the row count is bounded above by the number
-/// of CONFIGURED sources — a handful. That is why there is deliberately no <c>ExpiresAt</c>, no
-/// prune predicate, and no <c>MaintenanceJob</c> pass for it: an unbounded-growth prune would be
-/// machinery guarding against something the unique index already makes impossible.</para>
+/// <para><b>This table cannot grow without bound.</b> <see cref="SourceName"/> is uniquely indexed
+/// and a row is deleted the moment the source serves a payload, so the row count is bounded above by
+/// the number of HISTORICALLY configured sources — every name that has ever been configured, pruned
+/// at rehydration — rather than by the number configured right now. The two differ because nothing
+/// deletes a row when the operator removes the source it belongs to: a successful grab is the only
+/// clearing event, and a deleted source can never serve one. That gap is arb-pu58, and the prune
+/// that closes it is <c>IDownloadRefusalStore.PruneUnknownSourcesAsync</c>, called once per start
+/// from <c>DownloadRefusalRehydrationService</c>. There is still deliberately no <c>ExpiresAt</c> and
+/// no <c>MaintenanceJob</c> pass: the bound is a set of names, not a function of elapsed time.</para>
 ///
 /// <para><b>NO UPSTREAM TEXT IS STORED.</b> <see cref="Reason"/> is built by
 /// <c>DownloadProxyEndpoint</c> from the configured source name and an int status code only — never

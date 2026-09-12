@@ -381,6 +381,14 @@ public class DownloadProxyTests
             Calls++;
             return Task.FromException<IReadOnlyList<DownloadRefusal>>(new InvalidOperationException("database is locked"));
         }
+
+        public Task<int> PruneUnknownSourcesAsync(
+            IReadOnlyCollection<string> knownSourceNames,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Task.FromException<int>(new InvalidOperationException("database is locked"));
+        }
     }
 
     private static PersistentDownloadRefusalTracker PersistingTracker(IDownloadRefusalStore store) =>

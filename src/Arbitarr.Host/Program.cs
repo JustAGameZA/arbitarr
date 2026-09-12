@@ -340,8 +340,12 @@ builder.Services.AddSingleton<Arbitarr.Core.Diagnostics.IDownloadRefusalTracker>
 
 // arb-v3w: loads the persisted refusals into the tracker once at startup. See the service's own doc
 // for why this is a hosted one-shot rather than a lazy first read.
+//
+// arb-pu58: the same pass now prunes rows whose source no longer exists, so it also takes the scope
+// factory — it reads the Sources table (scoped DbContext) to decide what "no longer exists" means.
 builder.Services.AddHostedService(sp => new Arbitarr.Host.Diagnostics.DownloadRefusalRehydrationService(
     sp.GetRequiredService<Arbitarr.Core.Diagnostics.PersistentDownloadRefusalTracker>(),
+    sp.GetRequiredService<IServiceScopeFactory>(),
     sp.GetRequiredService<ILogger<Arbitarr.Host.Diagnostics.DownloadRefusalRehydrationService>>()));
 
 // M7-8b/AC24: options are re-read from the settings store on every cycle (see

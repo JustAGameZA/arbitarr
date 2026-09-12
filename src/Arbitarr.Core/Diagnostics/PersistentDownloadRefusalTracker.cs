@@ -65,13 +65,36 @@ public sealed class PersistentDownloadRefusalTracker : IDownloadRefusalTracker
     /// which is the startup service, and that service decides (it logs and carries on — see its own
     /// doc). Swallowing here would leave the caller unable to tell an empty database from an
     /// unreadable one.</para>
+    ///
+    /// <para>arb-pu58: rows for sources that no longer exist are PRUNED first, in the same pass, so a
+    /// source the operator removed cannot ghost the Dashboard. The prune and the load share one pass
+    /// because the alternative — filtering the loaded list here and leaving the rows in place — would
+    /// hide the item this run and resurrect it on every subsequent start.</para>
     /// </summary>
-    public async Task RehydrateAsync(CancellationToken cancellationToken = default)
+    /// <param name="knownSourceNames">
+    /// Every configured source's name, supplied by the caller because Core knows nothing of the
+    /// <c>Sources</c> table. See <see cref="IDownloadRefusalStore.PruneUnknownSourcesAsync"/> for why
+    /// this is every source row rather than the single source resolved in force, and why an empty
+    /// collection legitimately prunes everything.
+    /// </param>
+    /// <returns>How many orphaned rows were pruned.</returns>
+    public async Task<int> RehydrateAsync(
+        IReadOnlyCollection<string> knownSourceNames,
+        CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(knownSourceNames);
+
         IReadOnlyList<DownloadRefusal> persisted = Array.Empty<DownloadRefusal>();
+        var pruned = 0;
 
         await _withStoreAsync(
-            async (store, token) => persisted = await store.LoadAllAsync(token).ConfigureAwait(false),
+            async (store, token) =>
+            {
+                // Prune BEFORE loading, so the load cannot return a row this pass has just decided is
+                // orphaned — one scope, one connection, and no window in which the two disagree.
+                pruned = await store.PruneUnknownSourcesAsync(knownSourceNames, token).ConfigureAwait(false);
+                persisted = await store.LoadAllAsync(token).ConfigureAwait(false);
+            },
             cancellationToken).ConfigureAwait(false);
 
         foreach (var refusal in persisted)
@@ -87,6 +110,8 @@ public sealed class PersistentDownloadRefusalTracker : IDownloadRefusalTracker
                 _inner.RecordRefusal(refusal.SourceName, refusal.Reason, refusal.LastObservedUtc);
             }
         }
+
+        return pruned;
     }
 
     public async ValueTask RecordRefusalAsync(string sourceName, string reason, DateTimeOffset at, CancellationToken cancellationToken = default)
