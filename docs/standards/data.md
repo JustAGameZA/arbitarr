@@ -127,6 +127,31 @@ test assembly) — named alongside the other two scans in
 [process.md's Cecil IL scans section](process.md#cecil-il-scans-in-architecturetests), which is the
 one place all four are listed.
 
+### journal_mode is a file property, converted once, not per connection
+
+**`journal_mode` is persisted in the SQLite file header, not per connection.** It only needs
+setting once, by `SqliteConnectionFactory.ConvertToWalOnce`, before the migration scope opens the
+first connection at startup (arb-itmm). **`SqliteConnectionFactory.OpenConnection` only verifies**
+the mode by reading it back; it must never re-issue the `SET`.
+
+**On an unconverted file the `SET` is not bounded by `busy_timeout`.** Measured against a blocker
+holding a transaction on a fresh file: 8087 ms against a 5000 ms `busy_timeout`, and unbounded while
+the blocker holds — a hazard confined entirely to the not-yet-converted file, which is why
+converting once before concurrency begins removes it rather than merely bounding it. On an
+already-WAL file the `SET` is a no-op that returns in single-digit milliseconds even under a held
+write transaction, which is what makes re-verifying on every open (rather than re-converting) safe.
+
+**`auto_vacuum = INCREMENTAL` rides with the conversion** rather than living on its own pragma call,
+because it only takes effect on the connection that creates the file — which, since the conversion
+now runs before the migration scope, is `ConvertToWalOnce`'s connection.
+
+**The log store (`LogStore.DatabaseFileName`, a separate file from `arbitarr.db`) is not covered by
+`ConvertToWalOnce`.** It has its own opener, `LogStore.OpenConnection`, which re-issues the
+`journal_mode` `SET` on every open; that is only safe because `LogStore.EnsureCreated()` runs
+single-threaded in `Program.cs` before `builder.Build()`, converting the file before any concurrent
+opener can exist. A change that makes that call concurrent or moves it after `Build()` reopens the
+same unbounded wait for this file.
+
 **What the IL scan does and does not close.** `NoInlineDatabaseConnectionStringsTests` (also listed
 in the section linked above) reads `Arbitarr.Data`'s IL and fails any type outside its named
 allow-lists that constructs a `SqliteConnectionStringBuilder` or a `SqliteConnection` — it closes the

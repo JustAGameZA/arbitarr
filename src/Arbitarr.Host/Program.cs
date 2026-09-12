@@ -91,7 +91,12 @@ var databasePath = Path.Combine(configDirectory, "arbitarr.db");
 // log store around with it.
 //
 // Registered before Build() so the provider exists for startup logging, and EnsureCreated() runs
-// here — synchronously, once — so no log write can ever race schema creation.
+// here — synchronously, once — so no log write can ever race schema creation. This call is also
+// arb-itmm's converter for THIS file: it is the single-threaded first opener, before Build() and
+// long before any hosted service can open arbitarr-logs.db concurrently, so LogStore.OpenConnection
+// re-issuing "PRAGMA journal_mode = WAL" on every later open only ever hits an already-WAL file
+// (see LogStore.OpenConnection's remarks). Moving this call after Build() or off this thread would
+// reopen that unbounded wait for the log store.
 //
 // ARBITARR_LOGDB_ENABLED=false turns the sink off, the equivalent of Sonarr's LogDbEnabled. Console
 // is unaffected either way: docker logs is the raw view and must not regress, so this sink is
@@ -972,7 +977,18 @@ app.Services.GetRequiredService<Arbitarr.Data.Backup.BackupStateStore>()
 // SqliteConnectionFactory.OpenConnection now only VERIFIES the mode; do not move the conversion
 // back there. This also carries the auto_vacuum=INCREMENTAL pragma, which only takes effect on the
 // connection that CREATES the file — which, after this change, is this one.
-app.Services.GetRequiredService<SqliteConnectionFactory>().ConvertToWalOnce();
+try
+{
+    app.Services.GetRequiredService<SqliteConnectionFactory>().ConvertToWalOnce();
+}
+catch (Exception ex)
+{
+    throw new InvalidOperationException(
+        $"Arbitarr failed to convert '{databasePath}' to WAL journal mode on startup. " +
+        "The container cannot serve requests against a database that is not in the expected " +
+        "journal mode. Check that the /config volume is writable and not corrupted, then " +
+        "restart. See the inner exception for the underlying EF Core/SQLite error.", ex);
+}
 
 using (var scope = app.Services.CreateScope())
 {
