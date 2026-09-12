@@ -37,6 +37,11 @@ public sealed class MaintenanceSyntheticAgeingTests : IDisposable
     {
         _databasePath = Path.Combine(Path.GetTempPath(), $"arbitarr-m7-3a-ageing-{Guid.NewGuid():N}.db");
         _connectionFactory = new SqliteConnectionFactory(new SqliteConnectionOptions { DatabasePath = _databasePath });
+        // arb-itmm: mirrors the composition root — the one-time WAL + auto_vacuum conversion runs
+        // once, on a fresh file, before anything opens it, because OpenConnection now only VERIFIES
+        // the journal mode. This is also what keeps point 2 above true: auto_vacuum only takes
+        // effect on the connection that CREATES the file, which is this call's connection.
+        _connectionFactory.ConvertToWalOnce();
         _timeProvider = new FakeTimeProvider(Start);
 
         using var context = CreateContext();

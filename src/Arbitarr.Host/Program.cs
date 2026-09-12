@@ -962,6 +962,18 @@ app.Services.GetRequiredService<Arbitarr.Data.Backup.BackupStateStore>()
 // requests against a database that isn't at the expected schema version — so we catch only to
 // wrap the raw EF/SQLite exception in a clear, actionable message before re-throwing, which
 // stops the host loop before app.Run() rather than crashing later on the first request.
+// arb-itmm: convert the database file to WAL exactly once, HERE, before anything opens it
+// concurrently. On a fresh file "PRAGMA journal_mode = WAL" is not bounded by busy_timeout (8087 ms
+// measured against a 5000 ms timeout, and unbounded while a blocker holds on), so leaving the
+// conversion on the per-connection open path meant a container's first start could hang with no
+// timeout anywhere to break it once several hosted services opened the new database at once. This
+// statement runs single-threaded, before the migration scope below opens the first connection and
+// long before app.Run() starts the hosted services, so there is no concurrent opener to wait on.
+// SqliteConnectionFactory.OpenConnection now only VERIFIES the mode; do not move the conversion
+// back there. This also carries the auto_vacuum=INCREMENTAL pragma, which only takes effect on the
+// connection that CREATES the file — which, after this change, is this one.
+app.Services.GetRequiredService<SqliteConnectionFactory>().ConvertToWalOnce();
+
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<ArbitarrDbContext>();
