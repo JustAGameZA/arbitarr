@@ -935,6 +935,117 @@ public sealed class SanitizedErrorDescriptionTests
     }
 
     /// <summary>
+    /// The protocol spellings <c>(?!(?:tcp|udp)[46]?\b)</c> names, one row each.
+    ///
+    /// <para>One row cannot pin an alternation: a lookahead narrowed to <c>tcp</c> alone would keep
+    /// every <c>tcp</c> row green while <c>udp</c>, <c>tcp4</c> and <c>tcp6</c> silently lost the
+    /// guard. Each spelling is therefore driven separately. No new hosts — every row reuses
+    /// <c>gpu_box_example</c>, already planted by <see cref="SecurityReviewShapesCorpus"/>.</para>
+    /// </summary>
+    public static TheoryData<string> ProtocolWordsTheLookaheadNames() =>
+        ["tcp", "udp", "tcp4", "tcp6"];
+
+    /// <summary>
+    /// arb-glyh: <b>the <c>(?!(?:tcp|udp)[46]?\b)</c> lookahead on <c>ContextualSingleLabelHost</c>
+    /// is pinned directly, because no fixed-point check can see it removed.</b>
+    ///
+    /// <para><b>The blindness this closes.</b> The arm's doc comment names that lookahead as what
+    /// keeps the arm IDEMPOTENT, and the coverage standing behind that specific claim was
+    /// <see cref="Scrubbing_an_already_scrubbed_excerpt_reaches_a_fixed_point"/> — which checks only
+    /// that pass two equals pass one. Delete the lookahead and pass two eats the protocol word, but
+    /// pass THREE has nothing left to eat, so the sequence still settles: comparing two adjacent
+    /// passes reports a fixed point over text whose protocol word is already destroyed. The property
+    /// the lookahead buys is not "the text settles" but "the text settles WITH <c>tcp</c> still in
+    /// it", and only the latter can see the guard removed.</para>
+    ///
+    /// <para><b>Why a port is on every row here, and why that is the point.</b> The portless
+    /// <see cref="A_dial_error_redacts_the_host_and_keeps_the_protocol"/> does notice the deletion —
+    /// but on its FIRST pass, because with no port there is nothing else to take the host and the
+    /// contextual arm falls onto <c>tcp</c> immediately. With a port, <c>HostWithPort</c> takes the
+    /// host on pass one and the output looks perfect; the loss only appears on the re-scrub. So the
+    /// ported shape is exactly the one no existing test could see, and it is the shape a real Go
+    /// dial error actually has.</para>
+    ///
+    /// <para><b>Measured, not assumed</b> (CLAUDE.md §4). With the lookahead deleted from
+    /// <c>ContextualSingleLabelHost</c> — a local edit, reverted, <c>git status</c> clean, nothing
+    /// from it in this repository — this theory FAILED 4 / 4 and
+    /// <see cref="An_already_scrubbed_dial_error_is_returned_unchanged"/> FAILED 4 / 4, while
+    /// <see cref="Scrubbing_an_already_scrubbed_excerpt_reaches_a_fixed_point"/> stayed GREEN on
+    /// 36 / 36. That divergence is the whole reason this test exists.</para>
+    ///
+    /// <para><b>Positive control per row.</b> The host is shown present in the input before its
+    /// absence is asserted, and the redaction token is required in the output — so a row cannot pass
+    /// by the excerpt never reaching the scrubber.</para>
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(ProtocolWordsTheLookaheadNames))]
+    public void The_protocol_word_survives_scrubbing_and_re_scrubbing(string protocol)
+    {
+        const string host = "gpu_box_example";
+        var body = $$"""{"error":"dial {{protocol}} {{host}}:11434: connect: connection refused"}""";
+
+        // POSITIVE CONTROL: the host really is in the text being scrubbed.
+        Assert.Contains(host, body, StringComparison.Ordinal);
+
+        var describedOnce = SanitizedErrorDescription.Describe(
+            new OllamaRequestException(HttpStatusCode.BadRequest, body));
+        var excerptOnce = describedOnce[(describedOnce.IndexOf(": ", StringComparison.Ordinal) + 2)..];
+
+        Assert.DoesNotContain(host, excerptOnce, StringComparison.Ordinal);
+        // Detectability: something was redacted, so this cannot pass by the excerpt never arriving.
+        Assert.Contains(SanitizedErrorDescription.Replacement, excerptOnce, StringComparison.Ordinal);
+        // The protocol is diagnostic, not topology. It is what the lookahead protects.
+        Assert.Contains($"dial {protocol} ", excerptOnce, StringComparison.Ordinal);
+
+        // THE SECOND PASS IS THE REAL PATH, not a hypothetical: Describe() scrubs an
+        // already-scrubbed body. Without the lookahead the engine discards the optional protocol
+        // skip and falls back onto the protocol word itself, now that the host slot holds the
+        // replacement. Asserting the word SURVIVES — rather than that the text stopped changing —
+        // is what makes this assertion able to see that.
+        var describedTwice = SanitizedErrorDescription.Describe(
+            new OllamaRequestException(HttpStatusCode.BadRequest, excerptOnce));
+        var excerptTwice = describedTwice[(describedTwice.IndexOf(": ", StringComparison.Ordinal) + 2)..];
+
+        Assert.Contains($"dial {protocol} ", excerptTwice, StringComparison.Ordinal);
+        Assert.Equal(excerptOnce, excerptTwice);
+    }
+
+    /// <summary>
+    /// arb-glyh: the same guarantee entered from the OTHER end — an excerpt that arrives ALREADY
+    /// scrubbed, built from <see cref="SanitizedErrorDescription.Replacement"/> rather than produced
+    /// by a first pass.
+    ///
+    /// <para><b>Why this is not the test above with extra steps.</b> That test reaches the
+    /// already-scrubbed shape by scrubbing, so it can only ever see shapes this scrubber itself
+    /// emits. A log line re-scrubbed after a round trip through the persistent store, or an upstream
+    /// that echoes a redacted string back, arrives in this shape WITHOUT a first pass having run in
+    /// this process. Constructing it from the constant pins the arm against the shape directly: the
+    /// text must come back unchanged, protocol word intact.</para>
+    ///
+    /// <para><b>Positive control.</b> The replacement token is shown present in the input, so the
+    /// "unchanged" assertion is about an already-scrubbed string surviving rather than about an
+    /// empty one. With the lookahead deleted this failed on 4 / 4 rows.</para>
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(ProtocolWordsTheLookaheadNames))]
+    public void An_already_scrubbed_dial_error_is_returned_unchanged(string protocol)
+    {
+        var excerptText =
+            $"dial {protocol} {SanitizedErrorDescription.Replacement}:11434: connect: connection refused";
+        var body = $$"""{"error":"{{excerptText}}"}""";
+
+        // POSITIVE CONTROL: the input really is in the already-scrubbed shape.
+        Assert.Contains(SanitizedErrorDescription.Replacement, body, StringComparison.Ordinal);
+
+        var described = SanitizedErrorDescription.Describe(
+            new OllamaRequestException(HttpStatusCode.BadRequest, body));
+        var excerpt = described[(described.IndexOf(": ", StringComparison.Ordinal) + 2)..];
+
+        Assert.Contains($"dial {protocol} ", excerpt, StringComparison.Ordinal);
+        Assert.Equal(body, excerpt);
+    }
+
+    /// <summary>
     /// arb-19r3: <b>the corpus covers every scrub arm, so a new arm added without a fixture
     /// FAILS.</b>
     ///
