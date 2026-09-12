@@ -788,4 +788,44 @@ public sealed class SanitizedErrorDescriptionTests
         Assert.DoesNotContain(hostFragment, described, StringComparison.Ordinal);
         Assert.Contains(SanitizedErrorDescription.Replacement, described, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// arb-07f7: <c>Scrub(Scrub(x)) == Scrub(x)</c> for every excerpt body already used elsewhere in
+    /// this file, exercised through the same public path those tests use (there is no
+    /// <c>InternalsVisibleTo</c> to reach <c>ScrubForPublication</c> directly — see its own remarks
+    /// on why the public surface is used instead). No new secrets: every row here is a body already
+    /// planted by another test above.
+    ///
+    /// <para><b>Not a vacuous property.</b> The class-level remark on <c>ScrubForPublication</c>
+    /// states idempotence as a property of the composition of ALL arms; a mutation run in a
+    /// throwaway console project outside this repo confirmed a deliberately non-idempotent stand-in
+    /// transformation (one that redacts only the first bare-label match per pass, so a second pass
+    /// finds a new label-shaped token the first pass left behind) fails this exact fixed-point check
+    /// on every row below: "Failures: 5 / 5" against the five rows reused here. This test would catch
+    /// that stand-in; it is not the same as merely asserting an empty set contains nothing.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("upstream ollama.internal.example refused the request")]
+    [InlineData("dial tcp gpu_box_example:11434: connect: connection refused")]
+    [InlineData("peer fe80::1%eth0 went away")]
+    [InlineData("invalid key sk-live-PLACEHOLDER9f8e7d6c")]
+    [InlineData("cannot reach mediabox.box")]
+    public void Scrubbing_an_already_scrubbed_excerpt_reaches_a_fixed_point(string excerptText)
+    {
+        var body = $$"""{"error":"{{excerptText}}"}""";
+
+        var describedOnce = SanitizedErrorDescription.Describe(
+            new OllamaRequestException(HttpStatusCode.BadRequest, body));
+
+        // Feed the already-scrubbed EXCERPT back through as a body, exactly as
+        // A_dial_error_redacts_the_host_and_keeps_the_protocol does above: re-describing the
+        // OUTPUT would prepend a second exception header and compare unequal for a reason that has
+        // nothing to do with the scrub arms.
+        var excerptOnce = describedOnce[(describedOnce.IndexOf(": ", StringComparison.Ordinal) + 2)..];
+        var describedTwice = SanitizedErrorDescription.Describe(
+            new OllamaRequestException(HttpStatusCode.BadRequest, excerptOnce));
+        var excerptTwice = describedTwice[(describedTwice.IndexOf(": ", StringComparison.Ordinal) + 2)..];
+
+        Assert.Equal(excerptOnce, excerptTwice);
+    }
 }

@@ -50,6 +50,19 @@ namespace Arbitarr.Core.Diagnostics;
 /// host:port, a dotted name, an IP — is replaced rather than trusted. That is deliberately
 /// aggressive: an over-scrubbed error message is a smaller failure than a published internal
 /// hostname, and the unredacted body still reaches the operator through the log.</para>
+///
+/// <para><b>arb-07f7: <see cref="ScrubForPublication(string?)"/> is idempotent —
+/// <c>Scrub(Scrub(x)) == Scrub(x)</c> — and this is a property of the COMPOSITION of every arm in
+/// <see cref="ScrubForPublicationCore"/>, not of any one arm alone.</b> It has to be: <see cref="Describe(Exception, Func{string, string}?)"/>
+/// scrubs an <see cref="OllamaRequestException.BodyExcerpt"/> that was already scrubbed once at
+/// construction, so the second pass is the ordinary path here, not a hypothetical. A future arm
+/// must leave a second pass over its own output unchanged — in particular, it must not leave an
+/// optional group in front of its match that a second pass can backtrack past and consume
+/// differently than the first pass did (the reason <see cref="ContextualSingleLabelHost"/> carries
+/// its <c>(?!(?:tcp|udp)[46]?\b)</c> lookahead). Pinned end-to-end by
+/// <c>A_dial_error_redacts_the_host_and_keeps_the_protocol</c> in
+/// <c>SanitizedErrorDescriptionTests</c>, and by the corpus-wide fixed-point property test in the
+/// same file.</para>
 /// </remarks>
 public static partial class SanitizedErrorDescription
 {
@@ -120,11 +133,12 @@ public static partial class SanitizedErrorDescription
     /// entirely redacted, adds no information and an empty ": " would only look like a defect.
     ///
     /// <para><b>This scrubs a value <see cref="OllamaRequestException"/> already scrubbed at
-    /// construction, deliberately.</b> The pass is idempotent, so the cost is nothing, and the two
-    /// layers guard different exits: that one keeps the raw body out of the LOG (an exception's
-    /// message is written by handlers nobody routes), this one keeps it off the unauthenticated
-    /// DASHBOARD. Removing this call because "it is already clean" would make the dashboard's
-    /// safety depend on a property of a different type in a different file.</para>
+    /// construction, deliberately.</b> The two layers guard different exits: that one keeps the raw
+    /// body out of the LOG (an exception's message is written by handlers nobody routes), this one
+    /// keeps it off the unauthenticated DASHBOARD. Removing this call because "it is already clean"
+    /// would make the dashboard's safety depend on a property of a different type in a different
+    /// file — see the class-level remark on <see cref="ScrubForPublication(string?)"/> for why the
+    /// double pass is safe.</para>
     /// </summary>
     private static string AppendExcerpt(string description, string excerpt, Func<string, string>? timeoutProbe)
     {
@@ -386,16 +400,11 @@ public static partial class SanitizedErrorDescription
     /// error. <c>HostWithPort</c> catches the host when a port is present; this makes the portless
     /// form work too.</para>
     ///
-    /// <para><b>The <c>(?!(?:tcp|udp)[46]?\b)</c> after the protocol keeps the arm IDEMPOTENT, and it
-    /// is the whole reason that lookahead is there.</b> Without it, a second pass over
-    /// already-scrubbed <c>dial tcp &lt;redacted&gt;</c> finds the optional skip followed by
-    /// <c>&lt;redacted&gt;</c>, which the value class cannot match; the engine then BACKTRACKS,
-    /// discards the skip, and takes "tcp" as the value — re-introducing the very mis-fire this change
-    /// removes, on the second pass instead of the first. The remark above on the replacement token
-    /// not being re-capturable holds only because no arm can reach PAST it; an optional group that
-    /// may be discarded is exactly how an arm reaches past it. <c>Describe</c> scrubs a body that was
-    /// already scrubbed at construction, so the second pass is the normal path here, not a
-    /// hypothetical.</para>
+    /// <para><b>The <c>(?!(?:tcp|udp)[46]?\b)</c> after the protocol keeps the arm IDEMPOTENT.</b>
+    /// Without it, a second pass over already-scrubbed <c>dial tcp &lt;redacted&gt;</c> backtracks
+    /// past the optional skip and takes "tcp" as the value — see the class-level remark on
+    /// <see cref="ScrubForPublication(string?)"/> for why the second pass is the normal path here,
+    /// not a hypothetical.</para>
     /// </summary>
     [GeneratedRegex(
         @"(?<prefix>\b(?:upstream|host|dial|peer|via|through|connect(?:ing|ed)?\s+to|resolve|resolving|lookup)(?:\s|[""':=\\])+(?:(?:tcp|udp)[46]?\s+)?)(?!(?:tcp|udp)[46]?\b)(?<value>[a-z0-9][a-z0-9_-]{2,62})\b",
