@@ -69,6 +69,63 @@ public class CredentialPatternsTests
     }
 
     /// <summary>
+    /// arb-7j5x: EVERY arm must redact a SECOND occurrence of the SAME shape, not just its first.
+    ///
+    /// <para><b>Why this is a separate theory and not extra rows in
+    /// <see cref="CredentialCorpus"/>.</b> Every row of that corpus plants exactly ONE value per
+    /// shape, so a mutant in which each arm replaces only its FIRST match satisfies every absence
+    /// assertion in the file — measured: it survived all of them. The corpus cannot simply gain a
+    /// second value because <see cref="Redaction_is_idempotent"/> and the cross-sink theory in
+    /// <c>Arbitarr.Data.Tests</c> consume the same rows for different properties; this is the one
+    /// property that needs two occurrences, so it gets its own rows.</para>
+    ///
+    /// <para><b>The planted secret is the fragment MEASURED to survive the mutant, not simply "the
+    /// second value".</b> That distinction is load-bearing, and the query arm is why. Writing the
+    /// two credentials as adjacent parameters of ONE url (<c>?apikey=A&amp;token=B</c>) looks like
+    /// the natural plant and is VACUOUS: the query arm does leave <c>B</c> behind under the mutant,
+    /// but the later <c>NamedCredential</c> arm then matches <c>token=B</c> on its own first
+    /// match and redacts it anyway, so the row passes under the mutant and proves nothing. Two
+    /// SEPARATE query occurrences are used instead, which no later arm mops up. Re-measure before
+    /// changing any of these strings.</para>
+    /// </summary>
+    public static TheoryData<string, string> SecondOccurrenceCorpus() => new()
+    {
+        // Query parameter: two separate occurrences, per the note above.
+        {
+            "GET /a?apikey=PLACEHOLDERKEY123456 then GET /b?apikey=PLACEHOLDERSECOND7788",
+            "PLACEHOLDERSECOND7788"
+        },
+        // Authorization scheme.
+        {
+            "Authorization: Bearer PLACEHOLDERBEARER0011 retried as Bearer PLACEHOLDERBEARER2233",
+            "PLACEHOLDERBEARER2233"
+        },
+        // Named credential.
+        {
+            "X-Admin-Api-Key: PLACEHOLDERADMIN77 and client_secret=PLACEHOLDERSECRET12 expired",
+            "PLACEHOLDERSECRET12"
+        },
+        // Space-separated prose form.
+        {
+            "invalid key PLACEHOLDERSPACED3344 supplied, rejected token PLACEHOLDERSPACED5566 at gateway",
+            "PLACEHOLDERSPACED5566"
+        },
+    };
+
+    [Theory]
+    [MemberData(nameof(SecondOccurrenceCorpus))]
+    public void A_second_occurrence_of_the_same_shape_is_redacted_too(string input, string secret)
+    {
+        // POSITIVE CONTROL: the second occurrence really is in the input.
+        Assert.Contains(secret, input, StringComparison.Ordinal);
+
+        var redacted = CredentialPatterns.RedactCredentials(input);
+
+        Assert.Contains(CredentialPatterns.Replacement, redacted, StringComparison.Ordinal);
+        Assert.DoesNotContain(secret, redacted, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// The NAME survives while the value does not. "apikey=&lt;redacted&gt;" tells an operator which
     /// credential was present; bare "&lt;redacted&gt;" would leave them unable to tell an api key
     /// from a password. This pins the prefix-preserving replace, which a naive
