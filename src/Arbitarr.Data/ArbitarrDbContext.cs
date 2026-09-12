@@ -90,6 +90,14 @@ public sealed class ArbitarrDbContext : DbContext
     /// </summary>
     public DbSet<Source> Sources => Set<Source>();
 
+    /// <summary>
+    /// arb-x7w8.10: durable per-source backoff — how long a failing source is held off, how far its
+    /// escalation has climbed, and whether an authentication failure disabled it outright. One row
+    /// per source, so it is bounded without a prune. See <see cref="SourceBackoffState"/> for why
+    /// this is not a second circuit breaker, and why the API-hit COUNTS have no table at all.
+    /// </summary>
+    public DbSet<SourceBackoffState> SourceBackoffStates => Set<SourceBackoffState>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<MetadataCacheEntry>(entity =>
@@ -287,6 +295,22 @@ public sealed class ArbitarrDbContext : DbContext
             // headroom, matching the SuppressionAuditLogEntry.Reason precedent above.
             entity.Property(e => e.SourceName).IsRequired().HasMaxLength(256);
             entity.Property(e => e.Reason).IsRequired().HasMaxLength(1024);
+        });
+
+        modelBuilder.Entity<SourceBackoffState>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            // UNIQUE IS LOAD-BEARING, for the same reason it is on DownloadRefusalEntries above: the
+            // store's upsert depends on this index to turn a repeated outcome into an update rather
+            // than a second row, and two rows answering one source would make "is this source held
+            // off?" unanswerable. It is also what bounds the table — one row per source, set
+            // membership rather than elapsed time — so there is deliberately no ExpiresAt, no
+            // MaintenanceJob pass and no PrunePredicates entry.
+            entity.HasIndex(e => e.SourceName).IsUnique();
+            // SourceName matches Source.DisplayName's bound. LastOutcome stores a
+            // SourceCallOutcome NAME, never upstream text, so 64 is ample.
+            entity.Property(e => e.SourceName).IsRequired().HasMaxLength(256);
+            entity.Property(e => e.LastOutcome).HasMaxLength(64);
         });
 
         modelBuilder.Entity<EventEntry>(entity =>

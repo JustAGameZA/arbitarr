@@ -1168,4 +1168,63 @@ public sealed class EventRepositoryTests : IDisposable
         Assert.Equal(3, rows.Count);
         Assert.All(rows, r => Assert.Equal(1, r.RepeatCount));
     }
+
+    // ---- arb-x7w8.10: the per-source API-hit kinds opt into folding -----------------------------
+    //
+    // MayCoalesce is a switch with no default arm on purpose, so adding a kind means supplying an
+    // answer rather than inheriting one. These pin both halves of that edit: the two new kinds DO
+    // fold (the budget's RepeatCount arithmetic depends on it), and the kinds that folded before
+    // still do (the edit is the regression risk).
+
+    /// <summary>
+    /// The new hit kinds fold, which is what makes a busy indexer one row rather than thousands —
+    /// and what makes SourceApiHitCounter's RepeatCount summing necessary rather than decorative.
+    /// </summary>
+    [Theory]
+    [InlineData(EventKind.SourceQueryHit)]
+    [InlineData(EventKind.SourceGrabHit)]
+    [InlineData(EventKind.SourceSkipped)]
+    public async Task AddAsync_folds_the_per_source_api_hit_kinds(EventKind kind)
+    {
+        using var context = CreateContext();
+        var clock = new FakeTimeProvider(DateTimeOffset.Parse("2026-09-12T00:00:00Z"));
+        var repository = new EventRepository(context, clock);
+
+        var first = await repository.AddAsync(
+            kind, "Queried an upstream source", null, "indexer", null, CancellationToken.None);
+        clock.Advance(TimeSpan.FromSeconds(30));
+        var second = await repository.AddAsync(
+            kind, "Queried an upstream source", null, "indexer", null, CancellationToken.None);
+
+        Assert.Equal(first.Id, second.Id);
+
+        var row = Assert.Single(await repository.GetAllAsync(CancellationToken.None));
+        Assert.Equal(2, row.RepeatCount);
+    }
+
+    /// <summary>
+    /// THE REGRESSION GUARD ON THE MayCoalesce EDIT. Every kind that folded before arb-x7w8.10 must
+    /// still fold; a mis-edited switch arm would silently stop one of them, and nothing else in this
+    /// file asserts them as a set. Decision is deliberately absent — it must NEVER fold, which
+    /// AddAsync_never_folds_decisions_even_when_every_field_matches pins separately.
+    /// </summary>
+    [Theory]
+    [InlineData(EventKind.WorkerCycle)]
+    [InlineData(EventKind.SnapshotRefreshed)]
+    [InlineData(EventKind.SearchServed)]
+    [InlineData(EventKind.SourceFailed)]
+    public async Task AddAsync_still_folds_every_kind_that_folded_before_the_api_hit_kinds_were_added(
+        EventKind kind)
+    {
+        using var context = CreateContext();
+        var clock = new FakeTimeProvider(DateTimeOffset.Parse("2026-09-12T00:00:00Z"));
+        var repository = new EventRepository(context, clock);
+
+        await repository.AddAsync(kind, "Something happened", null, null, null, CancellationToken.None);
+        clock.Advance(TimeSpan.FromSeconds(30));
+        await repository.AddAsync(kind, "Something happened", null, null, null, CancellationToken.None);
+
+        var row = Assert.Single(await repository.GetAllAsync(CancellationToken.None));
+        Assert.Equal(2, row.RepeatCount);
+    }
 }
