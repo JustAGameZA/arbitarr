@@ -178,6 +178,44 @@ public sealed class RestoreServiceTests : IDisposable
     }
 
     /// <summary>
+    /// arb-zupt: the CORRUPT-DATABASE refusal also leaves nothing staged — the case the test above
+    /// cannot reach.
+    ///
+    /// <para><b>Why this is a distinct case and not a second spelling of the same one.</b> The bomb
+    /// above is refused from the central directory, before a byte is written and long before
+    /// anything is opened as SQLite. A corrupt database is the ONLY refusal that gets as far as
+    /// <c>BackupArchiveValidator.IsReadableSqliteDatabase</c>, which is the only place a staged file
+    /// is handed to SQLite at all — so this is the only path where the cleanup has a live handle to
+    /// contend with, and it was the one that leaked: the read-only connection was pooled, its
+    /// <c>Dispose</c> returned the handle rather than closing the file, and the <c>finally</c>'s
+    /// <c>TryDelete</c> swallowed the resulting IOException. The refusal reported success and
+    /// <c>arbitarr-restore-validate-&lt;guid&gt;.db</c> stayed on disk.</para>
+    ///
+    /// <para><b>This class's <c>Dispose</c> does not mask it.</b> The
+    /// <c>SqlitePools.ClearPoolsForDirectory</c> there runs at TEARDOWN, after this assertion has
+    /// already been evaluated, so the pooled handle is still held at the moment that matters. What
+    /// the teardown clear does hide is the DIRECTORY residue, which is why the leak surfaced in
+    /// <c>Arbitarr.Integration.Tests</c> (whose factory has no such clear) and not here.</para>
+    /// </summary>
+    [Fact]
+    public void A_corrupt_database_refusal_leaves_nothing_staged()
+    {
+        var path = BuildArchiveWithCorruptDatabase();
+
+        var stagedBefore = CountStagedValidationFiles();
+        using var result = BackupArchiveValidator.Validate(path, KnownMigrations, _paths.StagingDirectory);
+
+        // The refusal must be the corrupt-database one: refused any earlier and the SQLite open this
+        // test exists to check never happened.
+        Assert.Equal(BackupValidationFailure.CorruptDatabase, result.Failure);
+        Assert.Null(result.StagedDatabasePath);
+
+        // The validator always CALLS File.Delete on what it staged, so a surviving file means that
+        // delete threw and was swallowed — and the only thing that makes it throw is an open handle.
+        Assert.Equal(stagedBefore, CountStagedValidationFiles());
+    }
+
+    /// <summary>
     /// arb-3gd POSITIVE CONTROL for the "nothing was staged" assertion above. It proves two things,
     /// each with its own half:
     ///
@@ -462,6 +500,25 @@ public sealed class RestoreServiceTests : IDisposable
         Directory.Exists(_paths.StagingDirectory)
             ? Directory.EnumerateFiles(_paths.StagingDirectory, "arbitarr-restore-validate-*").Count()
             : 0;
+
+    /// <summary>
+    /// An archive that is structurally a complete backup — both entries present and correctly named
+    /// — whose database entry is not a SQLite file. Refused by the integrity check rather than by
+    /// any earlier structural one, which is what makes it the archive that reaches the SQLite open.
+    /// </summary>
+    private string BuildArchiveWithCorruptDatabase()
+    {
+        var path = Path.Combine(_configDirectory, "corrupt-" + Guid.NewGuid().ToString("N") + ".zip");
+
+        using (var stream = new FileStream(path, FileMode.Create))
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Create))
+        {
+            WriteTextEntry(archive, BackupArchiveLayout.DatabaseEntryName, "not a SQLite file at all");
+            WriteBytesEntry(archive, BackupArchiveLayout.SecretKeyEntryName, RandomNumberGenerator.GetBytes(32));
+        }
+
+        return path;
+    }
 
     /// <summary>
     /// An archive whose database entry HONESTLY declares more than

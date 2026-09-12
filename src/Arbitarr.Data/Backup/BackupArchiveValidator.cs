@@ -289,12 +289,30 @@ public static class BackupArchiveValidator
         {
             // Built inline, and on NoInlineDatabaseConnectionStringsTests' build-a-string list by
             // name: `path` is always a STAGED TEMP file extracted
-            // from an uploaded archive, never the live database, so the pool this fills is not one a
+            // from an uploaded archive, never the live database, so this is not a pool a
             // restore has to clear. The ReadOnly mode is part of that — this shape is for inspecting
             // an untrusted file, and giving it a home in DatabaseConnectionStrings would put a
             // never-live shape next to the live ones it exists to enumerate.
+            //
+            // POOLING IS OFF, AND THAT IS LOAD-BEARING (arb-zupt). A pooled connection's Dispose
+            // RETURNS the handle to the pool rather than closing the file, so the OS handle on this
+            // staged .db outlived this method — and nothing clears that pool, because
+            // SqlitePoolCleaner draws its strings from DatabaseConnectionStrings, which by the
+            // paragraph above deliberately does not know this shape. The refusal path's
+            // TryDelete then hit an IOException on Windows ("being used by another process") and
+            // swallowed it, so a rejected archive left arbitarr-restore-validate-<guid>.db behind
+            // while Validate reported it had cleaned up: the `finally` below claims every failure
+            // path leaves NOTHING behind, and only Pooling=false makes that true. Closing by
+            // construction beats clearing a pool afterwards — it cannot be defeated by the throw
+            // between Open and any later clear, and note Open DOES throw here on the corrupt-file
+            // path (SQLITE_NOTADB) with the handle still pooled, which is exactly that case.
             using var connection = new SqliteConnection(
-                new SqliteConnectionStringBuilder { DataSource = path, Mode = SqliteOpenMode.ReadOnly }.ToString());
+                new SqliteConnectionStringBuilder
+                {
+                    DataSource = path,
+                    Mode = SqliteOpenMode.ReadOnly,
+                    Pooling = false,
+                }.ToString());
             connection.Open();
 
             using var command = connection.CreateCommand();

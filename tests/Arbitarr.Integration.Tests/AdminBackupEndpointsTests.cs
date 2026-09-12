@@ -225,6 +225,117 @@ public sealed class AdminBackupEndpointsTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// arb-zupt: a CORRUPT-DATABASE refusal releases the staged file it opened, so nothing is left
+    /// behind and the staging directory is deletable once the request returns.
+    ///
+    /// <para><b>Why the corrupt-database archive specifically, when a refusal already has a
+    /// "nothing staged" assertion.</b> The existing one
+    /// (<see cref="Restore_is_refused_during_the_bootstrap_window_and_reads_no_form"/>) and the
+    /// Data.Tests bomb equivalent are both refused BEFORE the validator opens anything as SQLite —
+    /// the bootstrap gate never reads the form, and the bomb is cut off at the extraction bound. A
+    /// corrupt database is the only refusal that reaches
+    /// <c>BackupArchiveValidator.IsReadableSqliteDatabase</c>, which is the only place the staged
+    /// file gets an OS handle. So this path was the one with no coverage, and it was the one
+    /// leaking: the read-only connection was POOLED, its <c>Dispose</c> returned the handle to the
+    /// pool instead of closing the file, and the validator's <c>TryDelete</c> swallowed the
+    /// resulting IOException — leaving <c>arbitarr-restore-validate-&lt;guid&gt;.db</c> behind while
+    /// the refusal reported it had cleaned up. That residue is what
+    /// <c>BackupSecretExposureTests</c> was leaving under a private TMP.</para>
+    ///
+    /// <para><b>THE FILE COUNT IS A HANDLE ASSERTION HERE, WHICH IS NOT OBVIOUS.</b> The validator
+    /// ALWAYS calls <c>File.Delete</c> on that path on the refusal path, so the file being present
+    /// afterwards can only mean the delete threw and <c>TryDelete</c> swallowed it — and on Windows
+    /// the only thing that makes it throw is a handle still open on the file. Its absence is
+    /// therefore evidence the connection was released, not merely that someone tidied up.</para>
+    ///
+    /// <para><b>Deliberately NOT asserted by deleting the staging directory.</b> That was tried and
+    /// is the wrong probe: <c>MaintenanceHostedService</c> starts an automatic backup at host
+    /// startup, so an <c>arbitarr-snapshot-*.db</c> can still be open in there and the delete fails
+    /// for a reason that has nothing to do with this test — measured, it failed on exactly that. A
+    /// check that cannot tell its own subject from a bystander's file is a flake, not a stronger
+    /// assertion.</para>
+    ///
+    /// <para>Mutation-proved per CLAUDE.md §4 rather than by a planted fixture: with
+    /// <c>Pooling = false</c> reverted on that connection, this test goes red on the delete. That
+    /// was measured in a throwaway project outside this repository, so no vulnerable shape is
+    /// committed here.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_corrupt_database_refusal_leaves_no_staged_file_and_releases_its_handle()
+    {
+        await using var factory = new ArbitarrWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(AdminApiKeyFilter.HeaderName, AdminKey);
+
+        await factory.SeedAsync(async db =>
+        {
+            var existing = await db.Settings.FindAsync(SettingKey.AdminApiKey.ToString());
+            if (existing is null)
+            {
+                db.Settings.Add(new SettingEntry
+                {
+                    Name = SettingKey.AdminApiKey.ToString(),
+                    Value = AdminKey,
+                    UpdatedAt = DateTimeOffset.UtcNow,
+                });
+            }
+            else
+            {
+                existing.Value = AdminKey;
+                existing.UpdatedAt = DateTimeOffset.UtcNow;
+            }
+        });
+
+        var stagingDirectory = factory.Services
+            .GetRequiredService<Arbitarr.Data.Backup.BackupPaths>().StagingDirectory;
+
+        using (var content = BuildUpload(
+            BuildArchiveWithCorruptDatabase(),
+            confirmation: AdminBackupEndpoints.RestoreConfirmationWord))
+        using (var response = await client.PostAsync(AdminBackupEndpoints.RestoreRoute, content))
+        {
+            // The refusal must be the CORRUPT-DATABASE one. Without this the test could pass on an
+            // archive rejected earlier (missing entry, not a zip), which never opens SQLite and so
+            // never exercises the handle this test exists to check.
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Contains(
+                "could not be read as a SQLite file",
+                await response.Content.ReadAsStringAsync(),
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        // The refusal removed what it staged. This is a HANDLE assertion wearing a file-count coat:
+        // the validator always CALLS File.Delete on that path, so the only way the file is still
+        // here is that the delete threw and TryDelete swallowed it — and on Windows the only reason
+        // it throws is an open handle. Absence of the file therefore means the handle was released,
+        // which is the property under test; a leaked handle is exactly what makes this go red.
+        Assert.Empty(Directory.EnumerateFiles(stagingDirectory, "arbitarr-restore-validate-*"));
+    }
+
+    /// <summary>
+    /// An archive that is structurally a valid backup — both entries present, correctly named — but
+    /// whose database entry is not a SQLite file, so it is refused by the integrity check rather
+    /// than by any earlier structural one. The key entry is random bytes, not any real key
+    /// material: nothing here needs a genuine secret.
+    /// </summary>
+    private static byte[] BuildArchiveWithCorruptDatabase()
+    {
+        using var buffer = new MemoryStream();
+        using (var archive = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            using (var database = archive.CreateEntry(BackupArchiveLayout.DatabaseEntryName).Open())
+            {
+                database.Write(Encoding.UTF8.GetBytes("not a SQLite file at all"));
+            }
+
+            using var key = archive.CreateEntry(BackupArchiveLayout.SecretKeyEntryName).Open();
+            key.Write(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+        }
+
+        return buffer.ToArray();
+    }
+
+    /// <summary>
     /// An oversized upload is refused, and refused on the WIRE rather than after being spooled.
     ///
     /// <para>The limit is applied to the request body itself (a Content-Length check plus
