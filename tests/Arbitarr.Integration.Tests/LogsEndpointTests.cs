@@ -112,6 +112,42 @@ public sealed class LogsEndpointTests : IClassFixture<ArbitarrWebApplicationFact
     }
 
     [Fact]
+    public async Task The_level_parameter_serves_that_severity_and_above()
+    {
+        // arb-pw7r, over the wire rather than only at the store: this is what makes the System >
+        // Logs default of "Warning and above" show Error and Critical instead of hiding them.
+        await SeedAdminKeyAsync();
+        var store = _factory.Services.GetRequiredService<LogStore>();
+
+        // Scoped to its own logger because the fixture's store is shared with the other tests in
+        // this class -- an unscoped level query would also count their rows and the assertion
+        // would depend on execution order.
+        // Deliberately NOT prefixed with the other tests' "Test.LogsEndpoint": the logger filter is
+        // a SUBSTRING match, so a name extending theirs would fold these rows into their result and
+        // fail their totals.
+        const string logger = "Test.MinLevelFilter";
+        var start = DateTimeOffset.UtcNow.AddMinutes(-5);
+        await store.WriteAsync(new[]
+        {
+            new PendingLogEntry(start, "Information", logger, "an info", null, null),
+            new PendingLogEntry(start.AddSeconds(1), "Warning", logger, "a warning", null, null),
+            new PendingLogEntry(start.AddSeconds(2), "Error", logger, "an error", null, null),
+            new PendingLogEntry(start.AddSeconds(3), "Critical", logger, "a critical", null, null),
+        });
+
+        using var client = _factory.CreateClient();
+
+        var page = await GetLogsAsync(client, $"/api/admin/logs?level=Warning&logger={logger}");
+
+        Assert.NotNull(page);
+        Assert.Equal(3, page!.Total);
+        Assert.Equal(new[] { "Critical", "Error", "Warning" }, page.Entries.Select(e => e.Level));
+        // The Information row is the positive control: it proves a row BELOW the requested level
+        // was present to be excluded, without which its absence would assert nothing.
+        Assert.DoesNotContain("an info", page.Entries.Select(e => e.Message));
+    }
+
+    [Fact]
     public async Task An_oversized_page_size_is_clamped()
     {
         await SeedAdminKeyAsync();

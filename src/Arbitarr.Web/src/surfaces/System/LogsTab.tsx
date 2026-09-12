@@ -144,13 +144,9 @@ function LogsTable({ entries }: { entries: LogEntryResponse[] }) {
  * way.
  */
 export function LogsTab() {
-  // Defaults to Warning rather than "All levels": LogStore matches Level as an EXACT,
-  // case-insensitive string (see queries.ts's LOG_LEVELS note) with no minimum-severity
-  // semantic, so a "Warning and above" default is not achievable without a backend
-  // change out of scope for this PR (arb-kz8) -- filed as a follow-up. Exact "Warning" is
-  // the closest useful default: an operator opening the tab lands on the level that
-  // usually needs attention instead of the full firehose, and "All levels" stays one
-  // click away.
+  // Defaults to Warning, which the API applies as a MINIMUM severity (arb-pw7r), so this
+  // lands the operator on Warning, Error and Critical rather than the full firehose --
+  // with "All levels" one click away.
   const [filters, setFilters] = useState<LogFilters>({ level: 'Warning', logger: '' });
 
   // Client-side only: the endpoint has no message/text query parameter (checked against
@@ -216,9 +212,17 @@ export function LogsTab() {
                 }
               >
                 <option value="all">All levels</option>
+                {/*
+                  "and above" is spelled out on every option rather than left implicit,
+                  because the option the operator reads is the only place the minimum-
+                  severity semantic is visible -- a bare "Warning" reads as exact, which
+                  is precisely the misunderstanding that made the old exact filter hide
+                  Error and Critical. Critical is the exception: nothing sits above it, so
+                  the suffix there would promise a breadth that does not exist.
+                */}
                 {LOG_LEVELS.map((level) => (
                   <option key={level} value={level}>
-                    {level}
+                    {level === LOG_LEVELS[LOG_LEVELS.length - 1] ? level : `${level} and above`}
                   </option>
                 ))}
               </select>
