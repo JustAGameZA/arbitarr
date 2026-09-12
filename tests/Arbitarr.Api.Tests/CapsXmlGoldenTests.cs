@@ -71,7 +71,7 @@ public class CapsXmlGoldenTests
 
         var result = await CapsEndpoint.HandleTorznabAsync(
             aggregator,
-            new[] { (IUpstreamSource)source },
+            new StaticSourceRegistry(new[] { (IUpstreamSource)source }),
             CancellationToken.None);
 
         using var body = new MemoryStream();

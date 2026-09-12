@@ -43,7 +43,7 @@ public sealed class SearchRecentLogTests : IAsyncLifetime
                 // that returns one result, so this test exercises SearchEndpoint's live recording
                 // path without depending on any real upstream (NZBHydra2) being reachable.
                 services.RemoveAll<IUpstreamSource>();
-                services.RemoveAll<IReadOnlyList<IUpstreamSource>>();
+                services.RemoveAll<ISourceRegistry>();
                 services.AddSingleton<IUpstreamSource>(new SecondFakeUpstreamSource(
                     "recent-log-fake-source",
                     searchResults: new[]
@@ -59,7 +59,7 @@ public sealed class SearchRecentLogTests : IAsyncLifetime
                             Protocol = ProtocolKind.Usenet,
                         },
                     }));
-                services.AddSingleton<IReadOnlyList<IUpstreamSource>>(sp => sp.GetServices<IUpstreamSource>().ToArray());
+                services.AddSingleton<ISourceRegistry>(sp => new StaticSourceRegistry(sp.GetServices<IUpstreamSource>().ToArray()));
             });
         });
     }

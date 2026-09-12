@@ -16,9 +16,12 @@ public static class CapsEndpoint
 {
     public static async Task<IResult> HandleTorznabAsync(
         CapsAggregator aggregator,
-        IReadOnlyList<IUpstreamSource> sources,
+        ISourceRegistry registry,
         CancellationToken cancellationToken)
     {
+        // arb-x7w8.4: resolved per request rather than injected as a fixed list, so a source added,
+        // removed or disabled since startup is reflected in the caps this answers with.
+        var sources = await registry.ResolveAsync(cancellationToken).ConfigureAwait(false);
         var caps = await aggregator.AggregateAsync(sources, SearchProtocol.Torznab, cancellationToken).ConfigureAwait(false);
         var xml = TorznabXmlWriter.WriteCaps(caps);
         return Results.Text(XmlDocumentRendering.ToXmlString(xml), TorznabXmlWriter.ContentType);
@@ -26,9 +29,12 @@ public static class CapsEndpoint
 
     public static async Task<IResult> HandleNewznabAsync(
         CapsAggregator aggregator,
-        IReadOnlyList<IUpstreamSource> sources,
+        ISourceRegistry registry,
         CancellationToken cancellationToken)
     {
+        // arb-x7w8.4: resolved per request rather than injected as a fixed list, so a source added,
+        // removed or disabled since startup is reflected in the caps this answers with.
+        var sources = await registry.ResolveAsync(cancellationToken).ConfigureAwait(false);
         var caps = await aggregator.AggregateAsync(sources, SearchProtocol.Newznab, cancellationToken).ConfigureAwait(false);
         var xml = NewznabXmlWriter.WriteCaps(caps);
         return Results.Text(XmlDocumentRendering.ToXmlString(xml), NewznabXmlWriter.ContentType);

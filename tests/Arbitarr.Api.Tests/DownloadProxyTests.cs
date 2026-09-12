@@ -30,7 +30,7 @@ public class DownloadProxyTests
         var source = new FakeUpstreamSource("eztv", downloadFactory: () => new MemoryStream(payload));
         var sources = new IUpstreamSource[] { source };
 
-        var result = await DownloadProxyEndpoint.HandleAsync(release.ProxyGuid, ValidApiKey, Resolver(), lookup, sources, NullEventSink.Instance, CancellationToken.None);
+        var result = await DownloadProxyEndpoint.HandleAsync(release.ProxyGuid, ValidApiKey, Resolver(), lookup, new StaticSourceRegistry(sources), NullEventSink.Instance, CancellationToken.None);
 
         Assert.IsAssignableFrom<IResult>(result);
         Assert.IsNotType<Microsoft.AspNetCore.Http.HttpResults.NotFound>(result);
@@ -42,7 +42,7 @@ public class DownloadProxyTests
         var lookup = new InMemoryReleaseLookup();
         var sources = Array.Empty<IUpstreamSource>();
 
-        var result = await DownloadProxyEndpoint.HandleAsync("does-not-exist", ValidApiKey, Resolver(), lookup, sources, NullEventSink.Instance, CancellationToken.None);
+        var result = await DownloadProxyEndpoint.HandleAsync("does-not-exist", ValidApiKey, Resolver(), lookup, new StaticSourceRegistry(sources), NullEventSink.Instance, CancellationToken.None);
 
         Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.NotFound>(result);
     }
@@ -57,7 +57,7 @@ public class DownloadProxyTests
         // No sources registered for "eztv" at all.
         var sources = Array.Empty<IUpstreamSource>();
 
-        var result = await DownloadProxyEndpoint.HandleAsync(release.ProxyGuid, ValidApiKey, Resolver(), lookup, sources, NullEventSink.Instance, CancellationToken.None);
+        var result = await DownloadProxyEndpoint.HandleAsync(release.ProxyGuid, ValidApiKey, Resolver(), lookup, new StaticSourceRegistry(sources), NullEventSink.Instance, CancellationToken.None);
 
         Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.NotFound>(result);
     }
@@ -72,7 +72,7 @@ public class DownloadProxyTests
         var source = new FakeUpstreamSource("eztv", downloadException: new RequestLimitReachedException("eztv"));
         var sources = new IUpstreamSource[] { source };
 
-        var result = await DownloadProxyEndpoint.HandleAsync(release.ProxyGuid, ValidApiKey, Resolver(), lookup, sources, NullEventSink.Instance, CancellationToken.None);
+        var result = await DownloadProxyEndpoint.HandleAsync(release.ProxyGuid, ValidApiKey, Resolver(), lookup, new StaticSourceRegistry(sources), NullEventSink.Instance, CancellationToken.None);
 
         var statusCodeResult = Assert.IsAssignableFrom<Microsoft.AspNetCore.Http.IStatusCodeHttpResult>(result);
         Assert.Equal(Microsoft.AspNetCore.Http.StatusCodes.Status429TooManyRequests, statusCodeResult.StatusCode);
@@ -88,7 +88,7 @@ public class DownloadProxyTests
         var source = new FakeUpstreamSource("eztv", downloadFactory: () => new MemoryStream("bytes"u8.ToArray()));
         var sources = new IUpstreamSource[] { source };
 
-        var result = await DownloadProxyEndpoint.HandleAsync(release.ProxyGuid, apikey: null, Resolver(), lookup, sources, NullEventSink.Instance, CancellationToken.None);
+        var result = await DownloadProxyEndpoint.HandleAsync(release.ProxyGuid, apikey: null, Resolver(), lookup, new StaticSourceRegistry(sources), NullEventSink.Instance, CancellationToken.None);
 
         var statusCodeResult = Assert.IsAssignableFrom<Microsoft.AspNetCore.Http.IStatusCodeHttpResult>(result);
         Assert.Equal(Microsoft.AspNetCore.Http.StatusCodes.Status401Unauthorized, statusCodeResult.StatusCode);
@@ -104,7 +104,7 @@ public class DownloadProxyTests
         var source = new FakeUpstreamSource("eztv", downloadFactory: () => new MemoryStream("bytes"u8.ToArray()));
         var sources = new IUpstreamSource[] { source };
 
-        var result = await DownloadProxyEndpoint.HandleAsync(release.ProxyGuid, "wrong-key", Resolver(), lookup, sources, NullEventSink.Instance, CancellationToken.None);
+        var result = await DownloadProxyEndpoint.HandleAsync(release.ProxyGuid, "wrong-key", Resolver(), lookup, new StaticSourceRegistry(sources), NullEventSink.Instance, CancellationToken.None);
 
         var statusCodeResult = Assert.IsAssignableFrom<Microsoft.AspNetCore.Http.IStatusCodeHttpResult>(result);
         Assert.Equal(Microsoft.AspNetCore.Http.StatusCodes.Status401Unauthorized, statusCodeResult.StatusCode);
@@ -184,7 +184,7 @@ public class DownloadProxyTests
         var source = new FakeUpstreamSource("eztv", downloadFactory: () => new FakeFixedLengthStream(MaxLengthStream.MaxBytes + 1));
         var sources = new IUpstreamSource[] { source };
 
-        var result = await DownloadProxyEndpoint.HandleAsync(release.ProxyGuid, ValidApiKey, Resolver(), lookup, sources, NullEventSink.Instance, CancellationToken.None);
+        var result = await DownloadProxyEndpoint.HandleAsync(release.ProxyGuid, ValidApiKey, Resolver(), lookup, new StaticSourceRegistry(sources), NullEventSink.Instance, CancellationToken.None);
 
         var statusCodeResult = Assert.IsAssignableFrom<Microsoft.AspNetCore.Http.IStatusCodeHttpResult>(result);
         Assert.Equal(Microsoft.AspNetCore.Http.StatusCodes.Status502BadGateway, statusCodeResult.StatusCode);
@@ -202,7 +202,7 @@ public class DownloadProxyTests
         var source = new FakeUpstreamSource("eztv", downloadFactory: () => new FakeFixedLengthStream(MaxLengthStream.MaxBytes));
         var sources = new IUpstreamSource[] { source };
 
-        var result = await DownloadProxyEndpoint.HandleAsync(release.ProxyGuid, ValidApiKey, Resolver(), lookup, sources, NullEventSink.Instance, CancellationToken.None);
+        var result = await DownloadProxyEndpoint.HandleAsync(release.ProxyGuid, ValidApiKey, Resolver(), lookup, new StaticSourceRegistry(sources), NullEventSink.Instance, CancellationToken.None);
 
         var bytesResult = Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.FileContentHttpResult>(result);
         Assert.Equal(MaxLengthStream.MaxBytes, bytesResult.FileContents.Length);
@@ -221,7 +221,7 @@ public class DownloadProxyTests
         var source = new FakeUpstreamSource("eztv", downloadException: new HttpRequestException("origin mismatch"));
         var sources = new IUpstreamSource[] { source };
 
-        var result = await DownloadProxyEndpoint.HandleAsync(release.ProxyGuid, ValidApiKey, Resolver(), lookup, sources, NullEventSink.Instance, CancellationToken.None);
+        var result = await DownloadProxyEndpoint.HandleAsync(release.ProxyGuid, ValidApiKey, Resolver(), lookup, new StaticSourceRegistry(sources), NullEventSink.Instance, CancellationToken.None);
 
         var statusCodeResult = Assert.IsAssignableFrom<Microsoft.AspNetCore.Http.IStatusCodeHttpResult>(result);
         Assert.Equal(Microsoft.AspNetCore.Http.StatusCodes.Status502BadGateway, statusCodeResult.StatusCode);
@@ -246,7 +246,7 @@ public class DownloadProxyTests
         var sources = new IUpstreamSource[] { source };
         var sink = new RecordingEventSink();
 
-        var result = await DownloadProxyEndpoint.HandleAsync(release.ProxyGuid, ValidApiKey, Resolver(), lookup, sources, sink, CancellationToken.None);
+        var result = await DownloadProxyEndpoint.HandleAsync(release.ProxyGuid, ValidApiKey, Resolver(), lookup, new StaticSourceRegistry(sources), sink, CancellationToken.None);
 
         var statusCodeResult = Assert.IsAssignableFrom<Microsoft.AspNetCore.Http.IStatusCodeHttpResult>(result);
         Assert.Equal(Microsoft.AspNetCore.Http.StatusCodes.Status502BadGateway, statusCodeResult.StatusCode);
@@ -275,7 +275,7 @@ public class DownloadProxyTests
         var at = new DateTimeOffset(2026, 9, 11, 10, 0, 0, TimeSpan.Zero);
 
         await DownloadProxyEndpoint.HandleAsync(
-            release.ProxyGuid, ValidApiKey, Resolver(), lookup, sources, NullEventSink.Instance, CancellationToken.None,
+            release.ProxyGuid, ValidApiKey, Resolver(), lookup, new StaticSourceRegistry(sources), NullEventSink.Instance, CancellationToken.None,
             tracker, new FixedTimeProvider(at));
 
         var refusal = Assert.Single(tracker.Snapshot());
@@ -298,7 +298,7 @@ public class DownloadProxyTests
         var sources = new IUpstreamSource[] { source };
 
         await DownloadProxyEndpoint.HandleAsync(
-            release.ProxyGuid, ValidApiKey, Resolver(), lookup, sources, NullEventSink.Instance, CancellationToken.None,
+            release.ProxyGuid, ValidApiKey, Resolver(), lookup, new StaticSourceRegistry(sources), NullEventSink.Instance, CancellationToken.None,
             tracker, TimeProvider.System);
 
         Assert.Empty(tracker.Snapshot());
@@ -321,7 +321,7 @@ public class DownloadProxyTests
         var sources = new IUpstreamSource[] { source };
 
         await DownloadProxyEndpoint.HandleAsync(
-            release.ProxyGuid, ValidApiKey, Resolver(), lookup, sources, NullEventSink.Instance, CancellationToken.None,
+            release.ProxyGuid, ValidApiKey, Resolver(), lookup, new StaticSourceRegistry(sources), NullEventSink.Instance, CancellationToken.None,
             tracker, TimeProvider.System);
 
         Assert.Single(tracker.Snapshot());
@@ -341,7 +341,7 @@ public class DownloadProxyTests
         var sources = new IUpstreamSource[] { source };
 
         await DownloadProxyEndpoint.HandleAsync(
-            release.ProxyGuid, ValidApiKey, Resolver(), lookup, sources, NullEventSink.Instance, CancellationToken.None,
+            release.ProxyGuid, ValidApiKey, Resolver(), lookup, new StaticSourceRegistry(sources), NullEventSink.Instance, CancellationToken.None,
             tracker, TimeProvider.System);
 
         var refusal = Assert.Single(tracker.Snapshot());
@@ -413,7 +413,7 @@ public class DownloadProxyTests
         var tracker = PersistingTracker(store);
 
         var result = await DownloadProxyEndpoint.HandleAsync(
-            release.ProxyGuid, ValidApiKey, Resolver(), lookup, sources, NullEventSink.Instance, CancellationToken.None,
+            release.ProxyGuid, ValidApiKey, Resolver(), lookup, new StaticSourceRegistry(sources), NullEventSink.Instance, CancellationToken.None,
             tracker, TimeProvider.System);
 
         Assert.Equal(StatusCodes.Status502BadGateway, Assert.IsAssignableFrom<IStatusCodeHttpResult>(result).StatusCode);
@@ -440,7 +440,7 @@ public class DownloadProxyTests
         var tracker = PersistingTracker(store);
 
         var result = await DownloadProxyEndpoint.HandleAsync(
-            release.ProxyGuid, ValidApiKey, Resolver(), lookup, sources, NullEventSink.Instance, CancellationToken.None,
+            release.ProxyGuid, ValidApiKey, Resolver(), lookup, new StaticSourceRegistry(sources), NullEventSink.Instance, CancellationToken.None,
             tracker, TimeProvider.System);
 
         // The payload still comes back: a bookkeeping failure must never cost the caller the file it
@@ -465,7 +465,7 @@ public class DownloadProxyTests
         var sources = new IUpstreamSource[] { source };
         var sink = new RecordingEventSink();
 
-        var result = await DownloadProxyEndpoint.HandleAsync(release.ProxyGuid, ValidApiKey, Resolver(), lookup, sources, sink, CancellationToken.None);
+        var result = await DownloadProxyEndpoint.HandleAsync(release.ProxyGuid, ValidApiKey, Resolver(), lookup, new StaticSourceRegistry(sources), sink, CancellationToken.None);
 
         var statusCodeResult = Assert.IsAssignableFrom<Microsoft.AspNetCore.Http.IStatusCodeHttpResult>(result);
         Assert.Equal(Microsoft.AspNetCore.Http.StatusCodes.Status503ServiceUnavailable, statusCodeResult.StatusCode);

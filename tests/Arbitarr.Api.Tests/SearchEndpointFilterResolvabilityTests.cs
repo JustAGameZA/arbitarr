@@ -109,7 +109,7 @@ public sealed class SearchEndpointFilterResolvabilityTests : IDisposable
         ReleaseCandidate candidate)
     {
         var source = new SingleReleaseUpstreamSource(candidate);
-        var mergeStage = new UpstreamMergeStage(new[] { (IUpstreamSource)source });
+        var mergeStage = new UpstreamMergeStage(new StaticSourceRegistry(new[] { (IUpstreamSource)source }));
         var snapshotStore = new QuerySnapshotStore(context);
         var time = new FakeTimeProvider(Now);
         var snapshotService = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), snapshotStore, time);

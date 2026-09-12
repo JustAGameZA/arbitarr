@@ -52,8 +52,8 @@ public sealed class MintedClientApiKeyTests : IAsyncLifetime
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IUpstreamSource>();
-                services.RemoveAll<IReadOnlyList<IUpstreamSource>>();
-                services.AddSingleton<IReadOnlyList<IUpstreamSource>>(Array.Empty<IUpstreamSource>());
+                services.RemoveAll<ISourceRegistry>();
+                services.AddSingleton<ISourceRegistry>(StaticSourceRegistry.Empty);
             });
         });
     }

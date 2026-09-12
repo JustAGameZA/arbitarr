@@ -141,7 +141,7 @@ public sealed class ErrorXmlGoldenTests : IDisposable
     public async Task Rate_limited_search_endpoint_result_does_not_surface_as_http_5xx()
     {
         var source = new FakeUpstreamSource("eztv", searchException: new RequestLimitReachedException("eztv"));
-        var mergeStage = new UpstreamMergeStage(new[] { (IUpstreamSource)source });
+        var mergeStage = new UpstreamMergeStage(new StaticSourceRegistry(new[] { (IUpstreamSource)source }));
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var snapshotService = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);

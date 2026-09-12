@@ -56,7 +56,7 @@ public class MusicSearchGoldenTests : IDisposable
     {
         using var context = CreateContext();
         var source = new FakeUpstreamSource("synthsrc", searchResults: new[] { SyntheticMusicRelease() });
-        var mergeStage = new UpstreamMergeStage(new[] { (IUpstreamSource)source });
+        var mergeStage = new UpstreamMergeStage(new StaticSourceRegistry(new[] { (IUpstreamSource)source }));
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var snapshotService = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);
@@ -105,7 +105,7 @@ public class MusicSearchGoldenTests : IDisposable
     {
         using var context = CreateContext();
         var source = new FakeUpstreamSource("synthsrc", searchResults: new[] { SyntheticMusicRelease() });
-        var mergeStage = new UpstreamMergeStage(new[] { (IUpstreamSource)source });
+        var mergeStage = new UpstreamMergeStage(new StaticSourceRegistry(new[] { (IUpstreamSource)source }));
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var snapshotService = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);

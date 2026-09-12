@@ -53,16 +53,6 @@ builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 builder.Logging.AddDebug();
 
-// #53 stage 53b: NzbHydraSourceOptions requires a non-null absolute Uri, but a deployment can now
-// legitimately have *no* source configured (empty sources table, no environment configuration) —
-// a state the pre-53b env-var wiring could not represent, since it always defaulted to a URL. The
-// adapter is still constructed in that case so the search pipeline shape is unchanged; it is simply
-// pointed at RFC 5737 TEST-NET-1, which is guaranteed non-routable, so any request fails fast and
-// UpstreamMergeStage degrades to an empty result set exactly as it does for an unreachable source.
-// The alternative — registering no IUpstreamSource at all — would change the DI shape and is 53d's
-// call to make once the UI can add sources.
-const string UnconfiguredSourceBaseUrl = "http://192.0.2.1:1";
-
 // Runtime state lives under /config (AC21), overridable for local dev/test so a real /config
 // directory is never required outside the production container.
 //
@@ -209,38 +199,56 @@ builder.Services.AddSingleton(nzbHydraEnvironment);
 // Populated once at startup by SourceSeeder, after Database.Migrate() — the database cannot be read
 // safely before that, which is exactly why the source configuration can no longer be baked into
 // these registrations the way the pre-53b env-var wiring did.
+//
+// arb-x7w8.4: this no longer feeds the search path, which now resolves EVERY enabled row through
+// SourceRegistry per scope. What it still answers is the dashboard's "is anything configured"
+// question below, which SourceSeeder is the right place to settle because it runs once, after
+// migrations, in the same pass that logs what was resolved and warns about divergence.
 var resolvedSourceConfiguration = new ResolvedSourceConfiguration();
 builder.Services.AddSingleton(resolvedSourceConfiguration);
 
-// "Configured" means an API key is present — the same predicate the pre-53b env-var wiring used, so
-// the /api/config/effective contract is unchanged (plan §3.4 defers that to 53d). Only the *source*
-// of the answer moved, from the environment to the resolved database row. Registered as a factory
-// rather than an instance because the resolution has not happened yet at this point in startup; the
-// singleton is first resolved on a request, long after SourceSeeder has run. The dashboard's
-// effective-config view (M2 §2, D1 surface 3) reports this without ever exposing the key itself.
+// "Configured" means AT LEAST ONE ENABLED SOURCE WITH A KEY — arb-x7w8.4 restates the 53d predicate
+// for N sources, and the meaning is unchanged for the N=1 case the contract was written against.
+// The answer is still produced by SourceSeeder's resolve pass rather than recomputed here.
+// Registered as a factory rather than an instance because the resolution has not happened yet at
+// this point in startup; the singleton is first resolved on a request, long after SourceSeeder has
+// run. The dashboard's effective-config view (M2 §2, D1 surface 3) reports this without ever
+// exposing a key itself.
 builder.Services.AddSingleton(sp => new NzbHydraConfigurationStatus(
     IsConfigured: sp.GetRequiredService<ResolvedSourceConfiguration>().IsConfigured));
 
 // SEC-M1 (SSRF): the source adapter validates <link> origins itself, but disabling automatic
 // redirect-following here is defense in depth — an upstream response could otherwise 30x us to an
 // arbitrary host and we'd fetch it before the origin check ever saw the real target.
+//
+// ONE NAMED REGISTRATION PER ADAPTER KIND SERVES N SOURCES, and that is sound rather than a
+// shortcut: IHttpClientFactory.CreateClient returns a DISTINCT HttpClient per call (only the
+// handler chain behind it is pooled), so each source SourceRegistry builds owns its own client.
+// That distinctness is required, not merely tidy — both adapters assign HttpClient.Timeout from
+// their row's TimeoutSeconds, so a client shared across sources would make one row's timeout win
+// for all of them (NewznabSource:46-51 states the seam).
 builder.Services.AddHttpClient<NzbHydraSource>()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
-builder.Services.AddScoped<IUpstreamSource>(sp =>
-{
-    // Read per scope from the startup-resolved configuration rather than captured from the
-    // environment at registration time.
-    var resolved = sp.GetRequiredService<ResolvedSourceConfiguration>();
-    var options = new NzbHydraSourceOptions(
-        new Uri(resolved.BaseUrl ?? UnconfiguredSourceBaseUrl),
-        resolved.ApiKey ?? string.Empty,
-        resolved.SourceName ?? "NZBHydra2");
-    var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
-    var httpClient = httpClientFactory.CreateClient(nameof(NzbHydraSource));
-    var circuitBreaker = sp.GetRequiredService<IAsyncCircuitBreaker>();
-    return new NzbHydraSource(options, httpClient, circuitBreaker);
-});
-builder.Services.AddScoped<IReadOnlyList<IUpstreamSource>>(sp => sp.GetServices<IUpstreamSource>().ToArray());
+builder.Services.AddHttpClient(Arbitarr.Host.Sources.SourceRegistry.NewznabHttpClientName)
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+
+// arb-x7w8.4: the search path's sources, resolved PER SCOPE from the enabled rows rather than from
+// one configuration captured at startup — which is what makes adding, removing or disabling an
+// indexer take effect without a restart.
+//
+// REGISTERED AS ISourceRegistry, NOT AS IReadOnlyList<IUpstreamSource>, and that shape is forced
+// rather than chosen. Resolving the sources reads the database, so it is async; a list injected by
+// constructor has to come from a DI factory delegate, which cannot be async — so keeping the list
+// shape would mean blocking a thread-pool thread inside that factory on EVERY scope, i.e. every
+// search. HostBlockingAsyncCallTests bans exactly that, for a measured reason (it starved the pool
+// and surfaced as the arb-agh flake). Consumers therefore take the registry and await it at the top
+// of their own work. It is SCOPED and memoises within the scope, so two consumers in one request
+// share one resolution and the per-source keys are read once.
+//
+// arb-x7w8.10's per-indexer budgets and durable backoff decorate at THIS boundary.
+builder.Services.AddScoped<Arbitarr.Host.Sources.SourceRegistry>();
+builder.Services.AddScoped<ISourceRegistry>(sp =>
+    sp.GetRequiredService<Arbitarr.Host.Sources.SourceRegistry>());
 builder.Services.AddScoped<UpstreamMergeStage>();
 builder.Services.AddScoped<IQuerySnapshotStore, QuerySnapshotStore>();
 
@@ -264,12 +272,15 @@ builder.Services.AddScoped<DatabaseSizeReporter>();
 builder.Services.AddScoped<ISnapshotTtlSource, SettingsSnapshotTtlSource>();
 
 // arb-b5z: which sources produced a snapshot is part of what that snapshot IS, so the resolved
-// source set is a component of the snapshot token. Registered SCOPED rather than as a singleton
-// instance because ResolvedSourceConfiguration is still empty at this point in startup -- it is
-// written by SourceSeeder after app.Build() -- so the fingerprint has to be derived when a request
-// first resolves it, not here. Its value is then constant for the process, which is the intent: it
-// is not trying to notice a source change while running (it cannot), it is making sure the NEXT
-// process cannot be served the SQLite-persisted snapshots this one left behind.
+// source set is a component of the snapshot token. SCOPED because it reads the scoped
+// ArbitarrDbContext.
+//
+// arb-x7w8.4 made it LIVE rather than constant for the process. It used to hash
+// ResolvedSourceConfiguration once, which was sound only while the source set could not change
+// while running. SourceRegistry ended that -- a source added, removed or disabled now takes effect
+// on the next request -- so a startup-frozen fingerprint would hand one source set's persisted
+// snapshot rows to a different one, within a single process. It now derives from the enabled rows
+// on each call.
 builder.Services.AddScoped<ISourceSetFingerprintSource, Arbitarr.Host.Sources.ResolvedSourceSetFingerprintSource>();
 builder.Services.AddScoped(sp => new PaginationSnapshotService(
     sp.GetRequiredService<UpstreamMergeStage>(),
@@ -708,6 +719,9 @@ builder.Services.AddScoped<SourceRepository>();
 // SourceRepository.ReadApiKeyForUpstreamRequestAsync stays at exactly one call site, which is the
 // form that guarantee takes (CLAUDE.md section 1, docs/standards/architecture.md). Same shape, and
 // same reason, as SonarrCredentialProvider below.
+//
+// arb-x7w8.4 IS that second consumer: SourceRegistry takes a SourceCredential per enabled row and
+// never touches the repository's reader. The count is unchanged.
 builder.Services.AddScoped<Arbitarr.Data.Sources.SourceCredentialProvider>();
 
 
@@ -1460,7 +1474,7 @@ app.MapGet("/torznab/api", async (
     // arb-zwk: so a failed store write is recorded rather than silent. The endpoint degrades on that
     // failure and still answers, which without a log would be an invisible loss of durability.
     ILoggerFactory loggerFactory,
-    IReadOnlyList<IUpstreamSource> sources,
+    ISourceRegistry sourceRegistry,
     HttpRequest request,
     CancellationToken cancellationToken) =>
 {
@@ -1472,7 +1486,7 @@ app.MapGet("/torznab/api", async (
 
     if (string.Equals(t, "caps", StringComparison.OrdinalIgnoreCase))
     {
-        return await CapsEndpoint.HandleTorznabAsync(capsAggregator, sources, cancellationToken).ConfigureAwait(false);
+        return await CapsEndpoint.HandleTorznabAsync(capsAggregator, sourceRegistry, cancellationToken).ConfigureAwait(false);
     }
 
     var categories = ParseCategories(cat);
@@ -1532,7 +1546,7 @@ app.MapGet("/newznab/api", async (
     IReleaseLookupStore releaseLookupStore,
     // arb-zwk: see the torznab route's note on this parameter.
     ILoggerFactory loggerFactory,
-    IReadOnlyList<IUpstreamSource> sources,
+    ISourceRegistry sourceRegistry,
     HttpRequest request,
     CancellationToken cancellationToken) =>
 {
@@ -1544,7 +1558,7 @@ app.MapGet("/newznab/api", async (
 
     if (string.Equals(t, "caps", StringComparison.OrdinalIgnoreCase))
     {
-        return await CapsEndpoint.HandleNewznabAsync(capsAggregator, sources, cancellationToken).ConfigureAwait(false);
+        return await CapsEndpoint.HandleNewznabAsync(capsAggregator, sourceRegistry, cancellationToken).ConfigureAwait(false);
     }
 
     var categories = ParseCategories(cat);
@@ -1578,12 +1592,12 @@ app.MapGet("/download/{proxyGuid}", async (
     string? apikey,
     IClientApiKeyResolver apiKeyResolver,
     IReleaseLookup releaseLookup,
-    IReadOnlyList<IUpstreamSource> sources,
+    ISourceRegistry sourceRegistry,
     Arbitarr.Core.Diagnostics.IEventSink eventSink,
     Arbitarr.Core.Diagnostics.IDownloadRefusalTracker refusalTracker,
     TimeProvider timeProvider,
     CancellationToken cancellationToken) =>
-    await DownloadProxyEndpoint.HandleAsync(proxyGuid, apikey, apiKeyResolver, releaseLookup, sources, eventSink, cancellationToken, refusalTracker, timeProvider).ConfigureAwait(false))
+    await DownloadProxyEndpoint.HandleAsync(proxyGuid, apikey, apiKeyResolver, releaseLookup, sourceRegistry, eventSink, cancellationToken, refusalTracker, timeProvider).ConfigureAwait(false))
     .WithClassification(RouteClassification.PublicRead);
 
 // Terminal 404 for unmatched /api/ paths, so a typo'd, renamed or removed API route fails
