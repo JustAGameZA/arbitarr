@@ -1,3 +1,4 @@
+using System.Net;
 using Arbitarr.Integration.Tests.TestSupport;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -123,7 +124,7 @@ public sealed class ReleaseGuidSecretValidationTests : IDisposable
     }
 
     [Fact]
-    public void HostStart_WithThirtyTwoByteSecret_StartsNormally()
+    public async Task HostStart_WithThirtyTwoByteSecret_StartsNormally()
     {
         // The control. Without it, the two assertions above are satisfied by a host that refuses to
         // start for any reason at all, and the validation could be rejecting everything.
@@ -133,7 +134,13 @@ public sealed class ReleaseGuidSecretValidationTests : IDisposable
 
         using var client = host.CreateClient();
 
-        Assert.NotNull(client);
+        // NotNull(client) alone proves only that the factory constructed something; it says nothing
+        // about whether the host actually serves a request. /api/status is unauthenticated (see
+        // RouteClassificationTests) and hit the same way by other Integration tests, so a concrete
+        // 200 here proves the host is genuinely up and answering, not merely built.
+        var response = await client.GetAsync("/api/status");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     /// <summary>
@@ -164,4 +171,13 @@ public sealed class ReleaseGuidSecretValidationTests : IDisposable
         // and throws if the delete still fails.
         ConfigDirectoryTeardown.Delete(_configDirectory);
     }
+}
+
+// (arb-dvxj) Explicit collection definition: serialisation held only by xUnit default before this,
+// so the guarantee described in the class doc comment above was unstated. Does NOT join
+// ReleaseGuidSecretSwapDuringRequestTests's reserved collection — that class's doc comment reserves
+// it for itself.
+[CollectionDefinition(ReleaseGuidSecretValidationTests.CollectionName, DisableParallelization = true)]
+public class ReleaseGuidSecretValidationCollection
+{
 }
