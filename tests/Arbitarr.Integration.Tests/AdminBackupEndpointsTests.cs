@@ -242,6 +242,16 @@ public sealed class AdminBackupEndpointsTests : IClassFixture<ArbitarrWebApplica
         using var client = AuthorizedClient();
         var state = _factory.Services.GetRequiredService<BackupStateStore>();
 
+        // arb-lzf5: MaintenanceHostedService takes its first automatic backup pass BEFORE its
+        // first Task.Delay, on host startup, and CreateClient() above is what triggers that
+        // startup for this shared IClassFixture host. On a loaded runner that startup pass can
+        // fail and call RecordBackupFailure before this test ever reads the status, which makes
+        // the positive control below false on a machine slow enough to lose the race — not a
+        // change in behaviour. Force a healthy state explicitly rather than assume a fresh host
+        // has none: this keeps the control meaningful (it still proves a PLANTED failure below is
+        // visible, then that recovery clears it) without depending on that startup pass's outcome.
+        state.RecordBackup(DateTimeOffset.UtcNow, automatic: true);
+
         // POSITIVE CONTROL: healthy first. If the field were always set, the next assertion would
         // pass without the recording path working at all.
         var healthy = await client.GetFromJsonAsync<BackupStatusResponse>(AdminBackupEndpoints.StatusRoute);
