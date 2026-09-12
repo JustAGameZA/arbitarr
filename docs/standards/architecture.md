@@ -124,6 +124,35 @@ token, say) is not covered — such registrations need `.RemoveAllLoggers()`.
 *Why:* care taken inside a typed client cannot defend against a handler the container wraps around
 it. The defence has to be at registration.
 
+### Tier convention (arb-8ur7, from the #215 arch review)
+
+**Debug per item; a rate-capped Warning per call; a Warning per batch; Information for a
+whole-call outcome that is not a fault but would otherwise be invisible above Debug.** Each tier
+has a worked instance rather than a copied snippet:
+
+- **Debug per item, rate-capped Warning per call** —
+  `ReleaseClassifier.TryClassifyAsync` (arb-s4lg): the caller-supplied `detailAtWarning` flag picks
+  Warning or Debug per call; `ClassifierWorker` forwards it from `ClassifierPollingWorker`, which
+  caps at `MaxDetailedFailuresPerCycle` (three) before demoting the rest to Debug.
+- **Warning per batch** — `ClassifierPollingWorker.WarnOnFailures`: one Warning per cycle that had
+  failures, carrying the by-type counts and the suppressed-detail count, none for a clean cycle.
+- **Information for a whole-call outcome** —
+  `SyncReleaseArbiter.LogBudgetExhaustionIfWholeSearchTimedOut`: one Information line when every
+  candidate in a search returned `Unknown` with no transport failure counted, distinguishing "the
+  whole search's budget was exhausted" from "nothing to report" — a case that is correctly Debug
+  per candidate (see [Error handling](#error-handling-in-background-and-maintenance-work) below)
+  but would otherwise carry zero signal above Debug in aggregate.
+
+**#296 caveat:** that Information line fires identically for a single-candidate search that
+legitimately times out. This is accepted on purpose — gating it on candidate count greater than
+one would silently remove the only signal for a genuinely exhausted single-candidate ad-hoc
+search.
+
+*Why Information, not Warning:* everything at Information and above lands in the persistent SQLite
+log store (CLAUDE.md's secrets section, `LogStore.DatabaseFileName`), so choosing a tier is also
+choosing what accumulates there. A per-call or per-batch event promoted to Information would flood
+that store; a whole-call outcome that happens once per search does not.
+
 ---
 
 ## Error handling in background and maintenance work
