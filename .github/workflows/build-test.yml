@@ -18,6 +18,12 @@ on:
           bootstrap constant by arithmetic on the old one.
         type: boolean
         default: false
+      simulate_test_failure:
+        description: >-
+          Force the test step to fail so the failure()-gated failed-attempt
+          artifact upload steps can be exercised on demand.
+        type: boolean
+        default: false
 
 # The category filter, written ONCE at workflow level and reused by every matrix
 # job, by the measure-filter report and by the recorded artifact. Keeping it in
@@ -442,6 +448,17 @@ jobs:
             echo "::endgroup::"
           done
 
+      # arb-5fs: dispatch-only switch to prove the failure()-gated upload below
+      # actually fires, without committing a failing test. The event_name half
+      # of the guard makes it impossible for this to run on push or
+      # pull_request -- those events never set `inputs.simulate_test_failure`
+      # (it does not exist on their payload), but the explicit event_name
+      # check makes that impossibility structural rather than incidental.
+      - name: Simulate test failure (group ${{ matrix.group }})
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.simulate_test_failure }}
+        shell: bash
+        run: exit 1
+
       - name: Report peak memory (group ${{ matrix.group }})
         if: always()
         shell: bash
@@ -690,6 +707,14 @@ jobs:
         run: |
           set -euo pipefail
           npm test 2>&1 | tee vitest-console.log
+
+      # arb-5fs: same dispatch-only switch as the backend group's, see that
+      # step's comment. The event_name guard means push/pull_request runs
+      # never see this step fire.
+      - name: Simulate test failure (frontend)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.simulate_test_failure }}
+        shell: bash
+        run: exit 1
 
       - name: Read frontend test count
         id: count

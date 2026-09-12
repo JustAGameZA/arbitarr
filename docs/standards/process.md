@@ -91,7 +91,15 @@ The gate never reads them: it downloads `pattern: trx-*`, and these names cannot
 the point rather than a detail — a matching name would be summed into `executed=` a second time
 and surface as a floor breach. The frontend count reaches the gate through a job output, not an
 artifact, so nothing uploaded here can move it either. A green run never exercises the
-`if: failure()` path; bead `arb-5fs` proposes a dispatch-only input to prove it on demand.
+`if: failure()` path — a passing test step means `failure()` is false, so the upload step is
+skipped by construction, not by luck. `workflow_dispatch`'s `simulate_test_failure` input
+(arb-5fs) exercises that path on demand: when set, a step immediately after the test step runs
+`exit 1`, gated on `github.event_name == 'workflow_dispatch' && inputs.simulate_test_failure` so
+it is structurally impossible to fire on `push` or `pull_request`, which never populate that
+input. Triggering it cannot move the test-count floor even on master: `Record test counts` and
+`Upload test counts` inherit `success()` and never run on a failed run, and the floor lookup
+filters on `status=success`, so running this on a feature branch is prudence rather than the
+guard itself.
 
 **Recorded blind spot** (#182 architectural review): a `TEST_FILTER` change that narrows discovery
 and execution *consistently* to a nonzero count passes every per-assembly check — the shards agree,
