@@ -1,5 +1,7 @@
+using Arbitarr.Core.Sources;
 using Arbitarr.Data.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Arbitarr.Data.Sources;
 
@@ -84,10 +86,17 @@ public sealed record SourceOptions
 public sealed class SourceRepository
 {
     private readonly ArbitarrDbContext _dbContext;
+    private readonly ILogger<SourceRepository>? _logger;
 
-    public SourceRepository(ArbitarrDbContext dbContext)
+    /// <summary>
+    /// <paramref name="logger"/> is optional so the many existing constructions in tests that have
+    /// no opinion about logging keep compiling; the container supplies a real one, which is what
+    /// makes <see cref="GetAllAsync"/>'s credential warning reach <c>/api/admin/logs</c>.
+    /// </summary>
+    public SourceRepository(ArbitarrDbContext dbContext, ILogger<SourceRepository>? logger = null)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        _logger = logger;
     }
 
     /// <summary>The write-only Settings row name holding a source's API key. Internal naming detail, not a contract.</summary>
@@ -267,9 +276,63 @@ public sealed class SourceRepository
         return source;
     }
 
-    /// <summary>All configured sources, in creation order. Never includes secret material.</summary>
-    public Task<List<Source>> GetAllAsync(CancellationToken cancellationToken) =>
-        _dbContext.Sources.AsNoTracking().OrderBy(s => s.Id).ToListAsync(cancellationToken);
+    /// <summary>
+    /// All configured sources, in creation order. Never includes secret material.
+    ///
+    /// <para><b>Rows written before the arb-4vzm userinfo rejection are not re-validated</b>, here
+    /// or anywhere. <see cref="ValidateBaseUrl"/> guards the two WRITE paths; a row stored yesterday
+    /// with <c>https://user:pw@…</c> stays exactly as it is, keeps being projected onto
+    /// <c>GET /api/admin/sources</c>, and keeps riding on that source's outbound requests. This
+    /// method warns about each such row so the condition is visible rather than silent — read-time
+    /// rather than at startup because this is the read every admin surface already goes through, so
+    /// it needs no new hosted service and no composition-root change.</para>
+    ///
+    /// <para><b>The response is NOT filtered.</b> Stripping the userinfo in the projection would be
+    /// a second, quieter policy disagreeing with the validator — precisely the two-answers defect
+    /// this change exists to close — and it would hide from the operator the one thing they need to
+    /// act on. A credential the operator can see and remove beats one they cannot.</para>
+    /// </summary>
+    public async Task<List<Source>> GetAllAsync(CancellationToken cancellationToken)
+    {
+        var sources = await _dbContext.Sources.AsNoTracking().OrderBy(s => s.Id).ToListAsync(cancellationToken);
+
+        foreach (var source in sources)
+        {
+            WarnIfBaseUrlCarriesCredentials(source);
+        }
+
+        return sources;
+    }
+
+    /// <summary>
+    /// Warns that a stored base URL carries credentials, naming the ROW ID and nothing else.
+    ///
+    /// <para><b>Never the value, never the host, never the username.</b> This line lands in the
+    /// persistent SQLite log store served at <c>/api/admin/logs</c> (CLAUDE.md §1), and
+    /// <c>LogMessageCleanser</c> scrubs QUERY STRINGS — a credential in the userinfo component of a
+    /// URL would survive it verbatim. Logging the value in order to complain about it would perform
+    /// exactly the leak being complained about. Same constraint as
+    /// <c>security-properties-x7w8.md</c>'s P7 (the unknown-Kind warning names the row id and
+    /// nothing else, explicitly because the BaseUrl "may carry userinfo until the H1 bead lands" —
+    /// this is that bead).</para>
+    /// </summary>
+    private void WarnIfBaseUrlCarriesCredentials(Source source)
+    {
+        if (_logger is null)
+        {
+            return;
+        }
+
+        if (!Uri.TryCreate(source.BaseUrl, UriKind.Absolute, out var uri) || string.IsNullOrEmpty(uri.UserInfo))
+        {
+            return;
+        }
+
+        _logger.LogWarning(
+            "Source {SourceId}'s base URL contains credentials; remove them and store the key in " +
+            "the source's API key field. The value is deliberately not shown here.",
+            source.Id);
+    }
 
     /// <summary>
     /// Whether a source has an API key stored, without ever exposing the value — the read every
@@ -572,15 +635,30 @@ public sealed class SourceRepository
     /// create or change a source row must hit this same rule: this type's own <see cref="AddAsync"/>
     /// and <see cref="UpdateAsync"/>, and <c>Arbitarr.Host.Sources.SourceSeeder</c>, which
     /// writes a row directly against the DbContext rather than through this repository.
+    ///
+    /// <para><b>The first arms are <see cref="UpstreamOrigin.DescribeBaseUrlFault"/>'s, not this
+    /// type's</b>, so that what counts as a legitimate origin here is the same answer
+    /// <see cref="Arbitarr.Core.Sources.TorznabFeedParser.TryValidateOriginPinnedLink"/> gives for a
+    /// link. They had drifted apart in three directions (arb-4vzm userinfo, arb-07ei scheme,
+    /// arb-iub9 trailing dot) and every one of those gaps was a defect. That component owns the
+    /// parse/scheme floor, the userinfo rejection and the trailing-dot rejection; the
+    /// <c>.invalid</c> arm stays here because its reasoning is about seeding a placeholder, not
+    /// about what an origin is.</para>
+    ///
+    /// <para><b>Arm ORDER is load-bearing.</b> The userinfo rejection (inside the component) runs
+    /// before the <c>.invalid</c> arm below, which ECHOES <paramref name="baseUrl"/> into its
+    /// message. A credential-bearing <c>.invalid</c> URL reaching that arm first would print the
+    /// credential into the response body. Do not re-sort these into "simplest check first".</para>
     /// </summary>
     public static void ValidateBaseUrl(string baseUrl)
     {
-        if (string.IsNullOrWhiteSpace(baseUrl)
-            || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri)
-            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        var fault = UpstreamOrigin.DescribeBaseUrlFault(baseUrl, out var parsed);
+        if (fault is not null)
         {
-            throw new SourceValidationException($"'{baseUrl}' is not a valid absolute http(s) URL.");
+            throw new SourceValidationException(fault);
         }
+
+        var uri = parsed!;
 
         if (uri.Host.EndsWith(".invalid", StringComparison.OrdinalIgnoreCase)
             || string.Equals(uri.Host, "invalid", StringComparison.OrdinalIgnoreCase))
