@@ -105,10 +105,15 @@ public sealed class CreateUnopenedConnectionTests : IDisposable
     ///
     /// <para>Hence: the reference is measured on a SECOND DATABASE FILE (a distinct pool, so the
     /// reference's own handle is unreachable from here), AND this file's pool is CLEARED after the
-    /// conversion, so the connection under test can only be opened from scratch. With both in place
-    /// the same deletion FAILS this test. Neither is decoration — dropping either one restores the
-    /// vacuum. The clear goes through <c>SqlitePoolCleaner</c>, the scoped per-file API; CLAUDE.md
-    /// section 4 forbids <c>ClearAllPools</c>, which would reach into neighbouring test classes.</para>
+    /// conversion, so the connection under test can only be opened from scratch. As this test is
+    /// ORDERED, the per-file clear is what actually closes the vacuum: it runs after both the
+    /// reference work and this file's own <c>ConvertToWalOnce</c>, so it is what forces the open
+    /// under test to configure a fresh handle rather than draw the pooled one. The second-file
+    /// reference is not decoration either, but for a different reason: order aside, it keeps the
+    /// reference's own handle on a pool this test's clear cannot touch, so a reference taken on this
+    /// same file would still be reachable and would seed the same false pass regardless of ordering.
+    /// The clear goes through <c>SqlitePoolCleaner</c>, the scoped per-file API; CLAUDE.md section 4
+    /// forbids <c>ClearAllPools</c>, which would reach into neighbouring test classes.</para>
     /// </summary>
     [Fact]
     public void The_busy_timeout_is_applied_when_the_caller_opens_the_connection()
@@ -214,6 +219,11 @@ public sealed class CreateUnopenedConnectionTests : IDisposable
 
         // Still DELETE mode: the rejected open verified rather than converted (arb-itmm), and the
         // file is reachable again, so the connection it built is not still holding it.
+        //
+        // Deliberately raw, not the factory: this reopen must not re-run the factory's own WAL
+        // verification, or it would throw on the very file this check is confirming is reachable.
+        // NoInlineDatabaseConnectionStringsTests scans Arbitarr.Data only, so this test project is
+        // outside its reach — a tidy-up must not route this through the factory regardless.
         using var after = new SqliteConnection(_database.ConnectionString);
         after.Open();
         Assert.Equal("delete", ReadJournalMode(after));
@@ -226,6 +236,11 @@ public sealed class CreateUnopenedConnectionTests : IDisposable
     /// </summary>
     private void SeedRollbackJournalDatabase()
     {
+        // Deliberately raw, not the factory: the factory converts to WAL on open, and this helper's
+        // whole job is to leave the file in SQLite's default rollback-journal mode for the
+        // verification to reject. NoInlineDatabaseConnectionStringsTests scans Arbitarr.Data only,
+        // so this test project is outside its reach — a tidy-up must not route this through the
+        // factory regardless.
         using var seed = new SqliteConnection(_database.ConnectionString);
         seed.Open();
 
