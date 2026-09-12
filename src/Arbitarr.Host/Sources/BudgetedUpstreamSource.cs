@@ -18,6 +18,18 @@ namespace Arbitarr.Host.Sources;
 /// instead means the rules exist once, apply to every source kind including any added later, and
 /// touch neither adapter, <c>MergeResult</c>, nor <c>IAsyncCircuitBreaker</c>.</para>
 ///
+/// <para><b>EVERY DATABASE OPERATION OPENS ITS OWN SCOPE, AND THAT IS A CORRECTNESS REQUIREMENT
+/// RATHER THAN TIDINESS.</b> <c>UpstreamMergeStage</c> fans out to all N sources CONCURRENTLY under
+/// one <c>Task.WhenAll</c>, so every decorator in that fan-out runs at the same moment. Holding a
+/// scoped <c>ArbitarrDbContext</c> — which is not thread-safe — would put N concurrent readers on
+/// one instance and throw EF's "a second operation was started on this context" on the second
+/// configured source, crashing the search path for exactly the multi-indexer deployment this epic
+/// exists to enable. The gate therefore reaches the database through
+/// <see cref="ISourceGateScopeFactory"/>, one scope created and disposed per operation, which is the
+/// shape <c>DbClientApiKeyResolver</c> and <c>ScopedEventSink</c> already use for the same reason.
+/// ADR 0017's connection lifetime posture is unchanged: each scope's context owns its connection for
+/// the length of that one operation.</para>
+///
 /// <para><b>THIS IS NOT A CIRCUIT BREAKER AND MUST NOT BE MERGED WITH ONE.</b> The wrapped source
 /// still consults <c>IAsyncCircuitBreaker</c> itself, and that stays true: the breaker is an
 /// in-process short-window fault detector, this is durable operator-facing accounting, and
@@ -30,9 +42,9 @@ namespace Arbitarr.Host.Sources;
 /// healthy source as broken. A skip returns an EMPTY candidate list, which
 /// <c>UpstreamMergeStage</c> already unions harmlessly, so the merge still answers from the other
 /// sources and <c>MergeResult</c> needs no new field (arb-x7w8.7 owns that shape). The skip is
-/// EVENTED so the Activity surface can say why a source contributed nothing; an operator seeing an
-/// empty result from one indexer and no explanation is exactly the invisibility this bead exists to
-/// remove.</para>
+/// recorded as its own <see cref="EventKind.SourceSkipped"/> so the Activity surface can filter
+/// budget skips apart from real failures; an operator seeing an empty result from one indexer and no
+/// explanation is exactly the invisibility this bead exists to remove.</para>
 ///
 /// <para><b>A skip does not spend budget and does not touch backoff.</b> No hit event is written
 /// when no call is made — that is what keeps the count a record of API hits rather than of
@@ -43,21 +55,18 @@ public sealed class BudgetedUpstreamSource : IUpstreamSource
 {
     private readonly IUpstreamSource _inner;
     private readonly Source _configuration;
-    private readonly SourceApiHitCounter _counter;
-    private readonly SourceBackoffStore _backoff;
+    private readonly ISourceGateScopeFactory _scopeFactory;
     private readonly IEventSink _eventSink;
 
     public BudgetedUpstreamSource(
         IUpstreamSource inner,
         Source configuration,
-        SourceApiHitCounter counter,
-        SourceBackoffStore backoff,
+        ISourceGateScopeFactory scopeFactory,
         IEventSink eventSink)
     {
         _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
-        _counter = counter ?? throw new ArgumentNullException(nameof(counter));
-        _backoff = backoff ?? throw new ArgumentNullException(nameof(backoff));
+        _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _eventSink = eventSink ?? throw new ArgumentNullException(nameof(eventSink));
     }
 
@@ -69,8 +78,7 @@ public sealed class BudgetedUpstreamSource : IUpstreamSource
         SearchQuery query,
         CancellationToken cancellationToken = default)
     {
-        if (!await IsCallableAsync(cancellationToken).ConfigureAwait(false)
-            || !await _counter.HasQueryBudgetAsync(_configuration, cancellationToken).ConfigureAwait(false))
+        if (!await IsAllowedAsync(EventKind.SourceQueryHit, cancellationToken).ConfigureAwait(false))
         {
             await RecordSkipAsync("query", cancellationToken).ConfigureAwait(false);
             return Array.Empty<ReleaseCandidate>();
@@ -102,8 +110,7 @@ public sealed class BudgetedUpstreamSource : IUpstreamSource
         ReleaseCandidate release,
         CancellationToken cancellationToken = default)
     {
-        if (!await IsCallableAsync(cancellationToken).ConfigureAwait(false)
-            || !await _counter.HasGrabBudgetAsync(_configuration, cancellationToken).ConfigureAwait(false))
+        if (!await IsAllowedAsync(EventKind.SourceGrabHit, cancellationToken).ConfigureAwait(false))
         {
             await RecordSkipAsync("grab", cancellationToken).ConfigureAwait(false);
 
@@ -125,22 +132,37 @@ public sealed class BudgetedUpstreamSource : IUpstreamSource
             cancellationToken).ConfigureAwait(false);
     }
 
-    private Task<bool> IsCallableAsync(CancellationToken cancellationToken)
-        => _backoff.IsCallableAsync(Name, cancellationToken);
+    /// <summary>
+    /// Whether this source may be called: not backing off, not permanently disabled, and inside the
+    /// budget for <paramref name="kind"/>. ONE scope answers both questions, since they are asked
+    /// together and neither mutates.
+    /// </summary>
+    private Task<bool> IsAllowedAsync(EventKind kind, CancellationToken cancellationToken)
+        => _scopeFactory.UseAsync(
+            async (gate, ct) =>
+            {
+                if (!await gate.Backoff.IsCallableAsync(Name, ct).ConfigureAwait(false))
+                {
+                    return false;
+                }
+
+                return kind == EventKind.SourceQueryHit
+                    ? await gate.Counter.HasQueryBudgetAsync(_configuration, ct).ConfigureAwait(false)
+                    : await gate.Counter.HasGrabBudgetAsync(_configuration, ct).ConfigureAwait(false);
+            },
+            cancellationToken);
 
     /// <summary>
     /// Runs the wrapped call and resolves its outcome into the durable backoff state. The outcome
-    /// classification is the load-bearing part: an authentication failure and a timeout look alike
-    /// to a caller and must not be treated alike here — one is permanently disabling, the other
-    /// escalates.
+    /// classification is the load-bearing part: an authentication failure, a timeout and a refusal
+    /// Arbitarr itself issued look alike to a caller and must not be treated alike here.
     /// </summary>
     private async Task<T> InvokeAsync<T>(Func<Task<T>> call, CancellationToken cancellationToken)
     {
         try
         {
             var result = await call().ConfigureAwait(false);
-            await _backoff.RecordOutcomeAsync(Name, SourceCallOutcome.Success, cancellationToken)
-                .ConfigureAwait(false);
+            await RecordOutcomeAsync(SourceCallOutcome.Success, cancellationToken).ConfigureAwait(false);
             return result;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -151,8 +173,7 @@ public sealed class BudgetedUpstreamSource : IUpstreamSource
         }
         catch (Exception ex)
         {
-            await _backoff.RecordOutcomeAsync(Name, ClassifyOutcome(ex), cancellationToken)
-                .ConfigureAwait(false);
+            await RecordOutcomeAsync(ClassifyOutcome(ex), cancellationToken).ConfigureAwait(false);
             throw;
         }
     }
@@ -164,18 +185,30 @@ public sealed class BudgetedUpstreamSource : IUpstreamSource
     /// code rather than on message text — text is upstream-supplied, varies per indexer and would
     /// make the rule depend on wording nobody controls.</para>
     ///
-    /// <para><see cref="SourceUnavailableException"/> is deliberately NOT a fault here: it means the
-    /// call was refused before touching upstream (the breaker was already open, or this decorator
-    /// refused a grab above), so counting it would escalate a source for a decision Arbitarr itself
-    /// made and would compound one refusal into a longer one.</para>
+    /// <para><see cref="SourceUnavailableException"/> maps to
+    /// <see cref="SourceCallOutcome.NotAttempted"/>, NOT to success. It means the call was refused
+    /// before touching upstream — the breaker was already open, or this decorator refused a grab
+    /// above — so it is evidence of neither health nor fault. Calling it a success (as an earlier
+    /// revision of this file did) would CLEAR a permanent disable, silently re-enabling a source
+    /// with a rejected key every time its breaker opened; calling it a failure would escalate a
+    /// source for a decision Arbitarr itself made.</para>
     /// </summary>
     private static SourceCallOutcome ClassifyOutcome(Exception exception) => exception switch
     {
-        SourceUnavailableException => SourceCallOutcome.Success,
+        SourceUnavailableException => SourceCallOutcome.NotAttempted,
         HttpRequestException { StatusCode: HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden }
             => SourceCallOutcome.AuthenticationFailure,
         _ => SourceCallOutcome.TransientFailure,
     };
+
+    private Task RecordOutcomeAsync(SourceCallOutcome outcome, CancellationToken cancellationToken)
+        => _scopeFactory.UseAsync(
+            async (gate, ct) =>
+            {
+                await gate.Backoff.RecordOutcomeAsync(Name, outcome, ct).ConfigureAwait(false);
+                return true;
+            },
+            cancellationToken);
 
     private ValueTask RecordHitAsync(RecordedEventKind kind, CancellationToken cancellationToken)
         // Summary, Reason and Detail are all per-SOURCE constants, never per-occurrence values. That
@@ -193,17 +226,17 @@ public sealed class BudgetedUpstreamSource : IUpstreamSource
             cancellationToken: cancellationToken);
 
     private ValueTask RecordSkipAsync(string operation, CancellationToken cancellationToken)
-        // A SourceFailed with a NULL SourceDisplayName. The null is deliberate and load-bearing: a
-        // populated name arms NotificationPolicy.FoldSourceFailure's consecutive-failure counter and
-        // would notify the operator that a source is DOWN when it is merely budgeted or resting —
-        // the precise conflation ADR 0020 says must not happen. DownloadProxyEndpoint relies on the
-        // same property for the same reason. The source is named in the Reason instead, so the
-        // Activity surface can still say which one and why.
+        // ITS OWN KIND, WITH THE SOURCE NAMED. SourceSkipped is absent from
+        // NotificationDispatcher.Observe's switch, whose default arm therefore drops it BY
+        // CONSTRUCTION — so a skip cannot arm the consecutive-failure counter that reports a source
+        // as DOWN. An earlier revision wrote these as a SourceFailed with a NULL SourceDisplayName
+        // to get the same suppression, which worked but spent the one field that says WHICH source
+        // went quiet, and left skips indistinguishable from real failures on the Activity surface.
         => _eventSink.RecordAsync(
-            RecordedEventKind.SourceFailed,
+            RecordedEventKind.SourceSkipped,
             $"Skipped an upstream {operation}",
-            reason: $"Source '{Name}' is at its limit or backing off",
-            sourceDisplayName: null,
+            reason: "The source is at its limit or backing off",
+            sourceDisplayName: Name,
             detail: null,
             cancellationToken: cancellationToken);
 }

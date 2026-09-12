@@ -312,6 +312,50 @@ public sealed class SourceBackoffStoreTests : IDisposable
     }
 
     /// <summary>
+    /// NOT-ATTEMPTED WRITES NOTHING, WHICH IS THE POINT. A refusal Arbitarr itself issued — an open
+    /// breaker, or a source already backing off — is evidence of neither health nor fault. Recording
+    /// it as a success would CLEAR a permanent disable, silently re-enabling a source with a rejected
+    /// key; recording it as a failure would escalate a source for Arbitarr's own decision. Both
+    /// fields are asserted because a mutant that got one right could still get the other wrong.
+    /// </summary>
+    [Fact]
+    public async Task A_not_attempted_outcome_leaves_a_permanent_disable_and_the_level_untouched()
+    {
+        using var context = await CreateMigratedContextAsync();
+        var store = CreateStore(context, AfterGrace);
+
+        await store.RecordOutcomeAsync("indexer", SourceCallOutcome.TransientFailure);
+        await store.RecordOutcomeAsync("indexer", SourceCallOutcome.AuthenticationFailure);
+
+        var before = await store.GetAsync("indexer");
+        Assert.NotNull(before);
+        Assert.True(before.IsPermanentlyDisabled);
+        Assert.Equal(1, before.DisabledLevel);
+
+        await store.RecordOutcomeAsync("indexer", SourceCallOutcome.NotAttempted);
+
+        var after = await store.GetAsync("indexer");
+        Assert.NotNull(after);
+        Assert.True(after.IsPermanentlyDisabled);
+        Assert.Equal(1, after.DisabledLevel);
+    }
+
+    /// <summary>
+    /// Not-attempted creates no row where none existed, so a source that has never been called does
+    /// not acquire state merely by being refused.
+    /// </summary>
+    [Fact]
+    public async Task A_not_attempted_outcome_creates_no_row_for_an_unknown_source()
+    {
+        using var context = await CreateMigratedContextAsync();
+
+        await CreateStore(context, AfterGrace).RecordOutcomeAsync("indexer", SourceCallOutcome.NotAttempted);
+
+        using var reader = CreateContext();
+        Assert.Empty(await reader.SourceBackoffStates.ToListAsync());
+    }
+
+    /// <summary>
     /// One row per source, however many outcomes are recorded — the bound that lets this table go
     /// without a prune. A second row would also make the unique index throw, so this pins both.
     /// </summary>

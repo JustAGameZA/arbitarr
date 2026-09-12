@@ -49,6 +49,15 @@ public enum RecordedEventKind
     /// counts. A successful grab was recorded nowhere before this kind existed.
     /// </summary>
     SourceGrabHit,
+
+    /// <summary>
+    /// A source was skipped without being called (arb-x7w8.10) — budgeted, backing off, or
+    /// permanently disabled. Distinct from <see cref="SourceFailed"/> on purpose: a skip is not a
+    /// fault, and only <see cref="SourceFailed"/> arms the consecutive-failure notification fold.
+    /// Unlike a non-fault written as that kind, <c>SourceDisplayName</c> IS populated here — see
+    /// <c>Arbitarr.Data.Entities.EventKind.SourceSkipped</c>.
+    /// </summary>
+    SourceSkipped,
 }
 
 /// <summary>

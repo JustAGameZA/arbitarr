@@ -1183,6 +1183,7 @@ public sealed class EventRepositoryTests : IDisposable
     [Theory]
     [InlineData(EventKind.SourceQueryHit)]
     [InlineData(EventKind.SourceGrabHit)]
+    [InlineData(EventKind.SourceSkipped)]
     public async Task AddAsync_folds_the_per_source_api_hit_kinds(EventKind kind)
     {
         using var context = CreateContext();

@@ -322,11 +322,19 @@ builder.Services.AddSingleton(sp => new Arbitarr.Core.Diagnostics.PersistentDown
     },
     sp.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(Arbitarr.Core.Diagnostics.PersistentDownloadRefusalTracker).FullName!)));
 
-// arb-x7w8.10: per-source API-hit budgets and durable backoff. All three are SCOPED because they
-// hold the scoped ArbitarrDbContext, which is not thread-safe — the same reason every other store
-// here is. The decorator they serve is attached at the IReadOnlyList<IUpstreamSource> boundary
-// above, not to the typed source registration; see BudgetedUpstreamSourceFactory for why that
-// distinction survives arb-x7w8.4's registry.
+// arb-x7w8.10: per-source API-hit budgets and durable backoff. The two stores are SCOPED because
+// they hold the scoped ArbitarrDbContext, which is not thread-safe — the same reason every other
+// store here is. The decorator they serve is attached at the IReadOnlyList<IUpstreamSource>
+// boundary above, not to the typed source registration; see BudgetedUpstreamSourceFactory for why
+// that distinction survives arb-x7w8.4's registry.
+//
+// THE GATE NEVER HOLDS ONE OF THESE ACROSS A CALL. UpstreamMergeStage fans out to all N sources
+// concurrently under one Task.WhenAll, so the decorators run simultaneously; sharing one scoped
+// context across them throws EF's "a second operation was started on this context" as soon as a
+// second source is configured. SourceGateScopeFactory is therefore a SINGLETON over
+// IServiceScopeFactory and opens one scope per gate operation, the same shape DbClientApiKeyResolver
+// and ScopedEventSink use. These scoped registrations exist to be resolved FROM that per-operation
+// scope, never captured by the request.
 //
 // hostStartedAt is captured HERE, once, at composition time, and passed in rather than read from
 // the TimeProvider inside the scoped store. That is what makes the startup grace window a property
@@ -341,6 +349,8 @@ builder.Services.AddScoped(sp => new Arbitarr.Data.Sources.SourceBackoffStore(
     sp.GetRequiredService<ArbitarrDbContext>(),
     sp.GetRequiredService<TimeProvider>(),
     hostStartedAt));
+builder.Services.AddSingleton<Arbitarr.Host.Sources.ISourceGateScopeFactory,
+    Arbitarr.Host.Sources.SourceGateScopeFactory>();
 builder.Services.AddScoped<Arbitarr.Host.Sources.BudgetedUpstreamSourceFactory>();
 
 // arb-apj: what the rest of the app resolves is that state holder WRAPPED in a transition observer,

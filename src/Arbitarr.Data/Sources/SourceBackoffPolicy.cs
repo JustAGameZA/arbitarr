@@ -1,8 +1,8 @@
 namespace Arbitarr.Data.Sources;
 
 /// <summary>
-/// How a call to a source turned out, as far as backoff is concerned (arb-x7w8.10). Three outcomes,
-/// because the three lead to three genuinely different actions and collapsing any pair loses one.
+/// How a call to a source turned out, as far as backoff is concerned (arb-x7w8.10). Four outcomes,
+/// because each leads to a genuinely different action and collapsing any pair loses one.
 /// </summary>
 public enum SourceCallOutcome
 {
@@ -21,6 +21,24 @@ public enum SourceCallOutcome
     /// from <see cref="TransientFailure"/> is load-bearing rather than cosmetic.
     /// </summary>
     AuthenticationFailure = 2,
+
+    /// <summary>
+    /// The call never reached upstream, because Arbitarr itself refused it — the circuit breaker was
+    /// already open, or this source was budgeted or backing off.
+    ///
+    /// <para><b>THIS IS NOT A SUCCESS AND NOT A FAILURE, AND CONFLATING IT WITH EITHER IS A REAL
+    /// DEFECT.</b> Filed as a success it would RESET <see cref="Entities.SourceBackoffState.DisabledLevel"/>
+    /// and CLEAR <see cref="Entities.SourceBackoffState.IsPermanentlyDisabled"/> — so an open breaker
+    /// on a source with a rejected key would silently re-enable it, which is the "a process
+    /// re-enables a source whose key is known to be rejected" failure the durable table exists to
+    /// prevent, reintroduced through a different door. Filed as a failure it would escalate a source
+    /// for a decision Arbitarr made about it, compounding one refusal into a longer one.</para>
+    ///
+    /// <para><see cref="SourceBackoffStore.RecordOutcomeAsync"/> therefore records NOTHING for this
+    /// outcome: no level change, no hold-off, no flag, and no row created where none existed.
+    /// Observing nothing is the correct response to learning nothing.</para>
+    /// </summary>
+    NotAttempted = 3,
 }
 
 /// <summary>

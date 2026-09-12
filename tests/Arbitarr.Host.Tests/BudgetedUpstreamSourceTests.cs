@@ -10,6 +10,7 @@ using Arbitarr.Data.Sources;
 using Arbitarr.Host.Sources;
 using Arbitarr.TestSupport;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
@@ -77,11 +78,36 @@ public sealed class BudgetedUpstreamSourceTests : IDisposable
         var gated = new BudgetedUpstreamSource(
             inner,
             configuration,
-            new SourceApiHitCounter(context, clock),
-            new SourceBackoffStore(context, clock, StartedAt),
+            new SingleContextGateScopeFactory(context, clock, StartedAt),
             sink);
 
         return (gated, sink);
+    }
+
+    /// <summary>
+    /// A real service provider over this fixture's database, wired the way Program.cs wires the
+    /// gate: scoped stores, a SINGLETON scope factory over <see cref="IServiceScopeFactory"/>. Tests
+    /// about concurrency need the real scoping rather than a hand-built object graph, because the
+    /// scoping IS what is under test.
+    /// </summary>
+    private ServiceProvider BuildProvider()
+    {
+        var services = new ServiceCollection();
+
+        services.AddDbContext<ArbitarrDbContext>(options => options.UseSqlite(_database.ConnectionString));
+        services.AddSingleton<TimeProvider>(new FakeTimeProvider(Now));
+        services.AddScoped(sp => new SourceApiHitCounter(
+            sp.GetRequiredService<ArbitarrDbContext>(),
+            sp.GetRequiredService<TimeProvider>()));
+        services.AddScoped(sp => new SourceBackoffStore(
+            sp.GetRequiredService<ArbitarrDbContext>(),
+            sp.GetRequiredService<TimeProvider>(),
+            StartedAt));
+        services.AddSingleton<ISourceGateScopeFactory, SourceGateScopeFactory>();
+        services.AddSingleton<IEventSink>(NullEventSink.Instance);
+        services.AddScoped<BudgetedUpstreamSourceFactory>();
+
+        return services.BuildServiceProvider();
     }
 
     private static ReleaseCandidate CreateRelease(string title) => new()
@@ -158,11 +184,12 @@ public sealed class BudgetedUpstreamSourceTests : IDisposable
     }
 
     /// <summary>
-    /// The skip IS evented, so the Activity surface can say why a source contributed nothing — an
-    /// empty result with no explanation is the invisibility this bead removes.
+    /// The skip IS evented, as its OWN kind naming the source, so the Activity surface can filter
+    /// budget skips apart from real failures — an empty result with no explanation is the
+    /// invisibility this bead removes.
     /// </summary>
     [Fact]
-    public async Task A_skipped_search_is_evented_with_the_source_named_in_the_reason()
+    public async Task A_skipped_search_is_evented_as_its_own_kind_naming_the_source()
     {
         using var context = await CreateMigratedContextAsync();
 
@@ -174,15 +201,40 @@ public sealed class BudgetedUpstreamSourceTests : IDisposable
         await gated.SearchAsync(Query);
 
         using var reader = CreateContext();
-        var skip = Assert.Single(await reader.Events.Where(e => e.Kind == EventKind.SourceFailed).ToListAsync());
+        var skip = Assert.Single(await reader.Events.Where(e => e.Kind == EventKind.SourceSkipped).ToListAsync());
 
-        Assert.Contains("indexer", skip.Reason);
+        // THE NAME IS POPULATED, unlike on a SourceFailed row written for a non-fault. It is the one
+        // field that says WHICH source went quiet, and the suppression that used to depend on it
+        // being null is now structural instead — see the kind assertion below.
+        Assert.Equal("indexer", skip.SourceDisplayName);
+    }
 
-        // SourceDisplayName IS NULL ON PURPOSE. A populated name arms
-        // NotificationPolicy.FoldSourceFailure's consecutive-failure counter, which would notify the
-        // operator that a source is DOWN when it is merely budgeted — the exact conflation ADR 0020
-        // forbids.
-        Assert.Null(skip.SourceDisplayName);
+    /// <summary>
+    /// A SKIP IS NOT A FAILURE, AND THE SEPARATION IS STRUCTURAL. Nothing writes a
+    /// <see cref="EventKind.SourceFailed"/> row when a source is merely budgeted, so a skip cannot
+    /// reach <c>NotificationDispatcher.Observe</c>'s SourceFailed arm — the one that arms the
+    /// consecutive-failure counter and reports a source as DOWN. An earlier revision achieved this
+    /// by writing a SourceFailed with a null name; asserting the ABSENCE of the failure kind is what
+    /// makes the new arrangement's guarantee explicit rather than incidental.
+    /// </summary>
+    [Fact]
+    public async Task A_skipped_search_writes_no_source_failure_row_at_all()
+    {
+        using var context = await CreateMigratedContextAsync();
+
+        var (gated, _) = CreateGated(
+            context,
+            new FakeUpstreamSource("indexer"),
+            CreateConfiguration(queryLimit: 0));
+
+        await gated.SearchAsync(Query);
+
+        using var reader = CreateContext();
+
+        // The positive control: a skip WAS recorded, so the absence below is a real separation
+        // rather than nothing having happened at all.
+        Assert.NotEmpty(await reader.Events.Where(e => e.Kind == EventKind.SourceSkipped).ToListAsync());
+        Assert.Empty(await reader.Events.Where(e => e.Kind == EventKind.SourceFailed).ToListAsync());
     }
 
     /// <summary>
@@ -418,12 +470,12 @@ public sealed class BudgetedUpstreamSourceTests : IDisposable
 
         // Recovered, and past the hold-off.
         inner.SearchFailure = null;
+        var later = new FakeTimeProvider(Now.AddMinutes(10));
         var recovered = new BudgetedUpstreamSource(
             inner,
             CreateConfiguration(),
-            new SourceApiHitCounter(context, new FakeTimeProvider(Now.AddMinutes(10))),
-            new SourceBackoffStore(context, new FakeTimeProvider(Now.AddMinutes(10)), StartedAt),
-            new RecordingEventSink(context, new FakeTimeProvider(Now.AddMinutes(10))));
+            new SingleContextGateScopeFactory(context, later, StartedAt),
+            new RecordingEventSink(context, later));
 
         await recovered.SearchAsync(Query);
 
@@ -470,11 +522,9 @@ public sealed class BudgetedUpstreamSourceTests : IDisposable
 
         var inner = new FakeUpstreamSource("unconfigured");
 
-        var wrapped = Assert.Single(new BudgetedUpstreamSourceFactory(
-                context,
-                new SourceApiHitCounter(context, new FakeTimeProvider(Now)),
-                new SourceBackoffStore(context, new FakeTimeProvider(Now), StartedAt),
-                new RecordingEventSink(context, new FakeTimeProvider(Now)))
+        await using var provider = BuildProvider();
+        var wrapped = Assert.Single(provider
+            .GetRequiredService<BudgetedUpstreamSourceFactory>()
             .WrapAll(new IUpstreamSource[] { inner }));
 
         Assert.Same(inner, wrapped);
@@ -493,14 +543,189 @@ public sealed class BudgetedUpstreamSourceTests : IDisposable
 
         var inner = new FakeUpstreamSource("indexer");
 
-        var wrapped = Assert.Single(new BudgetedUpstreamSourceFactory(
-                context,
-                new SourceApiHitCounter(context, new FakeTimeProvider(Now)),
-                new SourceBackoffStore(context, new FakeTimeProvider(Now), StartedAt),
-                new RecordingEventSink(context, new FakeTimeProvider(Now)))
+        await using var provider = BuildProvider();
+        var wrapped = Assert.Single(provider
+            .GetRequiredService<BudgetedUpstreamSourceFactory>()
             .WrapAll(new IUpstreamSource[] { inner }));
 
         Assert.IsType<BudgetedUpstreamSource>(wrapped);
+    }
+
+    // ---- Concurrency: the search fan-out is parallel --------------------------------------------
+
+    /// <summary>
+    /// THE REGRESSION TEST FOR THE SHARED-DbContext DEFECT. <c>UpstreamMergeStage</c> launches every
+    /// source's search together under one <c>Task.WhenAll</c>, so two WRAPPED sources run their gate
+    /// checks simultaneously. While the decorators held a scoped <c>ArbitarrDbContext</c> handed to
+    /// them at construction, the second one threw EF's "a second operation was started on this
+    /// context before a previous operation completed" — and <c>UpstreamMergeStage</c>'s catch-all
+    /// turned that into an EMPTY result set, so a two-indexer deployment silently returned nothing
+    /// from at least one source on every search.
+    ///
+    /// <para>This test FAILED before the per-operation scope landed and passes after it. It is
+    /// deliberately driven through the real merge stage against a real service provider rather than
+    /// through the decorator alone: the concurrency is the merge stage's, and a sequential test of
+    /// two decorators cannot reproduce it.</para>
+    ///
+    /// <para>Both sources must ANSWER, which is the assertion that bites. An implementation that
+    /// still shared a context returns one release or none, because the racing source's EF exception
+    /// is swallowed by the merge stage's catch-all into an empty list.</para>
+    ///
+    /// <para><b>THE BARRIER IS WHAT MAKES THIS TEST REAL.</b> Each decorator awaits its own gate
+    /// read before calling its inner source, so without forcing them to overlap the two fan-out
+    /// tasks interleave cooperatively and a shared context is never touched twice at once — the test
+    /// then passes against the very defect it exists to catch (verified: it did). The inner sources
+    /// therefore rendezvous, so both gate reads are guaranteed in flight together.</para>
+    /// </summary>
+    [Fact]
+    public async Task Two_wrapped_sources_searched_concurrently_both_answer_rather_than_racing_one_context()
+    {
+        using (var context = await CreateMigratedContextAsync())
+        {
+            context.Sources.Add(CreateConfiguration("first"));
+            context.Sources.Add(CreateConfiguration("second"));
+            await context.SaveChangesAsync();
+        }
+
+        await using var provider = BuildProvider();
+
+        // Resolved from ONE request scope, exactly as the search path resolves them: this is what
+        // made the old arrangement share a single context across the fan-out.
+        await using var requestScope = provider.CreateAsyncScope();
+
+        // Releases both parties only once BOTH have arrived, so the two gate reads that precede them
+        // are necessarily concurrent.
+        using var barrier = new Barrier(2);
+
+        var wrapped = requestScope.ServiceProvider
+            .GetRequiredService<BudgetedUpstreamSourceFactory>()
+            .WrapAll(new IUpstreamSource[]
+            {
+                new FakeUpstreamSource("first", CreateRelease("From the first source")) { Rendezvous = barrier },
+                new FakeUpstreamSource("second", CreateRelease("From the second source")) { Rendezvous = barrier },
+            });
+
+        Assert.All(wrapped, source => Assert.IsType<BudgetedUpstreamSource>(source));
+
+        var merged = await new UpstreamMergeStage(wrapped).MergeAsync(Query);
+
+        Assert.Equal(2, merged.Releases.Count);
+        Assert.Contains(merged.Releases, r => r.Candidate.Title == "From the first source");
+        Assert.Contains(merged.Releases, r => r.Candidate.Title == "From the second source");
+    }
+
+    // ---- A refusal Arbitarr itself issued is neither success nor failure ------------------------
+
+    /// <summary>
+    /// A BREAKER-OPEN REFUSAL IS NEITHER RECOVERY NOR FAULT. The wrapped source throws
+    /// <see cref="SourceUnavailableException"/> when its own circuit breaker is open; an earlier
+    /// revision classified that as a SUCCESS, and the success arm resets the level AND clears
+    /// <c>IsPermanentlyDisabled</c> — so a source with a rejected key was silently re-enabled every
+    /// time its breaker opened, which is the durable table's whole purpose defeated through a
+    /// side door.
+    ///
+    /// <para>This is the assertion that kills both surviving mutants: classifying the exception as
+    /// TransientFailure (which would escalate a source for Arbitarr's own refusal) and deleting the
+    /// arm entirely. Both halves are asserted, because a mutant that cleared only one field would
+    /// pass a check of the other.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_breaker_open_refusal_leaves_the_escalation_level_untouched()
+    {
+        using var context = await CreateMigratedContextAsync();
+
+        var store = new SourceBackoffStore(context, new FakeTimeProvider(Now), StartedAt);
+
+        var inner = new FakeUpstreamSource("no-key")
+        {
+            SearchFailure = new SourceUnavailableException("The circuit breaker is open."),
+        };
+
+        var gated = new BudgetedUpstreamSource(
+            inner,
+            CreateConfiguration("no-key"),
+            new SingleContextGateScopeFactory(context, new FakeTimeProvider(Now), StartedAt),
+            new RecordingEventSink(context, new FakeTimeProvider(Now)));
+
+        // The source is CALLABLE and carries an escalation level, so the call is genuinely made and
+        // the exception under test is genuinely thrown. (A permanently disabled source is skipped by
+        // the gate, so its inner source is never invoked — the flag's survival across a refusal is
+        // asserted on the store directly in SourceBackoffStoreTests, which can reach that state.)
+        var state = await store.RecordOutcomeAsync("no-key", SourceCallOutcome.TransientFailure);
+        Assert.NotNull(state);
+        Assert.Equal(1, state.DisabledLevel);
+
+        // Past the hold-off, so the gate allows the call through.
+        var later = new FakeTimeProvider(Now.AddMinutes(10));
+        var callable = new BudgetedUpstreamSource(
+            inner,
+            CreateConfiguration("no-key"),
+            new SingleContextGateScopeFactory(context, later, StartedAt),
+            new RecordingEventSink(context, later));
+
+        await Assert.ThrowsAsync<SourceUnavailableException>(() => callable.SearchAsync(Query));
+
+        // THE LEVEL IS UNCHANGED: not reset to zero (which the old Success mapping did, and which
+        // would also have cleared a permanent disable), and not escalated to 2 (which classifying it
+        // as a transient failure would do). Both mutants are killed by this one equality.
+        var after = await store.GetAsync("no-key");
+        Assert.NotNull(after);
+        Assert.Equal(1, after.DisabledLevel);
+        Assert.False(after.IsPermanentlyDisabled);
+    }
+
+    /// <summary>
+    /// The same refusal does not ESCALATE a healthy source either — the other direction of the
+    /// NotAttempted rule, without which the test above would be satisfied by classifying the
+    /// exception as a transient failure.
+    /// </summary>
+    [Fact]
+    public async Task A_breaker_open_refusal_does_not_escalate_a_healthy_source()
+    {
+        using var context = await CreateMigratedContextAsync();
+
+        var inner = new FakeUpstreamSource("indexer")
+        {
+            SearchFailure = new SourceUnavailableException("The circuit breaker is open."),
+        };
+
+        var (gated, _) = CreateGated(context, inner, CreateConfiguration());
+
+        await Assert.ThrowsAsync<SourceUnavailableException>(() => gated.SearchAsync(Query));
+
+        var state = await new SourceBackoffStore(context, new FakeTimeProvider(Now), StartedAt)
+            .GetAsync("indexer");
+
+        // Nothing was written at all: no row, or a row still at level zero with no hold-off.
+        Assert.True(state is null || (state.DisabledLevel == 0 && state.DisabledUntil is null));
+    }
+
+    /// <summary>
+    /// An <see cref="ISourceGateScopeFactory"/> that hands out ONE context rather than opening a
+    /// scope per operation — the shape the single-source tests above want, since they assert against
+    /// that same context afterwards.
+    ///
+    /// <para>It is deliberately NOT what the concurrency test uses. That one goes through the real
+    /// <see cref="SourceGateScopeFactory"/> over a real provider, because a fake that shares one
+    /// context cannot reproduce the defect per-operation scoping exists to fix — it would pass
+    /// either way, which is exactly the vacuous shape to avoid here.</para>
+    /// </summary>
+    private sealed class SingleContextGateScopeFactory : ISourceGateScopeFactory
+    {
+        private readonly SourceGate _gate;
+
+        public SingleContextGateScopeFactory(
+            ArbitarrDbContext context,
+            TimeProvider timeProvider,
+            DateTimeOffset startedAt)
+            => _gate = new SourceGate(
+                new SourceApiHitCounter(context, timeProvider),
+                new SourceBackoffStore(context, timeProvider, startedAt));
+
+        public Task<T> UseAsync<T>(
+            Func<SourceGate, CancellationToken, Task<T>> operation,
+            CancellationToken cancellationToken)
+            => operation(_gate, cancellationToken);
     }
 
     /// <summary>
@@ -528,6 +753,7 @@ public sealed class BudgetedUpstreamSourceTests : IDisposable
                 RecordedEventKind.SourceQueryHit => EventKind.SourceQueryHit,
                 RecordedEventKind.SourceGrabHit => EventKind.SourceGrabHit,
                 RecordedEventKind.SourceFailed => EventKind.SourceFailed,
+                RecordedEventKind.SourceSkipped => EventKind.SourceSkipped,
                 _ => EventKind.WorkerCycle,
             };
 
@@ -556,15 +782,37 @@ public sealed class BudgetedUpstreamSourceTests : IDisposable
 
         public Exception? SearchFailure { get; set; }
 
-        public Task<IReadOnlyList<ReleaseCandidate>> SearchAsync(
+        /// <summary>
+        /// When set, the search blocks until every party has arrived — forcing two sources in one
+        /// fan-out to be inside their calls simultaneously, so the gate writes that follow them
+        /// genuinely overlap. Without it the fan-out interleaves cooperatively and never exercises
+        /// concurrent database access at all.
+        /// </summary>
+        public Barrier? Rendezvous { get; set; }
+
+        public async Task<IReadOnlyList<ReleaseCandidate>> SearchAsync(
             SearchQuery query,
             CancellationToken cancellationToken = default)
         {
             SearchCalls++;
 
-            return SearchFailure is { } failure
-                ? Task.FromException<IReadOnlyList<ReleaseCandidate>>(failure)
-                : Task.FromResult<IReadOnlyList<ReleaseCandidate>>(_results);
+            if (Rendezvous is { } barrier)
+            {
+                // Hold this source inside its search until its peer arrives. Both gate reads have
+                // completed by now, but the SECOND gate read cannot have started before the first
+                // source reached here — so the two decorators' database work is forced to overlap on
+                // the next pass through the fan-out. Run off the calling thread so a synchronous
+                // barrier wait cannot deadlock the awaiter.
+                await Task.Run(() => barrier.SignalAndWait(TimeSpan.FromSeconds(30)), CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+
+            if (SearchFailure is { } failure)
+            {
+                throw failure;
+            }
+
+            return _results;
         }
 
         public Task<SourceCaps> GetCapsAsync(

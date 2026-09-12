@@ -146,11 +146,11 @@ public sealed class EventRepository
     /// the safe answer for an unrecognised kind is "do not fold" — never folding costs storage,
     /// while folding wrongly costs a record.
     ///
-    /// <see cref="EventKind.SourceQueryHit"/> and <see cref="EventKind.SourceGrabHit"/>
-    /// (arb-x7w8.10) are exactly the case the paragraph above anticipates: kinds added later, whose
-    /// answer had to be supplied here rather than inherited from a default. They fold — they are
-    /// operational, individually unauditable, and a busy indexer produces precisely the repeated
-    /// burst folding exists for.
+    /// <see cref="EventKind.SourceQueryHit"/>, <see cref="EventKind.SourceGrabHit"/> and
+    /// <see cref="EventKind.SourceSkipped"/> (arb-x7w8.10) are exactly the case the paragraph above
+    /// anticipates: kinds added later, whose answer had to be supplied here rather than inherited
+    /// from a default. They fold — they are operational, individually unauditable, and a busy or
+    /// budgeted indexer produces precisely the repeated burst folding exists for.
     ///
     /// THE OPT-IN AND THE BUDGET'S <see cref="EventEntry.RepeatCount"/> ARITHMETIC ARE ONE CHANGE,
     /// and they had to be. Absent from this switch these kinds would not fold at all, so a budget
@@ -170,6 +170,7 @@ public sealed class EventRepository
         EventKind.SourceFailed => true,
         EventKind.SourceQueryHit => true,
         EventKind.SourceGrabHit => true,
+        EventKind.SourceSkipped => true,
         _ => false,
     };
 

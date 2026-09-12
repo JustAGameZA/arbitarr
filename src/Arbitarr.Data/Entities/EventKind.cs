@@ -61,4 +61,26 @@ public enum EventKind
     /// same reason <see cref="SourceQueryHit"/> is.</para>
     /// </summary>
     SourceGrabHit = 6,
+
+    /// <summary>
+    /// A source was SKIPPED without being called (arb-x7w8.10): its API-hit budget was spent, it was
+    /// backing off, or an authentication failure had disabled it permanently.
+    ///
+    /// <para><b>A SKIP IS NOT A FAILURE, AND THIS KIND EXISTS TO KEEP THEM APART.</b> A budgeted
+    /// indexer is working correctly — it has simply been used as much as it may be today — so
+    /// recording a skip as <see cref="SourceFailed"/> would feed fault machinery with a non-fault.
+    /// <c>NotificationDispatcher.Observe</c> maps <see cref="SourceFailed"/> onto the
+    /// consecutive-failure counter that reports a source as DOWN; this kind is absent from that
+    /// switch, so its default arm drops it BY CONSTRUCTION rather than by a caller remembering to
+    /// suppress it.</para>
+    ///
+    /// <para>That construction is why <c>SourceDisplayName</c> is POPULATED on these rows. An
+    /// earlier revision wrote skips as a <see cref="SourceFailed"/> with a NULL name, relying on the
+    /// null to keep them out of the notification fold — which worked, but spent the one field that
+    /// says WHICH source went quiet, and left skips indistinguishable from real failures on the
+    /// Activity surface. ADR 0020 requires budgeted, backing off and permanently disabled to stay
+    /// three distinguishable states rather than one "unavailable", and a filterable kind carrying a
+    /// name is what makes that possible.</para>
+    /// </summary>
+    SourceSkipped = 7,
 }

@@ -26,6 +26,7 @@ public static class EventKindMapping
         RecordedEventKind.SourceFailed => EventKind.SourceFailed,
         RecordedEventKind.SourceQueryHit => EventKind.SourceQueryHit,
         RecordedEventKind.SourceGrabHit => EventKind.SourceGrabHit,
+        RecordedEventKind.SourceSkipped => EventKind.SourceSkipped,
 
         // Unreachable in practice, and that is the point: EventKindMappingTests asserts this
         // mapping is total over both enums, so a kind added on one side without the other fails

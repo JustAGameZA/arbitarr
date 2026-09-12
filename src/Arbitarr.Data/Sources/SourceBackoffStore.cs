@@ -88,14 +88,33 @@ public sealed class SourceBackoffStore
     /// <see cref="SourceBackoffPolicy.StartupGraceWindow"/> ago, in which case the outcome is
     /// recorded but escalation is suppressed, so a restart does not disable every source at
     /// once.</description></item>
+    /// <item><description><b><see cref="SourceCallOutcome.NotAttempted"/> writes NOTHING AT ALL</b>
+    /// and creates no row — the call never reached upstream, so it is evidence of neither health nor
+    /// fault. See that member for why filing it as either is a defect rather than a simplification.
+    /// </description></item>
     /// </list>
     /// </summary>
-    public async Task<SourceBackoffState> RecordOutcomeAsync(
+    /// <returns>
+    /// The stored state, or null when the outcome was <see cref="SourceCallOutcome.NotAttempted"/>
+    /// and no row existed to begin with.
+    /// </returns>
+    public async Task<SourceBackoffState?> RecordOutcomeAsync(
         string sourceName,
         SourceCallOutcome outcome,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceName);
+
+        if (outcome == SourceCallOutcome.NotAttempted)
+        {
+            // NOTHING IS WRITTEN, not even LastOutcome, and no row is created. The call never
+            // happened, so there is no observation to record — and the two spellings that look
+            // tidier are both wrong: filing it as a success would clear a permanent disable (an open
+            // breaker would silently re-enable a source with a rejected key), and filing it as a
+            // failure would escalate a source for a refusal Arbitarr itself issued. Returning the
+            // untouched stored row, if any, keeps the caller able to see the state it is in.
+            return await GetAsync(sourceName, cancellationToken).ConfigureAwait(false);
+        }
 
         var now = _timeProvider.GetUtcNow();
 
