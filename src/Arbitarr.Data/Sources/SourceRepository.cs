@@ -75,8 +75,10 @@ public sealed record SourceOptions
 /// path that projects to the wire is permitted to use.
 ///
 /// 53c adds exactly one reader of the value itself, <see cref="ReadApiKeyForUpstreamRequestAsync"/>,
-/// for the §3.3 connectivity test, which cannot verify a key without sending it upstream. See that
-/// method's comment for the boundary: the value leaves this type only in an outbound request to the
+/// originally for the §3.3 connectivity test, which cannot verify a key without sending it upstream.
+/// Since arb-x7w8.3 its one caller is <see cref="SourceCredentialProvider"/>, which hands a
+/// <see cref="SourceCredential"/> to the probe and to every later consumer. See that method's
+/// comment for the boundary: the value leaves this type only in an outbound request to the
 /// configured source, never toward the caller and never into a log or error string.
 /// </summary>
 public sealed class SourceRepository
@@ -294,6 +296,16 @@ public sealed class SourceRepository
     /// <see cref="Arbitarr.Core.Sources.SourceProbeOutcome"/> is a closed enum precisely so that no
     /// probe failure path can carry attacker- or operator-visible free text derived from it. Any
     /// future caller of this method that is not "send it upstream" is a bug.</para>
+    ///
+    /// <para>THE SINGLE CALLER IS <see cref="SourceCredentialProvider"/>, and since arb-x7w8.3 it
+    /// is not the connectivity probe. The probe called this directly while it was the only consumer;
+    /// once the search path needs a per-source key too (the startup-resolved
+    /// <c>ResolvedSourceConfiguration</c> does not survive N runtime-added indexers), wiring each
+    /// consumer to this method would make two callers — and the guarantee IS the call-site count.
+    /// Every consumer now takes a <see cref="SourceCredential"/> from that provider instead. A new
+    /// consumer costs a new consumer, never a new caller; adding a second call here is the defect
+    /// <c>SecretReaderSingleCallerTests</c> exists to catch. See
+    /// docs/adr/0018-one-credential-provider-per-secret-family.md.</para>
     /// </summary>
     public Task<string?> ReadApiKeyForUpstreamRequestAsync(long sourceId, CancellationToken cancellationToken) =>
         _dbContext.Settings.AsNoTracking()
