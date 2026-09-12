@@ -43,6 +43,8 @@ public sealed class NewznabSource : IUpstreamSource
         _circuitBreaker = circuitBreaker ?? throw new ArgumentNullException(nameof(circuitBreaker));
         _rateLimiter = rateLimiter ?? new RateLimiter(options.RateLimitMaxCalls, options.EffectiveRateLimitInterval);
 
+        EnsureEndpointIsOnBaseOrigin();
+
         // The per-source TimeoutSeconds override is honoured HERE, on the client this instance owns,
         // because IUpstreamSource has no per-call timeout in its shape. That works while each source
         // gets its own HttpClient. When the registry (arb-x7w8.4) resolves N sources it must keep
@@ -218,6 +220,74 @@ public sealed class NewznabSource : IUpstreamSource
     /// host root.
     /// </summary>
     private Uri EndpointUri => new(_options.BaseUrl, _options.ApiPath.TrimStart('/'));
+
+    /// <summary>
+    /// Refuses an <see cref="NewznabSourceOptions.ApiPath"/> whose RESOLVED endpoint leaves the
+    /// origin of <see cref="NewznabSourceOptions.BaseUrl"/>, because
+    /// <see cref="AppendApiKey"/> puts the indexer's key in that endpoint's query string: an
+    /// endpoint on another origin means the operator's key is handed to a host they never
+    /// configured.
+    ///
+    /// <para><b>The trim in <see cref="EndpointUri"/> is NOT this defence, and assuming it is is
+    /// exactly what produced the bug.</b> <c>TrimStart('/')</c> does neutralise the
+    /// protocol-relative <c>//host/api</c> and <c>///host/api</c> forms, and <see cref="Uri"/>'s own
+    /// normalisation flattens <c>../../api</c> back under the base — but
+    /// <c>new Uri(base, relativeOrAbsolute)</c> REPLACES the base outright when the second argument
+    /// parses as absolute, and a leading slash is not what makes it absolute. So
+    /// <c>http://attacker.example/api</c> survives the trim untouched, as do its scheme-upgraded
+    /// (<c>https://</c>), whitespace-prefixed (<see cref="Uri"/> strips leading whitespace),
+    /// uppercase-scheme and scheme-downgraded (<c>file:///…</c>) variants.</para>
+    ///
+    /// <para><b>Asserted on the resolved endpoint, not on the ApiPath string.</b> Comparing scheme,
+    /// host and port against the base closes every one of those variants under a single check,
+    /// including ones nobody enumerated: there is no list of dangerous prefixes to keep current, and
+    /// a form that resolves back onto the base origin is harmless by definition. A string-shape
+    /// blacklist would have to be re-derived each time <see cref="Uri"/>'s parsing changes.</para>
+    ///
+    /// <para><b>Userinfo is part of the check even though it is not part of an origin.</b>
+    /// <c>http://x@indexer.example:9117/api</c> matches the base on scheme, host AND port, so the
+    /// three-way comparison alone accepts it — but the credentials ride into the request's
+    /// authority, which is logged in full: the framework's URI redaction collapses only the QUERY
+    /// string, and <c>LogMessageCleanser</c>'s patterns do not cover a userinfo segment. Requiring
+    /// it to be empty keeps the authority exactly what the operator configured.</para>
+    ///
+    /// <para><b>The constructor, not <see cref="EndpointUri"/>'s getter</b>, so the source fails at
+    /// CONSTRUCTION and can never be handed to a caller in a state where a later search would leak.
+    /// That also covers the registry (arb-x7w8.4) as a second producer of
+    /// <see cref="NewznabSourceOptions"/> without it having to know this rule exists.</para>
+    ///
+    /// <para><b>This is the configuration-time side of a three-sided origin invariant, and the three
+    /// are not consolidatable.</b> Here the OUTBOUND endpoint is pinned to the configured base when
+    /// the source is built; at response time the client refuses a redirect that would move the
+    /// request off that origin (<c>AllowAutoRedirect = false</c>, ADR 0014); at parse time
+    /// <c>TorznabFeedParser.TryValidateOriginPinnedLink</c> pins the links a feed hands back. They
+    /// run at different times against different inputs — operator configuration, an upstream
+    /// response status, and upstream-supplied feed content — so none of them can stand in for
+    /// another, and a single shared check would have to be reached from all three.</para>
+    ///
+    /// <para>The exception carries <see cref="NewznabSourceOptions.SourceName"/> and nothing else.
+    /// Rendering the offending endpoint or ApiPath would print an attacker-chosen host into the
+    /// persistent log store at <c>/api/admin/logs</c>, and the ApiPath may itself be shaped to carry
+    /// text there. See <see cref="SourceOriginRefusedException"/> for why it is deliberately NOT an
+    /// <see cref="ArgumentException"/>.</para>
+    /// </summary>
+    /// <exception cref="SourceOriginRefusedException">The resolved endpoint is not on the base URL's origin.</exception>
+    private void EnsureEndpointIsOnBaseOrigin()
+    {
+        var endpoint = EndpointUri;
+        var baseUrl = _options.BaseUrl;
+
+        var sameOrigin =
+            string.Equals(endpoint.Scheme, baseUrl.Scheme, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(endpoint.Host, baseUrl.Host, StringComparison.OrdinalIgnoreCase)
+            && endpoint.Port == baseUrl.Port
+            && string.IsNullOrEmpty(endpoint.UserInfo);
+
+        if (!sameOrigin)
+        {
+            throw new SourceOriginRefusedException(_options.SourceName);
+        }
+    }
 
     private static string SearchMode(SearchQuery query) => query switch
     {
