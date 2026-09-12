@@ -365,8 +365,9 @@ public sealed class ClassifierPollingWorker : BackgroundService
     /// It also reports how many per-call detail rows were SUPPRESSED by the
     /// <see cref="MaxDetailedFailuresPerCycle"/> cap, so the cap can never silently hide volume: an
     /// operator reading "3 detailed above, 47 more at Debug" knows both the scale and where the
-    /// rest went. Still the exception TYPES only — never a message, and never a title, GUID,
-    /// source name, prompt or URL.
+    /// rest went. Since arb-kwtn the suppressed clause is appended only when any were suppressed;
+    /// a cycle at or under the cap omits the clause rather than claiming zero. Still the exception
+    /// TYPES only — never a message, and never a title, GUID, source name, prompt or URL.
     /// </para>
     ///
     /// <para>

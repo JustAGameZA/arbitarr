@@ -378,6 +378,11 @@ public sealed class ClassifierPollingWorkerTests
         // Both per-call details are Warnings (under the cap) plus the one cycle summary.
         Assert.Equal(3, harness.Logger.Warnings.Count);
 
+        // arb-u6b1: pin the two-details-plus-summary split directly, rather than only via the
+        // Assert.Single on the cycle line above — that assertion alone would still pass if the
+        // count of 3 were made up of, say, zero detail rows and two other unrelated Warnings.
+        Assert.Equal(2, harness.Logger.Warnings.Count(w => !w.Contains("Classifier cycle", StringComparison.Ordinal)));
+
         // Types and counts only — never the release or the source.
         Assert.DoesNotContain(NoisyTitle, cycleWarning, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("g1", cycleWarning, StringComparison.OrdinalIgnoreCase);
