@@ -949,6 +949,25 @@ else
             "the key unset to use the secret persisted under the config directory, which is the " +
             "supported configuration.");
     }
+
+    // arb-q75n: recommend-only from the #220 security review. A configured override is silent
+    // otherwise, so a value copy-pasted across installs (sharing one instance's proxy-guid HMAC
+    // key with another) would never surface anywhere an operator would see it. Warn here, naming
+    // only the key -- never the value, its length, or a hash of it, for the same reason arb-pujk's
+    // validation exceptions above carry no key material: this file is exactly what the log
+    // cleanser cannot scrub out of a free-form message. Skipped in Development, where honouring a
+    // configured override is expected (e.g. the integration test factory, see arb-0hd0 above).
+    // No environment gate beyond this log line -- that decision is owner-pending and separate from
+    // this warning, and no entropy/all-zero check -- both are explicitly out of scope for arb-q75n.
+    if (!builder.Environment.IsDevelopment())
+    {
+        app.Services.GetRequiredService<ILoggerFactory>()
+            .CreateLogger("Arbitarr.Host.Program")
+            .LogWarning(
+                "The Arbitarr:ReleaseGuidSecret configuration key is set, so the release-guid " +
+                "secret is being taken from configuration instead of the file persisted under the " +
+                "config directory. A value copy-pasted across installs is now shared between them.");
+    }
 }
 
 ReleaseGuid.Configure(releaseGuidSecret);
