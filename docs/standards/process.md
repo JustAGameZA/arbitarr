@@ -300,6 +300,13 @@ implementation writes one value to all of them.
   Ghost in the Shell franchise trio are canonical fixtures. If you fix an identity-resolution bug,
   add the release name that triggered it as a fixture-backed test.
 - Fixture data must be fully redacted: `REDACTED` for keys, RFC 5737 (`192.0.2.x`) for hosts.
+- **Async teardown implements `IAsyncLifetime`, never bare `System.IAsyncDisposable`.** xunit v2
+  honours only `IDisposable` and `IAsyncLifetime`; it never awaits a class's own
+  `IAsyncDisposable.DisposeAsync`, so teardown on such a class silently never runs.
+  `InitializeAsync` may return `Task.CompletedTask` when there is nothing to set up. Four
+  integration test classes shipped with bare `IAsyncDisposable` teardown that never ran until
+  arb-gphi caught it (PR #264, open at time of writing); the claim was verified out of repo, per
+  [CLAUDE.md §4](../../CLAUDE.md#4-tests).
 
 ---
 
