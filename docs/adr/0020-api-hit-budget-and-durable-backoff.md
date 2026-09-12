@@ -30,13 +30,21 @@ relationship between the budget and the breaker is the same relationship
 transient, in-process one, not a special case of it.
 
 Counting hits needs a source of truth. There are two candidate shapes: a purpose-built accounting
-table (NZBHydra2's, which records each API access as its own row), or derivation from the events
-store already in the database (Prowlarr's, whose limit service derives counts from its history
-service). The events store here has a property that makes this non-obvious: `EventRepository`
-**folds** a repeated event onto the previous row and increments its `RepeatCount`, comparing six
-fields to decide ([CONTEXT.md](../../CONTEXT.md), "Search detail format"). Counting rows therefore undercounts, and
-the tempting fix — adding a per-occurrence value to `Detail` or `Reason` so events stop folding —
-would break folding for every other consumer of those events.
+table (NZBHydra2's `indexerapiaccess`, one row per hit), or derivation from history already in the
+database (Prowlarr's, whose `IndexerLimitService` counts history since the start of a window sized
+by the limits unit). Deriving has two complications here, and both are load-bearing rather than
+incidental.
+
+First, **no event written today records a per-source upstream hit.** `SearchServed` counts client
+requests and is written even when the answer came from a cache or a snapshot; successful grabs are
+not evented at all, since the download path only writes on failure. Derivation therefore presumes a
+new event kind rather than reusing an existing one — see the Decision.
+
+Second, `EventRepository` **folds** a repeated event onto the previous row and increments its
+`RepeatCount`, comparing six fields to decide ([CONTEXT.md](../../CONTEXT.md), "Search detail
+format"). For a kind that folds, counting rows undercounts — and the tempting fix, adding a
+per-occurrence value to `Detail` or `Reason` so events stop folding, would break folding for every
+other consumer of those events.
 
 ## Decision
 
@@ -44,12 +52,35 @@ would break folding for every other consumer of those events.
 state, held separately from `IAsyncCircuitBreaker`. The breaker is unchanged and stays an
 in-process short-window fault detector.**
 
-**Counts derive from the existing events store, not a purpose-built accounting table**, over a
-rolling window of 1 or 24 hours per the source's own limits unit. Because `EventRepository` folds,
-counting must consume `RepeatCount` rather than row count, or record budget events in a shape that
-does not fold. Defeating folding by rendering a per-occurrence value into `Detail` or `Reason` is
-not an available option: those fields are part of the fold identity that every other event
-consumer depends on.
+**Counts derive from the events store, not a purpose-built accounting table**, over a rolling
+window of 1 or 24 hours per the source's own `LimitsUnit`. "The events store" means the existing
+store and its existing machinery — not any event it holds today.
+
+**This derivation has a precondition, and it is not satisfied by any event written today.** No
+existing `EventKind` records a per-source upstream hit. `SearchServed` is written once per *client
+request* and is written even when nothing went upstream — `SearchEndpoint` computes a
+`servedWithoutUpstreamCall` flag precisely because a snapshot or a warm cache serves without
+calling a source — so counting `SearchServed` would count client traffic, not API hits, and would
+charge budget for cache hits. Grabs are worse: the download path events only on *failure*
+(`DownloadProxyEndpoint` writes a `SourceFailed`), so a successful grab — the one that actually
+spends the operator's grab allowance — is recorded nowhere.
+
+So this decision **requires a new `EventKind`**: per-source query and per-source grab hits, written
+**at the upstream call sites**, on the outbound call itself and never on a cache hit or a snapshot
+serve. It must be **explicitly opted into folding** in `EventRepository.MayCoalesce`, whose switch
+deliberately has no default arm for an unknown kind and answers `false` — never folding costs
+storage, folding wrongly costs a record. Until that opt-in exists the new kind does not fold, and
+the `RepeatCount` rule below does not yet apply to it.
+
+Given the opt-in, **counting must consume `RepeatCount` rather than row count.** Defeating folding
+by rendering a per-occurrence value into `Detail` or `Reason` is not an available option: those
+fields are part of the fold identity that every other event consumer depends on.
+
+The honest statement of the trade is therefore **one fewer table at the cost of one new event kind
+and its write sites** — not a free derivation. It still wins, because the events store already
+supplies retention, folding and admin-visible history, and a new kind inherits all three; a
+purpose-built counters table would have to grow each of them itself, and would then be a second
+record of hits that can disagree with the events an operator is reading.
 
 **At its limit a source is skipped, not failed.** A budgeted indexer is working correctly; it has
 simply been used as much as it may be today. Failing it would feed fault machinery with a
@@ -86,10 +117,15 @@ one thing this decision says it is not. The breaker's own scope boundary stays e
 
 ### A purpose-built API-access table, one row per hit (NZBHydra2's model)
 
-Rejected: it is a second store of something the events store already records, with its own
-migration, its own prune, and its own opportunity to disagree with the events the operator is
-looking at. Deriving from events is one fewer table and one fewer thing that can drift. Per-hit
-rows also grow without bound and need retention machinery that the folded events already have.
+Rejected, though the margin is narrower than it first looks, because neither option is free: this
+table would need a migration, a prune, a retention window and an admin surface, while the chosen
+route needs a new event kind and its write sites. The comparison is therefore not "reuse something
+that already exists" versus "build something" — hits are recorded nowhere today either way. It is
+which mechanism the new records live in. Events win because retention, folding, pruning and
+operator-visible history already exist there and a new kind inherits all four, whereas a
+purpose-built table grows each of them itself and then becomes a second record of hits that can
+disagree with the events an operator is reading. Per-hit rows also grow without bound, where folded
+events compress a burst onto one row by construction.
 
 ### Keep budget and backoff state in memory
 
@@ -114,11 +150,19 @@ broken in the minutes right after a deploy — the one moment they are most like
 deploy caused it. The grace window costs a short delay before a genuinely broken indexer starts
 backing off, which is cheap against disabling every healthy one.
 
-### Anchor the window to a clock hour, as NZBHydra2 does
+### Anchor the window to a clock hour or a fixed daily reset
 
-Rejected: an hour-of-day reset anchor has timezone and boundary semantics to get wrong, and gets
-them wrong invisibly. A rolling window has neither: it asks how many hits fall in the last N hours
-and needs no agreement about when a day starts.
+Rejected on its own merits, and attributed to nobody: an hour-of-day reset anchor has timezone and
+boundary semantics to get wrong — whose midnight, the host's or the indexer's, and what happens to
+the count across a DST shift — and it gets them wrong invisibly, as a count that is merely off. A
+rolling window has none of that: it asks how many hits fall in the last N hours and needs no
+agreement about when a day starts.
+
+(An earlier draft credited the clock-hour anchor to NZBHydra2. That was wrong and is corrected
+here: NZBHydra2 populates `apiHits`/`apiHitLimit`/`oldestApiHit` by parsing the indexer's own
+Newznab `<limits>` element and reasons from the oldest recorded hit, which is a rolling model, not
+an hour-of-day reset. The rolling window sized by the limits unit that this ADR adopts is
+Prowlarr's `IndexerLimitService` model, and that attribution stands.)
 
 ## Consequences
 
@@ -126,18 +170,47 @@ and needs no agreement about when a day starts.
   tidy-up will be tempted to merge them. Doing so reverses this decision and needs an ADR
   superseding this one. The distinction to hold on to: the breaker detects faults, the budget
   counts permitted usage, and a budgeted source is not a faulty source.
-- **Counting must survive folding.** A row-counting implementation undercounts the moment two
-  identical events fold, and it does so silently — the count is merely low, never wrong-looking.
-  The enforcing test plants a folded event with a `RepeatCount` above one and asserts the count
-  matches it; that is the mutation that catches row-counting, and a test that only counts distinct
-  events would pass against the bug.
+- **This decision supersedes the counter half of `Source`'s "own table" paragraph.**
+  `src/Arbitarr.Data/Entities/Source.cs` lists three things that do not belong on the config row —
+  the caps cache, the per-source query/grab counters with their window start, and the last
+  error/health state — and says each "belongs in its own table, following the
+  `DownloadRefusalEntry` precedent". That reasoning is right about *why* none of them belongs on
+  `Source` (a config row must not be rewritten on every search, and a restored backup must not
+  re-assert a stale window), and this ADR does not disturb that. It does disturb the remedy for one
+  of the three: **the counters get no table at all — they are derived from events.** The durable
+  **backoff** row remains its own table on the `DownloadRefusalEntry` precedent, so the paragraph
+  still holds for runtime state generally; it is only the counter clause that is superseded. The
+  comment is not edited here (this is a docs-only change); **arb-x7w8.10 corrects it when it lands
+  the feature.**
+- **Counting must survive folding, once the new kind opts into folding.** A row-counting
+  implementation undercounts the moment two identical events fold, and it does so silently — the
+  count is merely low, never wrong-looking. The enforcing test plants a folded event with a
+  `RepeatCount` above one and asserts the count matches it; that is the mutation that catches
+  row-counting, and a test that only counts distinct events would pass against the bug. Note the
+  ordering: while the new kind is absent from `MayCoalesce` it does not fold at all, so a
+  row-counting bug would pass every test until the opt-in lands and would then start undercounting.
+  The opt-in and the `RepeatCount` consumption belong in the same change.
+- **The new event kind must not be written on a cache hit.** Budget counts API hits, so the write
+  belongs at the outbound call site, not at the endpoint. A kind written where `SearchServed` is
+  written would charge the operator's allowance for answers that never left the process.
 - **Skipped, backing off, and permanently disabled are three distinct states** and must stay
   distinguishable to the operator. Collapsing them into one "unavailable" reports a permanently
   broken key as if it were a temporary pause, which removes the signal to go and fix it.
 - **Null limits are load-bearing.** Any code path that coalesces a null limit to zero turns every
   unconfigured indexer off. The distinction is the difference between "no limit configured" and "do
   not use this indexer".
-- **One backoff row per source bounds the table without a prune**, the same bound
+- **One backoff row per source bounds the backoff table without a prune**, the same bound
   `DownloadRefusalEntries` relies on under [ADR 0016](0016-persist-download-refusal-health.md).
   That bound holds only while a row's lifetime is tied to a configured source, so a source removed
   from configuration must not leave a row behind.
+- **The budget events are pruned, and by machinery that already exists.** The line above is about
+  the backoff table only; it is not a claim that this decision adds nothing prunable. The new event
+  kind is an operational kind, so it falls under `EventRetentionPolicy`'s `OperationalRetention`
+  (7 days) like every non-`Decision` kind, swept by the existing `MaintenanceJob` event prune. No
+  new prune predicate is needed for it. The longest budget window is 24 hours and sits well inside
+  7 days, so retention cannot truncate a window the budget is still counting over — a margin worth
+  keeping in mind if either number is ever changed, since shortening retention below a limits
+  window would silently start undercounting old hits.
+- **This ADR unblocks arb-x7w8.10**, which lands the budget check on the search path, the
+  `SourceBackoffState` table and its migration, the new event kind with its `MayCoalesce` opt-in
+  and its upstream write sites, and the correction to `Source.cs`'s counter clause noted above.
