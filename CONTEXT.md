@@ -73,6 +73,19 @@ confidence, which source resolved the identity, and flags.
 the *arr instance itself is authoritative, then TheXEM, then the Anime-Lists
 dataset (fetched at runtime, rate-limited, never vendored).
 
+**Inactive tier.** A tier that is **registered but performs no work**, because the
+configuration that would make it useful is unset. Distinct from a broken or absent
+one: it resolves from the container, so a missing registration still fails at
+startup, but every lookup returns `NotConfigured` without touching the network or
+the filesystem. `SeriesTitleResolver`'s Anime-Lists tier is the case in point —
+`Arbitarr:AnimeLists:SourceUrl` (an `appsettings`/environment value, **not** a
+`Settings` row and never in `SettingsCatalog`: it is neither a secret nor an admin-UI
+setting) has **no default**, because choosing the third-party mapping document and
+its licence is the operator's decision and a committed default would also put a
+first-run fetch on the search path of an install that never asked for one. Unset,
+the tier contributes nothing and an unresolved title degrades to the id-only
+upstream request; startup says so once, at Information.
+
 ---
 
 **Protocol answer vs infrastructure error.** A **protocol answer** means the request was

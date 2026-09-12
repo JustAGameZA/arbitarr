@@ -904,6 +904,106 @@ builder.Services.AddHttpClient(
         client => client.Timeout = Arbitarr.Media.Providers.ArrApiProviderOptions.DefaultRequestTimeout)
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 
+// arb-5uw: ADR 0002's SECOND identity tier -- AniDB's static anime-lists map, consulted by
+// SeriesTitleResolver only when the *arr instance above admitted nothing.
+//
+// REGISTERED UNCONDITIONALLY, AND REQUIRED BY THE RESOLVER. The previous attempt made it an
+// optional constructor parameter and registered it nowhere, so DI passed null and the tier was dead
+// in production while four tests passed by constructing the provider directly. A required
+// dependency turns a missing registration into a startup failure, which is the only place it is
+// visible.
+//
+// REGISTERED IS NOT ACTIVE. Arbitarr:AnimeLists:SourceUrl has NO default here and no upstream is
+// named anywhere in this repository, deliberately: which third-party mapping to fetch (and under
+// which licence) is the operator's decision, and a committed default would both make that choice
+// for them and put a first-run network fetch on the search path nobody opted into. Left unset the
+// provider reports NotConfigured with no network call and no filesystem access, so this
+// registration costs nothing until an operator sets the value. The inactive case is logged once
+// after Build() so the state is discoverable rather than silent.
+//
+// ConfigDirectory is the SAME configDirectory resolved at the top of this file, not a second read:
+// the fetched XML is runtime state and belongs beside the databases under /config (AC21), and a
+// second read here could disagree with the first for the per-builder reason that comment sets out.
+//
+// SINGLETON because the provider's AC19 fetch etiquette is instance state -- the in-process rate
+// limiter and the parsed-dataset cache both live on the instance, so a scoped registration would
+// hand every request a fresh one that remembers neither and would re-parse the document per search.
+// arb-6u6 APPLIES HERE: this is OPERATOR CONFIGURATION, so it must never be parsed with
+// `new Uri(...)`. That throws UriFormatException before Build(), and a host that will not boot on
+// a typo'd optional setting is a far worse failure than the setting being ignored -- the same rule
+// the Ollama startup-fallback client follows at ~:412 for exactly this reason. A malformed value
+// therefore leaves the tier INACTIVE, which is already a fully supported state here, rather than
+// taking the process down.
+//
+// The three checks mirror SettingsValidator.ValidateOllamaBaseUrl, which is the repository's
+// existing shape for "an operator-supplied address we will issue requests at":
+//   - absolute, parseable                 -- a relative or unparseable value has no host to fetch from;
+//   - http/https only                     -- SEC-M1: file://, ftp:// and friends are not fetch targets
+//                                            we will hand to HttpClient on an operator's behalf;
+//   - NO userinfo (user:pw@host)          -- this one is load-bearing for the logging comment below.
+//     That comment's premise is that this URI carries NO credential, so the registration safely
+//     omits .RemoveAllLoggers(). A userinfo-bearing URL would falsify it: the credential would ride
+//     in the logged request URI and land in the persistent store at /api/admin/logs, where neither
+//     .NET's query-string redaction nor LogMessageCleanser would scrub it (CLAUDE.md section 1).
+//     Rejecting it here is what keeps the comment below true, not a separate nicety.
+//
+// The rejection is recorded, not logged, because no logger exists before Build(); it is reported
+// once beside the inactive notice further down. It names ONLY THE KEY and never the value -- a
+// rejected value may be precisely the userinfo-bearing string we refused, and writing it into the
+// log store to complain about it would perform the leak the check just prevented.
+var animeListsSourceUrlRaw = builder.Configuration["Arbitarr:AnimeLists:SourceUrl"];
+var animeListsSourceUrlRejected = false;
+Uri? animeListsSourceUrl = null;
+
+if (!string.IsNullOrWhiteSpace(animeListsSourceUrlRaw))
+{
+    if (Uri.TryCreate(animeListsSourceUrlRaw, UriKind.Absolute, out var parsedAnimeListsSourceUrl)
+        && (parsedAnimeListsSourceUrl.Scheme == Uri.UriSchemeHttp
+            || parsedAnimeListsSourceUrl.Scheme == Uri.UriSchemeHttps)
+        && string.IsNullOrEmpty(parsedAnimeListsSourceUrl.UserInfo))
+    {
+        animeListsSourceUrl = parsedAnimeListsSourceUrl;
+    }
+    else
+    {
+        animeListsSourceUrlRejected = true;
+    }
+}
+
+var animeListsOptions = new Arbitarr.Media.Providers.AnimeListsProviderOptions(
+    SourceUrl: animeListsSourceUrl,
+    ConfigDirectory: configDirectory);
+builder.Services.AddSingleton(animeListsOptions);
+builder.Services.AddSingleton(sp => new Arbitarr.Media.Providers.AnimeListsProvider(
+    sp.GetRequiredService<Arbitarr.Media.Providers.AnimeListsProviderOptions>(),
+    sp.GetRequiredService<IHttpClientFactory>()
+        .CreateClient(Arbitarr.Media.Providers.AnimeListsProvider.HttpClientName)));
+
+// The client the anime-lists fetch rides on. NAMED rather than typed because the provider is a
+// singleton built around the options resolved above, so DI cannot activate it as a typed client.
+//
+// AllowAutoRedirect is disabled for the same SSRF reason as the ArrIdentityLookup registration
+// above: an address answering 30x must not make this process reissue the request at a host nobody
+// configured. That reason is if anything stronger here, because the address itself is
+// operator-supplied configuration rather than a probe target.
+//
+// NO .RemoveAllLoggers() HERE, and unlike the *arr clients above the reason is simpler rather than
+// measured: this request carries NO CREDENTIAL AT ALL -- the anime-lists document is a public
+// static file and the URI has no key in its query string or its path -- so there is nothing in the
+// logged URI to leak (CLAUDE.md section 1). Logging the address an operator configured is useful.
+// If a future upstream ever needs authentication, that stops being true and this registration needs
+// .RemoveAllLoggers(), because a token in a URL PATH is scrubbed by neither .NET's query-string
+// redaction nor LogMessageCleanser.
+//
+// THE TIMEOUT IS SET HERE, ONCE, and AnimeListsProvider must never assign HttpClient.Timeout
+// itself: it holds this POOLED client for the life of the process, and HttpClient throws on that
+// assignment once a request has started on the instance -- the same defect fixed in ArrApiProvider
+// under arb-u1c. The provider's constructor carries a comment naming this line as the owner.
+builder.Services.AddHttpClient(
+        Arbitarr.Media.Providers.AnimeListsProvider.HttpClientName,
+        client => client.Timeout = animeListsOptions.EffectiveRequestTimeout)
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+
 // #89: the AI backend's connectivity probe. AllowAutoRedirect is disabled for the same SEC-M5 SSRF
 // reason as the OllamaClient registration above -- a misconfigured address answering 30x must not
 // make this process issue a request at a host nobody configured.
@@ -994,6 +1094,51 @@ builder.Services.AddHostedService(sp => new Arbitarr.Host.Backup.StagingSweepSer
     sp.GetRequiredService<ILogger<Arbitarr.Host.Backup.StagingSweepService>>()));
 
 var app = builder.Build();
+
+// arb-5uw: say, once, that ADR 0002's AnimeLists tier is registered but INACTIVE. Without this the
+// state is indistinguishable from the tier being broken -- an operator sees anime titles resolving
+// only when Sonarr answers and has nothing anywhere telling them a second tier exists and is
+// waiting on one setting. Information rather than Warning: an unset value is the SUPPORTED default,
+// not a misconfiguration, precisely because choosing the upstream is the operator's decision.
+//
+// The message names the KEY and never a URL: there is no upstream to suggest here (see the
+// registration above), and the configured value is an operator's address that this line has no
+// reason to echo back into the persistent log store.
+if (!app.Services.GetRequiredService<Arbitarr.Media.Providers.AnimeListsProvider>().IsConfigured)
+{
+    var animeListsLogger = app.Services.GetRequiredService<ILoggerFactory>()
+        .CreateLogger("Arbitarr.Host.Program");
+
+    if (animeListsSourceUrlRejected)
+    {
+        // WARNING, not Information: an operator who SET this key meant to enable the tier, and the
+        // inactive state is now surprising rather than expected. Distinguishing the two is the
+        // whole point -- "I never configured it" and "I configured it and it was refused" need
+        // different actions, and reporting both at Information would hide the second inside the
+        // first for anyone who set a value with a typo.
+        //
+        // Names ONLY THE KEY. The value is withheld deliberately and permanently: one of the three
+        // things that reaches this branch is a userinfo-bearing URL, so echoing the rejected value
+        // would write a credential into the persistent log store served at /api/admin/logs -- the
+        // exact leak the validation above exists to prevent. AnimeListsSourceUrlValidationTests
+        // asserts the absence, with a positive control, for that reason.
+        animeListsLogger.LogWarning(
+            "The Arbitarr:AnimeLists:SourceUrl configuration key is set but is not a usable " +
+            "mapping-document address, so the AnimeLists identity tier is inactive. It must be an " +
+            "absolute http or https URL and must not contain credentials (user:password@host). " +
+            "The rejected value is deliberately not shown here because it may contain a " +
+            "credential. Series titles resolve from the configured *arr instance alone until this " +
+            "is corrected.");
+    }
+    else
+    {
+        animeListsLogger.LogInformation(
+            "The AnimeLists identity tier is inactive because no source URL is configured. Set the " +
+            "Arbitarr:AnimeLists:SourceUrl configuration key to a mapping document to enable it; " +
+            "until then series titles resolve from the configured *arr instance alone and no " +
+            "anime-lists document is fetched.");
+    }
+}
 
 // SEC-L2: load (or generate, on first run) the per-instance HMAC secret used to compute proxy
 // guids, persisted under the configured config directory so it survives restarts. Must run before
