@@ -124,8 +124,12 @@ therefore means "when the condition began". That is the point of persisting it:
 the misconfiguration behind a refused redirect outlives the process, so a restart
 that dropped the item, or reset the instant to "now", reported a clean system
 while every download still failed. The row count is bounded by the number of
-configured sources, so the table needs no pruning. Notifying on health items is
-tracked separately (arb-apj).
+configured sources, so the table needs no pruning. See
+[ADR 0016](docs/adr/0016-persist-download-refusal-health.md). Health items also
+notify now (arb-apj, shipped in #247): one notification when a source's item
+appears, one when it clears, pushed from a decorator rather than through
+`NotificationPolicy.FoldSourceFailure` — see
+[ADR 0014](docs/adr/0014-refuse-upstream-download-redirects.md).
 
 ---
 
@@ -416,6 +420,15 @@ search-side caches with an `ExpiresAt`, but they answer different questions: a
 query snapshot keeps one *result set* stable while a caller pages through it; a
 release lookup keeps one *rendered release* resolvable long after the search
 that produced it has been forgotten.
+
+**Download-refusal entries.** `DownloadRefusalEntries`, one row per source, the
+durable tier behind the health-item tracker described above. `SourceName` is
+uniquely indexed, so a source can hold at most one row; a row is upserted on
+each refusal and deleted on a successful grab from that source, never on
+elapsed time or a scheduled prune — the unique index and the delete-on-clear
+rule together bound the table without one. It is rehydrated into the in-memory
+tracker at startup, before the host serves, by an awaited hosted service. See
+[ADR 0016](docs/adr/0016-persist-download-refusal-health.md).
 
 **Search detail format.** The machine-readable spelling of *which* search an
 event row is about, written into an event's `Detail` by

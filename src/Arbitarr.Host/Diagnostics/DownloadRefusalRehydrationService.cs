@@ -31,8 +31,9 @@ namespace Arbitarr.Host.Diagnostics;
 /// rather than polling; a poll would hide a regression that reopened it.</para>
 ///
 /// <para>The table this reads is guaranteed to exist by then: <c>Program.cs</c> runs
-/// <c>dbContext.Database.Migrate()</c> (line 970) during startup, well before <c>app.Run()</c>
-/// (line 1281) starts the hosted services.</para>
+/// <c>dbContext.Database.Migrate()</c> in the pre-<c>app.Run()</c> startup block, well before
+/// <c>app.Run()</c> itself starts the hosted services. Cited by name, not by line: the line
+/// numbers drift as the file changes and a stale cite is worse than none.</para>
 ///
 /// <para><b>Rehydration replays through the INNER tracker, not the notifying decorator</b>, so
 /// restoring a persisted refusal raises no "appeared" edge. That is the intended behaviour: the

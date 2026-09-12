@@ -98,6 +98,14 @@ public sealed class PersistentDownloadRefusalTracker : IDownloadRefusalTracker
         var recorded = _inner.Snapshot().FirstOrDefault(r => string.Equals(r.SourceName, sourceName, StringComparison.Ordinal));
         if (recorded is null)
         {
+            // Unreachable in practice, not merely unlikely: the line above just called
+            // _inner.RecordRefusal(sourceName, ...) under the inner tracker's own lock, and that
+            // call is the only writer of _inner's dictionary (this type never mutates it directly).
+            // A write immediately followed by a read of the same key, with no other writer able to
+            // interleave, cannot come back empty. Kept as a guard rather than an assertion because a
+            // future change to the inner tracker's keying (e.g. a comparer change) is exactly the
+            // kind of edit that could make this reachable, and a null-check degrading to "skip the
+            // persist" is a far smaller failure than a NullReferenceException on the download path.
             return;
         }
 
