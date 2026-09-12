@@ -7,63 +7,6 @@ using Microsoft.AspNetCore.Routing;
 namespace Arbitarr.Api.Admin;
 
 /// <summary>
-/// A page of an *arr instance's download queue as served over the wire.
-///
-/// <para><b>THE TOP LEVEL IS ALWAYS 200, AND THE VERDICT LIVES IN <paramref name="Status"/>.</b> An
-/// unconfigured or unreachable instance is not an error in THIS request — the admin call itself
-/// succeeded and is reporting, faithfully, what it found. Mapping those onto HTTP status codes would
-/// make the client unable to tell "Arbitarr is broken" from "the *arr you pointed at is", and would
-/// put a 502-shaped answer on a route whose caller is already authenticated and only asking a
-/// question.</para>
-///
-/// <para><b>THE ENVELOPE IS A SHARED CONTRACT WITH A SECOND IMPLEMENTOR ALREADY NAMED, AND THIS IS
-/// THE NOTE THAT SAYS SO.</b> arb-6l9b.4's library endpoints
-/// (<c>GET /api/admin/arr/sonarr/series</c>, <c>GET /api/admin/arr/radarr/movies</c>) serve the same
-/// five outer fields — <see cref="Status"/>, <see cref="Message"/>, <see cref="Page"/>,
-/// <see cref="PageSize"/>, <see cref="TotalRecords"/> — over a different <c>Records</c> element type,
-/// because one Library screen renders all four sections and a client that switched on the envelope
-/// differently per section would be four renderers rather than one. Those five must be reproduced
-/// BYTE FOR BYTE: same JSON names, same casing, and <see cref="Status"/> drawn from the same
-/// <see cref="ArrSectionStatus"/> with <see cref="Message"/> still chosen from the status alone.</para>
-///
-/// <para>Whether that sharing becomes a GENERIC ENVELOPE TYPE is 6l9b.4's call to make, deliberately
-/// not pre-empted here: this bead has one implementor, and a generic
-/// <c>ArrSectionResponse&lt;T&gt;</c> introduced for a single use would be an abstraction invented
-/// ahead of its second case. 6l9b.4 arrives holding both cases at once and can see whether the
-/// element types really do vary only in <c>Records</c>. Either way the outer five do not change
-/// shape — if 6l9b.4 generalises, this record is what it generalises FROM.</para>
-///
-/// <para><b>6l9b.4 SHOULD ALSO TAKE <see cref="AdminArrQueueEndpoints.DefaultPageSize"/> AND
-/// <see cref="AdminArrQueueEndpoints.MaxPageSize"/> FROM THIS CLASS RATHER THAN RE-TYPING THE
-/// NUMBERS</b> — two surfaces on one screen disagreeing about what <c>?pageSize=200</c> means is a
-/// difference an operator would read as a bug, and re-typed constants are how that happens. The
-/// clamping itself is deliberately NOT extracted into a shared helper here: the library endpoints
-/// page server-side over a fetched-whole list rather than passing the parameters upstream, so their
-/// clamp has a different job, and a premature shared <c>PagingClamp</c> would have to be unpicked to
-/// let it do that job.</para>
-/// </summary>
-/// <param name="Status">
-/// One of <see cref="ArrSectionStatus"/>, as a stable string the UI switches on.
-/// </param>
-/// <param name="Message">
-/// Fixed, human-readable wording chosen from <paramref name="Status"/> ALONE. Never derived from the
-/// upstream response body, an exception message, the configured URL, or the key — see
-/// <see cref="AdminArrQueueEndpoints"/>'s doc for why that is a security property and not a style
-/// preference.
-/// </param>
-/// <param name="Page">The page served, after clamping.</param>
-/// <param name="PageSize">The page size served, after clamping.</param>
-/// <param name="TotalRecords">The upstream total across all pages; 0 for every non-Ok status.</param>
-/// <param name="Records">The projected rows; empty for every non-Ok status.</param>
-public sealed record ArrQueueResponse(
-    string Status,
-    string Message,
-    int Page,
-    int PageSize,
-    int TotalRecords,
-    IReadOnlyList<ArrQueueItem> Records);
-
-/// <summary>
 /// arb-6l9b.3: the admin-gated queue reads — <c>GET /api/admin/arr/sonarr/queue</c> and
 /// <c>GET /api/admin/arr/radarr/queue</c>. Both are <c>.RequireAdminApiKey()</c>, so the gate is by
 /// PATH PREFIX and never by verb: these are reads, but they are admin configuration-adjacent reads
@@ -103,6 +46,20 @@ public sealed record ArrQueueResponse(
 /// would be two places for the NotConfigured-vs-AuthenticationFailed distinction to drift. The kinds
 /// stay genuinely separate where they are separate: separate routes, separate typed clients with
 /// their own registrations, separate credential providers.</para>
+///
+/// <para><b>THE WIRE SHAPE IS <see cref="ArrSectionEnvelope{T}"/>, SHARED WITH
+/// <see cref="AdminArrLibraryEndpoints"/>.</b> arb-6l9b.3 served a hand-written
+/// <c>ArrQueueResponse</c> record and its doc left open whether the sharing should become a generic;
+/// arb-6l9b.4 arrived holding all four sections and folded this record onto the generic, so the five
+/// outer members are now identical BY CONSTRUCTION rather than by two copies staying in step. The
+/// change was rename-only: same JSON names, same casing, same order, same values.</para>
+///
+/// <para><b><see cref="DefaultPageSize"/> AND <see cref="MaxPageSize"/> ARE DEFINED HERE AND
+/// REFERENCED BY THE LIBRARY ENDPOINTS</b> rather than re-typed there — two surfaces on one screen
+/// disagreeing about what <c>?pageSize=200</c> means is a difference an operator would read as a bug,
+/// and re-typed constants are how that happens. The CLAMPING is deliberately not shared: the library
+/// endpoints page server-side over a fetched-whole list rather than passing the parameters upstream,
+/// so their clamp has a different job — see <see cref="AdminArrLibraryEndpoints"/>.</para>
 /// </summary>
 public static class AdminArrQueueEndpoints
 {
@@ -179,7 +136,7 @@ public static class AdminArrQueueEndpoints
     /// <see cref="ArrSectionStatus.AuthenticationFailed"/> against an *arr that is not actually
     /// broken, which is the same reasoning the providers' own docs record for the probe.</para>
     /// </summary>
-    private static async Task<ArrQueueResponse> ReadAsync(
+    private static async Task<ArrSectionEnvelope<ArrQueueItem>> ReadAsync(
         ArrQueueReader client,
         Uri? baseUrl,
         string? apiKey,
@@ -211,7 +168,7 @@ public static class AdminArrQueueEndpoints
         return Envelope(result.Status, resolvedPage, resolvedPageSize, result, instanceName);
     }
 
-    private static ArrQueueResponse Envelope(
+    private static ArrSectionEnvelope<ArrQueueItem> Envelope(
         ArrSectionStatus status,
         int page,
         int pageSize,
@@ -234,7 +191,7 @@ public static class AdminArrQueueEndpoints
     ///
     /// <para>None of that reasoning reaches here. A <c>pageSize</c> in a query string is not a stored
     /// value and nothing persists it; it is a knob on one read, its effect is visible in the same
-    /// response that answers it (<see cref="ArrQueueResponse.PageSize"/> reports what was actually
+    /// response that answers it (<see cref="ArrSectionEnvelope{T}.PageSize"/> reports what was actually
     /// served, so the clamp is not silent), and clamping is what every paged web API does because the
     /// alternative — a 400 on <c>?pageSize=1000</c> — turns a harmless over-ask into a broken page.
     /// The upper bound exists so an unbounded value cannot be used to make this process fetch and
