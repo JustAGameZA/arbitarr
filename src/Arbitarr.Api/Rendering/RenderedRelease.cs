@@ -15,8 +15,47 @@ namespace Arbitarr.Api.Rendering;
 /// re-admits a would-be-suppressed release, this carries a human-readable reason so the response
 /// still shows the release was matched by a suppression source, just not enforced.
 /// </param>
-public sealed record RenderedRelease(string SourceName, ReleaseCandidate Candidate, string? SuppressionAnnotation = null)
+/// <param name="AlternateMembers">
+/// The rest of this release's <b>dedup group</b> (arb-x7w8.8): the other sources' copies of the
+/// same release, which <c>DedupStage</c> matched on equal normalised title, size within tolerance
+/// and the same known protocol. Empty for a release that merged with nothing, which is every
+/// release on a single-source deployment — so this is additive in exactly the way
+/// <paramref name="SuppressionAnnotation"/> is, and every pre-existing call site keeps its
+/// behaviour byte for byte.
+///
+/// <para><b>The losers are carried here rather than discarded, and that is the point.</b>
+/// <c>docs/adr/0019-dedup-is-a-pipeline-stage-with-conservative-exact-merge.md</c> applies ADR
+/// 0003's de-rank-never-discard to this axis: the ordering carries the preference, the set carries
+/// the options, so a failed grab against this release can fall back to another member's
+/// <see cref="ProxyGuid"/>. Dropping them would express the preference by destroying the
+/// alternative.</para>
+///
+/// <para>Held on the representative rather than as a side record because the source name dedup
+/// orders by already lives here, not on <see cref="ReleaseCandidate"/>, and because every
+/// downstream reader (renderer, release lookup, download proxy) already holds a
+/// <c>RenderedRelease</c> — a parallel structure would need threading through all of them. The
+/// members are themselves <c>RenderedRelease</c>, so each fallback arrives with its own source
+/// name and its own computed <see cref="ProxyGuid"/>, which is what the proxy needs to actually
+/// grab it.</para>
+///
+/// <para><b>Members are flat, never nested.</b> A member's own <see cref="AlternateMembers"/> is
+/// always empty: <c>DedupStage</c> builds each group from the ungrouped merge output in one pass,
+/// so there is no second level to walk and no reader has to recurse.</para>
+/// </param>
+public sealed record RenderedRelease(
+    string SourceName,
+    ReleaseCandidate Candidate,
+    string? SuppressionAnnotation = null,
+    IReadOnlyList<RenderedRelease>? AlternateMembers = null)
 {
+    /// <summary>
+    /// The other members of this release's dedup group, ordered by source priority — never null,
+    /// so a reader can enumerate it without a null check the way it already can with
+    /// <see cref="ReleaseCandidate.Category"/>.
+    /// </summary>
+    public IReadOnlyList<RenderedRelease> AlternateMembers { get; init; } =
+        AlternateMembers ?? Array.Empty<RenderedRelease>();
+
     /// <summary>
     /// The stable proxy guid for this release, used by DownloadProxyEndpoint.
     ///

@@ -250,6 +250,16 @@ builder.Services.AddScoped<IQuerySnapshotStore, QuerySnapshotStore>();
 builder.Services.AddScoped<ISearchResultCacheStore, SearchResultCacheStore>();
 builder.Services.AddScoped<SearchResultCache>();
 builder.Services.AddScoped<SearchResultCacheStage>();
+
+// arb-x7w8.8 / ADR 0019: the dedup stage, registered beside the cache stage it runs immediately
+// before -- PaginationSnapshotService deduplicates the merge output on the way INTO the cache, so
+// the cache holds groups. AllEqualSourcePriority is the neutral placeholder: the source registry
+// (arb-x7w8.4) replaces THIS ONE LINE with the real name->Source.Priority lookup and nothing else
+// changes, because DedupStage depends on the interface and never on a concrete lookup.
+builder.Services.AddScoped<Arbitarr.Core.Pipeline.ISourcePriorityLookup>(
+    _ => Arbitarr.Core.Pipeline.AllEqualSourcePriority.Instance);
+builder.Services.AddScoped<DedupStage>();
+
 builder.Services.AddScoped<SearchResultRefresher>();
 builder.Services.AddScoped<RefreshFetcher>(sp =>
     (_, entry, cancellationToken) => sp.GetRequiredService<SearchResultRefresher>().RefreshAsync(entry, cancellationToken));
@@ -277,7 +287,8 @@ builder.Services.AddScoped(sp => new PaginationSnapshotService(
     sp.GetRequiredService<IQuerySnapshotStore>(),
     sp.GetRequiredService<TimeProvider>(),
     sp.GetRequiredService<ISnapshotTtlSource>(),
-    sp.GetRequiredService<ISourceSetFingerprintSource>()));
+    sp.GetRequiredService<ISourceSetFingerprintSource>(),
+    sp.GetRequiredService<DedupStage>()));
 
 // M7-7/R20: worker-health snapshot, singleton so both the hosted RefreshWorker (writer) and
 // StatusEndpoint (reader) share the same instance across the app's lifetime.
