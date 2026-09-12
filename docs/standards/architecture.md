@@ -204,3 +204,26 @@ catches.
 Where CONTRIBUTING.md or another standards doc states a general exception-handling rule, link to
 it rather than repeating it here; none currently does, so this section is the only statement of the
 background-work convention.
+
+---
+
+## Shutdown ordering
+
+**.NET stops hosted services in the reverse of their registration order.** A service whose
+`StopAsync` drains work to the database must therefore be registered *before* the DB-touching
+background services it needs to outlive — registering it later would stop it first, while those
+services are still writing.
+
+The worked instance is `ThrottledApiKeyLastUsedRecorder` and `ThrottledSessionActivityRecorder`
+(arb-acy9, #300): `Program.cs` registers both as hosted services ahead of
+`NotificationHostedService`, `MaintenanceHostedService` and `StagingSweepService`, so their
+`StopAsync` drain runs *after* those three have already stopped, once nothing else is contending
+for SQLite's single writer — including the maintenance service's own backup job.
+
+`ArbitarrDbContext` is registered `AddScoped`, not `AddDbContextPool`, so there is no pooled
+connection teardown to race against the drain. Introducing `AddDbContextPool` later would need
+this section revisited.
+
+Each recorder's drain is bounded by its own `DrainTimeout` (5s), weighed against the host's
+un-overridden 30s `ShutdownTimeout` that all hosted services share — a third such drain added to
+the shutdown path spends from the same 30s budget.
