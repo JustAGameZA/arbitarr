@@ -98,6 +98,12 @@ public static class LogsEndpoint
     /// with it; System &gt; Logs previously narrowed only the rows already on the page it held, which
     /// silently answered "no such log line" from one page of a store with hundreds.
     /// </param>
+    /// <param name="logger">Substring of the logger category to match, case-insensitively; null for all loggers.</param>
+    /// <param name="page">1-based page number; defaults to 1 and is clamped to at least 1.</param>
+    /// <param name="pageSize">
+    /// Rows per page; defaults to <see cref="LogStore.DefaultPageSize"/> and is clamped to
+    /// <see cref="LogStore.MaxPageSize"/>.
+    /// </param>
     public static async Task<IResult> HandleAsync(
         string? level,
         string? logger,

@@ -176,6 +176,11 @@ public sealed class LogStore
     /// is where it belongs by meaning: several callers pass these positionally
     /// (<c>ReadAsync(null, null, 1, 10)</c>), so inserting a third string parameter in the middle
     /// would silently re-bind their page number to the new filter and still compile.
+    /// <c>Message LIKE</c> is an unindexed scan over the whole table, bounded in practice only by
+    /// <see cref="LogRetentionPolicy"/> (7 days) via <see cref="TrimAsync"/> — there is no index this
+    /// filter could use, so a caller should pass <paramref name="message"/> BY NAME
+    /// (<c>message: "..."</c>) rather than positionally, since omitting it silently produces an
+    /// unfiltered read of the whole retained window.
     /// </param>
     public async Task<LogPage> ReadAsync(
         string? level,
