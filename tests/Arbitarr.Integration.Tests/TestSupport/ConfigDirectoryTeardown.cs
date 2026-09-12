@@ -30,6 +30,16 @@ namespace Arbitarr.Integration.Tests.TestSupport;
 /// inventory was never the problem; ownership was. It is fixed in
 /// <c>ArbitarrDbContextOptionsFactory.Create</c>.</para>
 ///
+/// <para><b>Ownership was only HALF of that fix, and the other half took until arb-auam.</b> The
+/// connection was still opened EAGERLY before being handed over, and EF adopts a connection lazily —
+/// on the context's first real use. A context resolved and disposed WITHOUT being used therefore
+/// never adopted its handle, so the ownership flag had nothing to act on and the connection was once
+/// again never returned to the pool: same invisible residue, same immunity to every pool clear, now
+/// confined to unused contexts. That is why ~3-4 directories per Integration run survived this
+/// helper long after arb-dhua was closed, and why the survivors looked like a property of particular
+/// test classes — the leak vanishes the instant anything reads from the context. <c>Create</c> now
+/// hands EF a CLOSED connection, so there is no window in which the handle is open but unowned.</para>
+///
 /// <para>Conversely, ownership alone does not delete the directory either: disposal only RETURNS the
 /// handle to the pool, and a pooled handle still holds a share lock on Windows. That is measured,
 /// not assumed — with ownership transferred but no clear, the delete still fails. Hence both.</para>
@@ -47,9 +57,9 @@ internal static class ConfigDirectoryTeardown
 {
     /// <summary>
     /// The number of delete attempts. A retry loop is not a flake-hiding retry of the TEST: since
-    /// arb-dhua the first attempt succeeds, and this exists only because a directory can still be
-    /// momentarily locked by something outside the test's control (a virus scanner, an indexer). The
-    /// final failure is not swallowed — see <see cref="Delete"/>.
+    /// arb-dhua and arb-auam the first attempt succeeds, and this exists only because a directory can
+    /// still be momentarily locked by something outside the test's control (a virus scanner, an
+    /// indexer). The final failure is not swallowed — see <see cref="Delete"/>.
     /// </summary>
     private const int Attempts = 10;
 
@@ -75,9 +85,11 @@ internal static class ConfigDirectoryTeardown
         {
             throw new IOException(
                 $"Test cleanup could not delete its config directory after {Attempts} attempts. " +
-                "Both halves of the teardown are required: the pool clear (here) and EF being given " +
+                "Every half of the teardown is required: the pool clear (here), EF being given " +
                 "ownership of the connection it is handed (ArbitarrDbContextOptionsFactory.Create, " +
-                "contextOwnsConnection: true). Check both before assuming an external lock holder.\n" +
+                "contextOwnsConnection: true), and that connection being handed over CLOSED so EF " +
+                "owns it even when the context is never used (CreateUnopenedConnection, arb-auam). " +
+                "Check all three before assuming an external lock holder.\n" +
                 $"  Recorded failure: {failure.GetType().Name}: {failure.Message}",
                 failure);
         }

@@ -16,13 +16,20 @@ namespace Arbitarr.Integration.Tests;
 /// pool clear was naming the wrong connection strings, and three separate attempts went into
 /// widening that inventory. All three failed, because the inventory was never the problem.</para>
 ///
-/// <para><b>The actual cause was OWNERSHIP.</b> <c>ArbitarrDbContextOptionsFactory.Create</c> opens
+/// <para><b>The actual cause was OWNERSHIP.</b> <c>ArbitarrDbContextOptionsFactory.Create</c> opened
 /// a connection eagerly and passed it to <c>UseSqlite(connection)</c> — an overload whose default
 /// leaves ownership with the CALLER. Disposing the <c>ArbitarrDbContext</c> therefore did not
 /// dispose the connection, so it was never RETURNED to the pool. <c>ClearPool</c> closes the
 /// connections a pool HOLDS; one that never came back is not among them, so no clear at any scope
 /// could ever have reached it. The fix is <c>contextOwnsConnection: true</c>, in production code —
 /// a long-running host leaked a connection per scope for exactly the same reason.</para>
+///
+/// <para><b>And ownership alone did not finish it (arb-auam).</b> While the connection was still
+/// opened EAGERLY, EF's lazy adoption meant a context resolved but never USED still left its handle
+/// open and unreturned — the same residue, surviving in the narrower case this test does not cover
+/// because it drives a request. <c>Create</c> now hands over a CLOSED connection;
+/// <see cref="UnusedDbContextDoesNotLeakItsConnectionTests"/> is the test for that case, and this
+/// one deliberately stays on the used-host path so the two remain attributable apart.</para>
 ///
 /// <para><b>Both halves are required</b>, which is measurable in isolation: with ownership
 /// transferred but no pool clear the delete still fails, because disposal only returns the handle

@@ -16,6 +16,13 @@ namespace Arbitarr.Data;
 /// mode, and it must be called exactly once, before anything opens this database concurrently.
 /// <see cref="OpenConnection"/> then only READS the mode back. Do not fold the conversion back
 /// into the open path: see the remarks on <see cref="ConvertToWalOnce"/>.</para>
+///
+/// <para><b>Two ways to get a connection, differing only in WHO opens it.</b>
+/// <see cref="OpenConnection"/> returns one already open and configured, for callers that use it
+/// immediately. <see cref="CreateUnopenedConnection"/> returns a CLOSED one that configures itself
+/// when its eventual opener opens it — that is what EF Core is given, so a resolved-but-unused
+/// <c>DbContext</c> cannot leak a handle it never adopted (arb-auam). Both route the pragmas
+/// through the same private <c>Configure</c>, so neither path can drift from the other.</para>
 /// </summary>
 public sealed class SqliteConnectionFactory
 {
@@ -102,11 +109,7 @@ public sealed class SqliteConnectionFactory
 
         try
         {
-            ApplyBusyTimeout(connection);
-
-            using var verifyCommand = connection.CreateCommand();
-            verifyCommand.CommandText = "PRAGMA journal_mode;";
-            VerifyJournalMode(verifyCommand.ExecuteScalar());
+            Configure(connection);
         }
         catch
         {
@@ -115,6 +118,71 @@ public sealed class SqliteConnectionFactory
         }
 
         return connection;
+    }
+
+    /// <summary>
+    /// Builds a connection in the <see cref="System.Data.ConnectionState.Closed"/> state that
+    /// applies exactly what <see cref="OpenConnection"/> applies — <c>busy_timeout</c>, then the WAL
+    /// verification — at the moment WHOEVER opens it does so, rather than here.
+    ///
+    /// <para><b>This exists for EF Core, and the closed state is the whole point (arb-auam).</b>
+    /// <c>UseSqlite(DbConnection, contextOwnsConnection: true)</c> makes the context dispose the
+    /// connection, but EF's <c>RelationalConnection</c> only ADOPTS a connection the first time the
+    /// context actually uses it. Hand it one that is already OPEN and a context that is resolved and
+    /// disposed without ever being used never adopts the handle: it is neither closed nor returned
+    /// to the pool, so it survives every <c>ClearPool</c> and the process holds the file for its
+    /// lifetime. Handing over a CLOSED connection removes the asymmetry — an unused context has
+    /// nothing to release, and a used one is opened, owned and returned by EF itself.</para>
+    ///
+    /// <para><b>Why the configuration hangs off <see cref="System.Data.Common.DbConnection.StateChange"/>.</b> The
+    /// pragmas can only run on an open connection, and by construction this method does not open it,
+    /// so the work has to follow the open wherever it happens — inside EF, on a schedule this type
+    /// does not control. The event is that hook, and routing it through the same
+    /// <see cref="Configure"/> call <see cref="OpenConnection"/> uses is what keeps the single
+    /// configuration path the class doc promises: EF and raw ADO.NET cannot drift, because there is
+    /// one implementation and both reach it.</para>
+    ///
+    /// <para><b>Rejected alternative: <c>UseSqlite(connectionString)</c>.</b> It is the smaller
+    /// change and it fixes the leak, because EF then creates and owns the connection outright. It
+    /// also silently drops both pragmas — EF would open a connection this factory never configures,
+    /// so <c>busy_timeout</c> would fall back to SQLite's default of 0 (immediate SQLITE_BUSY, the
+    /// AC15a hazard) and the journal-mode verification would never run on the application's own
+    /// connections. That is the drift the class doc exists to prevent, so the connection stays
+    /// factory-built and only its OPENING moves.</para>
+    ///
+    /// <para>A throw from the handler surfaces out of the caller's <c>Open()</c> — measured, so the
+    /// verification still fails closed through EF rather than being swallowed.</para>
+    /// </summary>
+    public SqliteConnection CreateUnopenedConnection()
+    {
+        var connection = new SqliteConnection(_options.ToConnectionString());
+
+        connection.StateChange += (_, args) =>
+        {
+            if (args.CurrentState == System.Data.ConnectionState.Open)
+            {
+                Configure(connection);
+            }
+        };
+
+        return connection;
+    }
+
+    /// <summary>
+    /// Applies <c>busy_timeout</c> and verifies the journal mode on an already-open connection. The
+    /// one place either happens, so <see cref="OpenConnection"/> and the deferred configuration of
+    /// <see cref="CreateUnopenedConnection"/> cannot diverge.
+    ///
+    /// <para>This READS the journal mode and never sets it — see the remarks on
+    /// <see cref="ConvertToWalOnce"/> for why that split (arb-itmm) is load-bearing.</para>
+    /// </summary>
+    private void Configure(SqliteConnection connection)
+    {
+        ApplyBusyTimeout(connection);
+
+        using var verifyCommand = connection.CreateCommand();
+        verifyCommand.CommandText = "PRAGMA journal_mode;";
+        VerifyJournalMode(verifyCommand.ExecuteScalar());
     }
 
     private void ApplyBusyTimeout(SqliteConnection connection)
