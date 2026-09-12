@@ -125,6 +125,14 @@ public sealed class SqliteConnectionFactory
     /// applies exactly what <see cref="OpenConnection"/> applies — <c>busy_timeout</c>, then the WAL
     /// verification — at the moment WHOEVER opens it does so, rather than here.
     ///
+    /// <para><b>That equivalence is PER OPEN, not per connection.</b> EF closes and reopens an
+    /// externally supplied <see cref="System.Data.Common.DbConnection"/> between operations, so this
+    /// connection is opened many times over its life and <see cref="Configure"/> runs once per open
+    /// — which is the correct granularity, since <c>busy_timeout</c> is connection-scoped state that
+    /// a close discards and so must be reapplied each time. <see cref="OpenConnection"/> configures
+    /// once because it hands back a connection it opened once; the two agree on what is applied to
+    /// an open connection, not on how many times it happens.</para>
+    ///
     /// <para><b>This exists for EF Core, and the closed state is the whole point (arb-auam).</b>
     /// <c>UseSqlite(DbConnection, contextOwnsConnection: true)</c> makes the context dispose the
     /// connection, but EF's <c>RelationalConnection</c> only ADOPTS a connection the first time the
@@ -152,6 +160,17 @@ public sealed class SqliteConnectionFactory
     ///
     /// <para>A throw from the handler surfaces out of the caller's <c>Open()</c> — measured, so the
     /// verification still fails closed through EF rather than being swallowed.</para>
+    ///
+    /// <para><b>It fails closed more WEAKLY than the raw path, though, and that asymmetry is
+    /// deliberate rather than overlooked.</b> <see cref="OpenConnection"/> disposes the connection
+    /// when <see cref="Configure"/> throws, so a failed verification leaves no usable handle behind.
+    /// The <see cref="System.Data.Common.DbConnection.StateChange"/> handler cannot do that — it runs
+    /// during the caller's own <c>Open()</c>, so disposing the connection from inside it is not
+    /// available — and the connection is therefore left <see cref="System.Data.ConnectionState.Open"/>.
+    /// <c>busy_timeout</c> has already been applied by that point and EF still disposes the
+    /// connection under <c>contextOwnsConnection: true</c>, so nothing leaks; but a caller that
+    /// caught the throw could go on using a handle whose journal mode was never verified. Only the
+    /// verification is weaker, and only for a caller that swallows the exception.</para>
     /// </summary>
     public SqliteConnection CreateUnopenedConnection()
     {

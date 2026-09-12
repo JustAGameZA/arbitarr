@@ -113,7 +113,12 @@ ownership with the caller, so a disposed `ArbitarrDbContext` does not dispose it
 connection is never *returned* to the pool. **`ClearPool` closes only what a pool holds**, so a
 connection that never came back is not among them: without that argument no pool clearing, however
 complete the inventory of strings, reaches anything at all (arb-dhua, where three attempts at
-widening the inventory failed for exactly this reason).
+widening the inventory failed for exactly this reason). **Ownership decides who *disposes* the
+connection, not when EF takes charge of it** — `RelationalConnection` adopts its connection lazily,
+on the context's first use, so a context resolved and never used adopts nothing and the flag has
+nothing to act on. The connection must therefore also be handed over *closed*, which is why `Create`
+builds it with `SqliteConnectionFactory.CreateUnopenedConnection`; see that method's remarks for the
+unused-context leak this closes (arb-auam).
 
 **`SqliteConnection.ClearAllPools()` is banned.** It is process-global: it force-closes every pooled
 connection in the process, including those of unrelated databases and of whatever test happens to

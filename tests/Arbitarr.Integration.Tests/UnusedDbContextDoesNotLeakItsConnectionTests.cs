@@ -95,25 +95,54 @@ public sealed class UnusedDbContextDoesNotLeakItsConnectionTests : IAsyncLifetim
 
         // THE ASSERTION. Delete (not TryDelete) throws with the teardown's full diagnostic when a
         // handle survives — which on the eager-open implementation is exactly what happens.
+        //
+        // ITS OBSERVABLE IS WINDOWS SHARE-LOCK SEMANTICS, SO THIS TEST DOES NOT PIN THE PROPERTY ON
+        // EVERY PLATFORM. A surviving handle blocks a directory delete on Windows; on Linux unlink
+        // removes the name with the handle still open, so the delete SUCCEEDS with the leak fully in
+        // place and this test would pass against the eager-open implementation on that shard —
+        // proving nothing there. That is not a defect in this assertion, it is the platform: the
+        // cross-platform property is carried by A_retained_connection_survives_the_same_teardown,
+        // which asserts on the connection's STATE rather than on a delete, and by the arb-1z1l IL
+        // scan. Do not "strengthen" this into a platform-conditional here — the split lives in the
+        // control, where it is the subject rather than an aside.
         ConfigDirectoryTeardown.Delete(_configDirectory);
     }
 
     /// <summary>
-    /// THE POSITIVE CONTROL for the test above: proof that a genuinely retained handle WOULD be
-    /// caught by that assertion.
+    /// THE POSITIVE CONTROL for the test above: proof that a genuinely retained handle is one the
+    /// teardown CANNOT release, so the success above is a real observation rather than a delete that
+    /// had become impossible to fail.
     ///
-    /// <para>Without this, "the delete succeeded" is compatible with the delete having become
-    /// impossible to fail — a teardown helper that silently stopped clearing pools, or a platform
-    /// that no longer holds a share lock, would turn the test above green while detecting nothing.
-    /// Here an open connection on the same database is held ACROSS the delete, so the delete must
-    /// fail; that it does is what makes the success above meaningful.</para>
+    /// <para>Without this, "the delete succeeded" is compatible with the delete having stopped
+    /// detecting anything — a teardown helper that silently dropped its pool clear would turn the
+    /// test above green while measuring nothing.</para>
+    ///
+    /// <para><b>WHY THIS DOES NOT SIMPLY REQUIRE THE DELETE TO THROW, AND CI IS WHERE THAT MATTERS.</b>
+    /// An open handle blocks a directory delete on WINDOWS, where it carries a share lock; on LINUX
+    /// — where CI runs — it does not, because unlink removes the NAME while the handle keeps the
+    /// inode alive, so the delete SUCCEEDS with the handle fully retained. This control was first
+    /// written as an unconditional <c>Assert.Throws&lt;IOException&gt;</c> and went red on the Linux
+    /// runner for exactly that reason: not because the property was absent, but because the
+    /// MEASUREMENT does not exist on that platform. The same account is recorded on
+    /// <see cref="ConfigDirectoryIsDeletedOnDisposalTests"/> and
+    /// <see cref="ConfigDirectoryTeardown"/>'s own tests, which hit it before this class did.</para>
+    ///
+    /// <para><b>So the assertion is on what a retained handle does on BOTH platforms</b>, following
+    /// <c>SqlitePoolCleanerTests</c>: the retained connection is still OPEN and still SERVING the
+    /// database after the teardown has run its pool clear over it. That is the property that makes
+    /// the test above meaningful — not "a delete fails", but "the teardown's clear cannot reach a
+    /// handle nothing returned to the pool", which is precisely the defect shape arb-auam fixed. It
+    /// is true on Windows and Linux alike and it is what a dropped clear or a handle that was never
+    /// really open would break. Neither branch below is a skip, and neither platform is left
+    /// unproven: the cross-platform observable is asserted unconditionally, and the Windows-only
+    /// share-lock throw is asserted ADDITIONALLY where the platform makes it meaningful.</para>
     ///
     /// <para>The connection is opened through <see cref="SqliteConnectionFactory"/> rather than
     /// constructed inline, so it is the same connection shape and the same pool the assertion above
     /// is clearing — a handle from some other string would be a control for the wrong thing.</para>
     /// </summary>
     [Fact]
-    public async Task A_retained_connection_makes_the_same_delete_fail()
+    public async Task A_retained_connection_survives_the_same_teardown()
     {
         var databasePath = new BackupPaths(_configDirectory).DatabasePath;
 
@@ -123,13 +152,59 @@ public sealed class UnusedDbContextDoesNotLeakItsConnectionTests : IAsyncLifetim
             await client.GetAsync("/api/status");
         }
 
+        // NON-VACUITY: the same check the test above makes. Without a database there is no handle to
+        // retain and everything below would be controlling nothing.
+        Assert.True(
+            File.Exists(databasePath),
+            "The host never created its database, so no SQLite handle was ever in play and this " +
+            "control would demonstrate nothing.");
+
+        // THE PLANTED DEFECT: an open connection nothing will return to the pool — the exact shape a
+        // resolved-but-unused DbContext left behind on the eager-open implementation. Deliberately
+        // held across the teardown.
         using var retained = new SqliteConnectionFactory(
             new SqliteConnectionOptions { DatabasePath = databasePath }).OpenConnection();
 
-        var failure = Assert.Throws<IOException>(() => ConfigDirectoryTeardown.Delete(_configDirectory));
+        Assert.Equal(System.Data.ConnectionState.Open, retained.State);
 
-        // The helper's own diagnostic, so a future refactor that changed what Delete throws on cannot
-        // leave this asserting on an unrelated IOException.
-        Assert.Contains("could not delete its config directory", failure.Message, StringComparison.Ordinal);
+        if (OperatingSystem.IsWindows())
+        {
+            // WINDOWS ONLY, and stated as such: the retained handle's share lock makes the delete
+            // lose, so here the throw IS available as a second, stronger detection. Asserting it
+            // where it is real keeps this platform's coverage at full strength rather than reducing
+            // both platforms to the weaker common denominator.
+            var failure = Assert.Throws<IOException>(() => ConfigDirectoryTeardown.Delete(_configDirectory));
+
+            // The helper's own diagnostic, so a future refactor that changed what Delete throws on
+            // cannot leave this asserting on an unrelated IOException.
+            Assert.Contains(
+                "could not delete its config directory", failure.Message, StringComparison.Ordinal);
+        }
+        else
+        {
+            // POSIX: unlink does not need the file to be unused, so the delete succeeds with the
+            // handle in place and there is no throw to require. Run the same teardown anyway — the
+            // point is that it runs its pool clear over this database and STILL cannot release this
+            // handle, which is asserted below on both platforms.
+            ConfigDirectoryTeardown.Delete(_configDirectory);
+        }
+
+        // THE CROSS-PLATFORM ASSERTION, and the one that actually carries this control. The teardown
+        // has now run its ClearPoolsFor over this database on either platform. A connection that was
+        // never RETURNED to the pool is not among the connections a pool HOLDS, so the clear cannot
+        // have touched it: it must still be open and still serving. If this ever goes quiet — the
+        // handle closed, or never usable in the first place — the test above is no longer known to be
+        // capable of failing, on Windows or Linux.
+        Assert.Equal(System.Data.ConnectionState.Open, retained.State);
+
+        using var command = retained.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM sqlite_schema;";
+
+        // The real schema, so this is a read of the host's database rather than of an empty file some
+        // later open happened to create at the same path.
+        Assert.True(
+            Assert.IsType<long>(command.ExecuteScalar()) > 0,
+            "The retained connection is open but its database has no schema, so it is not serving " +
+            "the host's database and this control is planting the wrong defect.");
     }
 }
