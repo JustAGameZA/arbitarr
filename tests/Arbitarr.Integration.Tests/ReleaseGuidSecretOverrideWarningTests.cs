@@ -44,6 +44,14 @@ public sealed class ReleaseGuidSecretOverrideWarningTests
         });
     }
 
+    private static List<string> Snapshot(List<string> sink)
+    {
+        lock (sink)
+        {
+            return [.. sink];
+        }
+    }
+
     private static string NewConfigDirectory() =>
         Path.Combine(Path.GetTempPath(), "arbitarr-q75n-releaseguid-warning", Guid.NewGuid().ToString("N"));
 
@@ -71,13 +79,17 @@ public sealed class ReleaseGuidSecretOverrideWarningTests
         try
         {
             await using var host = CreateHost(configDirectory, logs, environment: "Staging");
+            // CreateClient forces the host to actually start (and thus log); the client itself is
+            // otherwise unused, so do not remove this as apparently-dead code.
             using var client = host.CreateClient();
+
+            var snapshot = Snapshot(logs);
 
             // Positive control FIRST: prove the warning was actually produced and captured, so the
             // absence assertion below is evidence of scrubbing rather than of nothing happening.
-            Assert.Contains(logs, line => line.Contains("Arbitarr:ReleaseGuidSecret", StringComparison.Ordinal));
+            Assert.Contains(snapshot, line => line.Contains("Arbitarr:ReleaseGuidSecret", StringComparison.Ordinal));
 
-            Assert.All(logs, line => Assert.DoesNotContain(ThirtyTwoByteSecret, line, StringComparison.Ordinal));
+            Assert.All(snapshot, line => Assert.DoesNotContain(ThirtyTwoByteSecret, line, StringComparison.Ordinal));
         }
         finally
         {
@@ -111,11 +123,22 @@ public sealed class ReleaseGuidSecretOverrideWarningTests
 
         try
         {
-            // No UseEnvironment call: WebApplicationFactory defaults to Development.
-            await using var host = CreateHost(configDirectory, logs, environment: null);
+            // Explicit rather than relying on WebApplicationFactory's default, so a process-wide
+            // ASPNETCORE_ENVIRONMENT cannot silently change which branch this test exercises.
+            await using var host = CreateHost(configDirectory, logs, environment: "Development");
+            // CreateClient forces the host to actually start (and thus log); the client itself is
+            // otherwise unused, so do not remove this as apparently-dead code.
             using var client = host.CreateClient();
 
-            Assert.DoesNotContain(logs, line => line.Contains("Arbitarr:ReleaseGuidSecret", StringComparison.Ordinal));
+            var snapshot = Snapshot(logs);
+
+            // Positive control FIRST (CLAUDE.md §4): prove the sink actually saw the host's
+            // startup logging, so the absence assertion below is evidence the warning was
+            // suppressed rather than evidence the sink never received anything at all.
+            Assert.NotEmpty(snapshot);
+
+            Assert.DoesNotContain(snapshot, line => line.Contains("Arbitarr:ReleaseGuidSecret", StringComparison.Ordinal));
+            Assert.All(snapshot, line => Assert.DoesNotContain(ThirtyTwoByteSecret, line, StringComparison.Ordinal));
         }
         finally
         {
@@ -124,7 +147,9 @@ public sealed class ReleaseGuidSecretOverrideWarningTests
     }
 
     /// <summary>
-    /// Captures warning-and-above messages so a test can assert what the host told the operator.
+    /// Captures information-and-above messages so a test can assert what the host told the
+    /// operator, and so a clean run's non-empty capture is itself proof the sink is wired up
+    /// (CLAUDE.md §4) rather than merely proof nothing was logged at Warning or above.
     /// Deliberately minimal: it records rendered text only, because that is what an operator reads.
     /// </summary>
     private sealed class CapturingLoggerProvider(List<string> sink) : ILoggerProvider
@@ -139,7 +164,7 @@ public sealed class ReleaseGuidSecretOverrideWarningTests
         {
             public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
-            public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Warning;
+            public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Information;
 
             public void Log<TState>(
                 LogLevel logLevel,
