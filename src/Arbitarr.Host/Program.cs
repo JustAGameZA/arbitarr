@@ -814,6 +814,44 @@ builder.Services.AddHttpClient<Arbitarr.Core.Media.RadarrConnectivityProber>()
 // Arbitarr.Media (ADR 0001).
 builder.Services.AddScoped<Arbitarr.Data.Media.RadarrCredentialProvider>();
 
+// arb-6l9b.3: the two queue readers behind GET /api/admin/arr/{sonarr,radarr}/queue. TWO typed
+// clients rather than one shared instance even though the behaviour lives on a shared base
+// (ArrQueueReader): each kind gets its own primary handler, its own timeout, and -- the part that is
+// load-bearing for the tests -- its own LOGGER CATEGORY, which is how the key-scrubbing tests find
+// the rows a given client's requests produced and assert per row that the key is absent from them.
+//
+// AllowAutoRedirect is disabled for the same SSRF reason as every *arr client above, and it matters
+// on a read path exactly as much as on a probe: a misconfigured address answering 30x must not make
+// this process reissue a request CARRYING THE INSTANCE'S API KEY at a host nobody configured. With
+// redirects off the 3xx comes back as a non-success status the reader classifies as
+// UnexpectedResponse -- which is also the truthful answer for an address pointing at a proxy or a
+// login redirect. ArrQueueReaderTests asserts both the status and that exactly ONE request is issued.
+//
+// THE TIMEOUT IS SET HERE, ONCE, and ArrQueueReader must never assign HttpClient.Timeout itself: the
+// client is POOLED through IHttpClientFactory, and HttpClient throws on that assignment once a
+// request has started on the instance -- two concurrent reads are enough to produce it, which is the
+// failure ArrApiProvider's remarks record happening. A caller wanting a shorter bound uses a linked
+// CancellationTokenSource, which is exactly what ArrQueueReader.ReadQueueAsync does per call.
+//
+// NO .RemoveAllLoggers() ON EITHER, DELIBERATELY, for exactly the measured reason the
+// SonarrConnectivityProber registration above sets out at length -- read that comment rather than a
+// summary of it. In short: these clients' keys ride in the QUERY STRING
+// (ArrQueueReader.BuildQueueUri puts them there, matching both connectivity probers and
+// ArrApiProvider), and .NET's logging handler collapses the whole query string to "?*" before the
+// message is formatted, so the key never reaches the log store. RemoveAllLoggers() would be needed
+// only if a key ever moved into a URL PATH segment, which LogMessageCleanser does NOT scrub
+// (CLAUDE.md section 1) -- it does not here. Do not move these keys to an X-Api-Key header either:
+// that would split the codebase's one placement convention and invalidate the comment above. The
+// same process-wide System.Net.Http.DisableUriRedaction dependency the Sonarr comment documents
+// applies to both clients unchanged.
+builder.Services.AddHttpClient<Arbitarr.Core.Media.SonarrQueueClient>(
+        client => client.Timeout = Arbitarr.Core.Media.ArrQueueReader.DefaultTimeout)
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+
+builder.Services.AddHttpClient<Arbitarr.Core.Media.RadarrQueueClient>(
+        client => client.Timeout = Arbitarr.Core.Media.ArrQueueReader.DefaultTimeout)
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+
 // arb-u1c: the identity resolver that turns Sonarr's tvdbid into the series title the search path
 // sends upstream. Registered against the Core.Identity contract, so Arbitarr.Api (which builds the
 // search query) never sees Arbitarr.Media -- this composition root is the only place that knows
@@ -1187,6 +1225,13 @@ AdminArrEndpoints.Map(app);
 // two reasons and deliberately NOT sharing an implementation with it (arb-arrq D3 -- the rejected
 // generalisation is recorded in RadarrInstanceRepository's type doc). See AdminRadarrEndpoints.
 AdminRadarrEndpoints.Map(app);
+// arb-6l9b.3: the queue reads for both kinds. ONE surface for both, unlike the two configuration
+// surfaces above, because the queue wire contract is identical for Sonarr and Radarr (the upstream
+// v3 contract is) while their configuration contracts are free to diverge -- the reasoning is on
+// AdminArrQueueEndpoints' type doc. Both routes are CONCRETE rather than templated (paging is
+// query-string) so AdminApiKeyRouteEnumerationTests' sweep covers them; it skips every
+// {-containing route by design.
+AdminArrQueueEndpoints.Map(app);
 AdminRuleEndpoints.Map(app);
 AdHocSearchEndpoint.Map(app);
 MatchExplanationEndpoint.Map(app);

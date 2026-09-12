@@ -3,25 +3,31 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider, useMutation } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { SonarrSection } from './Sonarr';
+import { RadarrSection } from './Radarr';
 import { apiFetch } from '../../../api/client';
 import { useAdminKeyStore } from '../../../state/adminKeyStore';
 import { mockApi } from '../../../test/mockApi';
 import { renderSurface } from '../../../test/renderSurface';
 
-const ROUTE = '/api/admin/arr/sonarr';
-const TEST_ROUTE = '/api/admin/arr/sonarr/test';
+const ROUTE = '/api/admin/arr/radarr';
+const TEST_ROUTE = '/api/admin/arr/radarr/test';
 
-/** RFC 5737 TEST-NET-1: non-routable, and no real address enters committed content. */
-const CONFIGURED = { baseUrl: 'http://192.0.2.10:8989', hasApiKey: true };
+/**
+ * A documentation host under the reserved `.example` name, on Radarr's default
+ * port. Non-resolvable, and no real address enters committed content.
+ */
+const CONFIGURED = { baseUrl: 'http://radarr.example:7878', hasApiKey: true };
 const UNCONFIGURED = { baseUrl: null, hasApiKey: false };
+
+/** The same host on a second port, for the "the operator edited the address" case. */
+const EDITED_URL = 'http://radarr.example:7979';
 
 /**
  * Distinctive enough that a substring search over a serialized request body
  * cannot match it by accident, which is what makes the "it is not in here"
  * assertions below meaningful.
  */
-const TYPED_KEY = 'placeholder-sonarr-key-9d4c';
+const TYPED_KEY = 'placeholder-radarr-key-4b71';
 
 function probe(outcome: string, message: string) {
   return { success: outcome === 'Ok', outcome, message };
@@ -43,7 +49,7 @@ function renderWithClient() {
 
   render(
     <QueryClientProvider client={client}>
-      <SonarrSection />
+      <RadarrSection />
     </QueryClientProvider>,
   );
 
@@ -100,7 +106,7 @@ function lastPutBody(api: ReturnType<typeof mockApi>): Record<string, unknown> {
   return JSON.parse(puts[puts.length - 1]!.body!) as Record<string, unknown>;
 }
 
-describe('Sonarr section', () => {
+describe('Radarr section', () => {
   beforeEach(() => {
     useAdminKeyStore.setState({ key: null, serverKeyUnset: false });
     localStorage.clear();
@@ -119,10 +125,10 @@ describe('Sonarr section', () => {
    */
   it('shows the stored base URL in an editable field', async () => {
     mockApi({ [ROUTE]: { body: CONFIGURED } });
-    renderSurface(<SonarrSection />);
+    renderSurface(<RadarrSection />);
 
     const field = await screen.findByLabelText('Base URL');
-    expect(field).toHaveValue('http://192.0.2.10:8989');
+    expect(field).toHaveValue('http://radarr.example:7878');
     // Not a password field: masking a non-secret only stops the operator reading it.
     expect(field).toHaveAttribute('type', 'url');
   });
@@ -135,7 +141,7 @@ describe('Sonarr section', () => {
    */
   it('starts the key field empty and masked even when a key is stored', async () => {
     mockApi({ [ROUTE]: { body: CONFIGURED } });
-    renderSurface(<SonarrSection />);
+    renderSurface(<RadarrSection />);
 
     const field = await screen.findByLabelText('Replace API key');
     expect(field).toHaveValue('');
@@ -144,7 +150,7 @@ describe('Sonarr section', () => {
 
   it('labels the key field as setting rather than replacing when none is stored', async () => {
     mockApi({ [ROUTE]: { body: UNCONFIGURED } });
-    renderSurface(<SonarrSection />);
+    renderSurface(<RadarrSection />);
 
     expect(await screen.findByLabelText('Set API key')).toBeInTheDocument();
     expect(screen.queryByLabelText('Replace API key')).not.toBeInTheDocument();
@@ -152,14 +158,14 @@ describe('Sonarr section', () => {
 
   it('reports whether a key is stored without ever showing one', async () => {
     mockApi({ [ROUTE]: { body: CONFIGURED } });
-    renderSurface(<SonarrSection />);
+    renderSurface(<RadarrSection />);
 
     expect(await screen.findByText('Key configured')).toBeInTheDocument();
   });
 
   it('says so when nothing is configured yet', async () => {
     mockApi({ [ROUTE]: { body: UNCONFIGURED } });
-    renderSurface(<SonarrSection />);
+    renderSurface(<RadarrSection />);
 
     expect(await screen.findByText('No key')).toBeInTheDocument();
     expect(await screen.findByLabelText('Base URL')).toHaveValue('');
@@ -174,14 +180,14 @@ describe('Sonarr section', () => {
    */
   it('omits the key entirely when the field is left blank', async () => {
     const api = mockApi({ [ROUTE]: { body: CONFIGURED } });
-    renderSurface(<SonarrSection />);
+    renderSurface(<RadarrSection />);
 
     const field = await screen.findByLabelText('Base URL');
     await userEvent.clear(field);
-    await userEvent.type(field, 'http://192.0.2.20:8989');
+    await userEvent.type(field, EDITED_URL);
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
 
-    await waitFor(() => expect(lastPutBody(api)).toEqual({ baseUrl: 'http://192.0.2.20:8989' }));
+    await waitFor(() => expect(lastPutBody(api)).toEqual({ baseUrl: EDITED_URL }));
     // Stated as its own assertion, not merely implied by toEqual: this is the
     // property that keeps an address edit from blanking a working key.
     expect(lastPutBody(api)).not.toHaveProperty('apiKey');
@@ -190,7 +196,7 @@ describe('Sonarr section', () => {
 
   it('sends the key when the operator typed one', async () => {
     const api = mockApi({ [ROUTE]: { body: CONFIGURED } });
-    renderSurface(<SonarrSection />);
+    renderSurface(<RadarrSection />);
 
     const field = await screen.findByLabelText('Replace API key');
     await userEvent.type(field, TYPED_KEY);
@@ -198,7 +204,7 @@ describe('Sonarr section', () => {
 
     await waitFor(() =>
       expect(lastPutBody(api)).toEqual({
-        baseUrl: 'http://192.0.2.10:8989',
+        baseUrl: 'http://radarr.example:7878',
         apiKey: TYPED_KEY,
       }),
     );
@@ -214,7 +220,7 @@ describe('Sonarr section', () => {
    */
   it('clears the typed key from the field after a successful save', async () => {
     const api = mockApi({ [ROUTE]: { body: CONFIGURED } });
-    renderSurface(<SonarrSection />);
+    renderSurface(<RadarrSection />);
 
     const field = await screen.findByLabelText('Replace API key');
     await userEvent.type(field, TYPED_KEY);
@@ -235,7 +241,8 @@ describe('Sonarr section', () => {
    * even if a future server change started returning it.
    *
    * POSITIVE CONTROL: the base URL from the same response IS rendered, proving
-   * this render actually shows values from the payload.
+   * this render actually shows values from the payload — so the absence below is
+   * about the key specifically and not about a page that rendered nothing.
    */
   it('never renders a key that a response carried', async () => {
     mockApi({
@@ -243,10 +250,10 @@ describe('Sonarr section', () => {
       // that is the point — the page must not surface it if one ever did.
       [ROUTE]: { body: { ...CONFIGURED, apiKey: TYPED_KEY } },
     });
-    renderSurface(<SonarrSection />);
+    renderSurface(<RadarrSection />);
 
     // POSITIVE CONTROL: a value from this payload IS on screen.
-    expect(await screen.findByLabelText('Base URL')).toHaveValue('http://192.0.2.10:8989');
+    expect(await screen.findByLabelText('Base URL')).toHaveValue('http://radarr.example:7878');
 
     // ...therefore this absence is real.
     expect(screen.queryByDisplayValue(TYPED_KEY)).not.toBeInTheDocument();
@@ -264,7 +271,7 @@ describe('Sonarr section', () => {
    */
   it('surfaces the server rejection verbatim rather than inventing one', async () => {
     const api = mockApi({ [ROUTE]: { body: CONFIGURED } });
-    renderSurface(<SonarrSection />);
+    renderSurface(<RadarrSection />);
 
     // Rendered from a successful GET first...
     const save = await screen.findByRole('button', { name: 'Save' });
@@ -272,7 +279,7 @@ describe('Sonarr section', () => {
     // ...then the write is made to fail.
     api.set(ROUTE, {
       status: 400,
-      body: { error: 'The Sonarr base URL must not contain credentials.' },
+      body: { error: 'The Radarr base URL must not contain credentials.' },
     });
     await userEvent.click(save);
 
@@ -292,7 +299,7 @@ describe('Sonarr section', () => {
    */
   it('offers no key-clearing affordance, because the server has none', async () => {
     mockApi({ [ROUTE]: { body: CONFIGURED } });
-    renderSurface(<SonarrSection />);
+    renderSurface(<RadarrSection />);
 
     // POSITIVE CONTROL: the form's own buttons ARE present.
     expect(await screen.findByRole('button', { name: 'Save' })).toBeInTheDocument();
@@ -310,7 +317,7 @@ describe('Sonarr section', () => {
    */
   it('issues no DELETE anywhere on this surface', async () => {
     const api = mockApi({ [ROUTE]: { body: CONFIGURED } });
-    renderSurface(<SonarrSection />);
+    renderSurface(<RadarrSection />);
 
     await screen.findByRole('button', { name: 'Save' });
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
@@ -322,7 +329,7 @@ describe('Sonarr section', () => {
   /**
    * FIVE DISTINCT OUTCOMES, NOT ONE RED "FAILED". Each has a different fix, so a
    * single verdict would make the button decorative. `AuthenticationFailed` is
-   * the member the AI section deliberately does NOT have — Sonarr carries a key
+   * the member the AI section deliberately does NOT have — Radarr carries a key
    * and a wrong key is the likeliest misconfiguration this button catches.
    */
   it.each([
@@ -330,13 +337,13 @@ describe('Sonarr section', () => {
     ['Unreachable', 'Unreachable'],
     ['TlsFailure', 'TLS failure'],
     ['AuthenticationFailed', 'Key rejected'],
-    ['UnexpectedResponse', 'Not Sonarr'],
+    ['UnexpectedResponse', 'Not Radarr'],
   ])('renders a distinct badge for the %s outcome', async (outcome, label) => {
     mockApi({
       [ROUTE]: { body: CONFIGURED },
       [TEST_ROUTE]: { body: probe(outcome, `Server wording for ${outcome}.`) },
     });
-    renderSurface(<SonarrSection />);
+    renderSurface(<RadarrSection />);
 
     await userEvent.click(await screen.findByRole('button', { name: 'Test connection' }));
 
@@ -347,19 +354,19 @@ describe('Sonarr section', () => {
 
   /**
    * A probe that fails to complete is NOT a probe outcome and must not be dressed
-   * as one: a rejected admin key or a dead server says nothing about Sonarr.
+   * as one: a rejected admin key or a dead server says nothing about Radarr.
    */
   it('shows a transport failure without an outcome badge', async () => {
     mockApi({
       [ROUTE]: { body: CONFIGURED },
       [TEST_ROUTE]: { status: 503, body: { error: 'Service unavailable' } },
     });
-    renderSurface(<SonarrSection />);
+    renderSurface(<RadarrSection />);
 
     await userEvent.click(await screen.findByRole('button', { name: 'Test connection' }));
 
     await screen.findByRole('alert');
-    for (const label of ['Connected', 'Unreachable', 'TLS failure', 'Key rejected', 'Not Sonarr']) {
+    for (const label of ['Connected', 'Unreachable', 'TLS failure', 'Key rejected', 'Not Radarr']) {
       expect(screen.queryByText(label)).not.toBeInTheDocument();
     }
   });
@@ -369,7 +376,7 @@ describe('Sonarr section', () => {
       [ROUTE]: { body: CONFIGURED },
       [TEST_ROUTE]: { body: probe('Ok', 'Connected successfully and the API key was accepted.') },
     });
-    renderSurface(<SonarrSection />);
+    renderSurface(<RadarrSection />);
 
     await userEvent.click(await screen.findByRole('button', { name: 'Test connection' }));
 
@@ -386,7 +393,7 @@ describe('Sonarr section', () => {
   it('attaches the admin key to the read as well as the writes', async () => {
     useAdminKeyStore.setState({ key: 'admin-key-under-test', serverKeyUnset: false });
     const api = mockApi({ [ROUTE]: { body: CONFIGURED } });
-    renderSurface(<SonarrSection />);
+    renderSurface(<RadarrSection />);
 
     await screen.findByLabelText('Base URL');
     expect(api.adminKeyOn(ROUTE)).toBe('admin-key-under-test');
@@ -440,5 +447,35 @@ describe('Sonarr section', () => {
     await waitFor(() => expect(lastPutBody(api)).toHaveProperty('apiKey', TYPED_KEY));
 
     await waitFor(() => expect(sweepMutationCache(client)).not.toContain(TYPED_KEY));
+  });
+
+  /**
+   * THE KEY NEVER REACHES BROWSER STORAGE. The mutation carries it in a PUT body
+   * and nothing else, so neither store should gain an entry — and the settled
+   * mutation's own copy is dropped by `gcTime: 0` plus the `reset()` on settle.
+   *
+   * POSITIVE CONTROL: both stores are first shown to RECORD a planted value and
+   * to be searchable for it, so "the key is not in there" is an assertion about
+   * the key rather than about a lookup that could never find anything.
+   */
+  it('puts the typed key in neither localStorage nor sessionStorage', async () => {
+    const api = mockApi({ [ROUTE]: { body: CONFIGURED } });
+    renderSurface(<RadarrSection />);
+
+    const field = await screen.findByLabelText('Replace API key');
+    await userEvent.type(field, TYPED_KEY);
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(lastPutBody(api)).toHaveProperty('apiKey', TYPED_KEY));
+
+    const dump = () => JSON.stringify({ ...localStorage, ...sessionStorage });
+
+    // ...therefore this absence is real.
+    expect(dump()).not.toContain(TYPED_KEY);
+
+    // POSITIVE CONTROL, stated last so it cannot mask the assertion above: the
+    // same dump DOES find a planted value, proving it reads what these stores
+    // actually hold.
+    sessionStorage.setItem('planted', TYPED_KEY);
+    expect(dump()).toContain(TYPED_KEY);
   });
 });

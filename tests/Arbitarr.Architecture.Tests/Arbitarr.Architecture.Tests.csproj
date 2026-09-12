@@ -28,6 +28,7 @@
     <ProjectReference Include="..\..\src\Arbitarr.Media\Arbitarr.Media.csproj" />
     <ProjectReference Include="..\..\src\Arbitarr.Api\Arbitarr.Api.csproj" />
     <ProjectReference Include="..\..\src\Arbitarr.Data\Arbitarr.Data.csproj" />
+    <ProjectReference Include="..\..\src\Arbitarr.Sources.Newznab\Arbitarr.Sources.Newznab.csproj" />
     <ProjectReference Include="..\..\src\Arbitarr.Sources.NzbHydra\Arbitarr.Sources.NzbHydra.csproj" />
   </ItemGroup>
 

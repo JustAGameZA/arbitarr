@@ -1,0 +1,76 @@
+/*
+ * Radarr-section layout (arb-6l9b.2). Colour comes from var(--token) only (AC3);
+ * the panel, badge, form, button and message chrome are all surface.module.css,
+ * so nothing here restates them. Deliberately the same shapes as
+ * Sonarr.module.css and Ai.module.css — the three sections are the same kind of
+ * surface and should not drift apart visually for want of a shared file.
+ */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* The Configured line: badge, then what that means. */
+.status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
+  max-width: 80ch;
+}
+
+/* Wider than the shared .input default, for the same reason the Sonarr section's
+   is: a base URL with a host, a port and possibly a path prefix does not fit the
+   narrow default, and a field showing a fraction of it invites a mistyped paste.
+   A plain text field, never type="password" — the address is not a credential
+   (the server rejects one carrying userinfo) and hiding it would only stop the
+   operator checking it. The KEY field below is the opposite on both counts. */
+.urlInput {
+  min-width: 340px;
+  max-width: 100%;
+  padding: 5px 9px;
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--fg-primary);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+  max-width: 80ch;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+/* The probe result sits below the actions rather than beside them, so a long
+   message wraps into the panel instead of pushing the buttons out of line. */
+.testResult {
+  margin-top: 4px;
+  font-size: 13px;
+}
+
+.testResult p {
+  margin: 0;
+  max-width: 90ch;
+}
+
+.testHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+}

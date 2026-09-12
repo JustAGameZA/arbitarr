@@ -282,3 +282,21 @@ excluded and given their own write-only route.
 **Validation rejects; it never clamps.** A value outside bounds is an error the caller must see,
 not something to silently round into range. Validators live in `SettingsValidator` — one floor, in
 one place, reached through the repository's switch, not duplicated at the endpoint.
+
+**A nullable column that means a distinct state carries no default and is cleared through an
+explicit flag.** Where `null` is a *value* rather than an absence — `Source.QueryLimit` and
+`Source.GrabLimit` null mean unlimited, which is not the cap of zero that `0` means, and
+`Source.TimeoutSeconds` null means "fall back to the global default" rather than "no timeout" —
+three things follow together, and any one of them omitted destroys the distinction the other two
+preserve. (a) The property gets **no `HasDefaultValue`** in `ArbitarrDbContext`, because a default
+rewrites every row that never set one into the other state; the `Source` configuration deliberately
+defaults `ApiPath`, `Priority`, `LimitsUnit` and `NzbAccessMode` and deliberately does not default
+these three. (b) It travels to the wire **as a nullable** — `SourceResponse.QueryLimit` is `int?`,
+not an `int` that reports unlimited as `0`. (c) On any partial-update path it is written through an
+**explicit Set/Clear flag pair**, because "store null" and "leave alone" cannot share one JSON
+representation: an omitted field in `UpdateSourceRequest` conventionally means "do not touch", so
+`ClearQueryLimit` / `ClearGrabLimit` / `ClearTimeoutSeconds` are what express the null, and the
+endpoint maps each to the repository's `Set*` companion. A non-nullable column needs none of this —
+`Priority` has no unset state, so `0` there is an ordinary weight. The reasoning per column is on
+`Source`'s own doc comments; the rule is here because the next nullable column of this shape will be
+on a different entity. Settled in #320 (arb-x7w8.1); no ADR covers it.

@@ -85,6 +85,9 @@ describe('Settings', () => {
         'Account',
         'Sources',
         'Sonarr',
+        // Immediately after Sonarr: the two *arr instances read as a pair in the
+        // nav even though the server keeps their contracts apart (arb-6l9b.2).
+        'Radarr',
         'API keys',
         'Notifications',
         'AI backend',
@@ -104,9 +107,9 @@ describe('Settings', () => {
 
       // Asserted PER LINK, not "some link resolves": a single dead anchor is
       // exactly the defect this guards, and a loop that stopped at the first
-      // match would pass with five of eight broken. The count is pinned too,
+      // match would pass with five of nine broken. The count is pinned too,
       // so an empty list cannot satisfy a per-item assertion vacuously.
-      expect(links).toHaveLength(8);
+      expect(links).toHaveLength(9);
       for (const link of links) {
         const href = link.getAttribute('href');
         expect(href).toMatch(/^#.+/);

@@ -100,8 +100,16 @@ public class ProtocolConditionedPromptTests
 
         var messages = ClassificationPrompt.Build(candidate);
 
-        var titleLine = messages[1].Content.Split('\n').Single(l => l.StartsWith("Title: ", StringComparison.Ordinal));
-        Assert.Equal(512, titleLine["Title: ".Length..].Length);
+        // arb-uup7: assert the COUNT before selecting. A bare .Single() throws
+        // InvalidOperationException("Sequence contains more than one matching element") when a
+        // field forges a second Title line — which reads as a broken test rather than as the
+        // injection it actually is, and that is the failure mode this test most needs to name.
+        var titleLines = messages[1].Content
+            .Split('\n')
+            .Where(l => l.StartsWith("Title: ", StringComparison.Ordinal))
+            .ToList();
+        Assert.Single(titleLines);
+        Assert.Equal(512, titleLines[0]["Title: ".Length..].Length);
     }
 
     [Fact]
@@ -120,7 +128,12 @@ public class ProtocolConditionedPromptTests
 
         var messages = ClassificationPrompt.Build(candidate);
 
-        var categoriesLine = messages[1].Content.Split('\n').Single(l => l.StartsWith("Categories: ", StringComparison.Ordinal));
-        Assert.True(categoriesLine["Categories: ".Length..].Length <= 512);
+        // Count first, for the same reason as the title case above.
+        var categoriesLines = messages[1].Content
+            .Split('\n')
+            .Where(l => l.StartsWith("Categories: ", StringComparison.Ordinal))
+            .ToList();
+        Assert.Single(categoriesLines);
+        Assert.True(categoriesLines[0]["Categories: ".Length..].Length <= 512);
     }
 }

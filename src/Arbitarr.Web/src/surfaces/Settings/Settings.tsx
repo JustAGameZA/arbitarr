@@ -9,13 +9,14 @@ import { NotificationsSection } from './Notifications/Notifications';
 import { useSettingsQuery, useUpdateSettingMutation } from './queries';
 import { SourcesSection } from './Sources/Sources';
 import { SonarrSection } from './Sonarr/Sonarr';
+import { RadarrSection } from './Radarr/Radarr';
 import { ApiKeysSection } from './ApiKeys/ApiKeys';
 import { AccountSection } from './Account/Account';
 import { AiSection } from './Ai/Ai';
 import { SectionNav, slugifyGroup, type SectionNavEntry } from './SectionNav';
 
 /**
- * The six static sections, in the order the page renders them.
+ * The seven static sections, in the order the page renders them.
  *
  * This array is the SINGLE source for both the rendered sections and the nav
  * entries below, which is the load-bearing property of arb-5oe: the nav cannot
@@ -32,6 +33,7 @@ const STATIC_SECTIONS = [
   { id: 'account', label: 'Account' },
   { id: 'sources', label: 'Sources' },
   { id: 'sonarr', label: 'Sonarr' },
+  { id: 'radarr', label: 'Radarr' },
   { id: 'api-keys', label: 'API keys' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'ai', label: 'AI backend' },
@@ -190,7 +192,7 @@ export default function SettingsPage() {
   const [failedKey, setFailedKey] = useState<string | null>(null);
 
   /**
-   * The nav's entries: the six static sections, then one per catalog group.
+   * The nav's entries: the seven static sections, then one per catalog group.
    *
    * Derived from the SAME groupSettings() call that renders the dynamic panels
    * and the SAME STATIC_SECTIONS array the static ones are wrapped with, so a
@@ -236,8 +238,8 @@ export default function SettingsPage() {
 
         <div>
           {/* Each static section is wrapped rather than given an id of its own:
-              the six section components take no props, and threading one
-              through all six would be a six-file diff across files that are
+              the seven section components take no props, and threading one
+              through all seven would be a seven-file diff across files that are
               CRLF, for an anchor target that a wrapper provides just as well.
               The wrapper carries the scroll-margin-top that keeps the target
               clear of the sticky bar. */}
@@ -255,6 +257,14 @@ export default function SettingsPage() {
               speaks its own API. See SonarrSection for the full distinction. */}
           <div id="sonarr" className={local.section}>
             <SonarrSection />
+          </div>
+
+          {/* Its own section rather than a second field on Sonarr's: the server
+              keeps RadarrConfigResponse a separate record from ArrConfigResponse
+              even though the shapes match today (arb-arrq D3), and Radarr is
+              deliberately out of identity resolution (D4). See RadarrSection. */}
+          <div id="radarr" className={local.section}>
+            <RadarrSection />
           </div>
 
           <div id="api-keys" className={local.section}>

@@ -35,7 +35,7 @@ on:
 # Timing/Load/Quarantine are excluded here and run unfiltered nightly
 # (arb-rga.8); see docs/adr/0011 and docs/standards/process.md.
 #
-# TEST_ASSEMBLIES is the single, hoisted definition of the ten test assembly
+# TEST_ASSEMBLIES is the single, hoisted definition of the eleven test assembly
 # names (arb-6ke). Three places used to carry their own copy of this list --
 # the prep-job "Assert the build output was restored" step, the gate's trx
 # count, and (implicitly) the matrix groups -- and a misspelling in one could
@@ -67,7 +67,7 @@ on:
 env:
   TEST_FILTER: "Category!=Timing&Category!=Load&Category!=Quarantine"
   SHARD_ASSEMBLIES: "Arbitarr.Integration.Tests:2"
-  TEST_ASSEMBLIES: "Arbitarr.Ai.Tests Arbitarr.Api.Tests Arbitarr.Architecture.Tests Arbitarr.Core.Identity.Tests Arbitarr.Core.Tests Arbitarr.Data.Tests Arbitarr.Host.Tests Arbitarr.Integration.Tests Arbitarr.Media.Tests Arbitarr.Sources.NzbHydra.Tests"
+  TEST_ASSEMBLIES: "Arbitarr.Ai.Tests Arbitarr.Api.Tests Arbitarr.Architecture.Tests Arbitarr.Core.Identity.Tests Arbitarr.Core.Tests Arbitarr.Data.Tests Arbitarr.Host.Tests Arbitarr.Integration.Tests Arbitarr.Media.Tests Arbitarr.Sources.Newznab.Tests Arbitarr.Sources.NzbHydra.Tests"
 
 jobs:
   # --------------------------------------------------------------------------
@@ -78,23 +78,25 @@ jobs:
   # optimisation, it is a correctness requirement. The Mono.Cecil IL scan in
   # Arbitarr.Architecture.Tests (TestProcessGlobalStateTests) reads SIBLING
   # build output: it walks from its own output directory to
-  # tests/*/bin/<config>/<tfm>/*.dll and needs all TEN test assemblies present
+  # tests/*/bin/<config>/<tfm>/*.dll and needs all ELEVEN test assemblies present
   # in the SAME configuration and TFM (Ai, Api, Architecture, Core.Identity,
-  # Core, Data, Host, Integration, Media, Sources.NzbHydra). A group that built
-  # only its own projects would leave the others missing and the scan fails
+  # Core, Data, Host, Integration, Media, Sources.Newznab, Sources.NzbHydra). A
+  # group that built only its own projects would leave the others missing and
+  # the scan fails
   # LOUDLY naming them -- deliberately, so a missing assembly can never pass
   # vacuously over an empty set (CLAUDE.md section 4). See arb-rga.3 / PR #147.
   #
   # Since #157 (arb-n21) the same requirement extends to src/. Two further
   # Architecture scans read PRODUCTION output through the same walk, calling
   # ResolveAssemblyPath("src", ...) instead of ("tests", ...):
-  #   ProductionProcessGlobalStateTests reads all EIGHT production assemblies
-  #     (Ai, Api, Core, Core.Identity, Data, Host, Media, Sources.NzbHydra);
+  #   ProductionProcessGlobalStateTests reads all NINE production assemblies
+  #     (Ai, Api, Core, Core.Identity, Data, Host, Media, Sources.Newznab,
+  #     Sources.NzbHydra);
   #   NoInlineDatabaseConnectionStringsTests reads Arbitarr.Data.
   # They fail identically -- "Could not locate the built assembly for ..." --
   # so the artifact must carry src/ output BESIDE tests/, not tests/ alone.
   # src/Arbitarr.Web is the React frontend: no csproj, no managed output, which
-  # is why the production list is eight and not nine.
+  # is why the production list is nine and not ten.
   # --------------------------------------------------------------------------
   prep:
     name: Build (prep)
@@ -142,7 +144,7 @@ jobs:
       # `src/Y/bin/...` with the prefix intact. Every consumer's download `path:`
       # changed from `tests` to `.` to match -- unpacking into `tests` now would
       # produce `tests/tests/X/...` and `tests/src/Y/...`, and both scans plus
-      # the ten-dll assertion would fail on paths that look almost right.
+      # the per-dll assertions would fail on paths that look almost right.
       - name: Upload build output
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
         with:
@@ -223,7 +225,7 @@ jobs:
           - group: B
             assemblies: "Arbitarr.Data.Tests Arbitarr.Api.Tests Arbitarr.Core.Tests"
           - group: C
-            assemblies: "Arbitarr.Host.Tests Arbitarr.Media.Tests Arbitarr.Ai.Tests Arbitarr.Core.Identity.Tests Arbitarr.Sources.NzbHydra.Tests Arbitarr.Architecture.Tests"
+            assemblies: "Arbitarr.Host.Tests Arbitarr.Media.Tests Arbitarr.Ai.Tests Arbitarr.Core.Identity.Tests Arbitarr.Sources.Newznab.Tests Arbitarr.Sources.NzbHydra.Tests Arbitarr.Architecture.Tests"
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -265,7 +267,7 @@ jobs:
       # failure names the actual cause instead of a count.
       #
       # BOTH roots are asserted. tests/ feeds TestProcessGlobalStateTests; src/
-      # feeds ProductionProcessGlobalStateTests (all eight production
+      # feeds ProductionProcessGlobalStateTests (all nine production
       # assemblies) and NoInlineDatabaseConnectionStringsTests (Arbitarr.Data),
       # added by #157. Those two are why src/ is in the artifact at all, so a
       # src/ path missing here is the exact failure this step exists to name.
@@ -279,7 +281,7 @@ jobs:
           missing=0
 
           # TEST_ASSEMBLIES is the single hoisted list (arb-6ke); this loop no
-          # longer carries its own copy of the ten names.
+          # longer carries its own copy of the names.
           for a in $TEST_ASSEMBLIES; do
             dll="tests/${a}/bin/Release/net10.0/${a}.dll"
             if [ ! -f "$dll" ]; then
@@ -290,7 +292,7 @@ jobs:
 
           for a in Arbitarr.Ai Arbitarr.Api Arbitarr.Core Arbitarr.Core.Identity \
                    Arbitarr.Data Arbitarr.Host Arbitarr.Media \
-                   Arbitarr.Sources.NzbHydra; do
+                   Arbitarr.Sources.Newznab Arbitarr.Sources.NzbHydra; do
             dll="src/${a}/bin/Release/net10.0/${a}.dll"
             if [ ! -f "$dll" ]; then
               echo "BLOCKED: missing production assembly ${dll} from the test-build artifact." >&2
@@ -300,7 +302,7 @@ jobs:
 
           if [ "$missing" -ne 0 ]; then
             echo "" >&2
-            echo "All ten test assemblies AND all eight production assemblies must be present" >&2
+            echo "All eleven test assemblies AND all nine production assemblies must be present" >&2
             echo "in the same configuration and TFM. Four Architecture scans resolve them by" >&2
             echo "walking from their own output directory to a sibling tree, and fail rather" >&2
             echo "than passing vacuously over a smaller set:" >&2
@@ -311,8 +313,8 @@ jobs:
             exit 1
           fi
 
-          echo "All ten test assemblies present under tests/*/bin/Release/net10.0/."
-          echo "All eight production assemblies present under src/*/bin/Release/net10.0/."
+          echo "All eleven test assemblies present under tests/*/bin/Release/net10.0/."
+          echo "All nine production assemblies present under src/*/bin/Release/net10.0/."
 
       # The built dll is run DIRECTLY, not via the csproj. `dotnet test <csproj>
       # --no-build` still evaluates the project and needs obj/project.assets.json,
@@ -872,7 +874,7 @@ jobs:
           echo "Tree-wide secret/topology guard passed."
 
       # arb-bj7: nothing else checks that the four backend matrix groups
-      # (A1/A2/B/C) together cover EXACTLY the ten assemblies
+      # (A1/A2/B/C) together cover EXACTLY the assemblies
       # TEST_ASSEMBLIES names. A one-token deletion in a rebase leaves the dll
       # present in the prep artifact (that assertion passes) but simply unrun
       # by any group; the gate's trx-set check (arb-6ke) would then report it
@@ -890,7 +892,7 @@ jobs:
       # reformatted (flow sequence, block scalar, different key or indent),
       # the extraction must find ZERO assemblies lines and fail loudly on an
       # empty union below, never silently produce a partial or wrong one.
-      - name: Verify matrix groups union to the asserted ten assemblies
+      - name: Verify matrix groups union to the asserted assemblies
         shell: bash
         run: |
           set -euo pipefail
@@ -1048,7 +1050,7 @@ jobs:
             exit 1
           fi
 
-          echo "Matrix groups union to exactly the ten TEST_ASSEMBLIES."
+          echo "Matrix groups union to exactly TEST_ASSEMBLIES."
           if [ -n "${SHARD_ASSEMBLIES:-}" ]; then
             echo "Shard sets complete for: ${SHARD_ASSEMBLIES}"
           else
@@ -1225,7 +1227,7 @@ jobs:
       # catch drift between them, not to merge them into one source of truth. Until
       # this step, nothing diffed TestAssemblyNames against TEST_ASSEMBLIES: a name
       # deleted from the C# list just made the scans iterate nine assemblies
-      # instead of ten, with no count or set assertion anywhere to notice (found by
+      # instead of the full set, with no count or set assertion anywhere to notice (found by
       # worker-20 while doing arb-hxa -- the intended positive control for that
       # work did not fail anything before or after the extraction).
       #

@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import { Route, Routes } from 'react-router-dom';
 
 import { AppShell } from './components/shell/AppShell';
@@ -42,30 +43,43 @@ import NotFoundPage from './pages/NotFound';
  *
  * They are deliberately NOT in routes.titles.ts's ROUTES table either: that table
  * is the sidebar's eight surfaces, and SidebarNav's count comment says eight.
+ *
+ * THE TABLE BELOW IS THE ONE ROUTE TABLE, AND IT IS PINNED (arb-2bms). Adding a
+ * shell child here and nowhere else used to leave all five suites at 0 failed
+ * while the surface rendered with a "Page not found" tab title -- the JSX was the
+ * one of the three tables nothing read back. routes.titles.test.ts now converts
+ * these very elements with `createRoutesFromElements` and cross-pins the paths it
+ * finds against ROUTES, so the JSX is checked as written rather than against a
+ * copy of itself. That is why these elements are exported as a Fragment instead
+ * of being inlined into <Routes> below: a hoisted data table that <Routes> mapped
+ * over would be a SECOND table, free to drift from the JSX the app renders, and
+ * pinning a copy is the failure this bug already is.
  */
+export const APP_ROUTE_ELEMENTS = (
+  <Fragment>
+    {/* Outside the shell AND outside the guard -- see the note above. */}
+    <Route path="login" element={<LoginPage />} />
+    <Route path="setup" element={<SetupPage />} />
+    <Route
+      element={
+        <RequireSession>
+          <AppShell />
+        </RequireSession>
+      }
+    >
+      <Route index element={<DashboardPage />} />
+      <Route path="search" element={<SearchPage />} />
+      <Route path="rules" element={<RulesPage />} />
+      <Route path="suppressions" element={<SuppressionsPage />} />
+      <Route path="activity" element={<ActivityPage />} />
+      <Route path="library" element={<LibraryPage />} />
+      <Route path="settings" element={<SettingsPage />} />
+      <Route path="system" element={<SystemPage />} />
+      <Route path="*" element={<NotFoundPage />} />
+    </Route>
+  </Fragment>
+);
+
 export function AppRoutes() {
-  return (
-    <Routes>
-      {/* Outside the shell AND outside the guard -- see the note above. */}
-      <Route path="login" element={<LoginPage />} />
-      <Route path="setup" element={<SetupPage />} />
-      <Route
-        element={
-          <RequireSession>
-            <AppShell />
-          </RequireSession>
-        }
-      >
-        <Route index element={<DashboardPage />} />
-        <Route path="search" element={<SearchPage />} />
-        <Route path="rules" element={<RulesPage />} />
-        <Route path="suppressions" element={<SuppressionsPage />} />
-        <Route path="activity" element={<ActivityPage />} />
-        <Route path="library" element={<LibraryPage />} />
-        <Route path="settings" element={<SettingsPage />} />
-        <Route path="system" element={<SystemPage />} />
-        <Route path="*" element={<NotFoundPage />} />
-      </Route>
-    </Routes>
-  );
+  return <Routes>{APP_ROUTE_ELEMENTS}</Routes>;
 }

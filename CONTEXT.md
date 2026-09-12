@@ -185,6 +185,46 @@ cannot claim more than it tested.
 
 ---
 
+## Arr section status
+
+`ArrSectionStatus` (`src/Arbitarr.Core/Media/ArrQueue.cs`) is the verdict carried
+by each Library section's read — `GET /api/admin/arr/{sonarr,radarr}/queue`, and
+the series/movies reads that follow. Like the probe outcomes it is a **closed**
+enum with no free-text field, so no failure can carry key-derived text into a
+response; the envelope's `Message` is fixed wording chosen from this value alone.
+
+**It is a READ verdict, not a connectivity verdict**, and that is the whole
+distinction. A probe is triggered by an operator who has just entered an address
+and is asking "does what I saved work". A section status answers "could this
+section be filled just now", on a surface that is read on a schedule and may be
+looking at an instance nobody has configured yet.
+
+| Status | Means | Distinct from |
+|---|---|---|
+| `Ok` | The instance answered with a queue document that parsed | A reachable instance — an empty queue is still `Ok` |
+| `NotConfigured` | No address, or an address with no key | `Unreachable` — nothing was attempted, so the instance is not being accused of anything |
+| `Unreachable` | No usable connection, or past the timeout — including a failed TLS handshake | `NotConfigured` — an address was stored and tried |
+| `AuthenticationFailed` | Reached and answered, but rejected the key | `NotConfigured` — a key was sent and refused, rather than absent |
+| `UnexpectedResponse` | Answered, but not with a queue document — a login page, a 5xx, a redirect | `AuthenticationFailed` — the instance never said the key was wrong |
+
+**Not to be confused with `SourceProbeOutcome`.** Four names are shared (`Ok`,
+`Unreachable`, `AuthenticationFailed`, `UnexpectedResponse`) but the set differs
+at both ends, and each difference is load-bearing:
+
+- **No `TlsFailure`.** A failed handshake is simply "we could not read the
+  section"; telling it apart from a refused connection is the question the
+  *probe* exists to answer, and it already has a button and an outcome for it.
+  Carrying a member this surface would never act on differently would put a value
+  on the wire contract that nothing consumes — the mirror of the mistake
+  `OllamaProbeOutcome` avoids by omitting `AuthenticationFailed`.
+- **Plus `NotConfigured`**, covering **both** "no address" and "an address with
+  no key". They are one value because the operator's next action is identical —
+  finish configuring the section — and because the credential providers already
+  report that half-configured state as null. Attempting the call instead would
+  report `AuthenticationFailed` against an instance that is not actually broken.
+
+---
+
 ## AI backend
 
 An **AI backend** is the LLM instance the classifier speaks to — today Ollama, at
@@ -350,6 +390,117 @@ speculatively. See [ADR 0010](docs/adr/0010-secrets-clear-route.md).
 
 ---
 
+## Source configuration
+
+The per-indexer columns on `Source` (arb-x7w8.1). Each is validated at the repository
+boundary by **exact ordinal name**, never parsed as an enum.
+
+**Source kind.** Which upstream implementation a source row configures — `NzbHydra`,
+`Newznab` or `Torznab`, the three entries in `SourceRepository.KnownKinds`. Stored as a
+string so a new kind needs no migration, and matched ordinally so `"nzbhydra"` or
+`"NZBHYDRA"` is a 400 at write time rather than a row that is stored, listed, and then
+silently never matched by `SourceSeeder`'s ordinal comparison (arb-pn5). It names the
+implementation **Arbitarr speaks to, outbound**. It is not the **Protocol** above, which
+says which of Arbitarr's own two inbound routes a request arrived on: Arbitarr serves
+`/torznab/api` and `/newznab/api` to Sonarr and Radarr regardless of what its sources
+are, so a `Torznab` source and a Torznab client request are opposite ends of the broker.
+Distinct again from the `arr:{kind}:` namespace of the Arr instance section below, where
+`kind` means `sonarr` or `radarr`.
+
+**Access mode.** How a download from a source is served **downstream**, to the client
+(`Source.NzbAccessMode`): `Proxy`, where Arbitarr fetches the file upstream and streams
+the bytes so the indexer key never leaves the server, or `Redirect`, where Arbitarr
+answers with a `Location` pointing at the upstream URL, which carries the key to the
+client. `Proxy` is the default and today the **only accepted value** —
+`SourceRepository.RedirectAccessMode` is named but deliberately absent from
+`KnownNzbAccessModes`, so a write of it is rejected by construction; arb-x7w8.14 admits
+it together with the Settings warning, neither arriving without the other. Admitting it
+would **not** relax [ADR 0014](docs/adr/0014-refuse-upstream-download-redirects.md),
+which refuses a 3xx in the **upstream** direction (indexer → Arbitarr). The two are
+opposite legs of the same download and the shared word "redirect" is the whole reason to
+say which leg is meant: **Upstream redirect refusal** above is about what Arbitarr will
+follow, Access mode about what Arbitarr will answer.
+
+**Limits unit.** The rolling window `QueryLimit` and `GrabLimit` are both counted over —
+`Hour` or `Day`, the two entries in `SourceRepository.KnownLimitsUnits`. There is **one
+unit per source**, covering both limits; a source cannot meter queries hourly and grabs
+daily. Rolling, not a calendar reset: the window asks how many hits fall in the last 1 or
+24 hours, so it is not a quota that refills at midnight or on the hour. That is a decided
+point rather than an implementation detail —
+[ADR 0020](docs/adr/0020-api-hit-budget-and-durable-backoff.md) rejects anchoring the
+window to a clock hour or a fixed daily reset, because an hour-of-day anchor has timezone
+and boundary semantics to get wrong (whose midnight, the host's or the indexer's) that a
+rolling window simply does not have. The counters themselves are deliberately not columns
+on `Source` — that same ADR derives them from the events store, because a tally that
+changes on every search would rewrite the configuration row constantly and make a
+restored backup re-assert a stale window.
+
+**Unlimited (null).** The state `QueryLimit` or `GrabLimit` is in when no cap applies.
+It is a **distinct state from `0`**, which is a cap of zero — a source exhausted before
+it starts. Collapsing null to 0 silently disables an unlimited indexer; collapsing 0 to
+null lets a limited one run past the cap its operator set. Because null is a value here
+rather than an absence, the column carries no database default, travels the wire as a
+nullable, and is written through an explicit `ClearQueryLimit` / `ClearGrabLimit` flag —
+the rule and its reasoning are in
+[data.md](docs/standards/data.md#settings). `TimeoutSeconds` is nullable for the same
+structural reason but does not mean unlimited: null there is "use the global default",
+not "no timeout".
+
+---
+
+## Arr instance
+
+An **Arr instance** is a configured Sonarr or Radarr server that Arbitarr itself calls
+outbound — an address plus a write-only API key. There are exactly two, one per kind:
+the Sonarr instance, which resolves series identities
+(`src/Arbitarr.Data/Media/ArrInstanceRepository.cs`), and the Radarr instance, which
+backs the movie library and download queue
+(`src/Arbitarr.Data/Media/RadarrInstanceRepository.cs`). Each is a singleton: there is
+no list, no per-instance id, and nothing to enumerate.
+
+**It is not a source, and the distinction is load-bearing.** A source is searched, has
+a circuit breaker, appears in the sources health table, and is probed by fetching its
+Torznab caps document. An Arr instance is none of those: it is never searched, never
+returns releases, has no breaker and no health row, and its probe issues
+`{base}/api/v3/system/status` against the *arr API instead
+(`SonarrConnectivityProber`, `RadarrConnectivityProber`). Both probes nonetheless
+report the same `SourceProbeOutcome` enum, because an Arr instance does carry a key and
+so can genuinely answer `AuthenticationFailed` — the reason `OllamaProbeOutcome` had to
+be its own type does not apply here.
+
+**Nor is it the inbound relationship.** Sonarr and Radarr also talk *to* Arbitarr, on
+the indexer routes, presenting a **client key** that resolves to a
+`CredentialResolution`. That is the same two programs in the opposite direction. An Arr
+instance is the outbound half only; nothing about it is consulted when a client key
+arrives.
+
+**The `arr:{kind}:` settings namespace.** Each instance stores its pair as
+colon-namespaced rows in the `Settings` table — `arr:sonarr:base_url` /
+`arr:sonarr:api_key`, `arr:radarr:base_url` / `arr:radarr:api_key` — rather than in a
+table of its own, because two fixed rows per kind cannot accumulate and so need no
+retention. The colon in the name is the same mechanism `source:{id}:api_key` relies on:
+no `SettingKey` enum value can produce it, so neither row can surface through
+`GET /api/admin/settings`, which projects from `SettingsCatalog.Entries` and never from
+the table. The base URL is served back freely — it is not a credential, and
+`ValidateBaseUrl` rejecting userinfo is what earns that. The key half is
+**Write-only** in the sense defined above. There is no key-only clear route: under
+[ADR 0010](docs/adr/0010-secrets-clear-route.md) a secret is cleared by deleting the
+thing that owns it, so `DELETE /api/admin/arr/{kind}` unconfigures the whole instance.
+
+**`IArrInstanceEpoch` is Sonarr's, not the *arr instances'.**
+(`src/Arbitarr.Core/Media/IArrInstanceEpoch.cs`) It is a counter bumped after a
+successful Sonarr write, folded into cache keys so a repoint invalidates without a
+settings read. Its sole consumer is `SeriesTitleResolver.MemoKey`. A Radarr write
+**deliberately does not bump it**: Radarr holds no cache keyed on it and stays out of
+identity resolution, so a bump would evict a Sonarr memo that is still entirely correct
+for an unrelated write. That absence is asserted with a positive control showing the
+same epoch instance *does* advance for a Sonarr write, because "the epoch did not
+change" passes just as happily against an epoch that never changes for anything. If
+Radarr ever gains a cache, it needs its **own** epoch rather than a share of this one.
+The full reasoning is in `RadarrInstanceRepository`'s type doc and is not restated here.
+
+---
+
 ## Route classification
 
 Routes are classified as `PublicRead` or `AdminMutating`
@@ -392,12 +543,17 @@ means *the line was too long*. Reading the first as the second understates a
 redaction failure.
 
 **Backup archive.** The zip `GET /api/admin/backup` produces: a consistent
-snapshot of `arbitarr.db` (taken through SQLite'''s backup API, not a file copy),
+snapshot of `arbitarr.db` (taken through SQLite's backup API, not a file copy),
 `release-guid-secret.key`, and a manifest naming the instant and schema version.
-It excludes `arbitarr-logs.db`. It is a **credential-bearing file** — it carries
-every configured source'''s API key and the secret authenticating every release
-GUID this instance has issued — so it is admin-gated, never fetched through a
-URL-borne token, and never written anywhere served.
+It excludes `arbitarr-logs.db`, which is the only store left out
+(`BackupArchiveLayout`). It is a **credential-bearing file**, and the snapshot is of
+the *whole* database rather than a selection from it, so it carries **every secret
+stored in `arbitarr.db`**: every configured source's API key, the secret authenticating
+every release GUID this instance has issued, and — since the *arr singletons landed —
+the Sonarr and Radarr instance keys in the `arr:{kind}:api_key` rows. Write-only means
+there is no read path through the API; it does not mean absent from a snapshot of the
+table. That is why the archive is admin-gated, never fetched through a URL-borne token,
+and never written anywhere served.
 
 **Pre-restore safety copy.** A backup archive of the *current* state, written
 to the config directory immediately before a restore applies anything, so a

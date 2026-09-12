@@ -148,11 +148,20 @@ public class UsenetMetadataPromptTests
             usenetGroup: new[] { new string('g', 1000) });
         var message = UserMessage(candidate);
 
-        var posterLine = message.Split('\n').Single(l => l.StartsWith("Poster: ", StringComparison.Ordinal));
-        var groupLine = message.Split('\n').Single(l => l.StartsWith("Usenet group: ", StringComparison.Ordinal));
+        // arb-uup7: count before selecting, as in ProtocolConditionedPromptTests — a bare .Single()
+        // turns a forged second Poster/Usenet group line into an InvalidOperationException that
+        // reads as a broken test rather than as the injection it is.
+        var posterLines = message.Split('\n')
+            .Where(l => l.StartsWith("Poster: ", StringComparison.Ordinal))
+            .ToList();
+        var groupLines = message.Split('\n')
+            .Where(l => l.StartsWith("Usenet group: ", StringComparison.Ordinal))
+            .ToList();
 
-        Assert.Equal(512, posterLine["Poster: ".Length..].Length);
-        Assert.Equal(512, groupLine["Usenet group: ".Length..].Length);
+        Assert.Single(posterLines);
+        Assert.Single(groupLines);
+        Assert.Equal(512, posterLines[0]["Poster: ".Length..].Length);
+        Assert.Equal(512, groupLines[0]["Usenet group: ".Length..].Length);
     }
 
     /// <summary>
