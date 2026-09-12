@@ -44,10 +44,14 @@ public class SecretReaderSingleCallerTests
         ("src/Arbitarr.Data/Media/SonarrCredentialProvider.cs", "ArrInstanceRepository",
             "the single owner that hands a SonarrCredential to the probe and the resolver"),
 
-        // The per-source upstream key, read at the one place that builds an upstream request for
-        // that source.
-        ("src/Arbitarr.Api/Admin/AdminSourceEndpoints.cs", "SourceRepository",
-            "the source connectivity probe"),
+        // The per-source upstream key. Since arb-x7w8.3 the sole caller is SourceCredentialProvider,
+        // not the connectivity probe that used to read it directly: N runtime-added indexers mean
+        // the search path needs a per-source key too, and the startup-resolved
+        // ResolvedSourceConfiguration cannot supply one, so wiring both consumers to the repository
+        // would make two callers. This entry moved rather than gaining a sibling — the rule is one
+        // caller per reader, and the provider is it (ADR 0018).
+        ("src/Arbitarr.Data/Sources/SourceCredentialProvider.cs", "SourceRepository",
+            "the single owner that hands a SourceCredential to the probe and the search path"),
     ];
 
     [Fact]

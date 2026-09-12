@@ -39,7 +39,10 @@ tidy-up would silently break:
   That colon-namespaced name cannot be produced by any `SettingKey` enum value, which
   is *why* they can never surface on `GET /api/admin/settings`. It is a mechanism, not
   a coincidence.
-- **`SourceRepository.ReadApiKeyForUpstreamRequestAsync` must have exactly one caller.**
+- **Each `ReadApiKeyForUpstreamRequestAsync` must have exactly one caller: its
+  credential-provider type.** `SourceRepository`'s is `SourceCredentialProvider`;
+  `ArrInstanceRepository`'s is `SonarrCredentialProvider`. A new consumer takes a credential
+  from the provider — a new consumer is never a new caller ([ADR 0018](docs/adr/0018-one-credential-provider-per-secret-family.md)).
 - **The admin key is session-only in Zustand** — never `localStorage`, never
   `sessionStorage`, never a query string. `apiFetch` attaches it by path prefix.
 

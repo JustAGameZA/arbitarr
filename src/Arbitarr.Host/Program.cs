@@ -696,6 +696,14 @@ builder.Services.AddScoped(sp => new SettingsRepository(
 // admin CRUD surface (AdminSourceEndpoints).
 builder.Services.AddScoped<SourceRepository>();
 
+// arb-x7w8.3: the SINGLE production reader of a stored per-source API key (ADR 0018). The admin
+// connectivity probe takes a SourceCredential from this type rather than reading the key itself,
+// and the direct-indexer search path will be its second consumer -- which is the whole point:
+// SourceRepository.ReadApiKeyForUpstreamRequestAsync stays at exactly one call site, which is the
+// form that guarantee takes (CLAUDE.md section 1, docs/standards/architecture.md). Same shape, and
+// same reason, as SonarrCredentialProvider below.
+builder.Services.AddScoped<Arbitarr.Data.Sources.SourceCredentialProvider>();
+
 
 // #53 stage 53c: the §3.3 connectivity test's HTTP client. AllowAutoRedirect is disabled for the
 // same SSRF reason as the NzbHydraSource client above — a probed source could otherwise 30x us to

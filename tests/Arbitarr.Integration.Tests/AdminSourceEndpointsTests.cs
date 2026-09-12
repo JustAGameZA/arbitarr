@@ -1,9 +1,13 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using Arbitarr.Api.Admin;
 using Arbitarr.Core.Settings;
+using Arbitarr.Core.Sources;
 using Arbitarr.Data.Entities;
 using Arbitarr.Data.Sources;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Arbitarr.Integration.Tests;
@@ -409,6 +413,89 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
         Assert.False(result!.Success);
         Assert.Equal("Unreachable", result.Outcome);
         Assert.NotEmpty(result.Message);
+    }
+
+    /// <summary>
+    /// arb-x7w8.3: the probe still reaches its upstream WITH the stored key after the endpoint
+    /// stopped reading that key itself and started taking a <c>SourceCredential</c> from
+    /// <c>SourceCredentialProvider</c> (ADR 0018).
+    /// </summary>
+    /// <remarks>
+    /// <para><b>WHY THIS IS ASSERTED ON THE OUTBOUND URI AND NOT ON THE RESPONSE.</b> The endpoint
+    /// answers <c>Ok</c>/<c>Unreachable</c> either way, so a response-shaped assertion is a compile
+    /// check wearing a behavioural costume: rewiring the provider to return <see langword="null"/>
+    /// unconditionally would still produce a well-formed 200 with a named outcome, and the existing
+    /// unreachable test above would still pass. What actually regressed if the rewiring were wrong
+    /// is that the KEY stops arriving, and the only place that is observable is the request the
+    /// prober issues — so that is where this looks.</para>
+    ///
+    /// <para>The stub handler makes the probe succeed, which pins the other half: an
+    /// <c>Ok</c> outcome is only reachable when the whole chain — provider reads the planted key,
+    /// endpoint unpacks the credential, prober sends it — is intact.</para>
+    /// </remarks>
+    [Fact]
+    public async Task The_probe_still_sends_the_stored_key_upstream_through_the_credential_provider()
+    {
+        var probedUris = new List<Uri>();
+
+        using var factory = _factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.AddHttpClient<SourceConnectivityProber>()
+                .ConfigurePrimaryHttpMessageHandler(() => new CapturingCapsHandler(probedUris));
+        }));
+
+        await SeedAdminKeyAsync();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(AdminApiKeyFilter.HeaderName, AdminKey);
+
+        var created = await CreateSourceAsync(client, "Probed " + Guid.NewGuid().ToString("N"), SecretApiKey);
+
+        using var response = await client.PostAsync($"{SourcesRoute}/{created.Id}/test", content: null);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var result = await response.Content.ReadFromJsonAsync<SourceTestResponse>();
+        Assert.NotNull(result);
+        Assert.True(result!.Success);
+        Assert.Equal("Ok", result.Outcome);
+
+        // The probe was actually issued — without this, the key assertion below would be vacuous
+        // over an empty list, which is exactly the shape CLAUDE.md §4 warns about.
+        var probed = Assert.Single(probedUris);
+        Assert.Contains(SecretApiKey, probed.Query, StringComparison.Ordinal);
+
+        // And the key travelled in the QUERY STRING, not the path: LogMessageCleanser scrubs query
+        // strings only, and IHttpClientFactory's logging handler logs every path segment in full
+        // (CLAUDE.md §1). A key that migrated into the path would still satisfy the assertion above
+        // while becoming durably loggable.
+        Assert.DoesNotContain(SecretApiKey, probed.AbsolutePath, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Answers every request with a minimal caps document (so the probe classifies <c>Ok</c>) and
+    /// records the URI it was asked for, which is the only place the outbound key is observable.
+    /// </summary>
+    private sealed class CapturingCapsHandler : HttpMessageHandler
+    {
+        private const string CapsBody = """<?xml version="1.0" encoding="UTF-8"?><caps><categories /></caps>""";
+
+        private readonly List<Uri> _probed;
+
+        public CapturingCapsHandler(List<Uri> probed) => _probed = probed;
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            if (request.RequestUri is not null)
+            {
+                _probed.Add(request.RequestUri);
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(CapsBody, Encoding.UTF8, "application/xml"),
+            });
+        }
     }
 
     private HttpClient CreateAdminClient()

@@ -218,14 +218,20 @@ public static class AdminSourceEndpoints
     /// to submit. That is also why this route needs no optional-body treatment: with no body
     /// parameter there is no model binding to run ahead of the admin filter.
     ///
-    /// The stored key is read here and handed to the prober to be sent upstream. It is never put
-    /// into the response: <see cref="SourceProbeOutcome"/> is a closed enum and
-    /// <see cref="DescribeOutcome"/> maps it to fixed wording, so no branch can interpolate the key,
-    /// the upstream body, or an exception message into what the operator sees.
+    /// The stored key reaches the prober through <see cref="SourceCredentialProvider"/>, which since
+    /// arb-x7w8.3 is the sole reader of <c>SourceRepository.ReadApiKeyForUpstreamRequestAsync</c>
+    /// (ADR 0018) — this endpoint no longer reads it, and must not go back to doing so when the
+    /// search path becomes the provider's second consumer. It is never put into the response:
+    /// <see cref="SourceProbeOutcome"/> is a closed enum and <see cref="DescribeOutcome"/> maps it
+    /// to fixed wording, so no branch can interpolate the key, the upstream body, or an exception
+    /// message into what the operator sees. The credential is unpacked into the prober's existing
+    /// <c>(baseUrl, apiKey)</c> parameters rather than handed over whole, so no probe signature
+    /// gains a field that could carry key-derived text back out.
     /// </summary>
     private static async Task<IResult> TestSourceAsync(
         long id,
         SourceRepository repository,
+        SourceCredentialProvider credentials,
         SourceConnectivityProber prober,
         CancellationToken cancellationToken)
     {
@@ -235,8 +241,15 @@ public static class AdminSourceEndpoints
             return Results.NotFound(new { error = $"Source {id} does not exist." });
         }
 
-        var apiKey = await repository.ReadApiKeyForUpstreamRequestAsync(id, cancellationToken);
-        var outcome = await prober.ProbeAsync(source.BaseUrl, apiKey, cancellationToken);
+        // A source with no key stored yields no credential, and that is still worth probing: the
+        // operator pressing Test on a half-configured source wants to learn whether the ADDRESS is
+        // right, and an unauthenticated caps request answers that (Unreachable vs
+        // AuthenticationFailed vs UnexpectedResponse) where refusing to probe would answer nothing.
+        var credential = await credentials.GetAsync(id, cancellationToken);
+        var outcome = await prober.ProbeAsync(
+            credential?.BaseUrl ?? source.BaseUrl,
+            credential?.ApiKey,
+            cancellationToken);
 
         return Results.Ok(new SourceTestResponse(
             Success: outcome == SourceProbeOutcome.Ok,

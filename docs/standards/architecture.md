@@ -73,7 +73,11 @@ clearing is in [ADR 0010](../adr/0010-secrets-clear-route.md) — do not restate
   call-site count; a second caller is a second place to audit. `SecretReaderSingleCallerTests`
   counts them, because the comments claiming "the one place" stayed correct-looking while arb-u1c
   added a second caller beside them and three reviews read the comments instead of counting.
-  - `SourceRepository`'s is called from `AdminSourceEndpoints`.
+  - `SourceRepository`'s is called from `SourceCredentialProvider`, and from nowhere else — the
+    connectivity probe in `AdminSourceEndpoints` took a `SourceCredential` from it once the
+    direct-indexer search path needed a per-source key too, because the startup-resolved
+    `ResolvedSourceConfiguration` does not survive N runtime-added indexers
+    ([ADR 0018](../adr/0018-one-credential-provider-per-secret-family.md)).
   - `ArrInstanceRepository`'s is called from `SonarrCredentialProvider`, and from nowhere else.
     **Two consumers, one reader**: the admin connectivity probe and the search path's identity
     resolver both need an authenticated request against the configured Sonarr, and both take a
