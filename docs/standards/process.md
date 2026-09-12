@@ -467,6 +467,13 @@ For agent-opened PRs:
 - Merging requires **both** a passing code review and a passing architectural review.
 - **State superseded numbers as superseded.** If a rebase changes measured counts, update the body
   rather than leaving earlier figures to read as current.
+- **A comment that names a safety mechanism is a claim, not evidence.** When a comment reads like
+  "X is what prevents the race," the reviewer locates the line that actually implements X and
+  confirms the named thing is what makes it safe — a comment cannot fail a test, so nothing else
+  catches it being wrong. A named mechanism with no test covering it is itself a finding. Worked
+  instance: #164 shipped a comment naming hosted-service ordering as the no-race mechanism for
+  `StagingSweepService` when the real one was the `processStartUtc` cut-off, and the `>=` tie it
+  relied on was untested; caught in the #168 review (arb-21i).
 
 ---
 
