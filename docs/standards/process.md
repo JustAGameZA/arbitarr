@@ -380,6 +380,10 @@ implementation writes one value to all of them.
   integration test classes shipped with bare `IAsyncDisposable` teardown that never ran until
   arb-gphi caught it; the claim was verified out of repo, per
   [CLAUDE.md §4](../../CLAUDE.md#4-tests).
+- The same rule is why `ArbitarrWebApplicationFactory` deliberately does NOT implement
+  `IAsyncLifetime`: as a shared `IClassFixture` it is torn down via `Dispose` only for its ~29
+  consumers, and its class remarks explain why that is safe (arb-000x) rather than duplicating the
+  reasoning here.
 
 ---
 
