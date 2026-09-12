@@ -625,6 +625,145 @@ else
   fail "the backend job sources shard-filter.sh" "no '. ./.github/scripts/shard-filter.sh' line found"
 fi
 
+# ---------------------------------------------------------------------------
+# The artifact-name invariant (arb-m1sh, arb-8bs). The gate downloads
+# `pattern: trx-*` and sums executed= across whatever it finds (arb-e2x's
+# comment states the invariant). An upload name that matches `trx-*` but is
+# NOT a real trx set -- the failed-attempt evidence in particular -- would be
+# double-counted or counted at all, read as a floor breach or a false pass.
+# This asserts the shape of build-test.yml directly: every upload-artifact
+# `name:` and the one download-artifact `pattern:` used by the gate.
+#
+# `${{ ... }}` expressions are collapsed to a single placeholder token before
+# matching -- their runtime values (a matrix group, a run attempt number)
+# cannot change which *literal* prefix a name has, and a real `${{ }}` left
+# in place would itself glob-match as a wildcard, hiding exactly the fault
+# this control looks for.
+# ---------------------------------------------------------------------------
+
+# Reads upload-artifact `name:` values and the gate's download `pattern:`
+# from a build-test.yml-shaped text on stdin. Each upload is tagged by
+# whether its OWN step name (the `- name:` line the step is filed under, not
+# the artifact `name:` field) says "Upload test results" -- the step whose
+# trx this gate is meant to sum -- or anything else. Classifying by step
+# purpose rather than by the artifact name's own text is what lets the
+# mutated fixture below prove something: a check that instead re-derived
+# "is this a trx upload" from the same `trx-*` prefix it is trying to verify
+# would call the renamed failed-attempt name a trx upload and never notice
+# it collides with itself. Prints one line per upload
+# ("TRX:<name>" or "OTHER:<name>"), then "PATTERN:<value>" for the download
+# pattern actually used to download `trx-*` (identified by the preceding
+# `uses:` line, same as the real file: some other download step could exist
+# with a different pattern and must not be picked up).
+extract_artifact_names() {
+  awk '
+    /^[[:space:]]*- name:[[:space:]]*Upload test results/ { want_trx = 1; next }
+    /^[[:space:]]*- name:/ { want_trx = 0 }
+    /uses: actions\/upload-artifact@/ { in_up = 1; next }
+    in_up && /^[[:space:]]*name:/ {
+      sub(/^[[:space:]]*name:[[:space:]]*/, "")
+      print (want_trx ? "TRX:" : "OTHER:") $0
+      in_up = 0
+    }
+    /uses: actions\/download-artifact@/ { in_dl = 1; next }
+    in_dl && /^[[:space:]]*pattern:/ {
+      sub(/^[[:space:]]*pattern:[[:space:]]*/, "")
+      print "PATTERN:" $0
+      in_dl = 0
+    }
+  '
+}
+
+# Collapses every `${{ ... }}` expression in $1 to the literal token X.
+collapse_expressions() {
+  printf '%s' "$1" | sed -E 's/\$\{\{[^}]*\}\}/X/g'
+}
+
+# Runs the invariant against the text on stdin. Prints PASS/FAIL lines and
+# returns non-zero if any assertion failed, so the same function drives both
+# the real workflow file and the mutated self-test fixture below.
+check_artifact_name_invariant() {
+  local extracted trx_names=() other_names=() download_pattern="" bad=0
+  extracted=$(extract_artifact_names)
+
+  while IFS= read -r line; do
+    case "$line" in
+      TRX:*) trx_names+=("$(collapse_expressions "${line#TRX:}")") ;;
+      OTHER:*) other_names+=("$(collapse_expressions "${line#OTHER:}")") ;;
+      PATTERN:*)
+        # Only the pattern used to download trx-* matters here; a future
+        # unrelated download step's pattern must not overwrite it.
+        p=$(collapse_expressions "${line#PATTERN:}")
+        if [ "$p" = "trx-*" ]; then
+          download_pattern="$p"
+        fi
+        ;;
+    esac
+  done <<< "$extracted"
+
+  if [ "$download_pattern" != "trx-*" ]; then
+    echo "the gate's download pattern is not the literal trx-*"
+    return 1
+  fi
+
+  for n in "${trx_names[@]}"; do
+    if [[ "$n" != $download_pattern ]]; then
+      echo "trx upload name '${n}' does not match the download pattern ${download_pattern}"
+      bad=1
+    fi
+  done
+
+  for n in "${other_names[@]}"; do
+    if [[ "$n" == $download_pattern ]]; then
+      echo "non-trx upload name '${n}' matches the download pattern ${download_pattern}"
+      bad=1
+    fi
+  done
+
+  return "$bad"
+}
+
+# The real file: every trx-* upload matches trx-*, no non-trx upload
+# (failed-attempt-X-X, failed-attempt-X-frontend, test-build, test-counts)
+# does, and the download pattern is still literally trx-*.
+if out=$(check_artifact_name_invariant < "$workflow_file" 2>&1); then
+  pass "build-test.yml's artifact names respect the trx-* download pattern"
+else
+  fail "build-test.yml's artifact names respect the trx-* download pattern" "$out"
+  printf '%s\n' "$out" | sed 's/^/        /'
+fi
+
+# CLAUDE.md section 4 positive control: an absence assertion proves nothing
+# by itself unless it can be shown to catch a planted fault. Feed the same
+# function a copy of the relevant shape with the failed-attempt name renamed
+# to start with `trx-`, and require the check to FAIL, naming that name.
+mutated_fixture=$(cat <<'EOF'
+      - name: Upload test results (group X)
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b
+        with:
+          name: trx-${{ matrix.group }}
+      - name: Upload failed attempt evidence (group X)
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b
+        with:
+          name: trx-failed-${{ github.run_attempt }}-${{ matrix.group }}
+      - name: Download test results
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: trx-*
+EOF
+)
+if out=$(printf '%s\n' "$mutated_fixture" | check_artifact_name_invariant 2>&1); then
+  fail "the invariant control catches a trx-prefixed failed-attempt name" \
+    "expected a FAIL, but the check passed"
+else
+  if printf '%s' "$out" | grep -qF "trx-failed-"; then
+    pass "the invariant control catches a trx-prefixed failed-attempt name"
+  else
+    fail "the invariant control catches a trx-prefixed failed-attempt name" \
+      "failed, but did not name the mutated artifact: ${out}"
+  fi
+fi
+
 echo
 echo "controls: ${pass_count} passed, ${fail_count} failed"
 [ "$fail_count" -eq 0 ] || exit 1
