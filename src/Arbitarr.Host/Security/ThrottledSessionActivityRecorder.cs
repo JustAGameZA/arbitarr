@@ -34,6 +34,12 @@ namespace Arbitarr.Host.Security;
 /// at every restart shortens a live session rather than staling a display. The Warning below is
 /// untouched: the drain removes the shutdown case that made it fire spuriously, which is what lets
 /// the remaining occurrences be read as the genuine failures it was written for.</para>
+///
+/// <para>The drain's two escapes carry over unchanged, including the one that no timeout closes:
+/// <see cref="DrainAsync"/> samples <c>_inFlight</c> once, so a stamp dispatched after that sample
+/// is never waited for — and Kestrel may still be finishing requests, hence still calling
+/// <see cref="RecordSeen"/>, while the drain runs. See the key recorder's copy for the full
+/// argument.</para>
 /// </summary>
 public sealed class ThrottledSessionActivityRecorder : ISessionActivityRecorder, IHostedService
 {
@@ -124,10 +130,12 @@ public sealed class ThrottledSessionActivityRecorder : ISessionActivityRecorder,
 
         if (!ReferenceEquals(completed, all))
         {
+            // The captured total, not a re-count of the unfinished — see the key recorder's copy for
+            // why a re-count can print a self-contradicting "Gave up waiting for 0".
             _logger.LogWarning(
                 "Gave up waiting for {PendingCount} in-flight session activity write(s) after {DrainSeconds}s of shutdown; " +
                 "the affected sessions may idle out earlier than their last real use.",
-                pending.Count(task => !task.IsCompleted),
+                pending.Length,
                 DrainTimeout.TotalSeconds);
         }
     }

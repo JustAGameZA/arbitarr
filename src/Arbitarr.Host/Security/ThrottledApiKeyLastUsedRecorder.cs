@@ -47,10 +47,18 @@ namespace Arbitarr.Host.Security;
 /// drain service is deliberate: the in-flight set and the thing that must wait on it are the same
 /// object, and a second type would have to be handed a reference to this one anyway.</para>
 ///
-/// <para>The drain is a best-effort bound, not a guarantee: a write that outruns
-/// <see cref="DrainTimeout"/> is still abandoned, and will still log the Warning. That is the right
-/// trade — a shutdown must terminate — and it is why the timeout is seconds rather than
-/// milliseconds.</para>
+/// <para>The drain is a best-effort bound, not a guarantee, and it escapes in TWO ways, not one.
+/// The first is the obvious one: a write that outruns <see cref="DrainTimeout"/> is abandoned, and
+/// will still log the Warning. That is the right trade — a shutdown must terminate — and it is why
+/// the timeout is seconds rather than milliseconds. The second is easier to miss and no timeout
+/// closes it: <see cref="DrainAsync"/> SAMPLES <c>_inFlight</c> once, so a write dispatched after
+/// that sample is not in the set and is not waited for at all, however fast it is. Hosted services
+/// stop before the server is disposed but not before it has finished every request in flight, so
+/// Kestrel can still be completing a gated call — and therefore still calling
+/// <see cref="RecordUsed"/> — while this drain is running. Re-sampling in a loop would not close it
+/// either, only move the edge; the honest framing is that the drain covers the writes already
+/// dispatched when shutdown reached it, which is the overwhelming majority and the whole of the case
+/// this was written for.</para>
 /// </summary>
 public sealed class ThrottledApiKeyLastUsedRecorder : IApiKeyLastUsedRecorder, IHostedService
 {
@@ -64,6 +72,12 @@ public sealed class ThrottledApiKeyLastUsedRecorder : IApiKeyLastUsedRecorder, I
     /// empties, not after the timeout) while the cost of being stingy is the orphaned write this
     /// exists to prevent. It is a constant rather than a setting for the reason
     /// <c>NotificationHostedService.CycleInterval</c> is: no operator has a reason to turn it.</para>
+    ///
+    /// <para>The five seconds is PER RECORDER, and hosted services stop in sequence: this one and
+    /// <see cref="ThrottledSessionActivityRecorder"/> can together spend up to ten of the host's
+    /// un-overridden 30s <c>ShutdownTimeout</c>, which the rest of the hosted services share. That
+    /// is comfortable at two recorders; a third drain on this timeout would want weighing against
+    /// the remaining budget rather than added on the assumption the number is free.</para>
     /// </summary>
     public static readonly TimeSpan DrainTimeout = TimeSpan.FromSeconds(5);
 
@@ -127,10 +141,16 @@ public sealed class ThrottledApiKeyLastUsedRecorder : IApiKeyLastUsedRecorder, I
             // The Delay won. Say so rather than letting the abandoned writes' Warnings be the only
             // trace, which would read as a database fault rather than as a shutdown that ran out of
             // patience.
+            //
+            // The count is the CAPTURED TOTAL, not a re-count of what is still unfinished. A
+            // re-count is read after the Delay won, so writes that completed in the meantime have
+            // already left the set — and when the last of them lands between the Delay firing and
+            // the count being taken, it reports "Gave up waiting for 0", a Warning that contradicts
+            // itself. `pending.Length` cannot be 0 here: the empty case returned above.
             _logger.LogWarning(
                 "Gave up waiting for {PendingCount} in-flight API key last-used write(s) after {DrainSeconds}s of shutdown; " +
                 "they may not have been persisted.",
-                pending.Count(task => !task.IsCompleted),
+                pending.Length,
                 DrainTimeout.TotalSeconds);
         }
     }
