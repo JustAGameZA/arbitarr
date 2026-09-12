@@ -31,6 +31,29 @@
  * is the wrong one precisely because the pane, not the page, scrolls.
  */
 .nav {
+  /*
+   * Which layout this is, declared where it is DECIDED rather than inferred
+   * from geometry at runtime (arb-9b42).
+   *
+   * SectionNav.tsx must know whether the nav is the strip that covers the
+   * panels or the rail that sits beside them, because only the strip hides the
+   * top of the pane. Every geometric test for that is wrong:
+   *   - `position: sticky; top: 0` resolves against the scrollport's PADDING
+   *     box, while getBoundingClientRect returns its BORDER box, so a stuck
+   *     strip is never level with the root rect's own top (AppShell's .content
+   *     carries `padding: 20px 24px`, and the 768px query overrides only
+   *     min-width, never the padding);
+   *   - the rail below is `align-self: start` and therefore content-sized, so
+   *     a long entry list makes it taller than the scrollport, at which point
+   *     it cannot stick, scrolls away with the content, and its top goes
+   *     negative -- indistinguishable from a stuck strip by position alone.
+   *     The entry count is not bounded: Settings.tsx appends one per server
+   *     catalog group to the static sections.
+   * This declaration sits in the same block as the sticky rule it describes,
+   * so the two facts can only change together; the 1100px query below
+   * overrides both.
+   */
+  --section-nav-layout: strip;
   position: sticky;
   top: 0;
   z-index: 5;
@@ -154,6 +177,11 @@
  */
 @media (min-width: 1100px) {
   .nav {
+    /* Beside the panels, not over them: nothing is occluded, so SectionNav.tsx
+       measures its scroll band from the scrollport's own first visible edge.
+       Paired with the sticky/top override below for the reason given on the
+       base rule -- the layout claim and the layout must move together. */
+    --section-nav-layout: rail;
     position: sticky;
     /* Same reasoning as the base rule: offsets are relative to <main>, which
        already starts below the top bar. 20px matches the pane's own padding so

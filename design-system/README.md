@@ -70,10 +70,20 @@ rejects overflow-x and wraps instead.
 **An observer-derived active state needs a non-observer path for the states the observer cannot
 reach.** An `IntersectionObserver` reports only what geometry produces, so any state the layout
 never produces is a state the highlight can never enter — and the entry stays wrong indefinitely
-rather than briefly. Pair the observer with the authoritative signal for those states. Decided
-twice: SectionNav treats a click as authoritative, because a section below the last scrollable
-position is never reported as intersecting at all; SidebarNav derives its active entry from the
-route rather than from what is on screen.
+rather than briefly. Pair the observer with the authoritative signal for those states. One rule,
+with two instances of it in the shell: SectionNav treats a click as authoritative, because a
+section below the last scrollable position is never reported as intersecting at all; SidebarNav
+derives its active entry from the route rather than from what is on screen.
+
+**Where a stylesheet decides which layout is in force, declare it in a custom property rather than
+re-deriving it from measurements.** Geometry cannot reliably tell one layout from another, and two
+traps make position-based tests wrong in opposite directions: `position: sticky` offsets resolve
+against the scrollport's *padding* box while `getBoundingClientRect` returns its *border* box, so a
+stuck element is never level with the root rect's top; and a content-sized sticky element taller
+than its scrollport stops sticking altogether, scrolling away with the content and taking on
+exactly the geometry a stuck one would have. SectionNav is the precedent — `--section-nav-layout`
+is declared in the same rule as the sticky behaviour it describes, so the claim and the layout can
+only change together, and the script reads the claim instead of inferring it from a rect.
 
 ---
 
