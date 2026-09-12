@@ -882,10 +882,50 @@ builder.Services.AddHttpClient(
 // SINGLETON because the provider's AC19 fetch etiquette is instance state -- the in-process rate
 // limiter and the parsed-dataset cache both live on the instance, so a scoped registration would
 // hand every request a fresh one that remembers neither and would re-parse the document per search.
+// arb-6u6 APPLIES HERE: this is OPERATOR CONFIGURATION, so it must never be parsed with
+// `new Uri(...)`. That throws UriFormatException before Build(), and a host that will not boot on
+// a typo'd optional setting is a far worse failure than the setting being ignored -- the same rule
+// the Ollama startup-fallback client follows at ~:412 for exactly this reason. A malformed value
+// therefore leaves the tier INACTIVE, which is already a fully supported state here, rather than
+// taking the process down.
+//
+// The three checks mirror SettingsValidator.ValidateOllamaBaseUrl, which is the repository's
+// existing shape for "an operator-supplied address we will issue requests at":
+//   - absolute, parseable                 -- a relative or unparseable value has no host to fetch from;
+//   - http/https only                     -- SEC-M1: file://, ftp:// and friends are not fetch targets
+//                                            we will hand to HttpClient on an operator's behalf;
+//   - NO userinfo (user:pw@host)          -- this one is load-bearing for the logging comment below.
+//     That comment's premise is that this URI carries NO credential, so the registration safely
+//     omits .RemoveAllLoggers(). A userinfo-bearing URL would falsify it: the credential would ride
+//     in the logged request URI and land in the persistent store at /api/admin/logs, where neither
+//     .NET's query-string redaction nor LogMessageCleanser would scrub it (CLAUDE.md section 1).
+//     Rejecting it here is what keeps the comment below true, not a separate nicety.
+//
+// The rejection is recorded, not logged, because no logger exists before Build(); it is reported
+// once beside the inactive notice further down. It names ONLY THE KEY and never the value -- a
+// rejected value may be precisely the userinfo-bearing string we refused, and writing it into the
+// log store to complain about it would perform the leak the check just prevented.
+var animeListsSourceUrlRaw = builder.Configuration["Arbitarr:AnimeLists:SourceUrl"];
+var animeListsSourceUrlRejected = false;
+Uri? animeListsSourceUrl = null;
+
+if (!string.IsNullOrWhiteSpace(animeListsSourceUrlRaw))
+{
+    if (Uri.TryCreate(animeListsSourceUrlRaw, UriKind.Absolute, out var parsedAnimeListsSourceUrl)
+        && (parsedAnimeListsSourceUrl.Scheme == Uri.UriSchemeHttp
+            || parsedAnimeListsSourceUrl.Scheme == Uri.UriSchemeHttps)
+        && string.IsNullOrEmpty(parsedAnimeListsSourceUrl.UserInfo))
+    {
+        animeListsSourceUrl = parsedAnimeListsSourceUrl;
+    }
+    else
+    {
+        animeListsSourceUrlRejected = true;
+    }
+}
+
 var animeListsOptions = new Arbitarr.Media.Providers.AnimeListsProviderOptions(
-    SourceUrl: builder.Configuration["Arbitarr:AnimeLists:SourceUrl"] is { Length: > 0 } animeListsSourceUrl
-        ? new Uri(animeListsSourceUrl)
-        : null,
+    SourceUrl: animeListsSourceUrl,
     ConfigDirectory: configDirectory);
 builder.Services.AddSingleton(animeListsOptions);
 builder.Services.AddSingleton(sp => new Arbitarr.Media.Providers.AnimeListsProvider(
@@ -1020,13 +1060,38 @@ var app = builder.Build();
 // reason to echo back into the persistent log store.
 if (!app.Services.GetRequiredService<Arbitarr.Media.Providers.AnimeListsProvider>().IsConfigured)
 {
-    app.Services.GetRequiredService<ILoggerFactory>()
-        .CreateLogger("Arbitarr.Host.Program")
-        .LogInformation(
+    var animeListsLogger = app.Services.GetRequiredService<ILoggerFactory>()
+        .CreateLogger("Arbitarr.Host.Program");
+
+    if (animeListsSourceUrlRejected)
+    {
+        // WARNING, not Information: an operator who SET this key meant to enable the tier, and the
+        // inactive state is now surprising rather than expected. Distinguishing the two is the
+        // whole point -- "I never configured it" and "I configured it and it was refused" need
+        // different actions, and reporting both at Information would hide the second inside the
+        // first for anyone who set a value with a typo.
+        //
+        // Names ONLY THE KEY. The value is withheld deliberately and permanently: one of the three
+        // things that reaches this branch is a userinfo-bearing URL, so echoing the rejected value
+        // would write a credential into the persistent log store served at /api/admin/logs -- the
+        // exact leak the validation above exists to prevent. AnimeListsSourceUrlValidationTests
+        // asserts the absence, with a positive control, for that reason.
+        animeListsLogger.LogWarning(
+            "The Arbitarr:AnimeLists:SourceUrl configuration key is set but is not a usable " +
+            "mapping-document address, so the AnimeLists identity tier is inactive. It must be an " +
+            "absolute http or https URL and must not contain credentials (user:password@host). " +
+            "The rejected value is deliberately not shown here because it may contain a " +
+            "credential. Series titles resolve from the configured *arr instance alone until this " +
+            "is corrected.");
+    }
+    else
+    {
+        animeListsLogger.LogInformation(
             "The AnimeLists identity tier is inactive because no source URL is configured. Set the " +
             "Arbitarr:AnimeLists:SourceUrl configuration key to a mapping document to enable it; " +
             "until then series titles resolve from the configured *arr instance alone and no " +
             "anime-lists document is fetched.");
+    }
 }
 
 // SEC-L2: load (or generate, on first run) the per-instance HMAC secret used to compute proxy
