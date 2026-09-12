@@ -334,6 +334,59 @@ speculatively. See [ADR 0010](docs/adr/0010-secrets-clear-route.md).
 
 ---
 
+## Arr instance
+
+An **Arr instance** is a configured Sonarr or Radarr server that Arbitarr itself calls
+outbound — an address plus a write-only API key. There are exactly two, one per kind:
+the Sonarr instance, which resolves series identities
+(`src/Arbitarr.Data/Media/ArrInstanceRepository.cs`), and the Radarr instance, which
+backs the movie library and download queue
+(`src/Arbitarr.Data/Media/RadarrInstanceRepository.cs`). Each is a singleton: there is
+no list, no per-instance id, and nothing to enumerate.
+
+**It is not a source, and the distinction is load-bearing.** A source is searched, has
+a circuit breaker, appears in the sources health table, and is probed by fetching its
+Torznab caps document. An Arr instance is none of those: it is never searched, never
+returns releases, has no breaker and no health row, and its probe issues
+`{base}/api/v3/system/status` against the *arr API instead
+(`SonarrConnectivityProber`, `RadarrConnectivityProber`). Both probes nonetheless
+report the same `SourceProbeOutcome` enum, because an Arr instance does carry a key and
+so can genuinely answer `AuthenticationFailed` — the reason `OllamaProbeOutcome` had to
+be its own type does not apply here.
+
+**Nor is it the inbound relationship.** Sonarr and Radarr also talk *to* Arbitarr, on
+the indexer routes, presenting a **client key** that resolves to a
+`CredentialResolution`. That is the same two programs in the opposite direction. An Arr
+instance is the outbound half only; nothing about it is consulted when a client key
+arrives.
+
+**The `arr:{kind}:` settings namespace.** Each instance stores its pair as
+colon-namespaced rows in the `Settings` table — `arr:sonarr:base_url` /
+`arr:sonarr:api_key`, `arr:radarr:base_url` / `arr:radarr:api_key` — rather than in a
+table of its own, because two fixed rows per kind cannot accumulate and so need no
+retention. The colon in the name is the same mechanism `source:{id}:api_key` relies on:
+no `SettingKey` enum value can produce it, so neither row can surface through
+`GET /api/admin/settings`, which projects from `SettingsCatalog.Entries` and never from
+the table. The base URL is served back freely — it is not a credential, and
+`ValidateBaseUrl` rejecting userinfo is what earns that. The key half is
+**Write-only** in the sense defined above. There is no key-only clear route: under
+[ADR 0010](docs/adr/0010-secrets-clear-route.md) a secret is cleared by deleting the
+thing that owns it, so `DELETE /api/admin/arr/{kind}` unconfigures the whole instance.
+
+**`IArrInstanceEpoch` is Sonarr's, not the *arr instances'.**
+(`src/Arbitarr.Core/Media/IArrInstanceEpoch.cs`) It is a counter bumped after a
+successful Sonarr write, folded into cache keys so a repoint invalidates without a
+settings read. Its sole consumer is `SeriesTitleResolver.MemoKey`. A Radarr write
+**deliberately does not bump it**: Radarr holds no cache keyed on it and stays out of
+identity resolution, so a bump would evict a Sonarr memo that is still entirely correct
+for an unrelated write. That absence is asserted with a positive control showing the
+same epoch instance *does* advance for a Sonarr write, because "the epoch did not
+change" passes just as happily against an epoch that never changes for anything. If
+Radarr ever gains a cache, it needs its **own** epoch rather than a share of this one.
+The full reasoning is in `RadarrInstanceRepository`'s type doc and is not restated here.
+
+---
+
 ## Route classification
 
 Routes are classified as `PublicRead` or `AdminMutating`
@@ -376,12 +429,17 @@ means *the line was too long*. Reading the first as the second understates a
 redaction failure.
 
 **Backup archive.** The zip `GET /api/admin/backup` produces: a consistent
-snapshot of `arbitarr.db` (taken through SQLite'''s backup API, not a file copy),
+snapshot of `arbitarr.db` (taken through SQLite's backup API, not a file copy),
 `release-guid-secret.key`, and a manifest naming the instant and schema version.
-It excludes `arbitarr-logs.db`. It is a **credential-bearing file** — it carries
-every configured source'''s API key and the secret authenticating every release
-GUID this instance has issued — so it is admin-gated, never fetched through a
-URL-borne token, and never written anywhere served.
+It excludes `arbitarr-logs.db`, which is the only store left out
+(`BackupArchiveLayout`). It is a **credential-bearing file**, and the snapshot is of
+the *whole* database rather than a selection from it, so it carries **every secret
+stored in `arbitarr.db`**: every configured source's API key, the secret authenticating
+every release GUID this instance has issued, and — since the *arr singletons landed —
+the Sonarr and Radarr instance keys in the `arr:{kind}:api_key` rows. Write-only means
+there is no read path through the API; it does not mean absent from a snapshot of the
+table. That is why the archive is admin-gated, never fetched through a URL-borne token,
+and never written anywhere served.
 
 **Pre-restore safety copy.** A backup archive of the *current* state, written
 to the config directory immediately before a restore applies anything, so a
