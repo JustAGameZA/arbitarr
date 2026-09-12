@@ -392,6 +392,13 @@ function NotificationForm({
             rejection here is its answer rather than this page&apos;s guess. The window is a
             duration such as 01:00:00.
           </p>
+
+          <p className={local.hint}>
+            Once a failure row has already been counted, any repeats that fold onto it before the
+            next poll add only one more occurrence, however many there were. The
+            consecutive-failure threshold can therefore trip later than the raw failure count
+            suggests, never earlier.
+          </p>
         </div>
 
         <div className={local.group}>
