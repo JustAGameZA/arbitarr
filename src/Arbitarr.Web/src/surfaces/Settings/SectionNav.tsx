@@ -55,6 +55,13 @@ export function SectionNav({ entries }: SectionNavProps) {
   const [fadeLeft, setFadeLeft] = useState(false);
   const [fadeRight, setFadeRight] = useState(false);
 
+  // Set by the click handler and read by the observer effect below. A ref, not
+  // state: writing it must not trigger a re-render (that would fire the
+  // observer effect's cleanup/setup for a change that is not about `entries`),
+  // and the observer callback below needs to see the latest value on its next
+  // invocation, not the value captured when its closure was created.
+  const suppressUntilRef = useRef<{ id: string; until: number } | null>(null);
+
   useEffect(() => {
     const nav = navRef.current;
     if (nav === null) {
@@ -115,26 +122,71 @@ export function SectionNav({ entries }: SectionNavProps) {
       return undefined;
     }
 
+    const root = document.querySelector('main');
+
     const observer = new IntersectionObserver(
       (observed) => {
-        // The topmost intersecting section wins. Several are on screen at once
-        // on a tall viewport, and taking the last callback entry instead would
-        // make the highlight jump to whichever crossed the threshold most
-        // recently -- which, when scrolling up, is the one furthest DOWN the
-        // page. Compared by document order via the entries array, not by
-        // boundingClientRect, so the result does not depend on scroll direction.
-        const visible = observed
-          .filter((observation) => observation.isIntersecting)
-          .map((observation) => observation.target.id);
+        const intersecting = observed.filter((observation) => observation.isIntersecting);
 
-        if (visible.length === 0) {
+        if (intersecting.length === 0) {
           return;
         }
 
-        const topmost = entries.find((entry) => visible.includes(entry.id));
-        if (topmost !== undefined) {
-          setActiveId(topmost.id);
+        // A click just set the highlight directly; a stale callback naming a
+        // different entry must not steal it back before the click's own
+        // target has had a chance to be reported as intersecting (see the
+        // click handler below for why "reported" and "settled" are the same
+        // condition here). Once that target IS among the intersecting
+        // entries, or the bounded window has elapsed, this stops applying and
+        // the scroll-driven comparison below resumes as normal.
+        const suppressed = suppressUntilRef.current;
+        if (suppressed !== null) {
+          const targetSettled = intersecting.some(
+            (observation) => observation.target.id === suppressed.id,
+          );
+          if (targetSettled || performance.now() >= suppressed.until) {
+            suppressUntilRef.current = null;
+          } else {
+            return;
+          }
         }
+
+        // The band's top edge in viewport coordinates. rootMargin's bottom
+        // component ('-70%') shrinks the *effective* intersection rectangle by
+        // that fraction of the root's height, which moves its bottom edge up
+        // -- the top edge (what "the band" means here) is simply the root's
+        // own top, whether root is the scrolling <main> or (its fallback) the
+        // viewport.
+        const bandTop = (root ?? document.documentElement).getBoundingClientRect().top;
+
+        // Among sections whose heading has scrolled at or past the band's top
+        // edge (their own top is >= bandTop, i.e. not above it), the one
+        // closest to that edge -- the smallest such top -- is the section the
+        // operator is actually looking at. A tall preceding section can still
+        // be "intersecting" (its bottom is still inside the band) while its
+        // own top sits well above bandTop; comparing tops rather than
+        // document-array order is what excludes it in favour of whichever
+        // section's heading has actually reached the band.
+        const withinBand = intersecting.filter(
+          (observation) => observation.boundingClientRect.top >= bandTop,
+        );
+
+        let winner: IntersectionObserverEntry;
+        if (withinBand.length > 0) {
+          winner = withinBand.reduce((closest, candidate) =>
+            candidate.boundingClientRect.top < closest.boundingClientRect.top ? candidate : closest,
+          );
+        } else {
+          // Nothing has reached the band yet (every intersecting section's
+          // heading is still above it, e.g. one tall section spanning the
+          // whole band): fall back to the entry nearest the band from above --
+          // the largest top among those still <= bandTop.
+          winner = intersecting.reduce((nearest, candidate) =>
+            candidate.boundingClientRect.top > nearest.boundingClientRect.top ? candidate : nearest,
+          );
+        }
+
+        setActiveId(winner.target.id);
       },
       {
         // The scrolling element is the content pane (<main> carries
@@ -143,7 +195,7 @@ export function SectionNav({ entries }: SectionNavProps) {
         // because the pane is itself fully inside the viewport every section
         // would count as intersecting at once -- the highlight would then
         // never move off the first entry.
-        root: document.querySelector('main'),
+        root,
         // Biased to the top: the band sits just below the pane's top edge, so
         // the highlighted entry is the section whose heading the operator is
         // actually looking at rather than whichever occupies the most pixels.
@@ -176,6 +228,34 @@ export function SectionNav({ entries }: SectionNavProps) {
               // meaningless value that screen readers still expose, so the
               // attribute is absent rather than false on the others.
               aria-current={entry.id === activeId ? 'true' : undefined}
+              onClick={() => {
+                // A click is authoritative (arb-81x8 bug 1): a section below
+                // the last scrollable position can never intersect the band at
+                // all, so the observer alone can never highlight it -- without
+                // this the anchor still navigates but the previous entry stays
+                // highlighted forever. The default anchor navigation is left
+                // alone (no preventDefault) so `#hash` updates and the
+                // scroll-into-view/keyboard behaviour from #199 are unchanged.
+                setActiveId(entry.id);
+                // The browser's own jump (smooth-scrolled unless the operator
+                // has prefers-reduced-motion) will fire a burst of observer
+                // callbacks for whatever the viewport passes on the way,
+                // which would otherwise immediately overwrite the click with
+                // a stale mid-scroll candidate. Suppressed until either the
+                // clicked target itself is reported intersecting (the normal
+                // case) or a bounded window elapses (the target-never-
+                // intersects case from bug 1, where that report never comes).
+                // The window is shorter under reduced motion because the jump
+                // there is instant rather than animated, so there is no
+                // multi-frame scroll to wait out.
+                const reducedMotion =
+                  typeof window.matchMedia === 'function' &&
+                  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                suppressUntilRef.current = {
+                  id: entry.id,
+                  until: performance.now() + (reducedMotion ? 150 : 1000),
+                };
+              }}
             >
               {entry.label}
             </a>
