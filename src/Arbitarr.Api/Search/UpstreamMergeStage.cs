@@ -19,11 +19,17 @@ namespace Arbitarr.Api.Search;
 /// </summary>
 public sealed class UpstreamMergeStage : IMergeStage
 {
-    private readonly IReadOnlyList<IUpstreamSource> _sources;
+    /// <summary>
+    /// arb-x7w8.4: the sources are RESOLVED per merge rather than injected as a fixed list. The
+    /// source set now lives in the database and an operator's edit must take effect on the next
+    /// request rather than the next restart — see <see cref="ISourceRegistry"/> for why that
+    /// resolution is async and therefore cannot happen in this constructor.
+    /// </summary>
+    private readonly ISourceRegistry _registry;
 
-    public UpstreamMergeStage(IReadOnlyList<IUpstreamSource> sources)
+    public UpstreamMergeStage(ISourceRegistry registry)
     {
-        _sources = sources ?? throw new ArgumentNullException(nameof(sources));
+        _registry = registry ?? throw new ArgumentNullException(nameof(registry));
     }
 
     public string Name => "UpstreamMerge";
@@ -43,7 +49,12 @@ public sealed class UpstreamMergeStage : IMergeStage
     {
         ArgumentNullException.ThrowIfNull(query);
 
-        var tasks = _sources.Select(async source =>
+        // Resolved here, at the top of the work, rather than in the constructor: this is the await
+        // that a constructor-injected list could not have. Within one request the registry memoises,
+        // so a second consumer in the same scope does not re-read the rows or the keys.
+        var sources = await _registry.ResolveAsync(cancellationToken).ConfigureAwait(false);
+
+        var tasks = sources.Select(async source =>
         {
             try
             {

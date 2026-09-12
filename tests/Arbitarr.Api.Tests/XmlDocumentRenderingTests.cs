@@ -78,7 +78,7 @@ public sealed class XmlDocumentRenderingTests : IDisposable
 
         var result = await CapsEndpoint.HandleTorznabAsync(
             aggregator,
-            new[] { (IUpstreamSource)source },
+            new StaticSourceRegistry(new[] { (IUpstreamSource)source }),
             CancellationToken.None);
 
         return await ExecuteAndReadBodyAsync(result);
@@ -88,7 +88,7 @@ public sealed class XmlDocumentRenderingTests : IDisposable
     {
         var release = TestReleases.Torrent();
         var source = new FakeUpstreamSource("eztv", searchResults: new[] { release.Candidate });
-        var mergeStage = new UpstreamMergeStage(new[] { (IUpstreamSource)source });
+        var mergeStage = new UpstreamMergeStage(new StaticSourceRegistry(new[] { (IUpstreamSource)source }));
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(TestReleases.FixedPubDate);
         var snapshotService = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);
@@ -124,7 +124,7 @@ public sealed class XmlDocumentRenderingTests : IDisposable
     private async Task<string> RenderRateLimitErrorAsync()
     {
         var source = new FakeUpstreamSource("eztv", searchException: new RequestLimitReachedException("eztv"));
-        var mergeStage = new UpstreamMergeStage(new[] { (IUpstreamSource)source });
+        var mergeStage = new UpstreamMergeStage(new StaticSourceRegistry(new[] { (IUpstreamSource)source }));
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(TestReleases.FixedPubDate);
         var snapshotService = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);

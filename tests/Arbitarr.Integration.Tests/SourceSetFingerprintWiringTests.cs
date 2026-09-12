@@ -1,5 +1,9 @@
 using Arbitarr.Api.Search;
+using Arbitarr.Data;
+using Arbitarr.Data.Entities;
+using Arbitarr.Data.Sources;
 using Arbitarr.Host.Sources;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -18,6 +22,14 @@ namespace Arbitarr.Integration.Tests;
 /// unregistered provider caught in arb-u1c's review, where four unit tests passed by constructing
 /// the subject directly while DI left it null. A test that builds its own subject cannot see a
 /// missing registration; only one that asks the container can.</para>
+///
+/// <para><b>arb-x7w8.4 moved the DERIVATION tests out of this file</b>, to
+/// <c>Arbitarr.Host.Tests.ResolvedSourceSetFingerprintSourceTests</c>. The fingerprint is now read
+/// from the <c>Sources</c> table per call rather than hashed once from a
+/// <see cref="ResolvedSourceConfiguration"/>, so "what goes into it" is a question about rows and
+/// belongs beside the other row-level Host tests. What stays here is what only a real container can
+/// answer: that the registration exists, points at the live implementation, and produces a
+/// non-inert value.</para>
 /// </remarks>
 public sealed class SourceSetFingerprintWiringTests : IClassFixture<ArbitarrWebApplicationFactory>
 {
@@ -29,8 +41,8 @@ public sealed class SourceSetFingerprintWiringTests : IClassFixture<ArbitarrWebA
     }
 
     /// <summary>
-    /// The contract resolves, and resolves to the implementation that reads the resolved source
-    /// configuration. Asserting the concrete type matters: a registration pointing at
+    /// The contract resolves, and resolves to the implementation that reads the enabled source rows.
+    /// Asserting the concrete type matters: a registration pointing at
     /// <see cref="StaticSourceSetFingerprintSource"/> would satisfy resolution while leaving the
     /// token exactly as it was.
     /// </summary>
@@ -65,13 +77,18 @@ public sealed class SourceSetFingerprintWiringTests : IClassFixture<ArbitarrWebA
     }
 
     /// <summary>
-    /// The fingerprint is stable across requests within one process. It is derived from
-    /// configuration resolved once at startup, and a value that varied per request would give every
-    /// request its own snapshot token — silently disabling the pagination snapshot entirely, which is
-    /// a far worse regression than the staleness this change fixes.
+    /// The fingerprint is stable across scopes for an UNCHANGED source set. A value that varied per
+    /// request would give every request its own snapshot token — silently disabling the pagination
+    /// snapshot entirely, which is a far worse regression than the staleness the mechanism fixes.
     /// </summary>
+    /// <remarks>
+    /// Note what arb-x7w8.4 did and did NOT change here. The fingerprint is now derived per call
+    /// rather than once at construction, so it CAN differ between two scopes — but only when the
+    /// rows differ. Same rows, same value; that is the property this asserts, and
+    /// <c>A_source_added_between_scopes_changes_the_fingerprint</c> below asserts the other half.
+    /// </remarks>
     [Fact]
-    public async Task The_fingerprint_is_stable_across_scopes()
+    public async Task The_fingerprint_is_stable_across_scopes_for_an_unchanged_source_set()
     {
         using var first = _factory.Services.CreateScope();
         using var second = _factory.Services.CreateScope();
@@ -87,81 +104,93 @@ public sealed class SourceSetFingerprintWiringTests : IClassFixture<ArbitarrWebA
     }
 
     /// <summary>
-    /// The API key never reaches the fingerprint. It is not part of "which sources produced this
-    /// result set", and the fingerprint is hashed, cached, logged about and compared in tests — not a
-    /// surface that should carry a secret.
+    /// arb-x7w8.4's actual property, asserted through the REAL container: a source added while the
+    /// process is running changes the fingerprint on the next scope.
     /// </summary>
     /// <remarks>
-    /// The POSITIVE CONTROL is the second assertion: a fingerprint built from a
-    /// <see cref="ResolvedSourceConfiguration"/> carrying the planted key must equal the one built
-    /// without it. That demonstrates the key genuinely was in play and made no difference, where
-    /// asserting only its absence from the output would pass just as happily for a key that never
-    /// reached the type.
+    /// <para>This is the one the whole change rests on, and it is why the derivation could not stay
+    /// frozen at startup. Before the source registry, a source set could not change without a
+    /// restart, so hashing once was sound. Now it can — and a fingerprint that did not move would
+    /// hand this host's persisted snapshot rows, produced by the OLD source set, to searches run
+    /// against the NEW one.</para>
+    ///
+    /// <para>It owns its own factory rather than sharing the class fixture because it WRITES a row:
+    /// the shared fixture is injected into this class's other tests, whose stability assertions
+    /// would then be asserting over a set this test had mutated underneath them.</para>
     /// </remarks>
     [Fact]
-    public async Task The_api_key_is_not_part_of_the_fingerprint()
+    public async Task A_source_added_between_scopes_changes_the_fingerprint()
     {
-        const string plantedKey = "planted-fingerprint-key-0123456789";
+        await using var factory = new ArbitarrWebApplicationFactory();
 
-        var withoutKey = new ResolvedSourceConfiguration();
-        withoutKey.Apply("http://192.0.2.50:5076/", apiKey: null, sourceName: "NZBHydra2");
+        string Fingerprint()
+        {
+            using var scope = factory.Services.CreateScope();
+            return scope.ServiceProvider
+                .GetRequiredService<ISourceSetFingerprintSource>()
+                .GetAsync(CancellationToken.None)
+                .AsTask()
+                .GetAwaiter()
+                .GetResult();
+        }
 
-        var withKey = new ResolvedSourceConfiguration();
-        withKey.Apply("http://192.0.2.50:5076/", plantedKey, sourceName: "NZBHydra2");
+        var before = Fingerprint();
 
-        var fromWithout = await new ResolvedSourceSetFingerprintSource(withoutKey)
-            .GetAsync(CancellationToken.None);
-        var fromWith = await new ResolvedSourceSetFingerprintSource(withKey)
-            .GetAsync(CancellationToken.None);
+        await factory.SeedAsync(db => db.Sources.AddAsync(new Source
+        {
+            Kind = SourceRepository.NewznabKind,
+            DisplayName = "fingerprint-runtime-addition",
+            BaseUrl = "http://192.0.2.80:9117",
+            ApiPath = "/api",
+            Enabled = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        }).AsTask());
 
-        Assert.DoesNotContain(plantedKey, fromWith, StringComparison.Ordinal);
-        Assert.Equal(fromWithout, fromWith);
+        var after = Fingerprint();
+
+        Assert.NotEqual(before, after);
     }
 
     /// <summary>
-    /// A different source set DOES produce a different fingerprint — the property the whole change
-    /// rests on. Without this the assertions above would all pass for a constant.
+    /// Disabling a source changes the fingerprint too — the same property from the other direction,
+    /// and the one a "read every row" implementation would get wrong while passing the test above.
     /// </summary>
     [Fact]
-    public async Task A_different_source_set_produces_a_different_fingerprint()
+    public async Task Disabling_a_source_changes_the_fingerprint()
     {
-        var first = new ResolvedSourceConfiguration();
-        first.Apply("http://192.0.2.50:5076/", apiKey: null, sourceName: "NZBHydra2");
+        await using var factory = new ArbitarrWebApplicationFactory();
 
-        var relocated = new ResolvedSourceConfiguration();
-        relocated.Apply("http://192.0.2.51:5076/", apiKey: null, sourceName: "NZBHydra2");
+        string Fingerprint()
+        {
+            using var scope = factory.Services.CreateScope();
+            return scope.ServiceProvider
+                .GetRequiredService<ISourceSetFingerprintSource>()
+                .GetAsync(CancellationToken.None)
+                .AsTask()
+                .GetAwaiter()
+                .GetResult();
+        }
 
-        var unconfigured = new ResolvedSourceConfiguration();
+        await factory.SeedAsync(db => db.Sources.AddAsync(new Source
+        {
+            Kind = SourceRepository.TorznabKind,
+            DisplayName = "fingerprint-disable-subject",
+            BaseUrl = "http://192.0.2.81:9117",
+            ApiPath = "/api",
+            Enabled = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        }).AsTask());
 
-        var firstFingerprint = await new ResolvedSourceSetFingerprintSource(first).GetAsync(CancellationToken.None);
-        var relocatedFingerprint = await new ResolvedSourceSetFingerprintSource(relocated).GetAsync(CancellationToken.None);
-        var unconfiguredFingerprint = await new ResolvedSourceSetFingerprintSource(unconfigured).GetAsync(CancellationToken.None);
+        var whileEnabled = Fingerprint();
 
-        Assert.NotEqual(firstFingerprint, relocatedFingerprint);
+        await factory.SeedAsync(async db =>
+        {
+            var row = await db.Sources.FirstAsync(s => s.DisplayName == "fingerprint-disable-subject");
+            row.Enabled = false;
+        });
 
-        // First-time configuration is the case the issue is actually about, and it is caught by the
-        // base URL rather than by the key: an unconfigured instance resolves no URL at all.
-        Assert.NotEqual(unconfiguredFingerprint, firstFingerprint);
-    }
-
-    /// <summary>
-    /// Two (url, name) pairs that would concatenate into the same raw string without a separator
-    /// must still produce different fingerprints. This is the boundary the unit separator exists to
-    /// close: "http://192.0.2.60/a" + "b" and "http://192.0.2.60/" + "ab" concatenate identically
-    /// without a delimiter between the URL and the name.
-    /// </summary>
-    [Fact]
-    public async Task A_boundary_shifted_source_set_produces_a_different_fingerprint()
-    {
-        var first = new ResolvedSourceConfiguration();
-        first.Apply("http://192.0.2.60/a", apiKey: null, sourceName: "b");
-
-        var shifted = new ResolvedSourceConfiguration();
-        shifted.Apply("http://192.0.2.60/", apiKey: null, sourceName: "ab");
-
-        var firstFingerprint = await new ResolvedSourceSetFingerprintSource(first).GetAsync(CancellationToken.None);
-        var shiftedFingerprint = await new ResolvedSourceSetFingerprintSource(shifted).GetAsync(CancellationToken.None);
-
-        Assert.NotEqual(firstFingerprint, shiftedFingerprint);
+        Assert.NotEqual(whileEnabled, Fingerprint());
     }
 }

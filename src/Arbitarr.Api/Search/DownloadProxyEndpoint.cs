@@ -38,7 +38,7 @@ public static class DownloadProxyEndpoint
         string? apikey,
         IClientApiKeyResolver apiKeyResolver,
         IReleaseLookup releaseLookup,
-        IReadOnlyList<IUpstreamSource> sources,
+        ISourceRegistry registry,
         IEventSink eventSink,
         CancellationToken cancellationToken,
         IDownloadRefusalTracker? refusalTracker = null,
@@ -58,6 +58,12 @@ public static class DownloadProxyEndpoint
             return Results.NotFound();
         }
 
+        // arb-x7w8.4: resolved per request. A download must be served by the source that produced the
+        // release, and that source may have been added after this process started — so the lookup
+        // runs against the live set rather than one fixed at startup. A source the operator has since
+        // disabled correctly resolves to nothing here and answers 404: it is no longer one Arbitarr
+        // is configured to send its key to.
+        var sources = await registry.ResolveAsync(cancellationToken).ConfigureAwait(false);
         var source = sources.FirstOrDefault(s => s.Name == release.SourceName);
         if (source is null)
         {

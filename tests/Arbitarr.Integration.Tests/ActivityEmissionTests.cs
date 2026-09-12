@@ -47,7 +47,7 @@ public sealed class ActivityEmissionTests : IAsyncLifetime
                 // One fake upstream returning a single result, so the search path runs end to end
                 // without any real upstream being reachable. 192.0.2.x is RFC 5737 TEST-NET-1.
                 services.RemoveAll<IUpstreamSource>();
-                services.RemoveAll<IReadOnlyList<IUpstreamSource>>();
+                services.RemoveAll<ISourceRegistry>();
                 services.AddSingleton<IUpstreamSource>(new SecondFakeUpstreamSource(
                     "activity-emission-fake-source",
                     searchResults: new[]
@@ -63,7 +63,7 @@ public sealed class ActivityEmissionTests : IAsyncLifetime
                             Protocol = ProtocolKind.Usenet,
                         },
                     }));
-                services.AddSingleton<IReadOnlyList<IUpstreamSource>>(sp => sp.GetServices<IUpstreamSource>().ToArray());
+                services.AddSingleton<ISourceRegistry>(sp => new StaticSourceRegistry(sp.GetServices<IUpstreamSource>().ToArray()));
             });
         });
     }

@@ -42,6 +42,10 @@
     <ProjectReference Include="..\Arbitarr.Data\Arbitarr.Data.csproj" />
     <ProjectReference Include="..\Arbitarr.Media\Arbitarr.Media.csproj" />
     <ProjectReference Include="..\Arbitarr.Sources.NzbHydra\Arbitarr.Sources.NzbHydra.csproj" />
+    <!-- arb-x7w8.4: SourceRegistry builds the direct Newznab/Torznab adapter for rows of those
+         kinds. AC6 reserves every Arbitarr.Sources.* reference to this project, the sole
+         composition root (ADR 0001), so this edge belongs here and nowhere else. -->
+    <ProjectReference Include="..\Arbitarr.Sources.Newznab\Arbitarr.Sources.Newznab.csproj" />
   </ItemGroup>
 
 </Project>
