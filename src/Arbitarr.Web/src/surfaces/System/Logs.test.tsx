@@ -414,23 +414,52 @@ describe('System logs filtering', () => {
 describe('System logs message filter', () => {
   beforeEach(() => {
     useAdminKeyStore.setState({ key: 'test-key', serverKeyUnset: false });
+    // The Message input debounces what reaches the query (arb-x64p): fake timers let a test
+    // fast-forward past the ~250ms window instead of racing a real one, and userEvent's
+    // `delay: null` (below) keeps its own keystroke-pacing timers from needing the same
+    // real clock. `shouldAdvanceTime` lets Testing Library's own polling (findByRole, etc.)
+    // keep making progress against the fake clock instead of deadlocking against it.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
   it('asks the server for the message rather than filtering the rows in hand', async () => {
     const api = mockApi(allRoutes);
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderSurface(<SystemPage />);
     await openLogsTab(user);
 
     await user.type(screen.getByLabelText('Message'), 'probe');
+    await vi.advanceTimersByTimeAsync(250);
 
     // arb-w8ju: searching is the SERVER's job now, so the assertion is on the request.
     const request = api.callsTo('/api/admin/logs').at(-1);
     expect(request?.url.searchParams.get('message')).toBe('probe');
+  });
+
+  it('debounces the message so three quick keystrokes cost one request', async () => {
+    // arb-x64p: typing "probe" character by character must not issue five admin round
+    // trips. Advancing the fake clock only after the whole word lands proves the requests
+    // in between never fired, not merely that the LAST one carried the right value.
+    const api = mockApi(allRoutes);
+    const user = userEvent.setup({ delay: null });
+    renderSurface(<SystemPage />);
+    await openLogsTab(user);
+
+    const before = api.callsTo('/api/admin/logs').length;
+    await user.type(screen.getByLabelText('Message'), 'pro');
+    // No new request yet -- the debounce window has not elapsed.
+    expect(api.callsTo('/api/admin/logs')).toHaveLength(before);
+
+    await vi.advanceTimersByTimeAsync(250);
+
+    const after = api.callsTo('/api/admin/logs');
+    expect(after).toHaveLength(before + 1);
+    expect(after.at(-1)?.url.searchParams.get('message')).toBe('pro');
   });
 
   it('renders every row the server returned, without filtering them again', async () => {
@@ -439,13 +468,14 @@ describe('System logs message filter', () => {
     // would drop two of them here -- so this fails if the visibleEntries derivation comes
     // back, and it is the reason the assertion is a row COUNT rather than a presence check.
     mockApi(allRoutes);
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderSurface(<SystemPage />);
     const table = await openLogsTab(user);
 
     expect(within(table).getAllByRole('row')).toHaveLength(entries.length + 1);
 
     await user.type(screen.getByLabelText('Message'), 'probe');
+    await vi.advanceTimersByTimeAsync(250);
 
     const after = await screen.findByRole('table');
     expect(within(after).getAllByRole('row')).toHaveLength(entries.length + 1);
@@ -454,18 +484,20 @@ describe('System logs message filter', () => {
 
   it('drops the message parameter when the filter is cleared', async () => {
     const api = mockApi(allRoutes);
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderSurface(<SystemPage />);
     await openLogsTab(user);
 
     const input = screen.getByLabelText('Message');
     await user.type(input, 'probe');
+    await vi.advanceTimersByTimeAsync(250);
 
     // Positive control: the parameter is on the wire while filtered, so its absence after
     // clearing is evidence the filter changed rather than evidence it was never sent.
     expect(api.callsTo('/api/admin/logs').at(-1)?.url.searchParams.get('message')).toBe('probe');
 
     await user.clear(input);
+    await vi.advanceTimersByTimeAsync(250);
 
     // Omitted, not `message=` -- an empty string would be a filter the store treats as
     // absent only by accident.
@@ -474,11 +506,12 @@ describe('System logs message filter', () => {
 
   it('returns to page one when the message filter changes', async () => {
     const api = mockApi(allRoutes);
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderSurface(<SystemPage />);
     await openLogsTab(user);
 
     await user.type(screen.getByLabelText('Message'), 'probe');
+    await vi.advanceTimersByTimeAsync(250);
 
     // A server-side search changes which rows exist, so page 3 of the old result set is not
     // page 3 of the new one -- and may be past its end entirely.

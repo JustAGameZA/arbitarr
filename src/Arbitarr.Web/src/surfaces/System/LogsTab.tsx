@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 
 import { QueryState } from '../QueryState';
 import type { LogEntryResponse } from '../../api/types';
@@ -149,6 +149,12 @@ export function LogsTab() {
   // with "All levels" one click away.
   const [filters, setFilters] = useState<LogFilters>({ level: 'Warning', logger: '', message: '' });
 
+  // The Message <input> itself, kept separate from filters.message: the box has to react to
+  // every keystroke, but the value that reaches useLogsQuery -- and therefore the request and
+  // the query key -- is debounced, so typing a word issues one admin round trip instead of one
+  // per character.
+  const [messageInput, setMessageInput] = useState(filters.message);
+
   // 1-based, matching the server's own page numbering rather than translating at the
   // boundary. Offset paging, unlike Activity's cursor: see LogsResponse's note on why the
   // two stores are paged differently.
@@ -167,6 +173,20 @@ export function LogsTab() {
     setFilters((current) => ({ ...current, ...next }));
     setPage(1);
   };
+
+  // ~250ms: long enough that a normal typing cadence produces one request per pause rather
+  // than one per keystroke, short enough that the delay after the last character is not
+  // itself noticeable. Debounces the VALUE, not the keystroke handler, so the input stays
+  // controlled and immediate -- only what reaches `filters` (and so the query key and the
+  // page-1 reset) lags behind.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setFilters((current) => ({ ...current, message: messageInput }));
+      setPage(1);
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [messageInput]);
 
   // Derived from the server's OWN page/pageSize, not from the request: those are the
   // clamped values it actually served, so a clamp stays visible instead of silently
@@ -234,8 +254,8 @@ export function LogsTab() {
                 type="text"
                 className={styles.input}
                 placeholder="Search messages…"
-                value={filters.message}
-                onChange={(event) => applyFilters({ message: event.target.value })}
+                value={messageInput}
+                onChange={(event) => setMessageInput(event.target.value)}
               />
             </label>
           </div>
