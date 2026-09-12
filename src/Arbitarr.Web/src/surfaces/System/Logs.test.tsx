@@ -584,6 +584,42 @@ describe('System logs paging', () => {
     expect(screen.getByRole('button', { name: 'Previous' })).toBeEnabled();
   });
 
+  it('stays on the requested page when the message debounce elapses after the click', async () => {
+    // arb-6l13. The debounce effect also runs on MOUNT, and its timer used to reset the page
+    // unconditionally when it fired ~250ms later -- so clicking Next inside that window put
+    // the operator back on page 1 a quarter-second after arriving. The case above only caught
+    // it by accident: it normally finishes before the deadline, and did not under full-suite
+    // load, which is what made it look order-dependent rather than simply wrong.
+    //
+    // Fake timers make the ordering the assertion instead of the race: the clock is driven
+    // PAST the debounce deadline after the click, so the mount timer has certainly fired by
+    // the time the request is inspected. Nothing is typed, so a correct debounce has nothing
+    // to commit and must leave both the page and the request alone.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+
+    try {
+      const api = mockApi(pagedRoutes);
+      const user = userEvent.setup({ delay: null, advanceTimers: vi.advanceTimersByTime });
+      renderSurface(<SystemPage />);
+      await openLogsTab(user);
+
+      api.set('/api/admin/logs', {
+        body: { entries: fullPage, total: 120, page: 2, pageSize: LOG_PAGE_SIZE, loggers },
+      });
+      await user.click(screen.getByRole('button', { name: 'Next' }));
+      await screen.findByText('Page 2 of 3');
+
+      await vi.advanceTimersByTimeAsync(500);
+
+      // Still page 2, and no page-1 request issued behind it.
+      expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
+      const request = api.callsTo('/api/admin/logs').at(-1);
+      expect(request?.url.searchParams.get('page')).toBe('2');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('disables Next on the last page', async () => {
     mockApi({
       ...statusRoutes,
