@@ -82,8 +82,37 @@ public sealed class SyncReleaseArbiter : ISyncReleaseArbiter
         }
 
         WarnOnFailures(failuresByType, candidates.Count);
+        LogBudgetExhaustionIfWholeSearchTimedOut(outcomes, failuresByType, context.Budget, cancellationToken);
 
         return outcomes;
+    }
+
+    /// <summary>
+    /// A budget overrun and the caller's own cancellation are indistinguishable per-candidate (see
+    /// <see cref="ArbitrateOneAsync"/>), so both are correctly Debug and uncounted there. But when
+    /// Ollama is slow on every candidate, that per-candidate correctness adds up to zero signal above
+    /// Debug for what is actually "the whole search timed out" — indistinguishable, from the caller's
+    /// side, from "nothing to report" (no candidates, or a transport failure already Warned above).
+    /// This is the one Information line that recovers that distinction: only when every outcome is
+    /// Unknown, no transport failure was counted (that already got the Warning above), there was at
+    /// least one candidate, and the caller's own token did not fire (a cancelled caller walked away on
+    /// purpose; that is not budget exhaustion).
+    /// </summary>
+    private void LogBudgetExhaustionIfWholeSearchTimedOut(
+        List<ArbitrationOutcome> outcomes,
+        Dictionary<string, int> failuresByType,
+        TimeSpan budget,
+        CancellationToken cancellationToken)
+    {
+        if (outcomes.Count == 0) return;
+        if (failuresByType.Count != 0) return;
+        if (cancellationToken.IsCancellationRequested) return;
+        if (outcomes.Any(o => o.Verdict != Verdict.Unknown)) return;
+
+        _logger.LogInformation(
+            "AI arbitration returned Unknown for all {Candidates} candidate(s) in this search within the " +
+            "{Budget} per-call budget, with no transport failure. This search's budget was likely exhausted.",
+            outcomes.Count, budget);
     }
 
     /// <summary>

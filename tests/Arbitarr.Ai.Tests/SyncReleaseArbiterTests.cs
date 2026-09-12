@@ -196,6 +196,52 @@ public class SyncReleaseArbiterTests
         Assert.Contains("20 of 20", warning.Message, StringComparison.Ordinal);
     }
 
+    // ---- arb-l5ko: whole-search budget exhaustion is visible above Debug ---------------------
+
+    [Fact]
+    public async Task ArbitrateAsync_AllUnknown_NoTransportFailure_CallerNotCancelled_LogsOneInformationLine()
+    {
+        var logger = new RecordingLogger<SyncReleaseArbiter>();
+        var arbiter = new SyncReleaseArbiter(new NeverCompletingOllamaClient(), logger);
+
+        var outcomes = await arbiter.ArbitrateAsync(
+            new[] { PlantedCandidate("guid-1") }, Context(TimeSpan.FromMilliseconds(50)), CancellationToken.None);
+
+        Assert.Equal(Verdict.Unknown, Assert.Single(outcomes).Verdict);
+
+        // Positive control FIRST (CLAUDE.md §4): prove the line is captured on this sink before the
+        // absence assertions in the two tests below rely on the same sink shape.
+        var info = Assert.Single(logger.Entries, e => e.Level == LogLevel.Information);
+        Assert.DoesNotContain(PlantedTitle, info.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("guid-1", info.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ArbitrateAsync_CallerCancelled_LogsNoInformationLine()
+    {
+        var logger = new RecordingLogger<SyncReleaseArbiter>();
+        var arbiter = new SyncReleaseArbiter(new NeverCompletingOllamaClient(), logger);
+        using var callerCts = new CancellationTokenSource();
+        callerCts.Cancel();
+
+        var outcomes = await arbiter.ArbitrateAsync(
+            new[] { PlantedCandidate("guid-1") }, Context(TimeSpan.FromMilliseconds(50)), callerCts.Token);
+
+        Assert.Equal(Verdict.Unknown, Assert.Single(outcomes).Verdict);
+        Assert.DoesNotContain(logger.Entries, e => e.Level == LogLevel.Information);
+    }
+
+    [Fact]
+    public async Task ArbitrateAsync_AnyNonUnknownOutcome_LogsNoInformationLine()
+    {
+        var logger = new RecordingLogger<SyncReleaseArbiter>();
+        var arbiter = new SyncReleaseArbiter(new StaticOllamaClient(new OllamaVerdict("accept", 0.9)), logger);
+
+        await arbiter.ArbitrateAsync(new[] { PlantedCandidate("guid-1") }, Context(), CancellationToken.None);
+
+        Assert.DoesNotContain(logger.Entries, e => e.Level == LogLevel.Information);
+    }
+
     private sealed record LogEntry(LogLevel Level, string Message);
 
     /// <summary>
