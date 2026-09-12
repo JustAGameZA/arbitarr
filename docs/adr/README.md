@@ -71,3 +71,4 @@ of a superseded ADR is what stops the same rejected option being proposed again.
 | [0019](0019-dedup-is-a-pipeline-stage-with-conservative-exact-merge.md) | Dedup is a pipeline stage covering every source, merging only on normalised title equality, a tight size tolerance and the same `ProtocolKind`, and retaining all group members |
 | [0020](0020-api-hit-budget-and-durable-backoff.md) | API-hit budgets and backoff state are durable and operator-visible, derived from the events store, and separate from the circuit breaker |
 | [0021](0021-cardigann-out-of-v1.md) | Cardigann definitions are out of v1; Prowlarr and Jackett remain usable as ordinary Torznab sources |
+| [0022](0022-one-adapter-for-newznab-and-torznab.md) | One adapter, `NewznabSource`, serves both the `Newznab` and `Torznab` Source kinds |
