@@ -124,6 +124,13 @@ public sealed class SqliteConnectionFactory
         busyTimeoutCommand.ExecuteNonQuery();
     }
 
+    /// <remarks>
+    /// The exception message is written for the operator reading it off <c>/api/admin/logs</c> or
+    /// container output, not the developer reading this source: it tells them to restart the
+    /// container, since <see cref="ConvertToWalOnce"/> — the one-time conversion this depends on —
+    /// is not something they can invoke directly. Developers debugging why the conversion did not
+    /// run belong in this XML doc and in <see cref="ConvertToWalOnce"/>'s remarks, not the message.
+    /// </remarks>
     private static void VerifyJournalMode(object? result)
     {
         var mode = result as string;
@@ -132,8 +139,8 @@ public sealed class SqliteConnectionFactory
             throw new InvalidOperationException(
                 $"Expected SQLite journal_mode to be 'wal' but it reported '{mode ?? "<null>"}'. " +
                 "WAL mode is required for AC15a (concurrent classifier writes must not block the " +
-                "inline reader); refusing to proceed with an unverified journal mode. The one-time " +
-                "conversion (SqliteConnectionFactory.ConvertToWalOnce) must run at startup before " +
+                "inline reader); refusing to proceed with an unverified journal mode. Restart the " +
+                "container, which converts the database file to WAL mode once at startup before " +
                 "any connection is opened.");
         }
     }

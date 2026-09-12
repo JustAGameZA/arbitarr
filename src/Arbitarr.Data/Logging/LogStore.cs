@@ -490,6 +490,15 @@ public sealed class LogStore
             // silently losing WAL is a correctness problem worth failing startup over. Here the
             // worst case is a slower log write, and throwing from inside the logging sink would
             // turn a performance nuisance into a failure of the thing meant to record failures.
+            //
+            // arb-0jcf: issuing the SET here on every open is only safe because EnsureCreated()
+            // (Program.cs) calls this same method single-threaded, before builder.Build(), and
+            // therefore before any concurrent opener of arbitarr-logs.db can exist. That first,
+            // single-threaded call is what converts the file; every later call just re-issues a
+            // no-op SET against an already-WAL file (see SqliteConnectionFactory.ConvertToWalOnce's
+            // remarks for why that ordering — not busy_timeout — is what keeps this bounded). If
+            // EnsureCreated() is ever made concurrent or moved after Build(), this SET reintroduces
+            // arb-itmm's unbounded wait for this file too.
             pragma.CommandText = "PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 3000;";
             pragma.ExecuteNonQuery();
         }
