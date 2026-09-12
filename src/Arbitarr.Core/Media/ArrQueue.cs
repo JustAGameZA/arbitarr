@@ -16,7 +16,12 @@ namespace Arbitarr.Core.Media;
 /// the one the connectivity probe already spells out in its own section. Reusing it would put a
 /// member on this wire contract that this surface never produces, which is the mirror of the mistake
 /// CONTEXT.md records for <c>OllamaProbeOutcome</c> — there the unreachable member was
-/// <c>AuthenticationFailed</c>. Four members, all reachable, is the right closed set here.</para>
+/// <c>AuthenticationFailed</c>. Five members — <see cref="Ok"/>, <see cref="NotConfigured"/>,
+/// <see cref="Unreachable"/>, <see cref="AuthenticationFailed"/>, <see cref="UnexpectedResponse"/> —
+/// all reachable, is the right closed set here: <c>TlsFailure</c> is dropped for the reason above,
+/// and <see cref="NotConfigured"/> is added because this surface is read on a schedule against an
+/// instance that may never have been configured, a state a probe (which an operator triggers
+/// deliberately, having just entered an address) cannot be in.</para>
 /// </summary>
 public enum ArrSectionStatus
 {

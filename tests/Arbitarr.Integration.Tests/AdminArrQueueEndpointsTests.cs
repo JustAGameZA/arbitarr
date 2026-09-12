@@ -330,13 +330,20 @@ public sealed class AdminArrQueueEndpointsTests
     /// <summary>
     /// THE KEY NEVER REACHES THE RESPONSE BODY, WITH A POSITIVE CONTROL.
     ///
-    /// <para>The control is the second half: the same search that finds nothing in the real response
-    /// is first shown to FIND a planted copy of the key in a string of the same shape. Without it,
-    /// "the key is not in the body" would pass on an empty body, a 404, or a response the key could
-    /// never have reached — which is exactly how #80's leak shipped green.</para>
+    /// <para><b>THE CONTROL IS A DISTINCTIVE STRING THAT IS GENUINELY IN THE REAL BODY</b>, following
+    /// <c>AdminArrEndpointsTests.The_stored_key_never_comes_back_on_the_read</c>: finding it proves
+    /// this search, over THIS body, actually finds things that are there. Only then does the key's
+    /// absence mean the key is not there, rather than meaning the body was empty, the request 404'd,
+    /// or the search was looking at the wrong response.</para>
     ///
-    /// <para>Driven against the Ok branch AND the failure branches, because the failure paths are
-    /// where an implementation is most tempted to explain itself with the request it made.</para>
+    /// <para>The control differs per branch because the two branches carry different content, and it
+    /// has to be something the body really holds. On the Ok branch it is the fixture's queue title,
+    /// which travelled the whole projection path. On the failure branch there are no records at all,
+    /// so it is the fixed wording for that status — still a distinctive string, still genuinely in
+    /// the response, and still produced by the request under test.</para>
+    ///
+    /// <para>Driven against the Ok branch AND a failure branch, because the failure paths are where an
+    /// implementation is most tempted to explain itself with the request it made.</para>
     /// </summary>
     [Theory]
     [InlineData(true)]
@@ -356,13 +363,22 @@ public sealed class AdminArrQueueEndpointsTests
         // NON-VACUITY: the response is a real envelope that the key-bearing request produced.
         Assert.Contains("\"status\"", body, StringComparison.Ordinal);
 
-        // POSITIVE CONTROL: the very search used below DOES find the key when it is present, so its
-        // failure to find one in `body` is a real absence rather than a search that never matches.
-        Assert.Contains(SonarrKey, body + SonarrKey, StringComparison.OrdinalIgnoreCase);
+        // POSITIVE CONTROL: a distinctive string that IS in this body, found by the same search the
+        // absence assertion below uses. If this fails, the absence proves nothing.
+        var control = upstreamSucceeds
+            ? "Example.Show.S01E01.1080p.WEB-DL"
+            : "Something answered but it was not Sonarr.";
+        Assert.Contains(control, body, StringComparison.OrdinalIgnoreCase);
 
+        // ...therefore this absence is real.
         Assert.DoesNotContain(SonarrKey, body, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// The Radarr half of the assertion above, with the same control discipline: the fixture's queue
+    /// title is a distinctive string genuinely present in the response, so the key's absence beside it
+    /// is a real absence rather than a search that never matches.
+    /// </summary>
     [Fact]
     public async Task The_radarr_key_never_appears_in_the_response_body()
     {
@@ -373,7 +389,10 @@ public sealed class AdminArrQueueEndpointsTests
         var body = await response.Content.ReadAsStringAsync();
 
         Assert.Contains("\"status\"", body, StringComparison.Ordinal);
-        Assert.Contains(RadarrKey, body + RadarrKey, StringComparison.OrdinalIgnoreCase);
+
+        // POSITIVE CONTROL: really in this body, found by the same search used below.
+        Assert.Contains("Example.Show.S01E01.1080p.WEB-DL", body, StringComparison.OrdinalIgnoreCase);
+
         Assert.DoesNotContain(RadarrKey, body, StringComparison.OrdinalIgnoreCase);
     }
 
