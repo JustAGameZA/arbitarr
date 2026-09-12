@@ -22,6 +22,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Arbitarr.Core\Arbitarr.Core.csproj" />
     <ProjectReference Include="..\..\src\Arbitarr.Core.Identity\Arbitarr.Core.Identity.csproj" />
+    <!-- UpstreamOriginCorpus: the ONE origin corpus, shared with Arbitarr.Data.Tests. -->
+    <ProjectReference Include="..\Arbitarr.TestSupport\Arbitarr.TestSupport.csproj" />
   </ItemGroup>
 
 </Project>
