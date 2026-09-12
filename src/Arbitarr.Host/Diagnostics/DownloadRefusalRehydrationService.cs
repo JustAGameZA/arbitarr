@@ -82,6 +82,9 @@ public sealed class DownloadRefusalRehydrationService(
                     .ConfigureAwait(false);
             }
 
+            // The ordinal match this performs is safe because SourceName is a verbatim copy of
+            // DisplayName, while insertion uniqueness on Sources.DisplayName is case-insensitive —
+            // stricter than the comparison here, so no two known names can collide under it.
             var pruned = await tracker.RehydrateAsync(knownSourceNames, cancellationToken).ConfigureAwait(false);
 
             if (pruned > 0)

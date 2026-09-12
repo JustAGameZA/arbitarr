@@ -72,8 +72,9 @@ public sealed class ArbitarrDbContext : DbContext
 
     /// <summary>
     /// arb-v3w: the durable half of the sticky download-refusal health item, so a restart does not
-    /// hide a misconfiguration that is still in force. One row per source, bounded by the number of
-    /// configured sources — see <see cref="DownloadRefusalEntry"/> for why it needs no prune.
+    /// hide a misconfiguration that is still in force. A row is deleted on a successful grab, and
+    /// pruned at startup rehydration when its <c>SourceName</c> no longer matches a
+    /// <c>Sources.DisplayName</c> — see <see cref="DownloadRefusalEntry"/> for why.
     /// </summary>
     public DbSet<DownloadRefusalEntry> DownloadRefusalEntries => Set<DownloadRefusalEntry>();
 
@@ -276,8 +277,10 @@ public sealed class ArbitarrDbContext : DbContext
             entity.HasKey(e => e.Id);
             // UNIQUE IS LOAD-BEARING. The tracker holds exactly one outstanding refusal per source,
             // and the store's upsert depends on this index to turn a repeat into a refresh rather
-            // than a second row. It is also what bounds the table: one row per configured source,
-            // deleted on a successful grab, so nothing here can accumulate and no prune is needed.
+            // than a second row. A row is deleted on a successful grab and pruned at startup
+            // rehydration when SourceName no longer matches a Sources.DisplayName — see
+            // DownloadRefusalEntry for the full reasoning. The bound is set-membership in Sources,
+            // not elapsed time, so there is still deliberately no ExpiresAt and no MaintenanceJob pass.
             entity.HasIndex(e => e.SourceName).IsUnique();
             // SourceName matches Source.DisplayName's bound; Reason is a generated sentence built
             // from that name plus an int status code — never upstream text — so 1024 is comfortable
