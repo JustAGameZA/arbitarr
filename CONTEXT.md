@@ -334,6 +334,64 @@ speculatively. See [ADR 0010](docs/adr/0010-secrets-clear-route.md).
 
 ---
 
+## Source configuration
+
+The per-indexer columns on `Source` (arb-x7w8.1). Each is validated at the repository
+boundary by **exact ordinal name**, never parsed as an enum.
+
+**Source kind.** Which upstream implementation a source row configures — `NzbHydra`,
+`Newznab` or `Torznab`, the three entries in `SourceRepository.KnownKinds`. Stored as a
+string so a new kind needs no migration, and matched ordinally so `"nzbhydra"` or
+`"NZBHYDRA"` is a 400 at write time rather than a row that is stored, listed, and then
+silently never matched by `SourceSeeder`'s ordinal comparison (arb-pn5). It names the
+implementation **Arbitarr speaks to, outbound**. It is not the **Protocol** above, which
+says which of Arbitarr's own two inbound routes a request arrived on: Arbitarr serves
+`/torznab/api` and `/newznab/api` to Sonarr and Radarr regardless of what its sources
+are, so a `Torznab` source and a Torznab client request are opposite ends of the broker.
+Distinct again from the `arr:{kind}:` namespace of the Arr instance section below, where
+`kind` means `sonarr` or `radarr`.
+
+**Access mode.** How a download from a source is served **downstream**, to the client
+(`Source.NzbAccessMode`): `Proxy`, where Arbitarr fetches the file upstream and streams
+the bytes so the indexer key never leaves the server, or `Redirect`, where Arbitarr
+answers with a `Location` pointing at the upstream URL, which carries the key to the
+client. `Proxy` is the default and today the **only accepted value** —
+`SourceRepository.RedirectAccessMode` is named but deliberately absent from
+`KnownNzbAccessModes`, so a write of it is rejected by construction; arb-x7w8.14 admits
+it together with the Settings warning, neither arriving without the other. Admitting it
+would **not** relax [ADR 0014](docs/adr/0014-refuse-upstream-download-redirects.md),
+which refuses a 3xx in the **upstream** direction (indexer → Arbitarr). The two are
+opposite legs of the same download and the shared word "redirect" is the whole reason to
+say which leg is meant: **Upstream redirect refusal** above is about what Arbitarr will
+follow, Access mode about what Arbitarr will answer.
+
+**Limits unit.** The rolling window `QueryLimit` and `GrabLimit` are both counted over —
+`Hour` or `Day`, the two entries in `SourceRepository.KnownLimitsUnits`. There is **one
+unit per source**, covering both limits; a source cannot meter queries hourly and grabs
+daily. Rolling, not a calendar reset: the window asks how many hits fall in the last 1 or
+24 hours, so it is not a quota that refills at midnight or on the hour. That is a decided
+point rather than an implementation detail —
+[ADR 0020](docs/adr/0020-api-hit-budget-and-durable-backoff.md) rejects anchoring the
+window to a clock hour or a fixed daily reset, because an hour-of-day anchor has timezone
+and boundary semantics to get wrong (whose midnight, the host's or the indexer's) that a
+rolling window simply does not have. The counters themselves are deliberately not columns
+on `Source` — that same ADR derives them from the events store, because a tally that
+changes on every search would rewrite the configuration row constantly and make a
+restored backup re-assert a stale window.
+
+**Unlimited (null).** The state `QueryLimit` or `GrabLimit` is in when no cap applies.
+It is a **distinct state from `0`**, which is a cap of zero — a source exhausted before
+it starts. Collapsing null to 0 silently disables an unlimited indexer; collapsing 0 to
+null lets a limited one run past the cap its operator set. Because null is a value here
+rather than an absence, the column carries no database default, travels the wire as a
+nullable, and is written through an explicit `ClearQueryLimit` / `ClearGrabLimit` flag —
+the rule and its reasoning are in
+[data.md](docs/standards/data.md#settings). `TimeoutSeconds` is nullable for the same
+structural reason but does not mean unlimited: null there is "use the global default",
+not "no timeout".
+
+---
+
 ## Arr instance
 
 An **Arr instance** is a configured Sonarr or Radarr server that Arbitarr itself calls
