@@ -1,5 +1,6 @@
 using Arbitarr.Core.Settings;
 using Arbitarr.Data;
+using Arbitarr.Data.Backup;
 using Arbitarr.Data.Entities;
 using Arbitarr.Data.Maintenance;
 using Arbitarr.TestSupport;
@@ -48,21 +49,73 @@ public sealed class MaintenanceSyntheticAgeingTests : IDisposable
         context.Database.Migrate();
     }
 
+    /// <summary>
+    /// Deletes this class's database AND ITS SIDECARS, and FAILS if it cannot (arb-yt7j).
+    ///
+    /// <para>There is no host and no config directory here — this class owns a bare SQLite file
+    /// under the temp directory — so <c>ConfigDirectoryTeardown</c>, which takes a directory, does
+    /// not apply, and there is no background work to drain. What this shares with the classes that
+    /// do have a host is the two defects that made the old cleanup silently useless.</para>
+    ///
+    /// <para><b>It deleted only the main file.</b> The connection runs in WAL mode
+    /// (<c>ConvertToWalOnce</c> in the constructor, load-bearing for this class's page-reclaim
+    /// assertion), so SQLite keeps <c>-wal</c> and <c>-shm</c> sidecars beside it. Deleting one of
+    /// the three left the other two: measured, this class run alone leaked 3 files per run before
+    /// this change and leaks none after.</para>
+    ///
+    /// <para><b>And it swallowed the failure</b> in an empty <c>catch (IOException)</c> — the shape
+    /// CLAUDE.md §4 names, where the cleanup stops working and every run stays green regardless. A
+    /// failed delete now throws, which is right for a class deleting its OWN file because the
+    /// failure lands on the class responsible for it. <c>UnauthorizedAccessException</c> is caught
+    /// alongside <c>IOException</c> for the reason <see cref="TestSupport.ConfigDirectoryTeardown"/>
+    /// gives: Windows raises that one for a file another handle still holds open, and catching only
+    /// <c>IOException</c> let it escape looking like an unrelated failure.</para>
+    /// </summary>
     public void Dispose()
     {
         // Scoped to this class's own file rather than ClearAllPools(), which would also close
         // pooled connections belonging to test classes running in parallel (arb-rga.3).
-        SqlitePools.ClearPoolForFile(_databasePath);
-        try
+        //
+        // SqlitePoolCleaner.ClearPoolsFor, NOT SqlitePools.ClearPoolForFile, and that swap is what
+        // makes the delete below possible at all (arb-yt7j). Pools are keyed by the FULL connection
+        // string. ClearPoolForFile builds a bare "Data Source=<path>" string, but nothing in this
+        // class ever opens one: every connection here comes from SqliteConnectionFactory, whose
+        // string carries the pragmas DatabaseConnectionStrings spells out. So the old clear named a
+        // pool that was always empty and closed nothing, while the real handles stayed checked out —
+        // the delete then failed, and the empty catch(IOException) is why it failed in silence.
+        // ClearPoolsFor walks DatabaseConnectionStrings.ForDatabase (Application and Maintenance),
+        // which is the set this class actually uses. This is the same inventory-vs-ownership trap
+        // ConfigDirectoryTeardown documents; here it really was the inventory.
+        SqlitePoolCleaner.ClearPoolsFor(_databasePath);
+
+        // The sidecars are part of the database rather than incidental litter: in WAL mode SQLite
+        // writes pages into -wal and coordinates readers through -shm, so removing only the main
+        // file leaves two behind on every run.
+        var failures = new List<Exception>();
+
+        foreach (var path in new[] { _databasePath, _databasePath + "-wal", _databasePath + "-shm" })
         {
-            if (File.Exists(_databasePath))
+            try
             {
-                File.Delete(_databasePath);
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                failures.Add(ex);
             }
         }
-        catch (IOException)
+
+        if (failures.Count > 0)
         {
-            // Best-effort cleanup; a locked SQLite file on Windows shouldn't fail the test run.
+            throw new AggregateException(
+                "Test cleanup could not delete its SQLite database or a WAL sidecar beside it " +
+                $"({_databasePath}). The pool clear above releases this class's own handles, so a " +
+                "failure here means a handle outlived them — check that every ArbitarrDbContext and " +
+                "every OpenConnection in this class is disposed before teardown runs.",
+                failures);
         }
     }
 

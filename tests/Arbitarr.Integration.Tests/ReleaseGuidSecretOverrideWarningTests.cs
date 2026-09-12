@@ -1,3 +1,4 @@
+using Arbitarr.Integration.Tests.TestSupport;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Logging;
@@ -27,10 +28,43 @@ public sealed class ReleaseGuidSecretOverrideWarningTests
     // guard has nothing to flag and its presence in a captured log line could only mean it leaked.
     private const string ThirtyTwoByteSecret = "YXJiLXE3NW4tb3ZlcnJpZGUtc2VjcmV0LTMyYnl0ZXMhISE=";
 
-    private static WebApplicationFactory<Program> CreateHost(
+    /// <summary>
+    /// Builds a host this class OWNS over a caller-supplied config directory (arb-yt7j), returning
+    /// the root factory so the caller can await its <c>DisposeAsync</c> before deleting.
+    ///
+    /// <para>It previously derived from a bare <c>new WebApplicationFactory&lt;Program&gt;()</c> via
+    /// <c>WithWebHostBuilder</c>. Such a derived host is owned by the ROOT factory, and the root was
+    /// never disposed at all here — so the host outlived the test, and <see cref="Cleanup"/> deleted
+    /// the config directory out from under it while it still held the database open. That is why
+    /// the delete failed, and the empty <c>catch (IOException)</c> is why it failed in silence:
+    /// measured, this class leaked 2 config directories per run before this change and leaks none
+    /// after.</para>
+    ///
+    /// <para><see cref="ArbitarrWebApplicationFactory.OverConfigDirectory"/> is the
+    /// caller-supplied-directory host and is deliberately NON-OWNING: it stops the host and clears
+    /// the pools on disposal but does NOT delete the directory, so there is no double delete with
+    /// this class's own <see cref="Cleanup"/>. The per-test directory and per-test host stay as they
+    /// were — what changes is that the host is now drained before the directory is removed.</para>
+    ///
+    /// <para>The two <c>UseSetting</c> calls below still win over the ones
+    /// <c>ArbitarrWebApplicationFactory</c> applies in its own <c>ConfigureWebHost</c>, because
+    /// <c>WithWebHostBuilder</c>'s configuration runs after it. That matters for
+    /// <c>Arbitarr:ReleaseGuidSecret</c> specifically: this class pins a KNOWN value in order to
+    /// assert it never reaches the logs, so the factory's directory-derived default must not be the
+    /// one in force.</para>
+    /// </summary>
+    /// <para><b>Both factories are returned, and disposing the ROOT is what drains the host</b> —
+    /// the same asymmetry <c>CategoryParamCapTests</c> documents. <c>WithWebHostBuilder</c> hands
+    /// back a DERIVED factory that the caller must use to create its client (that is the one
+    /// carrying the log capture), while the running host belongs to the root. Awaiting the root's
+    /// <c>DisposeAsync</c> stops the host and clears the pools; the derived factory needs no
+    /// separate disposal.</para>
+    private static (ArbitarrWebApplicationFactory Root, WebApplicationFactory<Program> Host) CreateHost(
         string configDirectory, List<string> logSink, string? environment = null)
     {
-        return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        var root = ArbitarrWebApplicationFactory.OverConfigDirectory(configDirectory);
+
+        var host = root.WithWebHostBuilder(builder =>
         {
             builder.UseSetting("Arbitarr:ConfigDir", configDirectory);
             builder.UseSetting("Arbitarr:ReleaseGuidSecret", ThirtyTwoByteSecret);
@@ -42,6 +76,8 @@ public sealed class ReleaseGuidSecretOverrideWarningTests
 
             builder.ConfigureLogging(logging => logging.AddProvider(new CapturingLoggerProvider(logSink)));
         });
+
+        return (root, host);
     }
 
     private static List<string> Snapshot(List<string> sink)
@@ -55,20 +91,22 @@ public sealed class ReleaseGuidSecretOverrideWarningTests
     private static string NewConfigDirectory() =>
         Path.Combine(Path.GetTempPath(), "arbitarr-q75n-releaseguid-warning", Guid.NewGuid().ToString("N"));
 
-    private static void Cleanup(string configDirectory)
-    {
-        try
-        {
-            if (Directory.Exists(configDirectory))
-            {
-                Directory.Delete(configDirectory, recursive: true);
-            }
-        }
-        catch (IOException)
-        {
-            // Best-effort; a locked SQLite file on Windows shouldn't fail the run.
-        }
-    }
+    /// <summary>
+    /// Removes a per-test config directory, FAILING if it cannot (arb-yt7j).
+    ///
+    /// <para>This replaces a <c>Directory.Delete</c> inside an empty <c>catch (IOException)</c> with
+    /// no pool clear — the shape CLAUDE.md §4 names, where the cleanup stops working and the run
+    /// stays green anyway. <see cref="TestSupport.ConfigDirectoryTeardown.Delete"/> supplies the
+    /// half that was missing (the pool clear, without which the delete cannot win against a pooled
+    /// handle's share lock on Windows) and throws on failure instead of swallowing. Throwing is
+    /// correct here because this class owns the directory, so the failure lands on the test
+    /// responsible for it.</para>
+    ///
+    /// <para>The caller must have awaited the root factory's <c>DisposeAsync</c> FIRST: the clear
+    /// closes handles the pool HOLDS, and a host that is still running has not returned them.</para>
+    /// </summary>
+    private static void Cleanup(string configDirectory) =>
+        ConfigDirectoryTeardown.Delete(configDirectory);
 
     [Fact]
     public async Task NonDevelopment_WithOverride_WarnsWithKeyNameButNotValue()
@@ -78,7 +116,10 @@ public sealed class ReleaseGuidSecretOverrideWarningTests
 
         try
         {
-            await using var host = CreateHost(configDirectory, logs, environment: "Staging");
+            // The ROOT is what gets disposed (it owns the running host); the derived factory is what
+            // creates the client. See CreateHost for why they are separate.
+            var (root, host) = CreateHost(configDirectory, logs, environment: "Staging");
+            await using var owned = root;
             // CreateClient forces the host to actually start (and thus log); the client itself is
             // otherwise unused, so do not remove this as apparently-dead code.
             using var client = host.CreateClient();
@@ -125,7 +166,8 @@ public sealed class ReleaseGuidSecretOverrideWarningTests
         {
             // Explicit rather than relying on WebApplicationFactory's default, so a process-wide
             // ASPNETCORE_ENVIRONMENT cannot silently change which branch this test exercises.
-            await using var host = CreateHost(configDirectory, logs, environment: "Development");
+            var (root, host) = CreateHost(configDirectory, logs, environment: "Development");
+            await using var owned = root;
             // CreateClient forces the host to actually start (and thus log); the client itself is
             // otherwise unused, so do not remove this as apparently-dead code.
             using var client = host.CreateClient();
