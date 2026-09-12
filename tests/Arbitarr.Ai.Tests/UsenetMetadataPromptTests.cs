@@ -167,4 +167,33 @@ public class UsenetMetadataPromptTests
 
         Assert.Contains("usenet", messages[0].Content, StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>
+    /// The production path never prompts the candidate the parser produced. Every caller that
+    /// classifies goes through <see cref="ReleaseCandidate.WithTitle"/> first —
+    /// <c>ClassifierPollingWorker</c> (~:258) calls it unconditionally before
+    /// <c>ClassifyAndCacheAsync</c>, and <c>TitleNormalizer</c>/<c>FilterStage</c> do the same — so
+    /// a field the parser populates but the clone drops reaches the model as absent, in production
+    /// only, while every direct-construction test above still passes.
+    ///
+    /// <para>
+    /// That is not hypothetical: <c>Poster</c> shipped in exactly that state and the whole feature
+    /// was inert until the clone was fixed. This test round-trips through <c>WithTitle</c> and then
+    /// asserts ALL FIVE lines individually, so the next Usenet field added to the parser and the
+    /// renderer but not to the clone fails here rather than silently going missing at runtime.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Build_AfterWithTitleRoundTrip_StillRendersEveryUsenetField()
+    {
+        var rewritten = Populated().WithTitle("Rewritten.Title", originalTitleRaw: null);
+
+        var message = UserMessage(rewritten);
+
+        Assert.Contains("Poster: a1b2c3@example.invalid", message, StringComparison.Ordinal);
+        Assert.Contains("Usenet group: alt.binaries.example", message, StringComparison.Ordinal);
+        Assert.Contains("Files: 42", message, StringComparison.Ordinal);
+        Assert.Contains("Password protected: yes", message, StringComparison.Ordinal);
+        Assert.Contains("Grabs: 77", message, StringComparison.Ordinal);
+    }
 }

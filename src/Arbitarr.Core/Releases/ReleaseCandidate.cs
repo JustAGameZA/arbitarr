@@ -45,6 +45,7 @@ public sealed class ReleaseCandidate
         Peers = Peers,
         MinimumRatio = MinimumRatio,
         MinimumSeedTime = MinimumSeedTime,
+        Poster = Poster,
         UsenetGroup = UsenetGroup,
         PasswordProtected = PasswordProtected,
         Files = Files,
