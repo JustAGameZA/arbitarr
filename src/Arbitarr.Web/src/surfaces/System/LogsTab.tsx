@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 import { QueryState } from '../QueryState';
 import type { LogEntryResponse } from '../../api/types';
@@ -155,6 +155,10 @@ export function LogsTab() {
   // per character.
   const [messageInput, setMessageInput] = useState(filters.message);
 
+  // The message the debounce has already pushed into `filters`. Seeded with the initial
+  // message so the effect's MOUNT run finds nothing to commit -- see its note below.
+  const committedMessage = useRef(filters.message);
+
   // 1-based, matching the server's own page numbering rather than translating at the
   // boundary. Offset paging, unlike Activity's cursor: see LogsResponse's note on why the
   // two stores are paged differently.
@@ -179,9 +183,31 @@ export function LogsTab() {
   // itself noticeable. Debounces the VALUE, not the keystroke handler, so the input stays
   // controlled and immediate -- only what reaches `filters` (and so the query key and the
   // page-1 reset) lags behind.
+  //
+  // The timer commits ONLY when the debounced value actually differs from the message
+  // already committed, and the page reset lives inside that guard (arb-6l13). The effect
+  // also runs on MOUNT, where messageInput still equals filters.message: without the guard
+  // that mount run would fire setPage(1) 250ms after the tab opened, silently throwing an
+  // operator who clicked Next inside that window back to page 1. It is a real bug and not
+  // merely a test artifact -- it surfaced as an order-dependent failure only because the
+  // paging test usually finishes before the 250ms deadline and, under full-suite load,
+  // does not. The guard compares the VALUE rather than counting runs, which is what makes
+  // it hold: a first-run flag would close the mount run alone, while any later re-arm
+  // carrying an unchanged message would reset the page just the same.
   useEffect(() => {
     const timer = setTimeout(() => {
+      // Read the committed message from a ref rather than from `filters`, so the guard
+      // does not put `filters` in this effect's dependency list -- doing that would
+      // re-arm the timer on every filter change and reintroduce the same late reset
+      // from a different direction. The updater itself stays pure.
+      if (committedMessage.current === messageInput) {
+        return;
+      }
+
+      committedMessage.current = messageInput;
       setFilters((current) => ({ ...current, message: messageInput }));
+      // A genuinely new search: page 3 of the old result set is not page 3 of the new
+      // one, so the reset belongs with the change that invalidates the page.
       setPage(1);
     }, 250);
 

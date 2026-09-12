@@ -81,6 +81,15 @@ clearing is in [ADR 0010](../adr/0010-secrets-clear-route.md) — do not restate
     `Arbitarr.Data` because `Arbitarr.Api` and `Arbitarr.Media` both reference that project and
     neither may reference the other — so a second consumer costs a new consumer, never a new caller.
     That is the shape to reach for when a third arrives.
+  - `RadarrInstanceRepository`'s is called from `RadarrCredentialProvider`, and from nowhere else —
+    the shape the bullet above predicted, reached for deliberately. **The provider was introduced at
+    the FIRST consumer**, not the second: Sonarr's lesson is that the obvious wiring at the second
+    consumer produces two callers, and by then the guarantee has already been spent. The admin
+    connectivity probe is that first consumer; the queue and movie-library readers that follow take a
+    `RadarrCredential` from the provider rather than reaching for the reader, so the count stays at
+    one without anyone having to notice it was at risk. Radarr duplicates this shape rather than
+    sharing a generalised repository with Sonarr — the rejected alternative is recorded in
+    `RadarrInstanceRepository`'s own type doc, so a third *arr reopens it deliberately.
 - **The admin key is session-only in Zustand** on the frontend — never `localStorage`, never
   `sessionStorage`, never a query string. CI rejects browser-storage references in the web project.
 - **The admin key stays absent from `SettingsCatalog`**, which feeds both the settings PUT

@@ -161,27 +161,92 @@ export function SectionNav({ entries }: SectionNavProps) {
           }
         }
 
-        // The band's top edge in viewport coordinates. rootMargin's bottom
-        // component ('-70%') shrinks the *effective* intersection rectangle by
-        // that fraction of the root's height, which moves its bottom edge up
-        // -- the top edge (what "the band" means here) is simply the root's
-        // own top, whether root is the scrolling <main> or (its fallback) the
-        // viewport.
-        const bandTop = (root ?? document.documentElement).getBoundingClientRect().top;
-
-        // Among sections at or past the scrollport's top edge (their own top
-        // is >= bandTop, i.e. not above it), the one closest to that edge --
-        // the smallest such top -- wins. A tall preceding section can still be
-        // "intersecting" (its bottom is still inside the band) while its own
-        // top sits well above bandTop; comparing tops rather than
-        // document-array order is what excludes it in favour of whichever
-        // section has actually reached the edge.
+        // The scroll band's top edge in viewport coordinates: the first
+        // VISIBLE edge of the scrollport, not merely its geometric one
+        // (arb-9b42). "Scroll band" throughout, never bare "band" -- CONTEXT.md
+        // already uses that word for the FreshUntil/ServeUntil cache window.
         //
-        // "At the scrollport's top edge" is NOT the same as "what the operator
-        // is looking at": below 1100px the sticky strip covers the first 68px
-        // of the pane (Settings.module.css's scroll-margin-top), so a section
-        // level with bandTop is behind it. Compensating for that offset is
-        // arb-9b42's job, not this comparison's.
+        // rootMargin's bottom component ('-70%') shrinks the *effective*
+        // intersection rectangle by that fraction of the root's height, which
+        // moves its bottom edge up -- the top edge is untouched by it and is
+        // simply the root's own top, whether root is the scrolling <main> or
+        // (its fallback) the viewport.
+        //
+        // That geometric edge is not what the operator can see. Below 1100px
+        // this nav is a sticky strip at the pane's top edge and the panels
+        // scroll UNDER it (SectionNav.module.css: `top: 0`, opaque
+        // background), so a section level with the scrollport top is hidden
+        // behind the strip -- which is the whole reason Settings.module.css
+        // gives .section a 68px scroll-margin-top there. A clicked section
+        // therefore comes to rest at the strip's BOTTOM, and counting it as
+        // "reached the scroll band" at the scrollport top highlights the
+        // section before it.
+        //
+        // The strip's own measured `bottom` is used rather than a second copy
+        // of that 68px: the constant is pinned once, in Settings.module.css,
+        // and a measurement cannot drift away from it.
+        //
+        // WHICH LAYOUT this is comes from SectionNav.module.css's
+        // `--section-nav-layout`, declared beside the sticky rule it describes,
+        // NOT inferred from the nav's position. Two independent traps make
+        // every position-based test wrong, and both were shipped once:
+        //   1. Border box vs padding box. `sticky; top: 0` resolves against the
+        //      scrollport's PADDING box, while getBoundingClientRect returns
+        //      its BORDER box. AppShell's .content carries `padding: 20px 24px`
+        //      (unoverridden at narrow widths), so a stuck strip sits 20px
+        //      BELOW the root rect's top and is never level with it -- a
+        //      "flush against the top" test is false in every layout state, so
+        //      the correction silently never applies.
+        //   2. A tall rail does not stick. The rail is `align-self: start` and
+        //      so content-sized, and the entry count is unbounded (Settings.tsx
+        //      appends one per server catalog group). Once it is taller than
+        //      the scrollport it cannot stick at all: it scrolls away with the
+        //      content and its top goes negative, which is exactly what a stuck
+        //      strip would look like to a position test. bandTop would then
+        //      jump to the rail's bottom -- most of the pane -- emptying
+        //      withinBand and handing every highlight to the fallback.
+        //
+        // Being the strip is necessary but not sufficient: the strip only
+        // occludes once it is actually STUCK over the panels. Before the pane
+        // scrolls it sits in flow at the top and covers nothing. That check is
+        // the one comparison that must be geometric, so it is made against the
+        // padding-box top (trap 1), with the same 1px slack the fade
+        // measurement above uses and for the same reason: sub-pixel layout can
+        // leave a stuck element a fraction off its resolved offset, and an
+        // exact equality would drop the correction on those frames.
+        const rootElement = root ?? document.documentElement;
+        const rootRect = rootElement.getBoundingClientRect();
+        const scrollportTop = rootRect.top;
+
+        // Read per callback, not captured when the effect ran: a resize can
+        // swap strip for rail, and the strip's height changes with the entry
+        // count, without this effect re-running.
+        const nav = navRef.current;
+        let bandTop = scrollportTop;
+        if (nav !== null) {
+          const navStyle = getComputedStyle(nav);
+          const isStrip = navStyle.getPropertyValue('--section-nav-layout').trim() === 'strip';
+          if (isStrip) {
+            const paddingTop = parseFloat(getComputedStyle(rootElement).paddingTop) || 0;
+            const navRect = nav.getBoundingClientRect();
+            if (navRect.top <= scrollportTop + paddingTop + 1) {
+              bandTop = navRect.bottom;
+            }
+          }
+        }
+
+        // Among sections at or past that edge (their own top is >= bandTop,
+        // i.e. not above it), the one closest to the edge -- the smallest such
+        // top -- wins. A tall preceding section can still be "intersecting"
+        // (its bottom is still inside the scroll band) while its own top sits
+        // well above bandTop; comparing tops rather than document-array order
+        // is what excludes it in favour of whichever section has actually
+        // reached the edge.
+        //
+        // `>=`, not `>`: a section resting exactly at bandTop is the one the
+        // operator is looking at, and after a click it comes to rest exactly
+        // there. A strict comparison would drop it out of the scroll band
+        // entirely and fall through to the nearest-from-above branch.
         //
         // On equal tops both reduces below keep the incumbent (their
         // comparisons are strict), so the first candidate encountered wins and
@@ -196,10 +261,10 @@ export function SectionNav({ entries }: SectionNavProps) {
             candidate.boundingClientRect.top < closest.boundingClientRect.top ? candidate : closest,
           );
         } else {
-          // Nothing has reached the band yet (every intersecting section's
-          // heading is still above it, e.g. one tall section spanning the
-          // whole band): fall back to the entry nearest the band from above --
-          // the largest top among those still <= bandTop.
+          // Nothing has reached the scroll band yet (every intersecting
+          // section's heading is still above it, e.g. one tall section
+          // spanning the whole band): fall back to the entry nearest it from
+          // above -- the largest top among those still <= bandTop.
           winner = intersecting.reduce((nearest, candidate) =>
             candidate.boundingClientRect.top > nearest.boundingClientRect.top ? candidate : nearest,
           );
@@ -215,11 +280,18 @@ export function SectionNav({ entries }: SectionNavProps) {
         // would count as intersecting at once -- the highlight would then
         // never move off the first entry.
         root,
-        // Biased to the top: the band is anchored at the pane's own top edge,
-        // so the highlighted entry is the section that has reached that edge
-        // rather than whichever occupies the most pixels. See the bandTop
-        // comment above for why that edge is not the same as what is visible
-        // below 1100px.
+        // Biased to the top: the scroll band is anchored at the pane's own top
+        // edge, so the highlighted entry is the section that has reached that
+        // edge rather than whichever occupies the most pixels.
+        //
+        // Deliberately NOT narrowed to compensate for the sticky strip, and
+        // this is the wrong place to try. A rootMargin is fixed at construction
+        // while the correction is not: it depends on the current layout and on
+        // whether the strip is stuck, both of which change without this effect
+        // re-running. It also only decides which sections are REPORTED --
+        // which of them wins is the bandTop comparison above. Narrowing here
+        // would withhold the strip-occluded section from the callback
+        // altogether, taking the nearest-from-above fallback's input with it.
         rootMargin: '0px 0px -70% 0px',
       },
     );

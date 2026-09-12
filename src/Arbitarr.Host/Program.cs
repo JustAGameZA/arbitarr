@@ -762,6 +762,50 @@ builder.Services.AddHttpClient<Arbitarr.Core.Media.SonarrConnectivityProber>()
 // neither may reference the other.
 builder.Services.AddScoped<Arbitarr.Data.Media.SonarrCredentialProvider>();
 
+// arb-6l9b.1: the Radarr instance's configuration (base URL + write-only API key), stored as two
+// colon-namespaced rows in the existing Settings table -- arr:radarr:base_url and arr:radarr:api_key.
+// Same shape and same mechanism as the Sonarr pair above: NO NEW TABLE (the rows are fixed in number
+// and do not accumulate, so there is nothing new for MaintenanceJob to prune), and the key is stored
+// under a name no SettingKey can produce, so it can never surface through GET /api/admin/settings.
+// NEVER add either row to SettingsCatalog -- that unreachability is the mechanism, not a coincidence.
+//
+// A SEPARATE TYPE RATHER THAN A GENERALISED ONE (arb-arrq D3): the rejected alternative was
+// parameterising ArrInstanceRepository over an instance kind, and the grounds for rejecting it are
+// recorded in RadarrInstanceRepository's own type doc so a third *arr reopens it deliberately.
+// Note it takes NO IArrInstanceEpoch: that epoch is Sonarr's (it evicts SeriesTitleResolver's memo),
+// Radarr has no memo keyed on it, and bumping it for a Radarr write would evict a correct Sonarr
+// cache for an unrelated write.
+builder.Services.AddScoped<Arbitarr.Data.Media.RadarrInstanceRepository>();
+
+// arb-6l9b.1: the Radarr connectivity probe. AllowAutoRedirect is disabled for the same SSRF reason
+// as every *arr client above -- a misconfigured address answering 30x must not make this process
+// reissue a request (carrying Radarr's API key) at a host nobody configured.
+//
+// NO .RemoveAllLoggers() HERE, DELIBERATELY, for exactly the measured reason the
+// SonarrConnectivityProber registration above sets out at length -- read that comment rather than a
+// summary of it. In short: this client's key rides in the QUERY STRING
+// (RadarrConnectivityProber.BuildStatusUri puts it there, matching SonarrConnectivityProber and
+// ArrApiProvider), and .NET's logging handler collapses the whole query string to "?*" before the
+// message is formatted, so the key never reaches the log store. RemoveAllLoggers() is needed only if
+// a key ever moves into a URL PATH segment, which LogMessageCleanser does NOT scrub (CLAUDE.md
+// section 1) -- it does not here. Do not move this key to an X-Api-Key header either: that would
+// split the codebase's one placement convention and invalidate the comment above, which
+// SonarrKeyIsScrubbedFromLogsTests and DisableUriRedactionSwitchTests pin. The same process-wide
+// System.Net.Http.DisableUriRedaction dependency the Sonarr comment documents applies to this client
+// unchanged.
+builder.Services.AddHttpClient<Arbitarr.Core.Media.RadarrConnectivityProber>()
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+
+// arb-6l9b.1: the SINGLE production reader of the stored Radarr API key, holding
+// RadarrInstanceRepository.ReadApiKeyForUpstreamRequestAsync at exactly one call site -- the form
+// that guarantee takes (CLAUDE.md section 1, docs/standards/architecture.md), and the same one
+// SonarrCredentialProvider above exists to preserve for Sonarr's reader. Introduced with the FIRST
+// consumer rather than at the second, because Sonarr's history is that the obvious wiring at the
+// second consumer produces two callers, which is precisely the count the guarantee is made of. It
+// lives in Arbitarr.Data so every consumer can reach it without Arbitarr.Api referencing
+// Arbitarr.Media (ADR 0001).
+builder.Services.AddScoped<Arbitarr.Data.Media.RadarrCredentialProvider>();
+
 // arb-u1c: the identity resolver that turns Sonarr's tvdbid into the series title the search path
 // sends upstream. Registered against the Core.Identity contract, so Arbitarr.Api (which builds the
 // search query) never sees Arbitarr.Media -- this composition root is the only place that knows
@@ -1131,6 +1175,10 @@ AdminAiEndpoints.Map(app);
 // already has: the key is a secret whose colon-namespaced row no SettingKey can produce, and the
 // base URL needs a connectivity probe the generic catalog row cannot offer. See AdminArrEndpoints.
 AdminArrEndpoints.Map(app);
+// arb-6l9b.1: the Radarr instance's own admin surface, mirroring the Sonarr one above for the same
+// two reasons and deliberately NOT sharing an implementation with it (arb-arrq D3 -- the rejected
+// generalisation is recorded in RadarrInstanceRepository's type doc). See AdminRadarrEndpoints.
+AdminRadarrEndpoints.Map(app);
 AdminRuleEndpoints.Map(app);
 AdHocSearchEndpoint.Map(app);
 MatchExplanationEndpoint.Map(app);
