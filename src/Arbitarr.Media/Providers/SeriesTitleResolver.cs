@@ -23,17 +23,27 @@ namespace Arbitarr.Media.Providers;
 /// instance that sent the request is the one authority that already knows it.
 /// </para>
 /// <para>
-/// <b>ONE TIER, NOT TWO.</b> ADR 0002's preference order puts <see cref="AnimeListsProvider"/>
-/// behind <see cref="ArrApiProvider"/> as a fallback, and an earlier revision of this type wired
-/// it. That tier is NOT wired here, deliberately: <see cref="AnimeListsProvider"/> is registered
-/// nowhere, and registering it is not a composition-root line — it has no source URL anywhere in
-/// the repository, so wiring it means choosing a third-party upstream, giving it an operator-facing
-/// configuration knob, and admitting a first-run network fetch onto the search path. Shipping the
-/// tier with an optional constructor parameter that DI leaves null was worse than not shipping it:
-/// the fallback never ran in production while four tests passed by constructing it directly, which
-/// is a test suite asserting about code no request reaches. See bead arb-5uw. Until that lands, an
-/// unresolved title degrades to the id-only upstream request, exactly as it did before.
+/// <b>arb-5uw: TWO TIERS, THE SECOND INACTIVE UNTIL AN OPERATOR OPTS IN.</b> Per ADR 0002's
+/// preference order, <see cref="ArrApiProvider"/> answers first — it is the *arr instance's own
+/// authoritative data — and <see cref="AnimeListsProvider"/> is consulted only when it does not.
+/// The provider is a REQUIRED constructor dependency, not an optional one: an earlier revision made
+/// it optional, DI passed null because it was registered nowhere, and the tier was dead in
+/// production while four tests passed by constructing it directly. Required means a missing
+/// registration fails at STARTUP, where it is visible, instead of silently disabling a tier.
 /// </para>
+/// <para>Registered does not mean active. <see cref="AnimeListsProviderOptions.SourceUrl"/>
+/// (<c>Arbitarr:AnimeLists:SourceUrl</c>) has no default anywhere in the repository, because
+/// choosing the third-party upstream and its licence is the operator's decision and a committed
+/// default would also put a first-run network fetch on the search path nobody asked for. Unset, the
+/// provider reports <see cref="AnimeListsOutcomeKind.NotConfigured"/> with no I/O at all, and this
+/// tier contributes nothing — an unresolved title degrades to the id-only upstream request exactly
+/// as it did before.</para>
+///
+/// <para>ADR 0002 governs what the tier may admit: several DISTINCT names for one series cannot be
+/// separated, so NONE is admitted and
+/// <see cref="MatchProvenanceFlags.AmbiguousMapping"/> is reported through
+/// <see cref="LastAnimeListsFlags"/> — an inspectable flag rather than a null the caller has to
+/// interpret, which is the whole point of that decision. Exactly one name resolves.</para>
 /// <para>
 /// <b>THE CREDENTIAL IS NOT READ HERE.</b> It comes from
 /// <see cref="SonarrCredentialProvider"/>, which is the single production caller of
@@ -130,6 +140,7 @@ public sealed class SeriesTitleResolver : IIdentityResolver
     private readonly IAsyncCircuitBreaker _circuitBreaker;
     private readonly IMemoryCache _memo;
     private readonly IArrInstanceEpoch _epoch;
+    private readonly AnimeListsProvider _animeLists;
     private readonly TimeSpan _lookupBudget;
 
     public SeriesTitleResolver(
@@ -138,6 +149,7 @@ public sealed class SeriesTitleResolver : IIdentityResolver
         IAsyncCircuitBreaker circuitBreaker,
         IMemoryCache memo,
         IArrInstanceEpoch epoch,
+        AnimeListsProvider animeLists,
         TimeSpan? lookupBudget = null)
     {
         _credentials = credentials ?? throw new ArgumentNullException(nameof(credentials));
@@ -145,8 +157,32 @@ public sealed class SeriesTitleResolver : IIdentityResolver
         _circuitBreaker = circuitBreaker ?? throw new ArgumentNullException(nameof(circuitBreaker));
         _memo = memo ?? throw new ArgumentNullException(nameof(memo));
         _epoch = epoch ?? throw new ArgumentNullException(nameof(epoch));
+
+        // REQUIRED, arb-5uw. Optional-with-a-null-default is exactly how this tier shipped dead
+        // last time: DI had nothing to inject, the parameter defaulted to null, and the fallback
+        // never ran while its tests passed by constructing the provider themselves. Throwing here
+        // moves a missing registration to startup, where it is a failure rather than a silence.
+        _animeLists = animeLists ?? throw new ArgumentNullException(nameof(animeLists));
+
         _lookupBudget = lookupBudget ?? LookupBudget;
     }
+
+    /// <summary>
+    /// ADR 0002: the flags the most recent AnimeLists-tier consultation produced —
+    /// <see cref="MatchProvenanceFlags.AmbiguousMapping"/> when several distinct names claimed the
+    /// series and none was admitted, <see cref="MatchProvenanceFlags.None"/> otherwise.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>WHY THIS IS NOT INFERRED FROM THE NULL.</b> ADR 0002 requires "ambiguous, so
+    /// withheld" to be distinguishable from "nothing found", because they call for different
+    /// responses; a caller reading only <see cref="ResolveAsync"/>'s null cannot tell them apart.
+    /// <see cref="IIdentityResolver"/> carries no provenance channel, so the flag is surfaced here
+    /// rather than by widening that contract for one implementation's tier.</para>
+    ///
+    /// <para>Not reset by a memo hit and not part of the memo key: it describes the last
+    /// CONSULTATION, which is what an operator inspecting a withheld result wants to know.</para>
+    /// </remarks>
+    public MatchProvenanceFlags LastAnimeListsFlags { get; private set; } = MatchProvenanceFlags.None;
 
     /// <inheritdoc />
     /// <remarks>
@@ -193,10 +229,102 @@ public sealed class SeriesTitleResolver : IIdentityResolver
         return BuildIdentity(tvdbId, resolved);
     }
 
+    /// <summary>
+    /// ADR 0002's preference order for one lookup: the *arr instance's own API first, then the
+    /// AnimeLists tier, then nothing.
+    /// </summary>
+    /// <remarks>
+    /// The second tier runs only when the FIRST ADMITTED NOTHING — a title from *arr is
+    /// authoritative for the instance that sent the request, so there is no case where a static
+    /// third-party map should override it, and consulting it anyway would spend a fetch (and a first
+    /// run's whole download) on every search that already had its answer.
+    /// </remarks>
     private async Task<string?> LookUpAsync(
         string title,
         IdentityResolutionHints hints,
         int tvdbId,
+        CancellationToken cancellationToken)
+    {
+        var fromArrApi = await LookUpViaArrApiAsync(title, hints, cancellationToken).ConfigureAwait(false);
+        if (fromArrApi is not null)
+        {
+            // The AnimeLists tier is NOT consulted: a resolved title ends the lookup, so its flags
+            // from a previous consultation must not be left standing as if they described this one.
+            LastAnimeListsFlags = MatchProvenanceFlags.None;
+            return fromArrApi;
+        }
+
+        return await LookUpViaAnimeListsAsync(tvdbId, title, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// ADR 0002's SECOND tier: AniDB's static anime-lists map, consulted only when the *arr instance
+    /// admitted nothing, and only when an operator has configured a source URL.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>SEVERAL DISTINCT NAMES ADMIT NOTHING (ADR 0002).</b> An entry may carry more than
+    /// one <c>&lt;name&gt;</c>, and when those are genuinely different series names there is no
+    /// principled basis for preferring one: the map is hand-edited and unversioned, so "the first
+    /// one" is wrong exactly as often as it is right. None is admitted and
+    /// <see cref="LastAnimeListsFlags"/> records
+    /// <see cref="MatchProvenanceFlags.AmbiguousMapping"/>, which is what makes the withholding
+    /// inspectable instead of indistinguishable from a coverage gap.</para>
+    ///
+    /// <para>Distinctness is compared case-insensitively after trimming, so one name repeated in two
+    /// spellings is one name rather than a manufactured ambiguity.</para>
+    ///
+    /// <para>The echo guard applies here for the same reason it applies to the *arr tier: the
+    /// caller's <c>title</c> is a bare absolute episode number, and a name equal to it would put
+    /// "92 92" on the wire.</para>
+    /// </remarks>
+    private async Task<string?> LookUpViaAnimeListsAsync(
+        int tvdbId,
+        string title,
+        CancellationToken cancellationToken)
+    {
+        LastAnimeListsFlags = MatchProvenanceFlags.None;
+
+        // Short-circuits inside the provider with no network call and no filesystem access when no
+        // source URL is configured (arb-5uw), which is the stock state.
+        if (!_animeLists.IsConfigured)
+        {
+            return null;
+        }
+
+        AnimeListsResult<AnimeListsEntry> result;
+        try
+        {
+            result = await _animeLists.GetByTvdbIdAsync(tvdbId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return null;
+        }
+
+        if (result.Kind != AnimeListsOutcomeKind.Success || result.Value is not { } entry)
+        {
+            return null;
+        }
+
+        var names = entry.Names
+            .Where(IsUsableTitle)
+            .Select(n => n.Trim())
+            .Where(n => !IsSameNumber(n, title) && !IsSameText(n, title))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (names.Count > 1)
+        {
+            LastAnimeListsFlags = MatchProvenanceFlags.AmbiguousMapping;
+            return null;
+        }
+
+        return names.Count == 1 ? names[0] : null;
+    }
+
+    private async Task<string?> LookUpViaArrApiAsync(
+        string title,
+        IdentityResolutionHints hints,
         CancellationToken cancellationToken)
     {
         var credential = await _credentials.GetAsync(cancellationToken).ConfigureAwait(false);

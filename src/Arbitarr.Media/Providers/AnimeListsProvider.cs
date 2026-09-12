@@ -27,9 +27,34 @@ namespace Arbitarr.Media.Providers;
 /// freshness record, surviving process restarts without any additional persistence.</description></item>
 /// </list>
 /// </para>
+/// <para>
+/// <b>arb-5uw: THE TIER IS INACTIVE UNTIL AN OPERATOR OPTS IN.</b>
+/// <see cref="AnimeListsProviderOptions.SourceUrl"/> has no default anywhere in the repository, so a
+/// stock install reaches <see cref="IsConfigured"/> false and every lookup returns
+/// <see cref="AnimeListsOutcomeKind.NotConfigured"/> WITHOUT a network call or a filesystem read.
+/// That is what keeps the choice of third-party upstream (and its licence) the operator's, and what
+/// stops a first-run fetch appearing on the search path for anyone who never asked for one.
+/// </para>
+/// <para>
+/// <b>arb-5uw: THIS TYPE MUST NEVER ASSIGN <see cref="HttpClient.Timeout"/>.</b> It is constructed
+/// as a singleton around a POOLED named client (registered in <c>Program.cs</c> under
+/// <see cref="HttpClientName"/>), and <see cref="HttpClient"/> throws on that assignment once a
+/// request has started on the instance — the same defect fixed in <see cref="ArrApiProvider"/> under
+/// arb-u1c, where two concurrent searches were enough to make one throw. The timeout is therefore
+/// set ONCE, at that registration, from <see cref="AnimeListsProviderOptions.EffectiveRequestTimeout"/>.
+/// A caller wanting a shorter bound uses a linked <see cref="CancellationTokenSource"/> instead.
+/// </para>
 /// </remarks>
 public sealed class AnimeListsProvider
 {
+    /// <summary>The named <see cref="HttpClient"/> the runtime anime-lists fetch is issued on.</summary>
+    /// <remarks>
+    /// The registration in <c>Program.cs</c> carries the SSRF and timeout notes that apply to it —
+    /// including that the client's TIMEOUT IS SET THERE, once, and must never be assigned by this
+    /// type (see the type remarks above).
+    /// </remarks>
+    public const string HttpClientName = "AnimeListsDataset";
+
     private const string SourceName = "AnimeLists";
 
     private readonly AnimeListsProviderOptions _options;
@@ -44,10 +69,24 @@ public sealed class AnimeListsProvider
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
 
-        _httpClient.Timeout = options.EffectiveRequestTimeout;
+        // NO `_httpClient.Timeout = ...` HERE, arb-5uw. The client is pooled and shared, and the
+        // assignment throws once a request has started on it. The timeout is set once at the named
+        // client's registration in Program.cs, from EffectiveRequestTimeout. See the type remarks.
     }
 
     public string Name => SourceName;
+
+    /// <summary>
+    /// arb-5uw: whether an operator has opted this tier in by configuring
+    /// <see cref="AnimeListsProviderOptions.SourceUrl"/> (<c>Arbitarr:AnimeLists:SourceUrl</c>).
+    /// </summary>
+    /// <remarks>
+    /// When false every lookup short-circuits to <see cref="AnimeListsOutcomeKind.NotConfigured"/>
+    /// before any I/O, so a caller can register this tier unconditionally — which
+    /// <see cref="SeriesTitleResolver"/> does, as a REQUIRED dependency — without that registration
+    /// implying a network fetch.
+    /// </remarks>
+    public bool IsConfigured => _options.SourceUrl is not null;
 
     /// <summary>
     /// Looks up the AniDB anime-lists entry for a series by AniDB id, ensuring the local dataset is
@@ -57,6 +96,11 @@ public sealed class AnimeListsProvider
         int aniDbId,
         CancellationToken cancellationToken = default)
     {
+        if (!IsConfigured)
+        {
+            return AnimeListsResult<AnimeListsEntry>.NotConfigured();
+        }
+
         var dataset = await EnsureDatasetAsync(cancellationToken).ConfigureAwait(false);
         if (dataset is null)
         {
@@ -77,6 +121,11 @@ public sealed class AnimeListsProvider
         int tvdbId,
         CancellationToken cancellationToken = default)
     {
+        if (!IsConfigured)
+        {
+            return AnimeListsResult<AnimeListsEntry>.NotConfigured();
+        }
+
         var dataset = await EnsureDatasetAsync(cancellationToken).ConfigureAwait(false);
         if (dataset is null)
         {
@@ -153,12 +202,20 @@ public sealed class AnimeListsProvider
                 return await TryParseFileAsync(path, cancellationToken).ConfigureAwait(false);
             }
 
+            // Unreachable unless configured: both public entry points return NotConfigured before
+            // any of this runs (arb-5uw). Re-read as a local so the null state is closed here too,
+            // rather than by a suppression that a later caller could invalidate.
+            if (_options.SourceUrl is not { } sourceUrl)
+            {
+                return null;
+            }
+
             await ApplyRateLimitAsync(cancellationToken).ConfigureAwait(false);
 
             string body;
             try
             {
-                using var response = await _httpClient.GetAsync(_options.SourceUrl, cancellationToken).ConfigureAwait(false);
+                using var response = await _httpClient.GetAsync(sourceUrl, cancellationToken).ConfigureAwait(false);
                 _lastRequestAt = DateTimeOffset.UtcNow;
 
                 if (!response.IsSuccessStatusCode)
