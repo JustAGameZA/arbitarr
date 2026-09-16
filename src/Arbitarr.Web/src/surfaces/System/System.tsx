@@ -1,6 +1,5 @@
-import { useId, useState } from 'react';
-
 import { PageHeader } from '../../components/shell/PageHeader';
+import { TabPanel, Tabs, useTabs } from '../../components/Tabs/Tabs';
 import { QueryState } from '../QueryState';
 import { BackupTab } from './BackupTab';
 import { LogsTab } from './LogsTab';
@@ -297,13 +296,13 @@ function StatusTab() {
  * system-event list). Both omissions are rulings in plan §3, not oversights -- do not add
  * either back without revisiting it there.
  */
-const TABS = [
-  ['status', 'Status'],
-  ['logs', 'Logs'],
-  ['backup', 'Backup'],
+const TAB_ITEMS = [
+  { id: 'status', label: 'Status' },
+  { id: 'logs', label: 'Logs' },
+  { id: 'backup', label: 'Backup' },
 ] as const;
 
-type TabId = (typeof TABS)[number][0];
+type TabId = (typeof TAB_ITEMS)[number]['id'];
 
 /**
  * System.
@@ -319,68 +318,27 @@ type TabId = (typeof TABS)[number][0];
  * cannot represent, and routes.tsx's per-route document titles (#51) would need an entry
  * per tab. If a tab ever needs to be linkable, that is the tradeoff to reopen.
  *
- * The tabs are a real ARIA tablist: arrow keys move between them and the panel is
- * associated with its tab, which is the behaviour a keyboard operator expects from
- * something that looks like tabs.
+ * The tabs are the shared `Tabs` primitive (arb-9igu, extracted from this page's own
+ * inline WAI-ARIA tablist): a real ARIA tablist where arrow keys move between them and
+ * the panel is associated with its tab, which is the behaviour a keyboard operator
+ * expects from something that looks like tabs.
  */
 export default function SystemPage() {
-  const [tab, setTab] = useState<TabId>('status');
-  const tabIds = useId();
-
-  const tabId = (id: TabId) => `${tabIds}-tab-${id}`;
-  const panelId = (id: TabId) => `${tabIds}-panel-${id}`;
-
-  /**
-   * Arrow-key roving focus (WAI-ARIA tabs pattern), wrapping at both ends.
-   *
-   * Without this the tablist is reachable but not operable by keyboard the way its
-   * appearance promises: Tab alone would step through every tab as a separate stop,
-   * which is precisely what `tabIndex={-1}` on the inactive tabs prevents.
-   */
-  const onTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
-    const delta = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
-    if (delta === 0) {
-      return;
-    }
-
-    event.preventDefault();
-    const index = TABS.findIndex(([id]) => id === tab);
-    const next = TABS[(index + delta + TABS.length) % TABS.length][0];
-    setTab(next);
-    document.getElementById(tabId(next))?.focus();
-  };
+  const tabs = useTabs<TabId>('status');
 
   return (
     <>
       <PageHeader title="System" description="Build information and runtime diagnostics." />
 
-      <div className={local.tabs} role="tablist" aria-label="System sections">
-        {TABS.map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            id={tabId(id)}
-            role="tab"
-            aria-selected={tab === id}
-            aria-controls={panelId(id)}
-            // Only the active tab is a tab stop; the arrow keys move between them.
-            tabIndex={tab === id ? 0 : -1}
-            className={tab === id ? `${local.tab} ${local.tabActive}` : local.tab}
-            onClick={() => setTab(id)}
-            onKeyDown={onTabKeyDown}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <Tabs label="System sections" items={TAB_ITEMS} tabs={tabs} />
 
       {/* Only the active tab is rendered -- see StatusTab's note on why unmounting the
           inactive one matters more here than keeping its scroll position would. */}
-      <div id={panelId(tab)} role="tabpanel" aria-labelledby={tabId(tab)} tabIndex={-1}>
-        {tab === 'status' && <StatusTab />}
-        {tab === 'logs' && <LogsTab />}
-        {tab === 'backup' && <BackupTab />}
-      </div>
+      <TabPanel id={tabs.activeId} tabs={tabs}>
+        {tabs.activeId === 'status' && <StatusTab />}
+        {tabs.activeId === 'logs' && <LogsTab />}
+        {tabs.activeId === 'backup' && <BackupTab />}
+      </TabPanel>
     </>
   );
 }

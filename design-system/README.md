@@ -153,6 +153,38 @@ table surfaces — a second surface's toolbar must not grow its own copy of the 
 
 ---
 
+## Tabs
+
+`src/Arbitarr.Web/src/components/Tabs/Tabs.tsx` — a WAI-ARIA tablist primitive, extracted
+(arb-9igu) from System.tsx's inline implementation (#65) with no behaviour change at that
+extraction site.
+
+**Three exports, not one component.** `useTabs<TabId>(initialId)` owns selection state and
+namespaces the tab/panel id pair (via `useId`), `<Tabs>` renders the tablist, and
+`<TabPanel>` renders the associated `role="tabpanel"`. They are separate because *which
+panel content renders* is the caller's decision, not the primitive's — System unmounts the
+inactive tab's panel entirely (its three panels are independent queries; leaving them
+mounted behind a hidden tab would keep them refetching behind a table nobody is reading),
+and a future caller with cheaper panels is free to keep all of them mounted and merely
+hide the inactive ones. `Tabs` never sees panel content at all.
+
+**Roving tabindex, not `tabIndex=0` on every tab.** Only the active tab is a tab stop;
+arrow keys move both focus and selection between tabs, wrapping at both ends. `Tabs` do
+not scroll into view via `Tab` alone — that is the point: a tablist that let every tab
+consume a stop would make it slower to Tab past on a page with several tabs, which is not
+what a sighted user's mental model of "tabs" promises a keyboard user.
+
+**Generalise the tab id type, don't reach for `string`.** Each caller passes its own union
+(`'status' | 'logs' | 'backup'`), so `items` and `tabs` stay in sync at the type level — a
+typo'd id fails to compile rather than silently rendering an empty panel.
+
+**Promote a tablist here only when it has a real second caller**, the same rule
+`SectionNav` documents for staying local until it does. This one already has one: the
+Library surface (arb-6l9b.6) was about to grow an independent second implementation of
+System's tablist before this primitive existed to reuse instead.
+
+---
+
 ## State and storage
 
 **The admin key lives in a session-only Zustand store.** Never `localStorage`, never
