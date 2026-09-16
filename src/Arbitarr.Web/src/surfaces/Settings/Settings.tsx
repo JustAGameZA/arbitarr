@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 import { PageHeader } from '../../components/shell/PageHeader';
-import { QueryState, errorMessage } from '../QueryState';
+import { QueryState, errorMessage, useAnnounceOnChange } from '../QueryState';
 import type { SettingCatalogEntry } from '../../api/types';
 import styles from '../surface.module.css';
 import local from './Settings.module.css';
@@ -102,6 +102,8 @@ function SettingRow({
   // successful save refetches the catalog and remounts this row by key.
   const [value, setValue] = useState(entry.value);
   const rejected = failedKey === entry.key;
+  const saved = savedKey === entry.key && !rejected;
+  useAnnounceOnChange(saved, 'Saved.');
 
   return (
     <div className={local.setting}>
@@ -173,7 +175,7 @@ function SettingRow({
           {errorMessage(failure)}
         </p>
       )}
-      {savedKey === entry.key && !rejected && <p className={styles.success}>Saved.</p>}
+      {saved && <p className={styles.success}>Saved.</p>}
     </div>
   );
 }

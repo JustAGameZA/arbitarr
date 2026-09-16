@@ -4,6 +4,7 @@ import { Outlet, useLocation } from 'react-router-dom';
 import { SidebarNav } from './SidebarNav';
 import { TopBar } from './TopBar';
 import { resolveDocumentTitle } from '../../routes.titles';
+import { useLiveStatusStore } from '../../state/liveStatusStore';
 import { useTableDensityStore } from '../../state/tableDensityStore';
 import styles from './AppShell.module.css';
 
@@ -35,6 +36,8 @@ interface AppShellProps {
 export function AppShell({ children }: AppShellProps) {
   const { pathname } = useLocation();
   const density = useTableDensityStore((state) => state.density);
+  const liveStatusMessage = useLiveStatusStore((state) => state.message);
+  const liveStatusSeq = useLiveStatusStore((state) => state.seq);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawerRef = useRef<HTMLElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
@@ -79,6 +82,34 @@ export function AppShell({ children }: AppShellProps) {
 
   return (
     <div className={styles.shell}>
+      {/*
+        The one shared aria-live region (arb-tku8). `polite` so it queues
+        behind whatever the screen reader is already announcing rather than
+        interrupting it the way the existing `role="alert"` errors do --
+        pending/success states are not urgent enough to earn that. Mounted
+        here, unconditionally and always with the same identity, for the same
+        reason the document-title effect lives on the shell rather than a
+        per-page hook: a per-surface region is the thing this bead replaces,
+        and a component that unmounts on navigation would drop whatever
+        announcement was in flight when a route change happens to land.
+
+        `key={liveStatusSeq}` forces React to tear down and remount this
+        element on every `announce`, even when the new message string is
+        identical to the last one (liveStatusStore.ts's `seq`) -- without it,
+        two consecutive identical "Saved." announcements leave `state.message`
+        unchanged, AppShell (which selects the primitive `state.message`)
+        never re-renders, and the second announcement never reaches the DOM
+        for a screen reader to pick up. `seq` itself never renders, only the
+        message text does, so this does not change what is announced -- only
+        that a repeat is guaranteed to produce a DOM mutation an assistive
+        technology can detect. A live region briefly leaving and re-entering
+        the accessibility tree on each announcement is how AT already expects
+        to pick up a change to one; that already happens for every attribute
+        or text change, keyed or not.
+      */}
+      <p key={liveStatusSeq} className={styles.liveStatus} role="status" aria-live="polite">
+        {liveStatusMessage}
+      </p>
       {/*
         `data-open` drives the off-canvas transform below 768px (arb-759); above
         the breakpoint it is inert, because the only CSS that reads it sits
