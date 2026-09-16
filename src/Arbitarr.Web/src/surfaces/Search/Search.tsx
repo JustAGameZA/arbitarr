@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { PageHeader } from '../../components/shell/PageHeader';
@@ -119,11 +119,19 @@ function Provenance({ provenance }: { provenance: AdHocSearchProvenance }) {
  * therefore ported with the 404 rendered as a plain sentence instead of a
  * crash, and the gap is called out in the pull request.
  */
-function Explanation({ guid, onClose }: { guid: string; onClose: () => void }) {
+function Explanation({
+  id,
+  guid,
+  onClose,
+}: {
+  id: string;
+  guid: string;
+  onClose: () => void;
+}) {
   const explanation = useExplanationQuery(guid);
 
   return (
-    <div className={local.explanation}>
+    <div id={id} className={local.explanation}>
       <div className={local.explanationHead}>
         <strong>Match explanation</strong>
         <button type="button" className={styles.buttonSecondary} onClick={onClose}>
@@ -159,6 +167,10 @@ function Results({
   selectedGuid: string | null;
   onSelect: (guid: string | null) => void;
 }) {
+  // One explanation panel at a time (mirrors selectedGuid), so one stable id
+  // for the whole results list is enough for aria-controls to point at.
+  const explanationId = useId();
+
   if (response.releases.length === 0) {
     return (
       <>
@@ -204,6 +216,8 @@ function Results({
                   <button
                     type="button"
                     className={styles.buttonSecondary}
+                    aria-expanded={release.guid === selectedGuid}
+                    aria-controls={release.guid === selectedGuid ? explanationId : undefined}
                     onClick={() => onSelect(release.guid === selectedGuid ? null : release.guid)}
                   >
                     Explain
@@ -214,7 +228,9 @@ function Results({
           </tbody>
         </table>
       </div>
-      {selectedGuid !== null && <Explanation guid={selectedGuid} onClose={() => onSelect(null)} />}
+      {selectedGuid !== null && (
+        <Explanation id={explanationId} guid={selectedGuid} onClose={() => onSelect(null)} />
+      )}
     </>
   );
 }
