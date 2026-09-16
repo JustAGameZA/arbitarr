@@ -473,6 +473,143 @@ public class DownloadProxyTests
         Assert.Empty(sink.Events);
     }
 
+    // ---------------------------------------------------------------------
+    // arb-x7w8.13: PER-SOURCE RESOLUTION AT N=3.
+    // ---------------------------------------------------------------------
+
+    /// <summary>
+    /// THE test this bead exists for. With three indexers configured, a download must be fetched
+    /// from the ONE that produced the release — and the other two must not be asked at all.
+    ///
+    /// <para><b>Why N=3 rather than N=2.</b> At N=2 "the right source" and "not the first source"
+    /// are the same assertion for half the cases, so an implementation that picked the LAST source
+    /// would pass a two-source test written against the first. Three sources with the target in the
+    /// MIDDLE distinguishes first-wins, last-wins and correct-by-name, which are the three ways this
+    /// resolution can be wrong.</para>
+    ///
+    /// <para><b>Asserting the other two were never ASKED is the security half, not a tidiness
+    /// check.</b> Each <c>FetchDownloadAsync</c> sends that source's own indexer key upstream. A
+    /// fan-out that fetched from all three and returned the first non-empty answer would produce the
+    /// right bytes — and would have handed two indexers a request for a release they never listed,
+    /// spending their rate limit and their key on it. The payload assertion alone cannot see that;
+    /// the per-source call counts can.</para>
+    /// </summary>
+    [Fact]
+    public async Task With_three_sources_the_download_is_fetched_from_the_source_that_produced_the_release()
+    {
+        var release = TestReleases.Torrent(sourceName: "middle-indexer", guid: "123");
+        var lookup = new InMemoryReleaseLookup();
+        lookup.Record(release);
+
+        // Distinct payloads, so "the right bytes" cannot be satisfied by any other source's answer.
+        var first = new FakeUpstreamSource("first-indexer", downloadFactory: () => new MemoryStream("first-payload"u8.ToArray()));
+        var middle = new FakeUpstreamSource("middle-indexer", downloadFactory: () => new MemoryStream("middle-payload"u8.ToArray()));
+        var last = new FakeUpstreamSource("last-indexer", downloadFactory: () => new MemoryStream("last-payload"u8.ToArray()));
+        var sources = new IUpstreamSource[] { first, middle, last };
+
+        var result = await DownloadProxyEndpoint.HandleAsync(
+            release.ProxyGuid, ValidApiKey, Resolver(), lookup, new StaticSourceRegistry(sources), NullEventSink.Instance, CancellationToken.None);
+
+        var bytes = Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.FileContentHttpResult>(result);
+        Assert.Equal("middle-payload"u8.ToArray(), bytes.FileContents);
+
+        // Per source, not "some source was asked once": a count over the set would pass against an
+        // implementation that asked one source three times.
+        Assert.Empty(first.DownloadRequests);
+        Assert.Empty(last.DownloadRequests);
+        var asked = Assert.Single(middle.DownloadRequests);
+
+        // And it was asked for THIS release. Without this the test would pass against an
+        // implementation that fetched the right source with the wrong candidate.
+        Assert.Equal(release.Candidate.Guid, asked.Guid);
+    }
+
+    /// <summary>
+    /// The same N=3 set, with the release attributed to a source the operator has since removed or
+    /// disabled: the answer is 404 and NO source is fetched from. A resolution that fell back to
+    /// "any configured source" would send one indexer's key upstream for a release it never listed,
+    /// and would serve the caller a file from a source it did not ask for.
+    /// </summary>
+    [Fact]
+    public async Task With_three_sources_a_release_from_a_since_removed_source_fetches_from_none_of_them()
+    {
+        var release = TestReleases.Torrent(sourceName: "removed-indexer", guid: "123");
+        var lookup = new InMemoryReleaseLookup();
+        lookup.Record(release);
+
+        var first = new FakeUpstreamSource("first-indexer", downloadFactory: () => new MemoryStream("first-payload"u8.ToArray()));
+        var middle = new FakeUpstreamSource("middle-indexer", downloadFactory: () => new MemoryStream("middle-payload"u8.ToArray()));
+        var last = new FakeUpstreamSource("last-indexer", downloadFactory: () => new MemoryStream("last-payload"u8.ToArray()));
+        var sources = new IUpstreamSource[] { first, middle, last };
+
+        var result = await DownloadProxyEndpoint.HandleAsync(
+            release.ProxyGuid, ValidApiKey, Resolver(), lookup, new StaticSourceRegistry(sources), NullEventSink.Instance, CancellationToken.None);
+
+        Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.NotFound>(result);
+        Assert.Empty(first.DownloadRequests);
+        Assert.Empty(middle.DownloadRequests);
+        Assert.Empty(last.DownloadRequests);
+    }
+
+    /// <summary>
+    /// SEC-L1: the route FAILS CLOSED when no client keys are configured at all. The proxy guid on
+    /// its own is not an authorization credential, so an install that has not yet been given a
+    /// client key must refuse every download rather than serve them unauthenticated — which is what
+    /// a resolver written as "no keys configured means nothing to check" would do.
+    ///
+    /// <para>Asserted with the source present and answering, and with its call count checked: a 401
+    /// produced after the fetch would still have sent the indexer's key upstream on behalf of an
+    /// unauthenticated caller.</para>
+    /// </summary>
+    [Fact]
+    public async Task With_no_client_keys_configured_the_route_fails_closed_and_fetches_nothing()
+    {
+        var release = TestReleases.Torrent(sourceName: "eztv", guid: "123");
+        var lookup = new InMemoryReleaseLookup();
+        lookup.Record(release);
+
+        var source = new FakeUpstreamSource("eztv", downloadFactory: () => new MemoryStream("bytes"u8.ToArray()));
+        var sources = new IUpstreamSource[] { source };
+
+        // No key configured at all — the resolver has nothing to match against.
+        var noKeysResolver = new SingleKeyResolver(null);
+
+        // Even the key that WOULD be valid in every other test on this class is refused, because
+        // there is no configured key for it to be valid against.
+        var result = await DownloadProxyEndpoint.HandleAsync(
+            release.ProxyGuid, ValidApiKey, noKeysResolver, lookup, new StaticSourceRegistry(sources), NullEventSink.Instance, CancellationToken.None);
+
+        var statusCodeResult = Assert.IsAssignableFrom<Microsoft.AspNetCore.Http.IStatusCodeHttpResult>(result);
+        Assert.Equal(Microsoft.AspNetCore.Http.StatusCodes.Status401Unauthorized, statusCodeResult.StatusCode);
+        Assert.Empty(source.DownloadRequests);
+    }
+
+    /// <summary>
+    /// Proxy mode serves BYTES and never a Location header — the property the whole bead rests on,
+    /// asserted on the result type rather than on a status code. <c>FileContentHttpResult</c> carries
+    /// a byte body and has no redirect affordance at all; the redirect results
+    /// (<c>RedirectHttpResult</c>) are a different type, so a change to redirect mode fails here
+    /// rather than passing silently. Redirect mode is arb-x7w8.14's bead, not this one's.
+    /// </summary>
+    [Fact]
+    public async Task Proxy_mode_serves_bytes_and_never_a_redirect_result()
+    {
+        var release = TestReleases.Torrent(sourceName: "eztv", guid: "123");
+        var lookup = new InMemoryReleaseLookup();
+        lookup.Record(release);
+
+        var payload = "nzb-bytes"u8.ToArray();
+        var source = new FakeUpstreamSource("eztv", downloadFactory: () => new MemoryStream(payload));
+        var sources = new IUpstreamSource[] { source };
+
+        var result = await DownloadProxyEndpoint.HandleAsync(
+            release.ProxyGuid, ValidApiKey, Resolver(), lookup, new StaticSourceRegistry(sources), NullEventSink.Instance, CancellationToken.None);
+
+        var bytes = Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.FileContentHttpResult>(result);
+        Assert.Equal(payload, bytes.FileContents);
+        Assert.IsNotType<Microsoft.AspNetCore.Http.HttpResults.RedirectHttpResult>(result);
+    }
+
     /// <summary>Captures every event the endpoint records, so a test can assert on kind, source and reason.</summary>
     private sealed class RecordingEventSink : Arbitarr.Core.Diagnostics.IEventSink
     {
