@@ -1,3 +1,4 @@
+using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Media;
 using Arbitarr.Core.Sources;
 using Arbitarr.Data.Media;
@@ -41,7 +42,22 @@ public sealed record RadarrConfigResponse(string? BaseUrl, bool HasApiKey);
 /// <c>DELETE /api/admin/arr/radarr</c> unconfigures the whole instance and nothing clears the key on
 /// its own.</para>
 /// </summary>
-public sealed record UpdateRadarrConfigRequest(string? BaseUrl, string? ApiKey = null);
+public sealed record UpdateRadarrConfigRequest(string? BaseUrl, string? ApiKey = null)
+{
+    /// <summary>
+    /// Renders the address in full and the submitted key as
+    /// <see cref="CredentialPatterns.Replacement"/> (arb-1ox9). Mirrors
+    /// <see cref="UpdateArrConfigRequest.ToString"/>, whose remarks carry the full reasoning: the
+    /// synthesised render would print a live operator-supplied key, and neither the
+    /// <c>IHttpClientFactory</c> URI redaction nor <c>LogMessageCleanser</c> covers a value that is
+    /// not in a query string (CLAUDE.md §1).
+    /// </summary>
+    // The null arm is deliberate and must not be unified with the unconditional overrides on
+    // SonarrCredential / NamedClientApiKey — see UpdateArrConfigRequest.ToString for why.
+    public override string ToString() =>
+        $"{nameof(UpdateRadarrConfigRequest)} {{ {nameof(BaseUrl)} = {BaseUrl}, "
+        + $"{nameof(ApiKey)} = {(ApiKey is null ? "null" : CredentialPatterns.Replacement)} }}";
+}
 
 /// <summary>The outcome of <c>POST /api/admin/arr/radarr/test</c>.</summary>
 /// <param name="Outcome">

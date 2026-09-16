@@ -47,7 +47,41 @@ public sealed record CreateApiKeyRequest(string? Label, string? Scope);
 /// panel in <c>src/Arbitarr.Web/src/surfaces/Settings/ApiKeys/ApiKeys.tsx</c>, which holds the value
 /// in component state only and requires an explicit acknowledgement before dismissing it.</para>
 /// </summary>
-public sealed record CreatedApiKeyResponse(ApiKeyResponse Key, string PlaintextKey);
+public sealed record CreatedApiKeyResponse(ApiKeyResponse Key, string PlaintextKey)
+{
+    /// <summary>
+    /// Names the type and the key row it describes, and prints NO form of the key value — not even a
+    /// redaction marker in place of one, because there is no non-secret rendering of a plaintext key.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>OVERRIDDEN BECAUSE THE SYNTHESISED ONE PRINTS THE KEY</b> (arb-1ox9). A positional
+    /// record's compiler-generated <c>ToString</c> renders every member by name and value, so the
+    /// default here produced <c>CreatedApiKeyResponse { Key = …, PlaintextKey = the-actual-key }</c>.
+    /// Per this type's own summary it is the only response in the codebase that ever carries a live
+    /// admin credential, and the whole design around it is that the value exists in exactly one place
+    /// for exactly one response — a log line formatting this record would make a second, durable copy
+    /// in the store served at <c>/api/admin/logs</c> (#65), defeating the one-shot property rather
+    /// than merely leaking alongside it.</para>
+    ///
+    /// <para><b>AND NOTHING ELSE COVERS IT</b> (CLAUDE.md §1). <c>IHttpClientFactory</c>'s URI
+    /// redaction collapses an outbound request's query string and nothing else, and while
+    /// <c>LogMessageCleanser</c> scrubs some inline <c>name = value</c> shapes, the name
+    /// "plaintextkey" matches no arm of it — see <see cref="CreatedApiKey"/>'s own override for the
+    /// exact alternation and why "key" alone is not in it. The synthesised rendering of this
+    /// type therefore reached the persistent store verbatim, which
+    /// <c>CredentialRecordLogInjectionTests</c> asserts against the real pipeline.</para>
+    ///
+    /// <para>This does NOT affect the response body. <c>System.Text.Json</c> serialises the
+    /// properties and never calls <c>ToString</c> on the record, so the operator still receives the
+    /// key exactly once, which is the point of the type. The override governs only the diagnostic
+    /// rendering. <c>CredentialRecordToStringTests</c> pins that split, and holds this posture in a
+    /// different table from <see cref="Security.ChangePasswordRequest"/>'s documented refusal to have
+    /// an override at all.</para>
+    /// </remarks>
+    public override string ToString() =>
+        $"{nameof(CreatedApiKeyResponse)} {{ {nameof(Key)}.{nameof(ApiKeyResponse.Id)} = {Key.Id}, "
+        + $"{nameof(Key)}.{nameof(ApiKeyResponse.Label)} = {Key.Label} }}";
+}
 
 /// <summary>
 /// #58: the admin-gated CRUD surface for named, scoped API keys — create, list, revoke, and (#98)

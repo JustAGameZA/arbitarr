@@ -1,3 +1,4 @@
+using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Notifications;
 using Arbitarr.Data.Notifications;
 using Microsoft.AspNetCore.Builder;
@@ -77,7 +78,45 @@ public sealed record UpdateNotificationConfigRequest(
     double? SuppressionRateThreshold,
     string? SuppressionRateWindow,
     IReadOnlyList<string>? EnabledTriggers,
-    IReadOnlyList<string>? KnownTriggers);
+    IReadOnlyList<string>? KnownTriggers)
+{
+    /// <summary>
+    /// Renders the non-secret configuration in full and the submitted webhook URL as
+    /// <see cref="CredentialPatterns.Replacement"/> (arb-1ox9, #346 review).
+    /// </summary>
+    /// <remarks>
+    /// <para><b>THE WEBHOOK URL IS THE CREDENTIAL</b> — the same fact
+    /// <see cref="NotificationConfigResponse"/>'s absent url field is built around. It is a stored
+    /// write-only secret, and unlike every other secret in this codebase <b>its value lives in the
+    /// URL PATH</b>, not a query parameter. That places it outside both existing mechanisms
+    /// (CLAUDE.md §1): <c>IHttpClientFactory</c>'s redaction collapses only the QUERY STRING and
+    /// leaves every path segment in full, and <c>LogMessageCleanser</c>'s query-parameter arms do not
+    /// see a path either. Its webhook arm knows only the discord and telegram hosts, so an operator's
+    /// self-hosted endpoint matches no arm at all. The synthesised <c>ToString</c> on this positional
+    /// record therefore printed a live webhook token verbatim.</para>
+    ///
+    /// <para><b>The redaction is UNCONDITIONAL</b>, matching
+    /// <c>Arbitarr.Data.Media.SonarrCredential</c> rather than the presence-bit shape the *arr and
+    /// source request bodies in this namespace use. Those distinguish a null key because "the
+    /// operator did not submit one" is a real diagnostic fact about a partial update. Here the same
+    /// bit would tell less than it costs: whether a save carried a URL is state
+    /// <see cref="NotificationConfigResponse"/> reports deliberately and only through its
+    /// <c>HasWebhookUrl</c> field, and a second, incidental channel for it on an unbounded diagnostic
+    /// surface is not worth having.</para>
+    ///
+    /// <para>The thresholds and the trigger sets are rendered in full: they are operator
+    /// configuration, not credentials, and printing them is what makes this override useful for
+    /// diagnostics rather than merely silent.</para>
+    /// </remarks>
+    public override string ToString() =>
+        $"{nameof(UpdateNotificationConfigRequest)} {{ {nameof(Enabled)} = {Enabled}, "
+        + $"{nameof(WebhookUrl)} = {CredentialPatterns.Replacement}, "
+        + $"{nameof(ConsecutiveFailureThreshold)} = {ConsecutiveFailureThreshold}, "
+        + $"{nameof(SuppressionRateThreshold)} = {SuppressionRateThreshold}, "
+        + $"{nameof(SuppressionRateWindow)} = {SuppressionRateWindow}, "
+        + $"{nameof(EnabledTriggers)} = [{string.Join(", ", EnabledTriggers ?? [])}], "
+        + $"{nameof(KnownTriggers)} = [{string.Join(", ", KnownTriggers ?? [])}] }}";
+}
 
 /// <summary>The outcome of <c>POST /api/admin/notifications/test</c>.</summary>
 /// <param name="Outcome">
