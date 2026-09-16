@@ -1,9 +1,11 @@
 using Arbitarr.Data;
+using Arbitarr.Data.Logging;
 using Arbitarr.Integration.Tests.TestSupport;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Arbitarr.Integration.Tests;
 
@@ -245,22 +247,80 @@ public sealed class ArbitarrWebApplicationFactory : WebApplicationFactory<Progra
     /// </summary>
     public override async ValueTask DisposeAsync()
     {
+        // arb-s3ky: BEFORE base.DisposeAsync, because Services is gone afterwards. See the helper.
+        var drainCompletions = CaptureLogDrainCompletions();
+
         // Stops the host and awaits its hosted services, so no detached backup is still reading the
         // database when the directory goes. This is the ordering the whole fix rests on.
         await base.DisposeAsync().ConfigureAwait(false);
 
-        DeleteConfigDirectory();
+        DeleteConfigDirectory(drainCompletions);
     }
 
     protected override void Dispose(bool disposing)
     {
+        // arb-s3ky: BEFORE base.Dispose, for the same reason as in DisposeAsync. This is the path
+        // the ~29 class-fixture consumers actually take (see the class remarks), so wiring only the
+        // async override would leave the race live for almost every test in this assembly.
+        var drainCompletions = disposing ? CaptureLogDrainCompletions() : null;
+
         // base.Dispose stops the host synchronously. It cannot await hosted services the way
         // DisposeAsync does, which is why DeleteConfigDirectory retries rather than trying once.
         base.Dispose(disposing);
 
         if (disposing)
         {
-            DeleteConfigDirectory();
+            DeleteConfigDirectory(drainCompletions);
+        }
+    }
+
+    /// <summary>
+    /// The <c>DrainCompleted</c> task of every <see cref="SqliteLoggerProvider"/> this host
+    /// registered, read from <see cref="WebApplicationFactory{TEntryPoint}.Services"/> (arb-s3ky).
+    ///
+    /// <para><b>THIS MUST RUN BEFORE <c>base.Dispose</c>/<c>base.DisposeAsync</c>.</b> Those tear the
+    /// host down and <c>Services</c> is unusable afterwards, so the instances have to be captured
+    /// while the provider is still alive. The tasks themselves outlive it, which is exactly the
+    /// property that makes them worth capturing: the pump can still be draining after the host is
+    /// gone, and a task is still awaitable then.</para>
+    ///
+    /// <para><b>The providers are DISPOSED here, and that is what makes the completion reachable.</b>
+    /// <c>DrainCompleted</c> publishes only once the pump has run its FINAL drain, and the pump only
+    /// reaches that drain once it observes cancellation — which is to say once
+    /// <c>SqliteLoggerProvider.Dispose</c> has been called. Nothing else in this teardown calls it:
+    /// the provider is handed to <c>ILoggingBuilder.AddProvider</c> as an ALREADY-CONSTRUCTED
+    /// instance (<c>LoggingSetup.AddArbitarrSqliteLogging</c>). Capturing the task WITHOUT disposing
+    /// therefore hands the teardown a completion nothing will ever complete — measured as every
+    /// fixture burning the full <c>ConfigDirectoryTeardown.DrainCompletionWait</c> bound (four
+    /// disposal tests took 2m35s, ~30s each) and, worse, a still-live pump writing into the
+    /// directory being deleted, which crashed the host with
+    /// <c>SQLite Error 14: unable to open database file</c>. Dispose is bounded and idempotent, so
+    /// calling it here stays safe if any other path also disposes.</para>
+    ///
+    /// <para>Returns null on ANY failure to resolve rather than throwing. Some hosts in this assembly
+    /// never start (a test that only builds the factory), and a disposal path must not fault an
+    /// unrelated in-flight test — that is the same reasoning that makes
+    /// <see cref="LastDeleteFailure"/> a recorded property rather than a throw. A null here just
+    /// means the teardown falls back to the per-attempt pool clear it always had.</para>
+    /// </summary>
+    private IReadOnlyList<Task>? CaptureLogDrainCompletions()
+    {
+        try
+        {
+            var providers = Services.GetServices<ILoggerProvider>()
+                .OfType<SqliteLoggerProvider>()
+                .ToArray();
+
+            foreach (var provider in providers)
+            {
+                provider.Dispose();
+            }
+
+            return providers.Select(provider => provider.DrainCompleted).ToArray();
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException)
+        {
+            return null;
         }
     }
 
@@ -269,7 +329,7 @@ public sealed class ArbitarrWebApplicationFactory : WebApplicationFactory<Progra
     /// <see cref="ConfigDirectoryIsDeletedOnDisposalTests"/> asserts it does — see the remarks on
     /// <see cref="DisposeAsync"/> for the ownership defect that made it impossible until arb-dhua.
     /// </summary>
-    private void DeleteConfigDirectory()
+    private void DeleteConfigDirectory(IReadOnlyList<Task>? drainCompletions)
     {
         // The pool-clear-then-delete sequence, and the full account of WHY BOTH HALVES ARE REQUIRED
         // (arb-dhua) and why ClearAllPools is banned regardless, now live on
@@ -293,6 +353,11 @@ public sealed class ArbitarrWebApplicationFactory : WebApplicationFactory<Progra
         // unrelated test is in flight rather than the one that owns this factory. The failure is
         // RECORDED instead and ConfigDirectoryIsDeletedOnDisposalTests turns it into a visible
         // failure. Since arb-dhua a non-null result here is an ANOMALY, not the normal path.
-        LastDeleteFailure = ConfigDirectoryTeardown.TryDelete(_configDirectory);
+        //
+        // arb-s3ky: the drain completions captured above are passed through, so the delete waits for
+        // the log sink's pump to FINISH rather than merely to have been asked to stop. The pool
+        // clears alone cannot cover that: SqliteLoggerProvider.Dispose's bound gives up on purpose,
+        // and a handle the pump opens after a clear is one no retry could win.
+        LastDeleteFailure = ConfigDirectoryTeardown.TryDelete(_configDirectory, drainCompletions);
     }
 }
