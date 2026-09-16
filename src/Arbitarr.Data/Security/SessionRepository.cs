@@ -36,8 +36,10 @@ public sealed record IssuedSession(SessionEntry Entry, string PlaintextToken)
     /// <c>NamedCredential</c> arm matches the alternation
     /// <c>api_key|apikey|token|passkey|password|secret</c>, and "plaintexttoken" contains "token" —
     /// but that is a coincidence of spelling, not a guarantee: the sibling
-    /// <see cref="CreatedApiKey"/>'s <c>PlaintextKey</c> matches NOTHING in that list and reached the
-    /// store verbatim. Depending on a denylist to recognise each field's name is exactly the
+    /// <see cref="CreatedApiKey"/>'s <c>PlaintextKey</c> matched NOTHING in that list and reached the
+    /// store verbatim until arb-cia3 added a <c>plaintext…</c> alternative for it — a rename away
+    /// from the list, not a design change, is all it took to lose the coverage, and the fix was to
+    /// extend the list again. Depending on a denylist to recognise each field's name is exactly the
     /// arrangement this override removes. The cleanser also runs only in the LOG SINK, so an
     /// exception message or console line carrying this record never meets it.</para>
     ///

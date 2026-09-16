@@ -41,6 +41,15 @@ public sealed class SqliteLoggerProvider : ILoggerProvider
     public const int MaxQueueLength = 10_000;
 
     /// <summary>
+    /// How long <see cref="Dispose"/> waits for the pump's final drain before giving up. BOUNDED ON
+    /// PURPOSE, and unchanged by arb-s3ky: an unbounded await here would trade a test-teardown race
+    /// for a production hang — a wedged writer (a locked file, a full disk) would stop the container
+    /// from stopping. Losing the last few log lines beats that. A caller that genuinely can afford to
+    /// wait longer waits on <see cref="DrainCompleted"/> instead, which outlives this bound.
+    /// </summary>
+    public static readonly TimeSpan DefaultShutdownWait = TimeSpan.FromSeconds(5);
+
+    /// <summary>
     /// Categories are stored with this prefix stripped, matching Sonarr's handling of its own
     /// <c>NzbDrone.</c> prefix. Every Arbitarr logger category starts with it, so keeping it would
     /// cost horizontal space in the UI's Logger column to say the same word on every single row.
@@ -53,21 +62,46 @@ public sealed class SqliteLoggerProvider : ILoggerProvider
     private readonly Action<Exception>? _onError;
     private readonly ConcurrentQueue<PendingLogEntry> _queue = new();
     private readonly CancellationTokenSource _shutdown = new();
+    private readonly TimeSpan _shutdownWait;
+    private readonly TaskCompletionSource _drainCompleted =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Task _pump;
 
     private int _queueLength;
     private int _droppedSinceLastWrite;
+    private int _disposed;
 
     public SqliteLoggerProvider(
         LogStore store,
         LogLevel minimumLevel = LogLevel.Information,
         TimeProvider? timeProvider = null,
         Action<Exception>? onError = null)
+        : this(store, minimumLevel, timeProvider, onError, DefaultShutdownWait)
+    {
+    }
+
+    /// <summary>
+    /// arb-s3ky: test-only overload. <paramref name="shutdownWait"/> replaces
+    /// <see cref="DefaultShutdownWait"/> for this instance — the same test-seam shape as
+    /// <c>LogStore.WriteAsync</c>'s <c>cleanse</c> parameter (arb-qafw). It exists so a test can
+    /// demonstrate the GIVING-UP path — that <see cref="DrainCompleted"/> still publishes after
+    /// <see cref="Dispose"/> has abandoned a drain that outran its bound — without the test having
+    /// to hold a real drain open for five wall-clock seconds. Every production call site uses the
+    /// overload above and therefore <see cref="DefaultShutdownWait"/>; nothing here shortens
+    /// production shutdown.
+    /// </summary>
+    public SqliteLoggerProvider(
+        LogStore store,
+        LogLevel minimumLevel,
+        TimeProvider? timeProvider,
+        Action<Exception>? onError,
+        TimeSpan shutdownWait)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _minimumLevel = minimumLevel;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _onError = onError;
+        _shutdownWait = shutdownWait;
         _pump = Task.Run(PumpAsync);
     }
 
@@ -79,16 +113,48 @@ public sealed class SqliteLoggerProvider : ILoggerProvider
     /// </summary>
     public Task FlushAsync(CancellationToken cancellationToken = default) => DrainAsync(cancellationToken);
 
+    /// <summary>
+    /// Completes when the pump has finished its FINAL <see cref="DrainAsync"/> — i.e. when the last
+    /// pooled connection to <c>arbitarr-logs.db</c> has been returned to the pool and nothing this
+    /// provider owns will open the file again.
+    ///
+    /// <para><b>Why this exists (arb-s3ky).</b> <see cref="Dispose"/>'s wait is bounded at
+    /// <see cref="DefaultShutdownWait"/> and deliberately GIVES UP rather than hanging a shutting-down
+    /// container. Under contention the final drain's write transaction can outrun that bound, so
+    /// Dispose can return while the pump still holds — or is about to open — a pooled handle on the
+    /// log database. A test teardown that then clears the pools and deletes the config directory
+    /// loses to that handle, which is the intermittent this publishes a completion to close: a caller
+    /// that CAN afford to wait longer than shutdown can await this instead of guessing.
+    /// <c>ConfigDirectoryTeardown.Delete(string, IEnumerable&lt;Task&gt;)</c> is that caller.</para>
+    ///
+    /// <para><b>It publishes even when Dispose gave up, and even if the pump faults</b> — that is the
+    /// whole point, so it is completed from a <c>finally</c> at the end of <see cref="PumpAsync"/>
+    /// rather than being <c>_pump</c> handed out directly. This task therefore never faults and never
+    /// cancels; awaiting it cannot throw. It is idempotent under a double <see cref="Dispose"/>
+    /// because the pump runs, and so completes it, exactly once.</para>
+    /// </summary>
+    public Task DrainCompleted => _drainCompleted.Task;
+
     public void Dispose()
     {
+        // Idempotent by an explicit latch rather than by relying on Cancel()/Dispose() tolerating a
+        // repeat: CancellationTokenSource.Cancel() on an already-disposed source is not contractually
+        // safe, and xunit disposes some hosts through both disposal paths. The pump — and therefore
+        // DrainCompleted — is unaffected either way; it runs exactly once.
+        if (Interlocked.Exchange(ref _disposed, 1) == 1)
+        {
+            return;
+        }
+
         _shutdown.Cancel();
 
         try
         {
             // Wait for the pump to observe cancellation and drain what it has. Bounded so a wedged
             // writer cannot hang process shutdown — losing the last few log lines beats a container
-            // that will not stop.
-            _pump.Wait(TimeSpan.FromSeconds(5));
+            // that will not stop. A caller needing the STRONGER guarantee (that the log database's
+            // pooled handle is definitely back) awaits DrainCompleted, which outlives this.
+            _pump.Wait(_shutdownWait);
         }
         catch (AggregateException)
         {
@@ -96,6 +162,8 @@ public sealed class SqliteLoggerProvider : ILoggerProvider
             // Dispose itself cannot throw during host shutdown.
         }
 
+        // Cancel() above is idempotent and Wait() on a completed task returns at once, so a second
+        // Dispose reaches here and must not double-dispose the source.
         _shutdown.Dispose();
     }
 
@@ -122,23 +190,37 @@ public sealed class SqliteLoggerProvider : ILoggerProvider
 
     private async Task PumpAsync()
     {
-        while (!_shutdown.IsCancellationRequested)
+        try
         {
-            try
+            while (!_shutdown.IsCancellationRequested)
             {
-                await Task.Delay(FlushInterval, _timeProvider, _shutdown.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                break;
+                try
+                {
+                    await Task.Delay(FlushInterval, _timeProvider, _shutdown.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+
+                await DrainAsync(CancellationToken.None).ConfigureAwait(false);
             }
 
+            // Final drain on shutdown, so the lines explaining why the process is stopping are not
+            // the ones that get lost. CancellationToken.None deliberately: _shutdown is already
+            // cancelled.
             await DrainAsync(CancellationToken.None).ConfigureAwait(false);
         }
-
-        // Final drain on shutdown, so the lines explaining why the process is stopping are not the
-        // ones that get lost. CancellationToken.None deliberately: _shutdown is already cancelled.
-        await DrainAsync(CancellationToken.None).ConfigureAwait(false);
+        finally
+        {
+            // arb-s3ky: published in a FINALLY, not after the final drain, so an unexpected fault
+            // still publishes completion. A waiter blocked on DrainCompleted must never be stranded
+            // by the one case it exists to survive — the pump not finishing the way it planned to.
+            // DrainAsync already swallows write failures, so reaching here by exception means
+            // something outside the drain broke; either way the pump is done with the log database
+            // and every handle it held has gone back to the pool.
+            _drainCompleted.TrySetResult();
+        }
     }
 
     private async Task DrainAsync(CancellationToken cancellationToken)
