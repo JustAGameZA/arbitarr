@@ -56,8 +56,11 @@ from how it reads**: setting it *disables* the redaction and restores the full q
 string. Nothing here sets it, so the default is what any "the key is in the query string,
 so it is redacted" reasoning rests on — `DisableUriRedactionSwitchTests` pins both states.
 Since #65 these lines land in a persistent SQLite store served at `/api/admin/logs`.
-`LogMessageCleanser` scrubs credentials in *query strings*, so a secret in a URL **path**
-(a webhook token, say) is covered by neither the redaction nor the cleanser — such
+`LogMessageCleanser` scrubs credentials by *shape, anywhere in the line* — only one of its
+arms is query-string-scoped, and `NamedCredential` matches a credential-shaped name
+followed by `:` or `=` in any text — but every arm needs a credential-shaped **name or
+scheme next to the value**, so a secret in a URL **path** (a webhook token, say) has
+none and is covered by neither the redaction nor the cleanser — such
 registrations need `.RemoveAllLoggers()`. Care taken inside a typed client cannot defend
 against a handler the container wraps around it.
 
