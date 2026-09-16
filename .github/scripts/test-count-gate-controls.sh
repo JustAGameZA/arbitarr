@@ -589,6 +589,193 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# The aborted-run check (arb-whhe). assert_test_run_completed exists because
+# dotnet test exits 0 after "Test Run Aborted" -- so a control that only proved
+# it passes on a healthy run would prove nothing at all. Each case below plants
+# one fault in a ./TestResults tree shaped like the matrix step's and requires a
+# BLOCK naming it, and the first case proves the check is not simply always red.
+#
+# These run the SHIPPED .github/scripts/test-run-integrity.sh, sourced the same
+# way the backend job sources it. There is no way to run the workflow itself
+# here, so this is the evidence that the bash in that step behaves.
+# ---------------------------------------------------------------------------
+
+# Runs assert_test_run_completed in a SUBSHELL against a fixture dir, for the
+# same reason run_gate does: the function `exit`s on a fault.
+run_integrity() {
+  local dir="$1" trx_name="$2"
+  (
+    cd "$dir" || exit 99
+    set -euo pipefail
+    # shellcheck source=/dev/null
+    . "$repo_root/.github/scripts/test-run-integrity.sh"
+    assert_test_run_completed "$trx_name"
+  ) 2>&1
+}
+
+integrity_expect_block() {
+  local name="$1" dir="$2" trx_name="$3" needle="$4"
+  local out status
+  out=$(run_integrity "$dir" "$trx_name")
+  status=$?
+  if [ "$status" -eq 0 ]; then
+    fail "$name" "expected a BLOCK, but the check exited 0"
+    return
+  fi
+  if ! printf '%s' "$out" | grep -qF "$needle"; then
+    fail "$name" "blocked, but no message matched: ${needle}"
+    printf '%s\n' "$out" | sed 's/^/        /'
+    return
+  fi
+  pass "$name"
+}
+
+integrity_expect_pass() {
+  local name="$1" dir="$2" trx_name="$3"
+  local out status
+  out=$(run_integrity "$dir" "$trx_name")
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    fail "$name" "expected a pass, but the check exited ${status}"
+    printf '%s\n' "$out" | sed 's/^/        /'
+    return
+  fi
+  pass "$name"
+}
+
+# A healthy run's artefacts: a console log with dotnet test's normal summary and
+# a trx recording executed tests.
+make_clean_run() {
+  local d="$1"
+  rm -rf "$d"
+  mkdir -p "$d/TestResults"
+  write_trx "$d/TestResults/Demo.Other.Tests.trx" 20
+  cat > "$d/TestResults/Demo.Other.Tests.console.log" <<'LOG'
+  Determining projects to restore...
+Passed!  - Failed:     0, Passed:    20, Skipped:     0, Total:    20
+LOG
+}
+
+d="$tmp_root/run-clean"
+make_clean_run "$d"
+integrity_expect_pass "a completed run with no abort text passes" "$d" Demo.Other.Tests
+
+# The sighting itself: the abort banner sitting beside a green "Passed!" summary
+# in the SAME log, which is exactly what the four contended lanes printed.
+d="$tmp_root/run-aborted"
+make_clean_run "$d"
+cat > "$d/TestResults/Demo.Other.Tests.console.log" <<'LOG'
+[arbitarr] log sink write failed; entries are being dropped.
+Test Run Aborted.
+Passed!  - Failed:     0, Passed:     5, Skipped:     0, Total:     5
+LOG
+integrity_expect_block "abort text beside a green Passed! summary blocks" \
+  "$d" Demo.Other.Tests "aborted its test run"
+
+# The other wording vstest uses for the same event.
+d="$tmp_root/run-aborted-active"
+make_clean_run "$d"
+cat > "$d/TestResults/Demo.Other.Tests.console.log" <<'LOG'
+The active test run was aborted. Reason: Test host process crashed
+LOG
+integrity_expect_block "'the active test run was aborted' blocks" \
+  "$d" Demo.Other.Tests "aborted its test run"
+
+# A missing trx: the run never reached the logger's flush.
+d="$tmp_root/run-no-trx"
+make_clean_run "$d"
+rm -f "$d/TestResults/Demo.Other.Tests.trx"
+integrity_expect_block "a missing trx blocks by name" \
+  "$d" Demo.Other.Tests "was not written"
+
+# A completed run over nothing. The ratchet cannot see this whenever the other
+# assemblies sum above the floor.
+d="$tmp_root/run-zero"
+make_clean_run "$d"
+write_trx "$d/TestResults/Demo.Other.Tests.trx" 0
+integrity_expect_block "a trx recording 0 executed tests blocks" \
+  "$d" Demo.Other.Tests "executed 0 tests"
+
+# An unreadable counters element is named as such, NOT folded into the
+# zero-executed branch -- the message would otherwise send the reader to the
+# filter when the fault is the file.
+d="$tmp_root/run-malformed"
+make_clean_run "$d"
+printf '<TestRun><ResultSummary></ResultSummary></TestRun>\n' > "$d/TestResults/Demo.Other.Tests.trx"
+integrity_expect_block "an unparseable executed= blocks by name, not as zero" \
+  "$d" Demo.Other.Tests "no parseable executed= figure"
+
+# A missing console log is a fault, not a reason to skip the grep: a check that
+# quietly passes when its evidence is absent is the vacuous shape CLAUDE.md
+# section 4 rejects.
+d="$tmp_root/run-no-log"
+make_clean_run "$d"
+rm -f "$d/TestResults/Demo.Other.Tests.console.log"
+integrity_expect_block "a missing console log blocks rather than passing vacuously" \
+  "$d" Demo.Other.Tests "cannot be checked"
+
+# The abort scan must not be written with `grep -i`. GNU grep 3.0 (git-bash)
+# ABORTS with status 134 on `grep -i -F` over these patterns, and because "no
+# match" is grep's status 1 -- the healthy case, which therefore has to be
+# tolerated -- a crash is indistinguishable from a clean log and passes. That
+# is this bead's own defect reappearing inside its own fix, so the shape is
+# pinned here rather than left to a comment: the scan folds case with `tr` and
+# matches lowercase fixed strings.
+#
+# Comment lines are stripped before the search on purpose: the script EXPLAINS
+# the `grep -i` hazard in prose, and a check that read its own rationale as a
+# violation would fail on the fixed file.
+if sed 's/#.*//' "$repo_root/.github/scripts/test-run-integrity.sh" \
+     | grep -qE "grep([[:space:]]+-[a-zA-Z]+)*[[:space:]]+-[a-zA-Z]*i"; then
+  fail "the abort scan does not rely on grep -i" \
+    "found a case-insensitive grep, which aborts on some grep builds"
+else
+  pass "the abort scan does not rely on grep -i"
+fi
+
+# A clean log must survive `set -euo pipefail`. Written as a bare
+# `hits=$(... grep ...)`, the no-match status-1 kills the function on the
+# HEALTHY path before any status line runs, blocking every good run with an
+# empty message. Asserting the clean fixture both exits 0 AND says so catches
+# that, where an exit-code-only check would not tell it from a silent death.
+d="$tmp_root/run-clean-msg"
+make_clean_run "$d"
+integrity_clean_out=$(run_integrity "$d" Demo.Other.Tests)
+integrity_clean_status=$?
+if [ "$integrity_clean_status" -eq 0 ] \
+   && printf '%s' "$integrity_clean_out" | grep -qF "20 tests executed"; then
+  pass "a clean run reports its executed count rather than dying silently"
+else
+  fail "a clean run reports its executed count rather than dying silently" \
+    "status ${integrity_clean_status}, output: ${integrity_clean_out}"
+fi
+
+# The backend job must actually SOURCE the script, or none of the above is
+# evidence about CI.
+backend_job_sources_integrity=$(awk '
+  /\. \.\/\.github\/scripts\/test-run-integrity\.sh/ { found = 1 }
+  END { print found ? "yes" : "no" }
+' "$repo_root/.github/workflows/build-test.yml")
+if [ "$backend_job_sources_integrity" = "yes" ]; then
+  pass "the backend job sources test-run-integrity.sh"
+else
+  fail "the backend job sources test-run-integrity.sh" \
+    "no '. ./.github/scripts/test-run-integrity.sh' line found"
+fi
+
+# ...and CALL it. Sourcing a script nothing invokes is the same vacuous pass.
+backend_job_calls_integrity=$(awk '
+  /^[[:space:]]*assert_test_run_completed[[:space:]]/ { found = 1 }
+  END { print found ? "yes" : "no" }
+' "$repo_root/.github/workflows/build-test.yml")
+if [ "$backend_job_calls_integrity" = "yes" ]; then
+  pass "the backend job calls assert_test_run_completed"
+else
+  fail "the backend job calls assert_test_run_completed" \
+    "no bare 'assert_test_run_completed <name>' call found"
+fi
+
+# ---------------------------------------------------------------------------
 # Call-site shape (arb-2nx, shrunk by arb-1da). The workflow must call the ONE
 # entry function, and the three bare calls must be GONE from it -- otherwise
 # someone re-adds them beside the entry function and the checks run twice, with

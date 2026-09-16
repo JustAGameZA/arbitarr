@@ -94,6 +94,20 @@ public sealed class VerdictCacheKeyTests
     /// candidate reports no poster and no groups, so the two appended components are their
     /// "absent" encodings — which is the point, since even a release carrying neither metadata
     /// field re-keys.
+    ///
+    /// arb-ddhn updated it once more, on exactly the same terms: Category, Files, PasswordProtected
+    /// and Grabs became key components because ClassificationPrompt.Build renders all four, so every
+    /// key changes and the verdict cache is invalidated once on that deploy. The four landed as ONE
+    /// such invalidation rather than one bead at a time, because each addition costs the same single
+    /// round of re-classification and four staggered ones would cost four. This candidate reports
+    /// none of the four either — its Category is the empty default and the three nullables are null
+    /// — so the appended components are their "absent" encodings, which is again the point: a
+    /// release carrying no such metadata still re-keys, because the absent encodings are themselves
+    /// new hashed input. The literal below was NOT read back from a failing run's output; it was
+    /// derived independently from the documented encoding rules (the U+001F join over the fourteen
+    /// components, each nullable's "0" sentinel, the category count prefix) and then found to agree
+    /// with what Compute produces, so the pin still checks the implementation rather than recording
+    /// it.
     /// </summary>
     [Fact]
     public void Compute_FixedInputs_MatchesKnownDigest()
@@ -102,6 +116,6 @@ public sealed class VerdictCacheKeyTests
 
         var key = VerdictCacheKey.Compute(candidate, "indexer-1", "gpt-x", "digest-1", "prompt-v1", "t0-s42");
 
-        Assert.Equal("FEB371C1ECC23CEFCFE37CB863D6469D0380419B253860700C1BFAC7CE8D5325", key);
+        Assert.Equal("7F045CFD01DEC4724FB50AE85F2AFC48095BC5563D7C5B44348B832EEE4B9369", key);
     }
 }
