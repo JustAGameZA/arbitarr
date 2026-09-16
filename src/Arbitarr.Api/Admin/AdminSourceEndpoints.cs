@@ -1,3 +1,4 @@
+using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Sources;
 using Arbitarr.Data.Entities;
 using Arbitarr.Data.Sources;
@@ -58,7 +59,32 @@ public sealed record CreateSourceRequest(
     int? QueryLimit = null,
     int? GrabLimit = null,
     string? LimitsUnit = null,
-    string? NzbAccessMode = null);
+    string? NzbAccessMode = null)
+{
+    /// <summary>
+    /// Names the source being created and redacts the submitted key (arb-1ox9).
+    /// </summary>
+    /// <remarks>
+    /// <para>The synthesised <c>ToString</c> on a positional record prints every member by name and
+    /// value, so the default here rendered the operator-supplied <c>ApiKey</c> verbatim. This is a
+    /// REQUEST BODY on the admin write path, and neither existing scrubbing layer covers it: both the
+    /// <c>IHttpClientFactory</c> URI redaction and <c>LogMessageCleanser</c> are scoped to query
+    /// strings, while a bare <c>ApiKey = value</c> in a record's string form is not a URI at all
+    /// (CLAUDE.md §1) — it would land verbatim in the store served at <c>/api/admin/logs</c>.</para>
+    ///
+    /// <para><b>Only the identifying fields are rendered, not every member.</b> The tuning fields are
+    /// not secrets, but reproducing a dozen of them would make this override a second copy of the
+    /// parameter list that a future field is added to twice or once. The identity of the source plus
+    /// the key's redacted presence is what a diagnostic line needs; anything more belongs in a
+    /// structured log argument naming the field it cares about.</para>
+    /// </remarks>
+    // The null arm is deliberate and must not be unified with the unconditional overrides on
+    // SonarrCredential / NamedClientApiKey — see UpdateArrConfigRequest.ToString for why.
+    public override string ToString() =>
+        $"{nameof(CreateSourceRequest)} {{ {nameof(Kind)} = {Kind}, {nameof(DisplayName)} = {DisplayName}, "
+        + $"{nameof(BaseUrl)} = {BaseUrl}, "
+        + $"{nameof(ApiKey)} = {(ApiKey is null ? "null" : CredentialPatterns.Replacement)} }}";
+}
 
 /// <summary>
 /// Request body for <c>PUT /api/admin/sources/{id}</c>. A null <paramref name="ApiKey"/> leaves the
@@ -89,7 +115,20 @@ public sealed record UpdateSourceRequest(
     string? NzbAccessMode = null,
     bool ClearQueryLimit = false,
     bool ClearGrabLimit = false,
-    bool ClearTimeoutSeconds = false);
+    bool ClearTimeoutSeconds = false)
+{
+    /// <summary>
+    /// Names the source being updated and redacts the submitted key (arb-1ox9). Mirrors
+    /// <see cref="CreateSourceRequest.ToString"/>, whose remarks carry the full reasoning — including
+    /// why only the identifying fields are rendered rather than every member.
+    /// </summary>
+    // The null arm is deliberate and must not be unified with the unconditional overrides on
+    // SonarrCredential / NamedClientApiKey — see UpdateArrConfigRequest.ToString for why.
+    public override string ToString() =>
+        $"{nameof(UpdateSourceRequest)} {{ {nameof(Kind)} = {Kind}, {nameof(DisplayName)} = {DisplayName}, "
+        + $"{nameof(BaseUrl)} = {BaseUrl}, "
+        + $"{nameof(ApiKey)} = {(ApiKey is null ? "null" : CredentialPatterns.Replacement)} }}";
+}
 
 /// <summary>The outcome of <c>POST /api/admin/sources/{id}/test</c>, per §3.3.</summary>
 /// <param name="Outcome">

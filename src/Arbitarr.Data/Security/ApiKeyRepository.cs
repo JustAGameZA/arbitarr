@@ -17,7 +17,46 @@ namespace Arbitarr.Data.Security;
 /// </summary>
 /// <param name="Entry">The persisted row, carrying no secret.</param>
 /// <param name="PlaintextKey">The generated key value. Shown once, then gone.</param>
-public sealed record CreatedApiKey(ApiKeyEntry Entry, string PlaintextKey);
+public sealed record CreatedApiKey(ApiKeyEntry Entry, string PlaintextKey)
+{
+    /// <summary>
+    /// Names the type and the row it created, and prints NO form of the key — not even a redaction
+    /// marker in place of one, because there is no non-secret rendering of a plaintext key to give.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>OVERRIDDEN BECAUSE THE SYNTHESISED ONE PRINTS THE KEY</b> (arb-1ox9). A positional
+    /// record's compiler-generated <c>ToString</c> renders every member by name and value, so the
+    /// default here produced <c>CreatedApiKey { Entry = …, PlaintextKey = the-actual-key }</c>. This
+    /// is the one shape in which a live admin credential reaches a caller, so the value of a single
+    /// accidental <c>$"created {result}"</c> is a permanent admin credential in the persistent log
+    /// store served at <c>/api/admin/logs</c> (#65).</para>
+    ///
+    /// <para><b>AND NOTHING ELSE COVERS IT — THIS ONE IS NOT DEFENCE IN DEPTH, IT IS THE ONLY
+    /// DEFENCE</b> (CLAUDE.md §1). <c>IHttpClientFactory</c>'s URI redaction collapses an outbound
+    /// request's QUERY STRING and nothing else. <see cref="Logging.LogMessageCleanser"/> does scrub
+    /// some inline <c>name = value</c> shapes — its <c>NamedCredential</c> arm matches the
+    /// alternation <c>api_key|apikey|token|passkey|password|secret</c> — but <b>"plaintextkey"
+    /// contains none of those</b>. ("key" alone is deliberately absent from that arm so ordinary
+    /// identifiers are not mangled into unreadability.) So the synthesised rendering of THIS type
+    /// walked straight through the sink and into the persistent store verbatim. Measured, not
+    /// assumed: <c>CredentialRecordLogInjectionTests</c> asserts that leak against the real pipeline
+    /// as the control that makes this override's necessity a fact rather than a claim.</para>
+    ///
+    /// <para>The row's id and label ARE printed: they are not credentials, they are what makes a
+    /// diagnostic line about a creation useful at all, and printing them is what keeps this override
+    /// from being deleted as an empty gesture.</para>
+    ///
+    /// <para><b>This is the OPPOSITE posture to</b> <c>Arbitarr.Api.Security.ChangePasswordRequest</c>,
+    /// which documents that it must NEVER gain an override — it is defended by nothing ever logging
+    /// it, and an override there would make it look safe to log. The difference is that this type is
+    /// a repository RESULT that a caller legitimately holds and might reasonably report on, so the
+    /// safe rendering has to exist. <c>CredentialRecordToStringTests</c> holds both postures in two
+    /// separate tables so neither can silently flip into the other.</para>
+    /// </remarks>
+    public override string ToString() =>
+        $"{nameof(CreatedApiKey)} {{ {nameof(Entry)}.{nameof(ApiKeyEntry.Id)} = {Entry.Id}, "
+        + $"{nameof(Entry)}.{nameof(ApiKeyEntry.Label)} = {Entry.Label} }}";
+}
 
 /// <summary>
 /// #58: persistence and verification for named, scoped admin API keys, with the same

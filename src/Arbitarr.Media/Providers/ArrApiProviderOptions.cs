@@ -1,3 +1,5 @@
+using Arbitarr.Core.Diagnostics;
+
 namespace Arbitarr.Media.Providers;
 
 /// <summary>
@@ -32,4 +34,28 @@ public sealed record ArrApiProviderOptions(
     public static readonly TimeSpan DefaultRequestTimeout = TimeSpan.FromSeconds(10);
 
     public TimeSpan EffectiveRequestTimeout => RequestTimeout ?? DefaultRequestTimeout;
+
+    /// <summary>
+    /// Renders the address and source name in full and the key as
+    /// <see cref="CredentialPatterns.Replacement"/> (arb-1ox9).
+    /// </summary>
+    /// <remarks>
+    /// <para><b>THIS IS THE MECHANISM BEHIND <see cref="ApiKey"/>'s "never logged".</b> That param doc
+    /// is a comment, and a comment cannot fail — the synthesised <c>ToString</c> on a positional
+    /// record prints every member by name and value, so <c>$"provider options {options}"</c> would
+    /// have emitted the key verbatim while the doc above it still read as correct.</para>
+    ///
+    /// <para><b>The key's REQUEST shape being covered is exactly what makes this shape easy to
+    /// overlook</b> (CLAUDE.md §1). The key IS sent as a query-string parameter, so an outbound URI
+    /// carrying it is collapsed by <c>IHttpClientFactory</c>'s redaction — but that redaction sees
+    /// only request URIs, never this record. <c>LogMessageCleanser</c> does scrub a rendered
+    /// <c>ApiKey = …</c>, and <b>only in the LOG SINK</b>: an exception message or console line
+    /// carrying these options never meets it, while <c>ToString</c> is where all of those are formed.
+    /// The sink's coverage is name-dependent rather than structural — see
+    /// <c>Arbitarr.Data.Security.CreatedApiKey.ToString</c> for the sibling spelling it misses.</para>
+    /// </remarks>
+    public override string ToString() =>
+        $"{nameof(ArrApiProviderOptions)} {{ {nameof(BaseUrl)} = {BaseUrl}, "
+        + $"{nameof(ApiKey)} = {CredentialPatterns.Replacement}, "
+        + $"{nameof(SourceName)} = {SourceName} }}";
 }

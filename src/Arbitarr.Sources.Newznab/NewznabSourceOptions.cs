@@ -1,3 +1,5 @@
+using Arbitarr.Core.Diagnostics;
+
 namespace Arbitarr.Sources.Newznab;
 
 /// <summary>
@@ -56,4 +58,23 @@ public sealed record NewznabSourceOptions(
 
     /// <summary>The token-bucket refill window actually applied.</summary>
     public TimeSpan EffectiveRateLimitInterval => RateLimitInterval ?? TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// Renders the address, API path and source name in full and the key as
+    /// <see cref="CredentialPatterns.Replacement"/> (arb-1ox9).
+    /// </summary>
+    /// <remarks>
+    /// The synthesised <c>ToString</c> on a positional record prints every member by name and value,
+    /// so this type would otherwise emit a live per-source key into any line that interpolated it.
+    /// The <c>IHttpClientFactory</c> URI redaction does not cover it (that sees only request URIs),
+    /// and <c>LogMessageCleanser</c> covers it only in the LOG SINK and only because this field
+    /// happens to be spelled "ApiKey" (CLAUDE.md §1). See <c>ArrApiProviderOptions.ToString</c> for
+    /// the full reasoning and <c>Arbitarr.Data.Security.CreatedApiKey.ToString</c> for the sibling
+    /// spelling the cleanser misses. <see cref="ApiPath"/> is rendered: it is a routing detail, not a credential, and it
+    /// is the field most worth having in a diagnostic about a misrouted direct indexer.
+    /// </remarks>
+    public override string ToString() =>
+        $"{nameof(NewznabSourceOptions)} {{ {nameof(BaseUrl)} = {BaseUrl}, {nameof(ApiPath)} = {ApiPath}, "
+        + $"{nameof(ApiKey)} = {CredentialPatterns.Replacement}, "
+        + $"{nameof(SourceName)} = {SourceName} }}";
 }
