@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import DashboardPage from './Dashboard';
@@ -221,15 +221,76 @@ describe('Dashboard', () => {
     });
     renderSurface(<DashboardPage />);
 
-    expect(
-      await screen.findByText(
-        'No sources configured. Add an NZBHydra2 URL and API key to start searching.',
-      ),
-    ).toBeInTheDocument();
+    // A substring match, not the whole sentence: arb-mn12 appends a <Link> to
+    // this paragraph, so its text now spans two nodes and an exact whole-string
+    // match would find no single element carrying it.
+    expect(await screen.findByText(/No sources configured/)).toBeInTheDocument();
     expect(
       screen.queryByText(
         'NZBHydra2 is configured. Sources appear here after the first search runs.',
       ),
+    ).not.toBeInTheDocument();
+  });
+
+  /**
+   * arb-mn12. The link belongs to ONE of the three empty-state branches.
+   *
+   * Asserted per branch rather than once: a change that linked every branch — or
+   * that moved the link to the wrong one — would pass a single positive
+   * assertion, which is exactly the shape this suite has to exclude. The
+   * destination is asserted, not just that an anchor exists, because a link to
+   * the wrong route is the same dead end as no link at all.
+   */
+  it('links the not-configured empty state to Settings, and only that branch', async () => {
+    mockApi({
+      ...allOk,
+      '/api/status': { body: { ...status, sources: [] } },
+      '/api/config/effective': { body: { ...config, nzbHydraConfigured: false } },
+    });
+    renderSurface(<DashboardPage />);
+
+    const link = await screen.findByRole('link', { name: /Configure a source in Settings/i });
+    expect(link).toHaveAttribute('href', '/settings');
+
+    // The sentence it was added to is unchanged: this bead adds the affordance
+    // and leaves the Hydra framing to arb-x7w8.17.
+    expect(
+      screen.getByText(/No sources configured\. Add an NZBHydra2 URL and API key to start searching\./),
+    ).toBeInTheDocument();
+  });
+
+  it('leaves the configured-idle empty state unlinked', async () => {
+    mockApi({
+      ...allOk,
+      '/api/status': { body: { ...status, sources: [] } },
+      '/api/config/effective': { body: { ...config, nzbHydraConfigured: true } },
+    });
+    renderSurface(<DashboardPage />);
+
+    const empty = await screen.findByText(
+      'NZBHydra2 is configured. Sources appear here after the first search runs.',
+    );
+    expect(within(empty).queryByRole('link')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: /Configure a source in Settings/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('leaves the still-pending empty state unlinked while the config query has not resolved', async () => {
+    mockApi({
+      ...allOk,
+      '/api/status': { body: { ...status, sources: [] } },
+      // The effective-config query FAILS, so `nzbHydraConfigured` stays
+      // undefined — the same state the component sees while that query is
+      // pending, and the only one reachable deterministically from a test.
+      '/api/config/effective': { status: 503, body: { error: 'config unavailable' } },
+    });
+    renderSurface(<DashboardPage />);
+
+    const empty = await screen.findByText('No sources reporting yet.');
+    expect(within(empty).queryByRole('link')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: /Configure a source in Settings/i }),
     ).not.toBeInTheDocument();
   });
 
@@ -246,11 +307,7 @@ describe('Dashboard', () => {
         'NZBHydra2 is configured. Sources appear here after the first search runs.',
       ),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByText(
-        'No sources configured. Add an NZBHydra2 URL and API key to start searching.',
-      ),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/No sources configured/)).not.toBeInTheDocument();
   });
 
   it('renders the sources table, not an empty message, when sources are present', async () => {
@@ -258,11 +315,7 @@ describe('Dashboard', () => {
     renderSurface(<DashboardPage />);
 
     await screen.findByText('nzbhydra');
-    expect(
-      screen.queryByText(
-        'No sources configured. Add an NZBHydra2 URL and API key to start searching.',
-      ),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/No sources configured/)).not.toBeInTheDocument();
     expect(
       screen.queryByText(
         'NZBHydra2 is configured. Sources appear here after the first search runs.',

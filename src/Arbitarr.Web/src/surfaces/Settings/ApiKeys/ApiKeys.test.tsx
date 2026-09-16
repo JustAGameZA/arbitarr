@@ -317,6 +317,90 @@ describe('ApiKeys', () => {
     expect(empty).toHaveTextContent(/revocable credential/i);
   });
 
+  /**
+   * Every URL the section renders, as text.
+   *
+   * Collected by reading the <code> elements on screen rather than by
+   * re-deriving `origin + path`: a helper that computed the expected strings
+   * itself would agree with a broken component for the same reason the
+   * component was broken.
+   */
+  function renderedUrls(): string[] {
+    return [...document.querySelectorAll('code')]
+      .map((element) => element.textContent ?? '')
+      .filter((text) => text.includes('://'));
+  }
+
+  it('renders the exact *arr-facing routes, /torznab/api and /newznab/api', async () => {
+    mockKeysApi({ [`GET ${KEYS}`]: { body: keys } });
+    renderSurface(<ApiKeysSection />);
+
+    await screen.findByRole('cell', { name: 'Sonarr' });
+
+    // The literal suffixes, not merely "a URL is shown". A wrong path — an
+    // /api/ prefix, a version segment, a trailing slash — is the entire 404 this
+    // block exists to prevent, and a laxer assertion would pass against it.
+    const origin = window.location.origin;
+    expect(screen.getByText(`${origin}/torznab/api`)).toBeInTheDocument();
+    expect(screen.getByText(`${origin}/newznab/api`)).toBeInTheDocument();
+
+    // Both families are offered, with Torznab named preferred as the README says.
+    expect(screen.getByText(/preferred/i)).toBeInTheDocument();
+
+    // The caveat: the browser's origin is not necessarily what the *arr reaches.
+    expect(screen.getByText(/externally reachable address may differ/i)).toBeInTheDocument();
+  });
+
+  it('never renders the key inside a URL — it is the *arr form’s separate field', async () => {
+    const user = userEvent.setup();
+    const api = mockKeysApi({ [`GET ${KEYS}`]: { body: keys } });
+    renderSurface(<ApiKeysSection />);
+
+    await screen.findByRole('cell', { name: 'Sonarr' });
+    api.set(`POST ${KEYS}`, { status: 201, body: created });
+
+    await user.type(screen.getByLabelText('New key label'), 'Radarr');
+    await user.click(screen.getByRole('button', { name: 'Create key' }));
+
+    // The planted key really is in play: it reached the reveal panel. Without
+    // this, the absence assertion below would pass just as happily on a render
+    // that never received a key at all.
+    expect(await screen.findByText(PLAINTEXT)).toBeInTheDocument();
+
+    const urls = renderedUrls();
+    expect(urls.length).toBeGreaterThan(0);
+
+    // POSITIVE CONTROL: prove this search WOULD catch a key baked into a URL, so
+    // the assertion that follows detects absence rather than reporting a search
+    // that could never have matched.
+    const withLeak = [...urls, `${window.location.origin}/torznab/api?apikey=${PLAINTEXT}`];
+    expect(withLeak.some((url) => url.includes(PLAINTEXT))).toBe(true);
+
+    expect(urls.some((url) => url.includes(PLAINTEXT))).toBe(false);
+  });
+
+  it('copies a URL best-effort, and survives a context with no clipboard API', async () => {
+    const user = userEvent.setup();
+    mockKeysApi({ [`GET ${KEYS}`]: { body: keys } });
+    renderSurface(<ApiKeysSection />);
+
+    await screen.findByRole('cell', { name: 'Sonarr' });
+
+    const writeText = vi.fn(() => Promise.resolve());
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
+
+    await user.click(screen.getByRole('button', { name: 'Copy Torznab URL' }));
+    expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/torznab/api`);
+    expect(await screen.findByText('Copied.')).toBeInTheDocument();
+
+    // No clipboard at all — the jsdom and non-secure-context case the copy
+    // closure's optional chaining exists for. The click must not throw, and the
+    // URL must stay on screen to be selected by hand.
+    vi.stubGlobal('navigator', { ...navigator, clipboard: undefined });
+    await user.click(screen.getByRole('button', { name: 'Copy Newznab URL' }));
+    expect(screen.getByText(`${window.location.origin}/newznab/api`)).toBeInTheDocument();
+  });
+
   it('explains what each scope reaches, and changes the explanation with the choice', async () => {
     const user = userEvent.setup();
     mockKeysApi({ [`GET ${KEYS}`]: { body: keys } });

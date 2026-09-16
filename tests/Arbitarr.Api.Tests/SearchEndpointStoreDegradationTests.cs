@@ -174,7 +174,7 @@ public sealed class SearchEndpointStoreDegradationTests : IDisposable
         Assert.DoesNotContain(Candidate().Title, warning.Message, StringComparison.Ordinal);
         Assert.DoesNotContain(Candidate().Guid, warning.Message, StringComparison.Ordinal);
         // It still says enough to act on: how many rows were lost.
-        Assert.Contains("1 releases", warning.Message, StringComparison.Ordinal);
+        Assert.Contains("1 lookup entries", warning.Message, StringComparison.Ordinal);
     }
 
     /// <summary>

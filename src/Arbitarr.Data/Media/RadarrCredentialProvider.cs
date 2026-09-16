@@ -31,11 +31,18 @@ public sealed record RadarrCredential(Uri BaseUrl, string ApiKey)
     /// to end up in a log line, an exception message, or a structured-logging argument that formats
     /// its operands.
     ///
-    /// <para><b>NEITHER EXISTING LAYER WOULD CATCH IT</b> (CLAUDE.md §1). <c>IHttpClientFactory</c>'s
-    /// redaction collapses a URI's QUERY STRING and nothing else, and <c>LogMessageCleanser</c> scrubs
-    /// credentials in query strings but not in URL paths. A bare <c>ApiKey = value</c> inside a
-    /// record's string form is in neither — it is not a URI at all — so the value would reach the log
-    /// store verbatim. Redacting at the source is the only layer that covers this shape.</para>
+    /// <para><b>THE OTHER LAYERS DO NOT OWN THIS SHAPE</b> (CLAUDE.md §1).
+    /// <c>IHttpClientFactory</c>'s redaction collapses a URI's QUERY STRING and nothing else, so a
+    /// record's string form — not a URI at all — is outside it entirely.
+    /// <c>LogMessageCleanser</c> reaches further than a query string: its <c>NamedCredential</c> arm
+    /// matches a credential-shaped NAME followed by <c>:</c> or <c>=</c> ANYWHERE in the text, and
+    /// (arb-cia3, measured) that arm does match <c>ApiKey = value</c> in this exact rendering. But
+    /// it is a sink-side denylist keyed on the member being NAMED like a credential, and it is
+    /// defence in depth by its own remarks, not the control: the sibling
+    /// <c>CreatedApiKey.PlaintextKey</c> was named just differently enough to match nothing at all
+    /// and reached the log store verbatim (arb-cia3). Redacting at the source is what does not
+    /// depend on the name; deleting this override to lean on the cleanser would trade a guarantee
+    /// for a pattern list.</para>
     ///
     /// <para>The base URL is still rendered in full: it is deliberately not a credential, and
     /// <see cref="RadarrInstanceRepository.ValidateBaseUrl"/> rejecting userinfo is what keeps that

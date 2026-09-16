@@ -287,11 +287,28 @@ public static class SearchEndpoint
         // download-proxy registrations and the rendered XML must all agree on the post-filter view.
         var filtered = await filterStage.ApplyAsync(result.Releases, queryText ?? string.Empty, clientName, cancellationToken).ConfigureAwait(false);
 
+        // arb-vlsu: the lookup registrations below cover `filtered` PLUS every dedup-group member on
+        // RenderedRelease.AlternateMembers (one level only — RenderedRelease.cs confirms members are
+        // flat, never nested, so no recursion is needed). A representative-only registration left
+        // every AlternateMembers ProxyGuid unresolvable at /download/{proxyGuid}, even though each
+        // member is a complete RenderedRelease carrying its own SourceName and its own computed
+        // ProxyGuid. Each member is registered as its own flat, top-level entry (not nested under the
+        // representative), so DownloadProxyEndpoint resolves it against ITS OWN source automatically —
+        // the existing SEC-M1 origin re-validation there keys off release.SourceName/the resolved
+        // source, which is correct per-member once members are registered this way; no new validation
+        // code is needed. AlternateMembers defaults to Array.Empty<RenderedRelease>() for every
+        // ungrouped release, so this SelectMany is a no-op addition when nothing dedups. Only these
+        // two registration calls read the flattened set — result count and XML rendering keep reading
+        // `filtered` exactly as before.
+        var releasesToRegister = filtered
+            .Concat(filtered.SelectMany(r => r.AlternateMembers))
+            .ToArray();
+
         // Register only the post-filter set: an enforced-mode (shadow OFF) suppression is a deny,
         // full stop, so a withheld release must not remain resolvable via /download/{proxyGuid}.
         // Shadow-mode-suppressed releases stay in `filtered` (annotated), so they stay
         // downloadable.
-        releaseLookup.RecordRange(filtered);
+        releaseLookup.RecordRange(releasesToRegister);
 
         // arb-tps: the durable counterpart to the line above, written to the SAME post-filter set
         // for the same reason — an enforced suppression must not stay resolvable via /download in
@@ -309,12 +326,12 @@ public static class SearchEndpoint
         // degrades a store miss to a 404 rather than a 500. Letting the exception escape would turn a
         // durability problem into a total search outage — an *arr sees no results at all, rather than
         // results whose links merely stop surviving a restart.
-        if (releaseLookupStore is not null && filtered.Count > 0)
+        if (releaseLookupStore is not null && releasesToRegister.Length > 0)
         {
             try
             {
                 await releaseLookupStore.UpsertRangeAsync(
-                        filtered.Select(r => new StoredRelease(r.ProxyGuid, r.SourceName, r.Candidate)),
+                        releasesToRegister.Select(r => new StoredRelease(r.ProxyGuid, r.SourceName, r.Candidate)),
                         cancellationToken)
                     .ConfigureAwait(false);
             }
@@ -331,8 +348,8 @@ public static class SearchEndpoint
                 // carries the source URL, which is the one thing that must not be written there.
                 logger?.LogWarning(
                     ex,
-                    "Release lookup store write failed for {ReleaseCount} releases; the search still answered and the in-memory tier still resolves these links.",
-                    filtered.Count);
+                    "Release lookup store write failed for {EntryCount} lookup entries (including dedup-group members); the search still answered and the in-memory tier still resolves these links.",
+                    releasesToRegister.Length);
                 // See docs/adr/0015-persist-release-lookup.md's "Degradation contract" table (write side).
             }
         }

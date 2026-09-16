@@ -63,13 +63,15 @@ public sealed record CreatedApiKeyResponse(ApiKeyResponse Key, string PlaintextK
     /// in the store served at <c>/api/admin/logs</c> (#65), defeating the one-shot property rather
     /// than merely leaking alongside it.</para>
     ///
-    /// <para><b>AND NOTHING ELSE COVERS IT</b> (CLAUDE.md §1). <c>IHttpClientFactory</c>'s URI
-    /// redaction collapses an outbound request's query string and nothing else, and while
-    /// <c>LogMessageCleanser</c> scrubs some inline <c>name = value</c> shapes, the name
-    /// "plaintextkey" matches no arm of it — see <see cref="CreatedApiKey"/>'s own override for the
-    /// exact alternation and why "key" alone is not in it. The synthesised rendering of this
-    /// type therefore reached the persistent store verbatim, which
-    /// <c>CredentialRecordLogInjectionTests</c> asserts against the real pipeline.</para>
+    /// <para><b>AND IT IS THE LAYER THAT DOES NOT DEPEND ON THE NAME</b> (CLAUDE.md §1).
+    /// <c>IHttpClientFactory</c>'s URI redaction collapses an outbound request's query string and
+    /// nothing else, so it never covered this. <c>LogMessageCleanser</c> scrubs inline
+    /// <c>name = value</c> shapes, but when this type was written the name "plaintextkey" matched no
+    /// arm of it, so the synthesised rendering of this type reached the persistent store verbatim.
+    /// arb-cia3 has since taught that arm a <c>plaintext…</c> alternative — see
+    /// <see cref="CreatedApiKey"/>'s own override for the alternation, why "key" alone is not in it,
+    /// and why the sink covering this shape is defence in depth rather than grounds for removing
+    /// either override.</para>
     ///
     /// <para>This does NOT affect the response body. <c>System.Text.Json</c> serialises the
     /// properties and never calls <c>ToString</c> on the record, so the operator still receives the

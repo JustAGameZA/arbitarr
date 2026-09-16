@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Arbitarr.Data.Logging;
 using Arbitarr.TestSupport;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using Xunit;
 
@@ -207,6 +208,199 @@ public sealed class SqliteLoggerProviderTests : IDisposable
         Assert.Contains(
             (await store.ReadAsync("Warning", null, 1, 10)).Entries,
             e => e.Message.Contains("Dropped", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// arb-s3ky, THE PROPERTY: <see cref="SqliteLoggerProvider.DrainCompleted"/> reports when the
+    /// pump has actually FINISHED, which is a strictly later moment than <c>Dispose</c> returning.
+    /// Dispose's wait is bounded and gives up on purpose; a caller that can afford to wait longer — a
+    /// test teardown about to delete the directory the log database lives in — needs the stronger
+    /// signal, because a pool clear closes only the handles a pool HOLDS and cannot reach one a
+    /// still-running drain has checked out.
+    ///
+    /// <para><b>MUTANT KILLED:</b> <c>DrainCompleted =&gt; Task.CompletedTask</c>. The first
+    /// assertion below fails against it immediately — a completed task is complete the moment Dispose
+    /// returns, which is precisely the guarantee this member exists NOT to give.</para>
+    ///
+    /// <para><b>The wait is DRIVEN, not slept.</b> The hold is a real SQLite write lock taken by this
+    /// test on the log database, so the pump's final <c>WriteAsync</c> genuinely blocks inside
+    /// <c>BEGIN</c> rather than the test approximating a busy pump with a timer. The provider's
+    /// shutdown bound is shortened through its test-only constructor (see that overload's remarks)
+    /// purely so the give-up happens in milliseconds; <c>DefaultShutdownWait</c>, and therefore
+    /// production shutdown, is untouched.</para>
+    /// </summary>
+    [Fact]
+    public async Task DrainCompleted_outlives_a_Dispose_that_gave_up_and_completes_when_the_drain_is_released()
+    {
+        var store = NewStore();
+        var holder = OpenExclusiveWriter(store);
+
+        SqliteLoggerProvider provider;
+        try
+        {
+            // A short shutdown bound, so Dispose is certain to give up while the drain below is
+            // still blocked on the lock held above — which it will be for as long as the hold lasts,
+            // the store's busy_timeout notwithstanding (see OpenExclusiveWriter).
+            provider = new SqliteLoggerProvider(
+                store,
+                LogLevel.Information,
+                timeProvider: null,
+                onError: null,
+                shutdownWait: TimeSpan.FromMilliseconds(200));
+
+            // A queued entry is what makes the final drain WRITE rather than return early on an empty
+            // batch — without it the drain never touches the lock and this would prove nothing about
+            // a held drain.
+            provider.CreateLogger("Arbitarr.Api.Search").LogInformation("held behind a write lock");
+
+            provider.Dispose();
+
+            // THE ASSERTION THE MUTANT FAILS. Dispose has returned, but the pump is still inside its
+            // final write, so the completion must NOT be signalled yet.
+            Assert.False(
+                provider.DrainCompleted.IsCompleted,
+                "DrainCompleted was already complete when Dispose returned from a drain it had " +
+                "abandoned. It must report the pump FINISHING, which is later than Dispose giving up.");
+        }
+        finally
+        {
+            // Releasing the hold lets the blocked drain finish.
+            ReleaseExclusiveWriter(holder);
+        }
+
+        // ... and the completion then publishes. Bounded so a regression fails the test rather than
+        // hanging the run.
+        await provider.DrainCompleted.WaitAsync(TimeSpan.FromSeconds(30));
+    }
+
+    /// <summary>
+    /// arb-s3ky: the NON-VACUITY control for the test above. That test asserts DrainCompleted is NOT
+    /// complete just after Dispose — an assertion that would pass just as happily if the pump had
+    /// never run, or if the entry never reached a write at all. This proves the drain was genuinely
+    /// in flight and blocked BY THE HOLD: the row it was carrying reaches the store once released,
+    /// which an un-started pump could not produce.
+    /// </summary>
+    [Fact]
+    public async Task A_drain_released_after_Dispose_gave_up_still_writes_its_batch()
+    {
+        var store = NewStore();
+        var holder = OpenExclusiveWriter(store);
+
+        SqliteLoggerProvider provider;
+        try
+        {
+            provider = new SqliteLoggerProvider(
+                store,
+                LogLevel.Information,
+                timeProvider: null,
+                onError: null,
+                shutdownWait: TimeSpan.FromMilliseconds(200));
+
+            provider.CreateLogger("Arbitarr.Api.Search").LogInformation("written after the hold released");
+            provider.Dispose();
+        }
+        finally
+        {
+            ReleaseExclusiveWriter(holder);
+        }
+
+        await provider.DrainCompleted.WaitAsync(TimeSpan.FromSeconds(30));
+
+        Assert.Contains(
+            (await store.ReadAsync(null, null, 1, 10)).Entries,
+            e => e.Message == "written after the hold released");
+    }
+
+    /// <summary>
+    /// arb-s3ky: on the ORDINARY path — nothing holding the database — the completion is already
+    /// published by the time <c>Dispose</c> returns, so a caller awaiting it pays nothing.
+    ///
+    /// <para><b>MUTANT KILLED:</b> publishing the completion somewhere that does not run on the
+    /// normal path (for instance only in the catch of Dispose's <c>AggregateException</c>, which the
+    /// pump never raises). This fails against that; the held-drain test above does not, because there
+    /// the completion arrives late either way.</para>
+    /// </summary>
+    [Fact]
+    public void A_normal_Dispose_publishes_the_drain_completion_before_it_returns()
+    {
+        var store = NewStore();
+        var provider = new SqliteLoggerProvider(store);
+        provider.CreateLogger("Arbitarr.Api.Search").LogInformation("a line to drain");
+
+        provider.Dispose();
+
+        Assert.True(
+            provider.DrainCompleted.IsCompletedSuccessfully,
+            "Dispose returned without the pump's drain completion being published, even though " +
+            "nothing was holding the log database. A caller awaiting it would then be waiting for a " +
+            "pump that had already finished.");
+    }
+
+    /// <summary>
+    /// arb-s3ky: <c>Dispose</c> is safe to call twice. xunit disposes some hosts through both
+    /// disposal paths, and a second call must not throw out of a teardown nor unpublish the
+    /// completion.
+    ///
+    /// <para><b>MUTANT KILLED:</b> removing the disposed latch, which leaves the second call invoking
+    /// <c>Cancel()</c> on an already-disposed <c>CancellationTokenSource</c>.</para>
+    /// </summary>
+    [Fact]
+    public void Disposing_twice_does_not_throw_and_leaves_the_completion_published()
+    {
+        var store = NewStore();
+        var provider = new SqliteLoggerProvider(store);
+        provider.CreateLogger("Arbitarr.Api.Search").LogInformation("a line to drain");
+
+        provider.Dispose();
+
+        Assert.Null(Record.Exception(provider.Dispose));
+        Assert.True(provider.DrainCompleted.IsCompletedSuccessfully);
+    }
+
+    /// <summary>
+    /// An open <c>BEGIN IMMEDIATE</c> on the store's own database. Any other writer — here the
+    /// provider's final drain — blocks on it, and goes on blocking for as long as this is held: the
+    /// store's <c>busy_timeout</c> does NOT time the waiter out, which was measured rather than
+    /// assumed. That is what makes the hold a controllable gate rather than a race.
+    ///
+    /// <para>The connection string is built the way <c>LogStore</c> builds its own, because a
+    /// different string names a different pool.</para>
+    ///
+    /// <para><b>Release is <see cref="ReleaseExclusiveWriter"/>, never a bare <c>Dispose</c>.</b>
+    /// Disposing a POOLED connection with a transaction still open returns it to the pool with the
+    /// transaction — and therefore the write lock — intact, so the blocked writer stays blocked
+    /// forever. Measured: a bare Dispose left the drain wedged past 30 seconds. The explicit
+    /// <c>ROLLBACK</c> is what actually releases it.</para>
+    /// </summary>
+    private static SqliteConnection OpenExclusiveWriter(LogStore store)
+    {
+        var holder = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = store.DatabasePath,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Cache = SqliteCacheMode.Default,
+            Pooling = true,
+        }.ToString());
+        holder.Open();
+
+        using var begin = holder.CreateCommand();
+        begin.CommandText = "BEGIN IMMEDIATE;";
+        begin.ExecuteNonQuery();
+
+        return holder;
+    }
+
+    /// <summary>Releases <see cref="OpenExclusiveWriter"/>'s lock — see its remarks for why the
+    /// explicit rollback is required and a Dispose alone is not.</summary>
+    private static void ReleaseExclusiveWriter(SqliteConnection holder)
+    {
+        using (var rollback = holder.CreateCommand())
+        {
+            rollback.CommandText = "ROLLBACK;";
+            rollback.ExecuteNonQuery();
+        }
+
+        holder.Dispose();
     }
 
     [Fact]
