@@ -39,6 +39,13 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
     /// </summary>
     private const string SecretApiKey = "placeholder-super-secret-source-key";
 
+    /// <summary>
+    /// arb-4vzm: the password planted inside a credential-bearing <c>baseUrl</c>. Distinct from
+    /// <see cref="SecretApiKey"/> on purpose, so a leak through the base URL cannot be mistaken for
+    /// a leak through the API key or vice versa.
+    /// </summary>
+    private const string PlantedBaseUrlPassword = "placeholder-base-url-password";
+
     private readonly ArbitarrWebApplicationFactory _factory;
 
     public AdminSourceEndpointsTests(ArbitarrWebApplicationFactory factory)
@@ -935,6 +942,123 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
                 Content = new StringContent(CapsBody, Encoding.UTF8, "application/xml"),
             });
         }
+    }
+
+    /// <summary>
+    /// arb-4vzm, end to end and per write path: a base URL carrying credentials is refused with a
+    /// 400 on BOTH <c>POST</c> and <c>PUT</c>, nothing is stored, and — the part that matters — the
+    /// credential does not come back in the rejection body.
+    ///
+    /// <para>The 400 alone is not the property. The credential riding out in the error message would
+    /// be the same leak the check exists to stop, merely relocated from the success path to the
+    /// failure path, so the message must name the problem without echoing the value.</para>
+    ///
+    /// <para>The response-echo half of the defect is asserted by
+    /// <see cref="The_userinfo_refusal_assertion_would_fail_if_the_credential_were_echoed"/> below,
+    /// which shows this assertion is capable of firing before relying on it.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_base_url_carrying_credentials_is_refused_on_both_write_paths_without_echoing_it()
+    {
+        await SeedAdminKeyAsync();
+        using var client = CreateAdminClient();
+
+        var displayName = "Credential base URL " + Guid.NewGuid().ToString("N");
+        var credentialBaseUrl = $"https://operator:{PlantedBaseUrlPassword}@indexer.example:9117";
+
+        using var createResponse = await client.PostAsJsonAsync(SourcesRoute, new
+        {
+            kind = "NzbHydra",
+            displayName,
+            baseUrl = credentialBaseUrl,
+            apiKey = (string?)null,
+            enabled = true,
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, createResponse.StatusCode);
+        var createBody = await createResponse.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(PlantedBaseUrlPassword, createBody, StringComparison.Ordinal);
+
+        // Nothing was stored: the source list carries no row under that display name.
+        using var listResponse = await client.GetAsync(SourcesRoute);
+        var listBody = await listResponse.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(displayName, listBody, StringComparison.Ordinal);
+        Assert.DoesNotContain(PlantedBaseUrlPassword, listBody, StringComparison.Ordinal);
+
+        // The second write path. A clean row first, so the PUT exercises the validator rather than
+        // the does-not-exist arm.
+        var existing = await CreateSourceAsync(client, "Clean before credential PUT " + Guid.NewGuid().ToString("N"), apiKey: null);
+
+        using var updateResponse = await client.PutAsJsonAsync($"{SourcesRoute}/{existing.Id}", new
+        {
+            kind = existing.Kind,
+            displayName = existing.DisplayName,
+            baseUrl = credentialBaseUrl,
+            enabled = existing.Enabled,
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, updateResponse.StatusCode);
+        var updateBody = await updateResponse.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(PlantedBaseUrlPassword, updateBody, StringComparison.Ordinal);
+
+        // And the stored row kept its clean value rather than being half-updated.
+        using var afterResponse = await client.GetAsync($"{SourcesRoute}/{existing.Id}");
+        if (afterResponse.StatusCode == HttpStatusCode.OK)
+        {
+            var after = await afterResponse.Content.ReadFromJsonAsync<SourceResponse>();
+            Assert.Equal(existing.BaseUrl, after!.BaseUrl);
+        }
+    }
+
+    /// <summary>
+    /// POSITIVE CONTROL for the refusal assertions above (CLAUDE.md §4), in the shape this file
+    /// already uses for the API-key sweep. Asserting a 400 came back proves the value was REFUSED.
+    /// It does not prove the credential would be DETECTABLE if the message echoed it — and an
+    /// echoing message is exactly what the arm order inside <c>ValidateBaseUrl</c> exists to
+    /// prevent, so a vacuous check here would hide the failure it was written for.
+    ///
+    /// <para>So this builds the echoing message the mutant would produce, asserts the very same
+    /// <c>DoesNotContain</c> check FAILS against it, and only then asserts the real body passes.
+    /// Nothing vulnerable is added to the product: the leaked shape is constructed here and thrown
+    /// away.</para>
+    /// </summary>
+    [Fact]
+    public async Task The_userinfo_refusal_assertion_would_fail_if_the_credential_were_echoed()
+    {
+        await SeedAdminKeyAsync();
+        using var client = CreateAdminClient();
+
+        var credentialBaseUrl = $"https://operator:{PlantedBaseUrlPassword}@indexer.example:9117";
+
+        using var response = await client.PostAsJsonAsync(SourcesRoute, new
+        {
+            kind = "NzbHydra",
+            displayName = "Echo control " + Guid.NewGuid().ToString("N"),
+            baseUrl = credentialBaseUrl,
+            apiKey = (string?)null,
+            enabled = true,
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var realBody = await response.Content.ReadAsStringAsync();
+
+        // The mutant's body: the same rejection with the value interpolated, as every ECHOING arm in
+        // ValidateBaseUrl already formats its own message.
+        var echoingBody = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            error = $"'{credentialBaseUrl}' is not a valid absolute http(s) URL.",
+        });
+
+        // FIRST: prove the check bites.
+        Assert.ThrowsAny<Xunit.Sdk.XunitException>(
+            () => Assert.DoesNotContain(PlantedBaseUrlPassword, echoingBody, StringComparison.Ordinal));
+
+        // THEN: the real body, checked by that now-proven-capable assertion.
+        Assert.DoesNotContain(PlantedBaseUrlPassword, realBody, StringComparison.Ordinal);
+
+        // And the body really is the refusal, so the check ran against the right payload rather than
+        // an empty one.
+        Assert.NotEmpty(realBody);
     }
 
     private HttpClient CreateAdminClient()

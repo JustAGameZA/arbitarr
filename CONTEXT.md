@@ -685,6 +685,34 @@ break Sonarr's grab-history match).
 
 ---
 
+## Dedup group
+
+Once Arbitarr fronts more than one source, the same release arrives more than
+once — most often from NZBHydra2 and a directly configured indexer at the same
+time. A **dedup group** is the set of copies the dedup stage judged to be one
+release. Two copies join a group only on **exact evidence, all three conditions
+together**: equal normalised title (equality, never similarity — no edit
+distance, no threshold), sizes within a tight tolerance, and the same
+`ProtocolKind`, where **`Unknown` matches nothing, including another `Unknown`**
+— two copies that both failed to report a protocol share only a missing field.
+**A group retains every member**, ordered by source priority (higher wins), with
+the first as its representative; the losers are never discarded, because a failed
+grab from the first member falls back to the next, which is only possible if the
+group still holds it — [ADR
+0003](docs/adr/0003-siblings-are-deranked-not-discarded.md)'s
+de-rank-never-discard on a different axis. Consumers therefore see a group of N
+members and must not assume N is 1. It lives in the pipeline, not in any source
+adapter (`DedupStage`, `src/Arbitarr.Api/Search/`, over `DedupNormalizer` in
+`src/Arbitarr.Core/Pipeline/`), because an adapter sees only its own indexer and
+could collapse only that indexer's duplicates of itself — the case that does not
+arise. **Two rows for one release is the expected failure mode and must not be
+"fixed" by loosening the match**: a false split is a visible duplicate row, while
+a false merge silently hides one release behind another. The full reasoning is in
+[ADR
+0019](docs/adr/0019-dedup-is-a-pipeline-stage-with-conservative-exact-merge.md).
+
+---
+
 ## Cache ages
 
 `FreshUntil` and `ServeUntil` are two different boundaries on the same entry:
