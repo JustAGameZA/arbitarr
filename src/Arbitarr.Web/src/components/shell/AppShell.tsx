@@ -4,6 +4,7 @@ import { Outlet, useLocation } from 'react-router-dom';
 import { SidebarNav } from './SidebarNav';
 import { TopBar } from './TopBar';
 import { resolveDocumentTitle } from '../../routes.titles';
+import { useLiveStatusStore } from '../../state/liveStatusStore';
 import { useTableDensityStore } from '../../state/tableDensityStore';
 import styles from './AppShell.module.css';
 
@@ -35,6 +36,7 @@ interface AppShellProps {
 export function AppShell({ children }: AppShellProps) {
   const { pathname } = useLocation();
   const density = useTableDensityStore((state) => state.density);
+  const liveStatusMessage = useLiveStatusStore((state) => state.message);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawerRef = useRef<HTMLElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
@@ -79,6 +81,20 @@ export function AppShell({ children }: AppShellProps) {
 
   return (
     <div className={styles.shell}>
+      {/*
+        The one shared aria-live region (arb-tku8). `polite` so it queues
+        behind whatever the screen reader is already announcing rather than
+        interrupting it the way the existing `role="alert"` errors do --
+        pending/success states are not urgent enough to earn that. Mounted
+        here, unconditionally and always with the same identity, for the same
+        reason the document-title effect lives on the shell rather than a
+        per-page hook: a per-surface region is the thing this bead replaces,
+        and a component that unmounts on navigation would drop whatever
+        announcement was in flight when a route change happens to land.
+      */}
+      <p className={styles.liveStatus} role="status" aria-live="polite">
+        {liveStatusMessage}
+      </p>
       {/*
         `data-open` drives the off-canvas transform below 768px (arb-759); above
         the breakpoint it is inert, because the only CSS that reads it sits

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 
-import { QueryState, errorMessage } from '../../QueryState';
+import { QueryState, errorMessage, useAnnounceOnChange } from '../../QueryState';
 import styles from '../../surface.module.css';
 import local from './Ai.module.css';
 import {
@@ -96,6 +96,7 @@ function OllamaForm({
 
   const [baseUrl, setBaseUrl] = useState(config.baseUrl);
   const [model, setModel] = useState(config.model);
+  useAnnounceOnChange(saved && rejection === null, 'Saved.');
 
   /*
     #112: the picker appears only once a test has actually reported models, and
