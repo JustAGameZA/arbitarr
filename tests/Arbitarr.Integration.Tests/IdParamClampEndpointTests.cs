@@ -58,11 +58,11 @@ public sealed class IdParamClampEndpointTests : IAsyncLifetime
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IUpstreamSource>();
-                services.RemoveAll<IReadOnlyList<IUpstreamSource>>();
+                services.RemoveAll<ISourceRegistry>();
                 services.AddSingleton<IUpstreamSource>(new SecondFakeUpstreamSource(
                     "idclamp-fake-source",
                     onSearch: query => observed = query));
-                services.AddSingleton<IReadOnlyList<IUpstreamSource>>(sp => sp.GetServices<IUpstreamSource>().ToArray());
+                services.AddSingleton<ISourceRegistry>(sp => new StaticSourceRegistry(sp.GetServices<IUpstreamSource>().ToArray()));
             });
         });
 
@@ -100,11 +100,11 @@ public sealed class IdParamClampEndpointTests : IAsyncLifetime
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IUpstreamSource>();
-                services.RemoveAll<IReadOnlyList<IUpstreamSource>>();
+                services.RemoveAll<ISourceRegistry>();
                 services.AddSingleton<IUpstreamSource>(new SecondFakeUpstreamSource(
                     "idclamp-fake-source",
                     onSearch: query => observed = query));
-                services.AddSingleton<IReadOnlyList<IUpstreamSource>>(sp => sp.GetServices<IUpstreamSource>().ToArray());
+                services.AddSingleton<ISourceRegistry>(sp => new StaticSourceRegistry(sp.GetServices<IUpstreamSource>().ToArray()));
             });
         });
 
@@ -138,11 +138,11 @@ public sealed class IdParamClampEndpointTests : IAsyncLifetime
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IUpstreamSource>();
-                services.RemoveAll<IReadOnlyList<IUpstreamSource>>();
+                services.RemoveAll<ISourceRegistry>();
                 services.AddSingleton<IUpstreamSource>(new SecondFakeUpstreamSource(
                     "idclamp-fake-source",
                     onSearch: query => observed = query));
-                services.AddSingleton<IReadOnlyList<IUpstreamSource>>(sp => sp.GetServices<IUpstreamSource>().ToArray());
+                services.AddSingleton<ISourceRegistry>(sp => new StaticSourceRegistry(sp.GetServices<IUpstreamSource>().ToArray()));
             });
         });
 
@@ -178,11 +178,11 @@ public sealed class IdParamClampEndpointTests : IAsyncLifetime
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IUpstreamSource>();
-                services.RemoveAll<IReadOnlyList<IUpstreamSource>>();
+                services.RemoveAll<ISourceRegistry>();
                 services.AddSingleton<IUpstreamSource>(new SecondFakeUpstreamSource(
                     "idclamp-fake-source",
                     onSearch: query => observed = query));
-                services.AddSingleton<IReadOnlyList<IUpstreamSource>>(sp => sp.GetServices<IUpstreamSource>().ToArray());
+                services.AddSingleton<ISourceRegistry>(sp => new StaticSourceRegistry(sp.GetServices<IUpstreamSource>().ToArray()));
             });
         });
 
@@ -209,11 +209,11 @@ public sealed class IdParamClampEndpointTests : IAsyncLifetime
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IUpstreamSource>();
-                services.RemoveAll<IReadOnlyList<IUpstreamSource>>();
+                services.RemoveAll<ISourceRegistry>();
                 services.AddSingleton<IUpstreamSource>(new SecondFakeUpstreamSource(
                     "idclamp-fake-source",
                     onSearch: query => observed = query));
-                services.AddSingleton<IReadOnlyList<IUpstreamSource>>(sp => sp.GetServices<IUpstreamSource>().ToArray());
+                services.AddSingleton<ISourceRegistry>(sp => new StaticSourceRegistry(sp.GetServices<IUpstreamSource>().ToArray()));
             });
         });
 

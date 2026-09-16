@@ -34,7 +34,7 @@ public class UpstreamMergeStageIntegrationTests
             "source-b",
             searchResults: new[] { MakeRelease("source-b-1", "Release From Source B") });
 
-        var mergeStage = new UpstreamMergeStage(new IUpstreamSource[] { sourceA, sourceB });
+        var mergeStage = new UpstreamMergeStage(new StaticSourceRegistry(new IUpstreamSource[] { sourceA, sourceB }));
 
         var result = await mergeStage.MergeAsync(new SearchQuery(null, Array.Empty<int>(), 50, SearchProtocol.Torznab), CancellationToken.None);
 
@@ -52,7 +52,7 @@ public class UpstreamMergeStageIntegrationTests
             searchResults: new[] { MakeRelease("source-a-1", "Release From Source A") });
         var rateLimited = new SecondFakeUpstreamSource("source-limited", throwsRequestLimitReached: true);
 
-        var mergeStage = new UpstreamMergeStage(new IUpstreamSource[] { sourceA, rateLimited });
+        var mergeStage = new UpstreamMergeStage(new StaticSourceRegistry(new IUpstreamSource[] { sourceA, rateLimited }));
 
         var result = await mergeStage.MergeAsync(new SearchQuery(null, Array.Empty<int>(), 50, SearchProtocol.Torznab), CancellationToken.None);
 

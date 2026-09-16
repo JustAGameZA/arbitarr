@@ -60,9 +60,10 @@ public sealed class ReleaseLookupSurvivesRestartAndTtlTests : IAsyncLifetime
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IUpstreamSource>();
-                services.RemoveAll<IReadOnlyList<IUpstreamSource>>();
-                services.AddSingleton<IReadOnlyList<IUpstreamSource>>(
-                    new IUpstreamSource[] { new PayloadServingSource(SourceName, Candidate(), PayloadBytes) });
+                services.RemoveAll<ISourceRegistry>();
+                services.AddSingleton<ISourceRegistry>(
+                    new StaticSourceRegistry(
+                        new IUpstreamSource[] { new PayloadServingSource(SourceName, Candidate(), PayloadBytes) }));
             });
         });
 

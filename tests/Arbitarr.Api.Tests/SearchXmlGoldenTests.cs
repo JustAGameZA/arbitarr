@@ -94,7 +94,7 @@ public sealed class SearchXmlGoldenTests : IDisposable
         var firstRelease = TestReleases.Torrent();
         var secondRelease = TestReleases.Torrent(sourceName: "second-source", guid: "999", title: "Second.Release.1080p");
         var source = new FakeUpstreamSource("eztv", searchResults: new[] { firstRelease.Candidate, secondRelease.Candidate });
-        var mergeStage = new UpstreamMergeStage(new[] { (IUpstreamSource)source });
+        var mergeStage = new UpstreamMergeStage(new StaticSourceRegistry(new[] { (IUpstreamSource)source }));
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(TestReleases.FixedPubDate);
         var snapshotService = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);
