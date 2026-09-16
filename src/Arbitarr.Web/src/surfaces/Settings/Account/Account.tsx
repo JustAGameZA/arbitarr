@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { errorMessage } from '../../QueryState';
+import { errorMessage, useAnnounceOnChange } from '../../QueryState';
 import styles from '../../surface.module.css';
 import local from './Account.module.css';
 import { useChangePasswordMutation } from './queries';
@@ -43,6 +43,7 @@ export function AccountSection() {
   // show the operator nothing at all where a refusal belongs.
   const [saved, setSaved] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
+  useAnnounceOnChange(saved && failure === null, 'Saved.');
 
   /**
    * Drop the settled change from the MutationCache.

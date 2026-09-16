@@ -1,7 +1,7 @@
 import { useId, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
-import { QueryState } from '../QueryState';
+import { QueryState, useAnnounceOnChange } from '../QueryState';
 import type { BackupStatusResponse } from '../../api/types';
 import styles from '../surface.module.css';
 import local from './System.module.css';
@@ -129,6 +129,10 @@ export function BackupTab() {
   const [confirmation, setConfirmation] = useState('');
   const [restoring, setRestoring] = useState(false);
   const [restoreOutcome, setRestoreOutcome] = useState<{ ok: boolean; message: string } | null>(null);
+  useAnnounceOnChange(
+    restoreOutcome !== null && restoreOutcome.ok,
+    restoreOutcome !== null && restoreOutcome.ok ? restoreOutcome.message : '',
+  );
 
   const fileInput = useRef<HTMLInputElement>(null);
   const fileFieldId = useId();

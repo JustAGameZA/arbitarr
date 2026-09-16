@@ -220,6 +220,20 @@ project.
 the key on that basis. Verb-based gating silently breaks the GET-only Search and Suppressions
 surfaces.
 
+**Shared live status region.** One `role="status"` `aria-live="polite"` region lives in
+`AppShell`, always mounted, the same reasoning `state/tableDensityStore.ts` gives for living
+shell-wide rather than per-surface: a per-page region is what this replaces, and a component that
+unmounts on navigation would drop whatever announcement was in flight when a route change lands.
+Announcements come from two sources only — `QueryState`'s pending branch (the `false`→`true` edge
+only, not every re-render while already pending) and a surface's routed `.success` message; errors
+are excluded because they already announce via `role="alert"` (25+ existing call sites), and an
+assertive alert queued behind a polite announcement would only delay it. A surface announces
+through `state/liveStatusStore.ts`, never by adding a second live region of its own. Identical
+consecutive messages (two "Saved." in a row, from the same surface saved twice or two different
+surfaces) are still both announced: the store keeps a `seq` nonce alongside `message`, so a repeat
+of the same text is guaranteed to force a DOM mutation rather than silently no-op on the second
+one.
+
 ---
 
 ## Testing UI appearance
