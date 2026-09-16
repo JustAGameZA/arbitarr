@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Security;
 
 namespace Arbitarr.Host.Security;
@@ -74,4 +75,41 @@ public sealed class ConfiguredClientApiKeyResolver : IClientApiKeyResolver
 /// <summary>A single named client apikey, as bound from configuration.</summary>
 /// <param name="Name">The key's configured name (surfaced to future M4 filter-profile association).</param>
 /// <param name="Key">The literal key value clients must present.</param>
-public sealed record NamedClientApiKey(string Name, string Key);
+public sealed record NamedClientApiKey(string Name, string Key)
+{
+    /// <summary>
+    /// Renders the key's NAME in full and the key itself as
+    /// <see cref="CredentialPatterns.Replacement"/> (arb-1ox9, #346 review).
+    /// </summary>
+    /// <remarks>
+    /// <para><b>OVERRIDDEN BECAUSE THE SYNTHESISED ONE PRINTS THE KEY.</b> A positional record's
+    /// compiler-generated <c>ToString</c> renders every member by name and value, so the default here
+    /// produced <c>NamedClientApiKey { Name = default, Key = the-actual-client-key }</c>. This record
+    /// is bound at startup from <c>Arbitarr:ClientApiKeys</c> and is exactly the shape a
+    /// configuration-binding diagnostic ("bound N client keys: …") would format.
+    /// </para>
+    ///
+    /// <para><b>Neither existing mechanism covers it</b> (CLAUDE.md §1).
+    /// <c>IHttpClientFactory</c>'s URI redaction is scoped to an outbound request's query string, and
+    /// this is not a URI. <c>LogMessageCleanser</c> would scrub a rendered <c>Key = …</c> via its
+    /// <c>NamedCredential</c> arm, but <b>it runs only in the LOG SINK</b>: an exception message or
+    /// console line carrying this record never meets it, and startup binding is precisely where
+    /// console output happens.</para>
+    ///
+    /// <para><b>The redaction is UNCONDITIONAL, matching <c>SonarrCredential</c>'s posture</b> and
+    /// deliberately NOT the presence-bit shape the admin request bodies use
+    /// (<c>Arbitarr.Api.Admin.UpdateArrConfigRequest</c> and its siblings). Those bodies render a
+    /// null key distinctly because there a null means "the operator did not submit one", which is a
+    /// real diagnostic distinction. <see cref="Key"/> here is non-nullable and always present, so
+    /// there is no such bit to carry.</para>
+    ///
+    /// <para><see cref="Name"/> is rendered in full: it is a configured label, not a credential, and
+    /// printing it is what makes this override useful for diagnostics rather than merely silent. The
+    /// marker is <see cref="CredentialPatterns.Replacement"/> rather than a literal, so this
+    /// redaction and the cleanser's can never drift into two spellings a search would have to know
+    /// about separately.</para>
+    /// </remarks>
+    public override string ToString() =>
+        $"{nameof(NamedClientApiKey)} {{ {nameof(Name)} = {Name}, "
+        + $"{nameof(Key)} = {CredentialPatterns.Replacement} }}";
+}

@@ -1,3 +1,5 @@
+using Arbitarr.Core.Diagnostics;
+
 namespace Arbitarr.Data.Media;
 
 /// <summary>
@@ -19,7 +21,48 @@ namespace Arbitarr.Data.Media;
 /// </remarks>
 /// <param name="BaseUrl">The validated absolute base URL of the configured Sonarr instance.</param>
 /// <param name="ApiKey">The key to send to that instance, and to nowhere else.</param>
-public sealed record SonarrCredential(Uri BaseUrl, string ApiKey);
+public sealed record SonarrCredential(Uri BaseUrl, string ApiKey)
+{
+    /// <summary>
+    /// Renders the address in full and the key as <see cref="CredentialPatterns.Replacement"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>OVERRIDDEN BECAUSE THE SYNTHESISED ONE PRINTS THE KEY.</b> A positional record's
+    /// compiler-generated <c>ToString</c> renders every member by name and value, so the default here
+    /// produced <c>SonarrCredential { BaseUrl = …, ApiKey = the-actual-key }</c> — and this type is
+    /// handed to code that is about to make a network request, which is exactly the code most likely
+    /// to reach a log line, an exception message, or a structured-logging argument that formats its
+    /// operands. An interpolation is how a credential reaches a log line by accident:
+    /// <c>$"probe failed for {credential}"</c> compiles, reads as harmless, and is a durable
+    /// disclosure.</para>
+    ///
+    /// <para><b>WHY THE CLEANSER IS NOT ENOUGH, STATED PRECISELY</b> (CLAUDE.md §1).
+    /// <c>IHttpClientFactory</c>'s redaction collapses an outbound request URI's QUERY STRING and
+    /// nothing else, so it covers this shape not at all. <see cref="Logging.LogMessageCleanser"/> is
+    /// the one worth being exact about: its <c>NamedCredential</c> arm matches a credential-shaped
+    /// NAME followed by <c>:</c> or <c>=</c> anywhere in the text, so a rendered
+    /// <c>ApiKey = …</c> IS scrubbed on its way into the log store. Do not conclude from that that
+    /// this override is redundant — <b>the cleanser runs only in the LOG SINK.</b> A credential
+    /// interpolated into an exception message, into console output, or into any surface that is not
+    /// the SQLite sink never meets it, and <c>ToString</c> is where every one of those shapes is
+    /// formed. Redacting at the source is the only layer that covers all of them.</para>
+    ///
+    /// <para>That the sink also covers the <c>ApiKey</c> spelling is incidental rather than
+    /// structural: the same arm does NOT match <c>PlaintextKey = …</c>, which is why
+    /// <c>Security.CreatedApiKey</c>'s override is load-bearing outright. Relying on a denylist to
+    /// know a property's name is the arrangement this override exists to stop depending on.</para>
+    ///
+    /// <para>The base URL is still rendered in full: it is deliberately not a credential, and
+    /// <see cref="ArrInstanceRepository.ValidateBaseUrl"/> rejecting userinfo is what keeps that true.
+    /// Printing it is what makes this override useful for diagnostics rather than merely silent.</para>
+    ///
+    /// <para>The marker is <see cref="CredentialPatterns.Replacement"/> rather than a literal, so this
+    /// redaction and the cleanser's can never drift apart into two spellings a search would have to
+    /// know about separately.</para>
+    /// </remarks>
+    public override string ToString() =>
+        $"{nameof(SonarrCredential)} {{ {nameof(BaseUrl)} = {BaseUrl}, {nameof(ApiKey)} = {CredentialPatterns.Replacement} }}";
+}
 
 /// <summary>
 /// The single production reader of the stored Sonarr API key, and the reason
