@@ -16,7 +16,40 @@ namespace Arbitarr.Data.Security;
 /// </summary>
 /// <param name="Entry">The persisted row, carrying no secret.</param>
 /// <param name="PlaintextToken">The generated token value. Written to one cookie, then gone.</param>
-public sealed record IssuedSession(SessionEntry Entry, string PlaintextToken);
+public sealed record IssuedSession(SessionEntry Entry, string PlaintextToken)
+{
+    /// <summary>
+    /// Names the type and the session row, and prints NO form of the token — not even a redaction
+    /// marker in place of one, because there is no non-secret rendering of a plaintext token to give.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>OVERRIDDEN BECAUSE THE SYNTHESISED ONE PRINTS THE TOKEN</b> (arb-1ox9). A positional
+    /// record's compiler-generated <c>ToString</c> renders every member by name and value, so the
+    /// default here produced <c>IssuedSession { Entry = …, PlaintextToken = the-actual-token }</c> —
+    /// a live session credential, in the persistent log store served at <c>/api/admin/logs</c> (#65),
+    /// for whatever remains of its lifetime. This type is constructed on the login path, which is one
+    /// of the paths most likely to acquire a diagnostic log line.</para>
+    ///
+    /// <para><b>THE EXISTING LAYERS COVER THIS ONLY BY ACCIDENT</b> (CLAUDE.md §1).
+    /// <c>IHttpClientFactory</c>'s URI redaction is scoped to an outbound request's query string and
+    /// covers it not at all. <see cref="Logging.LogMessageCleanser"/> happens to catch it — its
+    /// <c>NamedCredential</c> arm matches the alternation
+    /// <c>api_key|apikey|token|passkey|password|secret</c>, and "plaintexttoken" contains "token" —
+    /// but that is a coincidence of spelling, not a guarantee: the sibling
+    /// <see cref="CreatedApiKey"/>'s <c>PlaintextKey</c> matches NOTHING in that list and reached the
+    /// store verbatim. Depending on a denylist to recognise each field's name is exactly the
+    /// arrangement this override removes. The cleanser also runs only in the LOG SINK, so an
+    /// exception message or console line carrying this record never meets it.</para>
+    ///
+    /// <para>The row's id and the account it belongs to ARE printed: neither is a credential, and
+    /// they are what makes a diagnostic line about an issuance useful rather than merely silent. See
+    /// <see cref="CreatedApiKey.ToString"/> for why this posture differs from
+    /// <c>Arbitarr.Api.Security.ChangePasswordRequest</c>'s documented refusal to have one.</para>
+    /// </remarks>
+    public override string ToString() =>
+        $"{nameof(IssuedSession)} {{ {nameof(Entry)}.{nameof(SessionEntry.Id)} = {Entry.Id}, "
+        + $"{nameof(Entry)}.{nameof(SessionEntry.UserId)} = {Entry.UserId} }}";
+}
 
 /// <summary>
 /// #44: issuance, verification, and revocation of server-side sessions.
