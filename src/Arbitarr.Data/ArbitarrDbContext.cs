@@ -320,6 +320,15 @@ public sealed class ArbitarrDbContext : DbContext
             // filtered by kind), #54 filters decisions specifically. A composite (Kind, OccurredAt)
             // index serves both without needing two separate indexes.
             entity.HasIndex(e => new { e.Kind, e.OccurredAt });
+            // arb-15u3: SourceApiHitCounter.CountAsync filters on (Kind, SourceDisplayName) before
+            // its unavoidable in-memory OccurredAt/LastRepeatedAt window comparison (DateTimeOffset
+            // does not translate on this SQLite/EF combination — see that type's doc comment). Without
+            // this index the WHERE clause on SourceDisplayName has nothing to ride and SQLite scans
+            // every row of the Kind partition table-wide on every budget check, not just the rows for
+            // the one source being asked about. This index bounds THAT scan to the source; the
+            // remaining client-side window filter stays, same as every other DateTimeOffset comparison
+            // in this store.
+            entity.HasIndex(e => new { e.Kind, e.SourceDisplayName });
             entity.Property(e => e.Summary).IsRequired().HasMaxLength(1024);
             entity.Property(e => e.Reason).HasMaxLength(1024);
             entity.Property(e => e.SourceDisplayName).HasMaxLength(256);

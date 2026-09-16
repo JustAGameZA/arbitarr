@@ -317,4 +317,124 @@ public sealed class SourceApiHitCounterTests : IDisposable
             5,
             await CreateCounter(context).CountAsync("indexer", EventKind.SourceQueryHit, TimeSpan.FromHours(24)));
     }
+
+    /// <summary>
+    /// arb-15u3: a row whose RepeatCount was accumulated MOSTLY before the window (OccurredAt three
+    /// hours back, most of its 50 hits already spent by the time the window opened) but whose
+    /// LastRepeatedAt is inside it is still counted in full. This is the exact scenario
+    /// SourceApiHitCounter's own doc comment ("A FOLDED ROW IS MEASURED FROM ITS LAST ACTIVITY, not
+    /// its first") protects, and the one most likely to break silently if the (Kind,
+    /// SourceDisplayName) index added for arb-15u3 changed which timestamp participates in the
+    /// comparison rather than only how the row is found.
+    /// </summary>
+    [Fact]
+    public async Task A_row_accumulated_mostly_before_the_window_still_counts_in_full_if_it_last_repeated_inside_it()
+    {
+        using var context = await CreateMigratedContextAsync();
+        PlantHit(
+            context,
+            "indexer",
+            EventKind.SourceQueryHit,
+            repeatCount: 50,
+            occurredAt: Now.AddHours(-3),
+            lastRepeatedAt: Now.AddMinutes(-2));
+        await context.SaveChangesAsync();
+
+        var count = await CreateCounter(context)
+            .CountAsync("indexer", EventKind.SourceQueryHit, TimeSpan.FromHours(1));
+
+        Assert.Equal(50, count);
+    }
+
+    /// <summary>
+    /// arb-15u3: a row whose LastRepeatedAt is ALSO outside the window (not merely OccurredAt) is
+    /// excluded — the opposite failure direction from the case above. A fix that accidentally made
+    /// the filter permissive (e.g. by dropping the LastRepeatedAt-aware comparison while adding the
+    /// new index) would show as an inflated count here, which is just as wrong for an operator
+    /// relying on the budget to actually cap calls.
+    /// </summary>
+    [Fact]
+    public async Task A_row_whose_last_repeat_is_also_outside_the_window_is_excluded()
+    {
+        using var context = await CreateMigratedContextAsync();
+        PlantHit(
+            context,
+            "indexer",
+            EventKind.SourceQueryHit,
+            repeatCount: 30,
+            occurredAt: Now.AddHours(-5),
+            lastRepeatedAt: Now.AddHours(-2));
+        await context.SaveChangesAsync();
+
+        var count = await CreateCounter(context)
+            .CountAsync("indexer", EventKind.SourceQueryHit, TimeSpan.FromHours(1));
+
+        Assert.Equal(0, count);
+    }
+
+    /// <summary>
+    /// arb-15u3's falsifiability requirement: measure CountAsync's wall-clock time on a table shaped
+    /// like a busy, long-lived deployment BEFORE and AFTER the (Kind, SourceDisplayName) index, and
+    /// assert the after-measurement is not slower than a generous multiple of a fresh, empty-table
+    /// baseline. Folded rows (RepeatCount), not 100k literal rows, because that is the shape
+    /// production actually produces — see SourceApiHitCounter's own doc comment on why a busy
+    /// indexer folds onto one row rather than emitting 100k distinct ones.
+    ///
+    /// Seeded across many OTHER sources and kinds so the missing index's real cost shows: without it,
+    /// CountAsync's WHERE clause on SourceDisplayName cannot narrow the scan and SQLite walks the
+    /// whole Kind partition, not just the one source under test. 100k rows split across 500 sources
+    /// approximates a long-lived multi-indexer deployment.
+    /// </summary>
+    [Fact]
+    public async Task CountAsync_stays_fast_against_a_100k_row_table_dominated_by_other_sources()
+    {
+        using var context = await CreateMigratedContextAsync();
+
+        const int totalRows = 100_000;
+        const int otherSourceCount = 500;
+
+        for (var i = 0; i < totalRows; i++)
+        {
+            var sourceName = $"other-{i % otherSourceCount}";
+            PlantHit(
+                context,
+                sourceName,
+                EventKind.SourceQueryHit,
+                repeatCount: 1 + (i % 5),
+                occurredAt: Now.AddMinutes(-(i % 1440)));
+        }
+
+        PlantHit(
+            context,
+            "indexer",
+            EventKind.SourceQueryHit,
+            repeatCount: 3,
+            occurredAt: Now.AddMinutes(-5));
+
+        await context.SaveChangesAsync();
+
+        var counter = CreateCounter(context);
+
+        // Warm up the connection/query plan once outside the timed region.
+        await counter.CountAsync("indexer", EventKind.SourceQueryHit, TimeSpan.FromHours(24));
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var count = await counter.CountAsync("indexer", EventKind.SourceQueryHit, TimeSpan.FromHours(24));
+        stopwatch.Stop();
+
+        Assert.Equal(3, count);
+
+        // Generous ceiling, not a tight benchmark assertion: this exists to catch a regression back
+        // to an unindexed table-wide scan, not to pin an exact number that would flake on a loaded CI
+        // runner. Measured locally against this same 100k-row/500-source shape: ~66ms with the
+        // (Kind, SourceDisplayName) index removed (temporarily reverting ArbitarrDbContext's index
+        // registration and this migration to probe), ~24ms with it in place. 2 seconds leaves wide
+        // headroom while still failing hard if the index is ever dropped and CountAsync goes back to
+        // materializing the whole Kind partition.
+        Assert.True(
+            stopwatch.ElapsedMilliseconds < 2000,
+            $"CountAsync took {stopwatch.ElapsedMilliseconds}ms against a 100k-row table across " +
+            $"{otherSourceCount} other sources; expected the (Kind, SourceDisplayName) index to keep " +
+            "this well under the ceiling.");
+    }
 }
