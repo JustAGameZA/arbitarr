@@ -397,6 +397,15 @@ jobs:
           # and its stdout is the filter this step then uses.
           . ./.github/scripts/shard-filter.sh
 
+          # arb-whhe: assert_test_run_completed judges each assembly's own
+          # artefacts -- its console log and its trx -- instead of dotnet test's
+          # exit code, which has twice reported 0 over an aborted run. The
+          # reasoning, and the two sightings, are at the top of that script.
+          # Sourced for the same reason shard-filter.sh is: the positive
+          # controls in test-count-gate-controls.sh then exercise the SAME text
+          # this step runs.
+          . ./.github/scripts/test-run-integrity.sh
+
           for a in $GROUP_ASSEMBLIES; do
             dll="tests/${a}/bin/Release/net10.0/${a}.dll"
 
@@ -447,6 +456,13 @@ jobs:
                 > >(tee "./TestResults/${trx_name}.console.log") 2>&1
             echo "$(( $(date +%s) - start ))" > "./TestResults/${trx_name}.secs"
             echo "peak dotnet+testhost RSS: $(cat "./TestResults/${trx_name}.peakkb") KB in $(cat "./TestResults/${trx_name}.secs") s"
+            # Reached ONLY when dotnet test exited 0 -- `set -e` has already
+            # taken the step down on a non-zero status, which is the case this
+            # does not need to cover. What it covers is the opposite: a 0 that
+            # does not mean the assembly ran. Inside the loop, before the next
+            # assembly starts, so the failing name is the one in the ::group::
+            # that is still open.
+            assert_test_run_completed "$trx_name"
             echo "::endgroup::"
           done
 
