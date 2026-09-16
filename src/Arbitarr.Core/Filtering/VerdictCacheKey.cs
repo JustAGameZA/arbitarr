@@ -6,8 +6,9 @@ namespace Arbitarr.Core.Filtering;
 
 /// <summary>
 /// Computes the AI verdict cache key established at Step 5 and populated by Step 6
-/// (<c>Arbitarr.Data.Entities.VerdictCacheEntry.ReleaseKeyHash</c>). The key is a hash of
-/// (normalized title + size + source + protocol) — explicitly <b>not</b> <see cref="ReleaseCandidate.Guid"/>,
+/// (<c>Arbitarr.Data.Entities.VerdictCacheEntry.ReleaseKeyHash</c>). The key is a hash of the
+/// candidate fields the classification prompt renders (normalized title + size + source + protocol,
+/// plus the arb-a7ll and arb-ddhn metadata below) — explicitly <b>not</b> <see cref="ReleaseCandidate.Guid"/>,
 /// which can rotate per-request for the same underlying release on some indexers (R17) — carrying
 /// the model name, model digest, prompt version, and decoding identity so a model/prompt/decoding
 /// change invalidates rather than silently mixing verdicts produced under different conditions.
@@ -24,7 +25,7 @@ public static class VerdictCacheKey
 
     /// <summary>
     /// Computes the cache key for <paramref name="candidate"/> under the given model identity.
-    /// Two candidates with the same normalized title, size, source, and protocol produce the same
+    /// Two candidates agreeing on every hashed field below produce the same
     /// key (even with different <see cref="ReleaseCandidate.Guid"/> values); changing
     /// <paramref name="modelName"/>, <paramref name="modelDigest"/>, <paramref name="promptVersion"/>,
     /// or <paramref name="decodingIdentity"/> changes the key.
@@ -66,13 +67,41 @@ public static class VerdictCacheKey
     /// Both are hashed RAW — no trim, no lower-casing. The M5 remark's argument for normalizing the
     /// title does not carry over: normalization is only safe where the differing inputs are the same
     /// claim, and a poster differing in case or surrounding whitespace is a different From header and
-    /// so a different poster, exactly as the prompt shows it to the model. Encoding is collision-free
+    /// so a different poster. Encoding is collision-free
     /// by construction rather than by separator choice: a null poster (the indexer reported none)
     /// carries a sentinel prefix distinct from the prefix on a present value, so null and "" — which
     /// <see cref="ReleaseCandidate.Poster"/> documents as different claims — cannot fold together;
     /// and the group list is emitted count-first with every element length-prefixed, so
     /// <c>["a,b"]</c> and <c>["a","b"]</c> differ in the hashed input no matter which characters a
     /// newsgroup name turns out to permit.
+    /// </para>
+    ///
+    /// <para>
+    /// arb-ddhn: the key encoding is deliberately FINER than the prompt's own rendering, and must
+    /// stay that way. <c>ClassificationPrompt.Build</c> gates the poster line on
+    /// <see cref="string.IsNullOrWhiteSpace(string)"/>, so a null poster, an empty one and a
+    /// whitespace-only one all render identically (no line at all) — the key still separates all
+    /// three. That is not a mismatch to be tidied away by relaxing the key to match the gate: the
+    /// gate is a rendering decision that may be revisited, whereas collapsing the key would make
+    /// two candidates the indexer described differently share one cache entry permanently, and no
+    /// later prompt change could undo the collisions already written. Keys may be finer than the
+    /// prompt; they must never be coarser.
+    /// </para>
+    ///
+    /// <para>
+    /// arb-ddhn: <see cref="ReleaseCandidate.Category"/>, <see cref="ReleaseCandidate.Files"/>,
+    /// <see cref="ReleaseCandidate.PasswordProtected"/> and <see cref="ReleaseCandidate.Grabs"/> are
+    /// key components for the same reason arb-a7ll gave for poster and group: <c>Build</c> RENDERS
+    /// all four, so they are part of what the model was asked about. <c>PasswordProtected</c> is the
+    /// sharpest of them — <c>UsenetGuidance</c> directs the model to judge on structural metadata
+    /// rather than title readability, so a flipped password flag is precisely a changed question, and
+    /// without it in the key the verdict formed for the unprotected release is served for the
+    /// protected one. All four are appended AFTER the existing components, so the ordering of what
+    /// was already hashed is untouched; they are added together as ONE invalidation rather than one
+    /// bead at a time, because each addition costs the same single round of re-classification and
+    /// four staggered ones would cost four. <c>arb-016s</c>'s architecture ratchet now pins the
+    /// coupling that was missing: a field rendered by <c>Build</c> without a component here fails
+    /// the build.
     /// </para>
     /// </summary>
     public static string Compute(
@@ -102,7 +131,11 @@ public static class VerdictCacheKey
             promptVersion,
             decodingIdentity,
             EncodePoster(candidate.Poster),
-            EncodeGroups(candidate.UsenetGroup));
+            EncodeGroups(candidate.UsenetGroup),
+            EncodeCategories(candidate.Category),
+            EncodeNullableInt(candidate.Files),
+            EncodeNullableBool(candidate.PasswordProtected),
+            EncodeNullableInt(candidate.Grabs));
 
         var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(input));
         return Convert.ToHexString(hashBytes);
@@ -140,6 +173,65 @@ public static class VerdictCacheKey
 
         return builder.ToString();
     }
+
+    /// <summary>
+    /// arb-ddhn: encodes the category list on exactly the pattern <see cref="EncodeGroups"/>
+    /// established — count first, then every element preceded by its length — for the same reason:
+    /// the prompt joins the categories on a comma (<c>Build</c>'s <c>sanitizedCategories</c>), and a
+    /// join is only unambiguous while its separator is absent from every element. The list is
+    /// <c>int</c>-typed today, so no element can contain a comma and the join happens to be safe;
+    /// that is a property of today's TYPE, not of this code, and the same widening the prompt's own
+    /// arb-uup7 remark anticipates would silently make <c>[12,34]</c> and <c>["12,34"]</c> one key.
+    /// Length-prefixing is closed by construction instead, so the encoding does not have to be
+    /// revisited when the type moves. Order is preserved rather than sorted: the prompt renders the
+    /// list in the order the indexer gave it, so a reordered list is a differently-worded question.
+    /// </summary>
+    private static string EncodeCategories(IReadOnlyList<int> categories)
+    {
+        var builder = new StringBuilder();
+        builder.Append(categories.Count.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+        foreach (var category in categories)
+        {
+            var text = category.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            builder
+                .Append(':')
+                .Append(text.Length.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                .Append(':')
+                .Append(text);
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// arb-ddhn: encodes a nullable count (<see cref="ReleaseCandidate.Files"/>,
+    /// <see cref="ReleaseCandidate.Grabs"/>) with the same sentinel discipline as
+    /// <see cref="EncodePoster"/>. "The indexer reported nothing" and "the indexer reported zero"
+    /// are different claims — <c>Build</c> emits no line for the first and <c>Files: 0</c> for the
+    /// second, and its arb-458f remark says in full why a zeroed line is NOT neutral — so coercing
+    /// null to 0 here would hand the two an identical component and merge exactly the pair the
+    /// prompt takes care to keep apart. Invariant culture so no operator's locale can move the key.
+    /// </summary>
+    private static string EncodeNullableInt(int? value) =>
+        value is { } present
+            ? "1:" + present.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : "0";
+
+    /// <summary>
+    /// arb-ddhn: encodes <see cref="ReleaseCandidate.PasswordProtected"/> with the same sentinel
+    /// discipline — null ("not reported", no line in the prompt) must not fold into false
+    /// ("reported as not password-protected", <c>Password protected: no</c>). This is the sharpest
+    /// of the four fields: <c>UsenetGuidance</c> tells the model to judge on structural metadata, so
+    /// a flipped flag is a different question and a shared key serves the wrong verdict. Rendered as
+    /// the invariant <c>True</c>/<c>False</c> rather than the prompt's yes/no: the key encodes the
+    /// VALUE, not the prompt's wording of it, so a later change to that wording is a prompt-version
+    /// bump and not a silent re-keying.
+    /// </summary>
+    private static string EncodeNullableBool(bool? value) =>
+        value is { } present
+            ? "1:" + present.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : "0";
 
     /// <summary>
     /// Title normalization used by the cache key: trims surrounding whitespace and lower-invariants

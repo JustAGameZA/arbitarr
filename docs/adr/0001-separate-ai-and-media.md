@@ -58,3 +58,25 @@ acquires no Ollama type and the boundary is unchanged. Status unchanged.
 Upgrade consequence, once: every existing entry was written under a three-component key and
 therefore misses exactly once after deploy, re-classifying on demand. No migration accompanies it —
 the stored key is a SHA-256 hex digest, so its length does not move when an input is added.
+
+**2026-09-13 (arb-ddhn).** The verdict cache key gained four more components — `Category`, `Files`,
+`PasswordProtected` and `Grabs` — on the same reasoning arb-a7ll used for `Poster` and `UsenetGroup`:
+the classification prompt RENDERS all four, so they are part of the question the model answered, and
+a key that omits them serves a verdict formed under different metadata. `PasswordProtected` is the
+sharpest, because the Usenet guidance directs the model to judge on structural metadata rather than
+title readability, so a flipped password flag is exactly arb-a7ll's failure mode again. The boundary
+is unchanged: the fields are read from the `Arbitarr.Core` candidate contract inside `Arbitarr.Core`,
+and `Arbitarr.Ai` still contributes only the plain-string model and decoding identity.
+
+The root cause is also closed rather than only the instance (arb-016s): `ClassificationPrompt.Build`
+and `VerdictCacheKey.Compute` independently enumerated candidate fields with nothing coupling them,
+so a field could be rendered to the model without becoming part of the key. An architecture-lane
+ratchet now asserts every `candidate.<Member>` that `Build` reads is also read by `Compute`, on the
+precedent of the arb-cz6 doc-cref ratchet — the direction is deliberate and one-way, since the
+prompt's rendering is the contract the key follows and not the reverse, and a key finer than the
+prompt (null versus empty poster) is correct where a coarser one never is.
+
+Upgrade consequence, once again, and deliberately batched: all four land as ONE invalidation, so
+every existing entry misses exactly once after deploy and re-classifies on demand. Four staggered
+additions would have cost four such rounds for the same end state. No migration accompanies it, for
+the same reason as above.
