@@ -3,6 +3,7 @@ using Arbitarr.Api.Search;
 using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Releases;
 using Arbitarr.Core.Sources;
+using Arbitarr.Core.Sources.CircuitBreaker;
 using Arbitarr.Data;
 using Arbitarr.Data.Entities;
 using Arbitarr.Data.Events;
@@ -11,6 +12,7 @@ using Arbitarr.Host.Sources;
 using Arbitarr.TestSupport;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
@@ -61,7 +63,11 @@ public sealed class BudgetedUpstreamSourceTests : IDisposable
         {
             Kind = "Newznab",
             DisplayName = displayName,
-            BaseUrl = "http://indexer.example.invalid",
+            // RFC 5737 TEST-NET-1: non-routable, so a row the registry actually resolves into an
+            // adapter cannot reach anything. ApiPath is set because SourceRegistry builds a real
+            // NewznabSource from this row; nothing here lets a call leave the process.
+            BaseUrl = "http://192.0.2.50:9117",
+            ApiPath = "/api",
             QueryLimit = queryLimit,
             GrabLimit = grabLimit,
             LimitsUnit = "Day",
@@ -105,7 +111,17 @@ public sealed class BudgetedUpstreamSourceTests : IDisposable
             StartedAt));
         services.AddSingleton<ISourceGateScopeFactory, SourceGateScopeFactory>();
         services.AddSingleton<IEventSink>(NullEventSink.Instance);
-        services.AddScoped<BudgetedUpstreamSourceFactory>();
+
+        // The registry and its decorator, wired the way Program.cs wires them: the concrete registry
+        // under its OWN type and BudgetedSourceRegistry under the INTERFACE, so what these tests
+        // resolve is what a search-path consumer resolves.
+        services.AddSingleton<IAsyncCircuitBreaker>(new AlwaysClosedCircuitBreaker());
+        services.AddSingleton<IHttpClientFactory>(new RecordingHttpClientFactory());
+        services.AddSingleton<ILogger<SourceRegistry>>(new SilentLogger());
+        services.AddScoped(sp => new SourceCredentialProvider(
+            new SourceRepository(sp.GetRequiredService<ArbitarrDbContext>())));
+        services.AddScoped<SourceRegistry>();
+        services.AddScoped<ISourceRegistry, BudgetedSourceRegistry>();
 
         return services.BuildServiceProvider();
     }
@@ -146,7 +162,8 @@ public sealed class BudgetedUpstreamSourceTests : IDisposable
 
         var healthy = new FakeUpstreamSource("healthy", CreateRelease("From the healthy source"));
 
-        var merged = await new UpstreamMergeStage(new IUpstreamSource[] { budgeted, healthy })
+        var merged = await new UpstreamMergeStage(
+                new StaticSourceRegistry(new IUpstreamSource[] { budgeted, healthy }))
             .MergeAsync(Query);
 
         // The budgeted source was never called — the skip is a real skip, not an empty answer from
@@ -504,7 +521,8 @@ public sealed class BudgetedUpstreamSourceTests : IDisposable
 
         var healthy = new FakeUpstreamSource("healthy", CreateRelease("From the healthy source"));
 
-        var merged = await new UpstreamMergeStage(new IUpstreamSource[] { disabled, healthy })
+        var merged = await new UpstreamMergeStage(
+                new StaticSourceRegistry(new IUpstreamSource[] { disabled, healthy }))
             .MergeAsync(Query);
 
         Assert.Equal(0, disabledInner.SearchCalls);
@@ -512,43 +530,114 @@ public sealed class BudgetedUpstreamSourceTests : IDisposable
     }
 
     /// <summary>
-    /// A source with NO configuration row is passed through unwrapped by the factory, rather than
-    /// blocked — a missing row is not an outage.
+    /// EVERY source the registry resolves comes back wrapped — asserted PER SOURCE over N=2, not
+    /// "at least one is". A decorator that wrapped only the first, or only the row it happened to
+    /// match, would satisfy a single-source assertion and leave the second indexer ungated.
+    ///
+    /// <para>There is deliberately no companion "an unconfigured source passes through unwrapped"
+    /// case. Before arb-x7w8.4 a source could be built from a startup-resolved configuration with no
+    /// row behind it, and the earlier factory passed such a source through rather than blocking it;
+    /// with the registry every source is constructed FROM a row inside
+    /// <c>SourceRegistry.ResolveWithRowIdsAsync</c>, so the unmatched case cannot arise and the
+    /// branch is not written.</para>
     /// </summary>
     [Fact]
-    public async Task The_factory_passes_through_a_source_that_has_no_configuration_row()
+    public async Task Every_source_the_registry_resolves_comes_back_wrapped()
     {
-        using var context = await CreateMigratedContextAsync();
-
-        var inner = new FakeUpstreamSource("unconfigured");
+        using (var context = await CreateMigratedContextAsync())
+        {
+            context.Sources.Add(CreateConfiguration("first"));
+            context.Sources.Add(CreateConfiguration("second"));
+            await context.SaveChangesAsync();
+        }
 
         await using var provider = BuildProvider();
-        var wrapped = Assert.Single(provider
-            .GetRequiredService<BudgetedUpstreamSourceFactory>()
-            .WrapAll(new IUpstreamSource[] { inner }));
+        await using var requestScope = provider.CreateAsyncScope();
 
-        Assert.Same(inner, wrapped);
+        var resolved = await requestScope.ServiceProvider
+            .GetRequiredService<ISourceRegistry>()
+            .ResolveAsync(CancellationToken.None);
+
+        Assert.Equal(2, resolved.Count);
+        Assert.All(resolved, source => Assert.IsType<BudgetedUpstreamSource>(source));
     }
 
     /// <summary>
-    /// A source WITH a configuration row is wrapped — the other half of the factory's rule, without
-    /// which the pass-through case above would be satisfied by a factory that wrapped nothing.
+    /// THE POSITIVE CONTROL for the assertion above. The same assertion, run against the UNDECORATED
+    /// <see cref="SourceRegistry"/> over the same rows, comes out the OTHER WAY — which is what
+    /// proves it would detect a composition root that stopped decorating. Without this, "every
+    /// resolved source is a BudgetedUpstreamSource" is an assertion nobody has shown can be false.
     /// </summary>
     [Fact]
-    public async Task The_factory_wraps_a_source_that_has_a_configuration_row()
+    public async Task The_undecorated_registry_yields_sources_that_are_not_wrapped()
     {
-        using var context = await CreateMigratedContextAsync();
-        context.Sources.Add(CreateConfiguration("indexer"));
-        await context.SaveChangesAsync();
-
-        var inner = new FakeUpstreamSource("indexer");
+        using (var context = await CreateMigratedContextAsync())
+        {
+            context.Sources.Add(CreateConfiguration("first"));
+            context.Sources.Add(CreateConfiguration("second"));
+            await context.SaveChangesAsync();
+        }
 
         await using var provider = BuildProvider();
-        var wrapped = Assert.Single(provider
-            .GetRequiredService<BudgetedUpstreamSourceFactory>()
-            .WrapAll(new IUpstreamSource[] { inner }));
+        await using var requestScope = provider.CreateAsyncScope();
 
-        Assert.IsType<BudgetedUpstreamSource>(wrapped);
+        var resolved = await requestScope.ServiceProvider
+            .GetRequiredService<SourceRegistry>()
+            .ResolveAsync(CancellationToken.None);
+
+        Assert.Equal(2, resolved.Count);
+        Assert.All(resolved, source => Assert.IsNotType<BudgetedUpstreamSource>(source));
+    }
+
+    /// <summary>
+    /// EACH resolved source carries ITS OWN row's limits, asserted over two rows whose limits
+    /// DISAGREE. One has <c>GrabLimit = 0</c> and is refused; the other has none and is let through.
+    ///
+    /// <para><b>The disagreement is what makes this bite.</b> A pairing that put one row's
+    /// configuration on every source — the shape any collapsed lookup produces — makes both sources
+    /// refuse or neither refuse, and cannot produce this split. Two rows with the SAME limits would
+    /// pass against that mutant, which is why the limits differ.</para>
+    /// </summary>
+    [Fact]
+    public async Task Each_resolved_source_is_gated_by_its_own_rows_limits()
+    {
+        using (var context = await CreateMigratedContextAsync())
+        {
+            // Priority orders them deterministically, so the assertions below name a definite source
+            // rather than whichever one the database happened to return first.
+            var blocked = CreateConfiguration("blocked-row", grabLimit: 0);
+            blocked.Priority = 99;
+            var unlimited = CreateConfiguration("unlimited-row");
+            unlimited.Priority = 1;
+
+            context.Sources.Add(blocked);
+            context.Sources.Add(unlimited);
+            await context.SaveChangesAsync();
+        }
+
+        await using var provider = BuildProvider();
+        await using var requestScope = provider.CreateAsyncScope();
+
+        var resolved = await requestScope.ServiceProvider
+            .GetRequiredService<ISourceRegistry>()
+            .ResolveAsync(CancellationToken.None);
+
+        Assert.Equal(2, resolved.Count);
+
+        // Higher priority first (SourceRegistry.ResolveAsync), so index 0 is the GrabLimit = 0 row
+        // and index 1 is the unlimited one. A GRAB rather than a search, because a refused grab
+        // THROWS a distinguishable exception while a refused search is merely empty — so "refused by
+        // the gate" and "called and came back with nothing" cannot be confused here.
+        await Assert.ThrowsAsync<SourceUnavailableException>(
+            () => resolved[0].FetchDownloadAsync(CreateRelease("Blocked")));
+
+        // The unlimited source is let THROUGH the gate and reaches the ADAPTER, which refuses a
+        // direct-indexer download itself (NewznabSource: that path is arb-x7w8.13/.14). That the
+        // refusal comes from the adapter and NOT from the gate is the assertion — a different
+        // exception type, thrown from a different layer, so the two cannot be confused. Nothing
+        // reaches the network either way.
+        await Assert.ThrowsAsync<NotSupportedException>(
+            () => resolved[1].FetchDownloadAsync(CreateRelease("Allowed")));
     }
 
     // ---- Concurrency: the search fan-out is parallel --------------------------------------------
@@ -597,17 +686,27 @@ public sealed class BudgetedUpstreamSourceTests : IDisposable
         // are necessarily concurrent.
         using var barrier = new Barrier(2);
 
-        var wrapped = requestScope.ServiceProvider
-            .GetRequiredService<BudgetedUpstreamSourceFactory>()
-            .WrapAll(new IUpstreamSource[]
-            {
+        // Built over the request scope's SINGLETON gate scope factory — which is the thing under
+        // test — rather than resolved through ISourceRegistry, because the inner sources have to be
+        // the rendezvousing fakes and the registry constructs real adapters from the rows.
+        var gateScopeFactory = requestScope.ServiceProvider.GetRequiredService<ISourceGateScopeFactory>();
+        var eventSink = requestScope.ServiceProvider.GetRequiredService<IEventSink>();
+
+        var wrapped = new IUpstreamSource[]
+        {
+            new BudgetedUpstreamSource(
                 new FakeUpstreamSource("first", CreateRelease("From the first source")) { Rendezvous = barrier },
+                CreateConfiguration("first"),
+                gateScopeFactory,
+                eventSink),
+            new BudgetedUpstreamSource(
                 new FakeUpstreamSource("second", CreateRelease("From the second source")) { Rendezvous = barrier },
-            });
+                CreateConfiguration("second"),
+                gateScopeFactory,
+                eventSink),
+        };
 
-        Assert.All(wrapped, source => Assert.IsType<BudgetedUpstreamSource>(source));
-
-        var merged = await new UpstreamMergeStage(wrapped).MergeAsync(Query);
+        var merged = await new UpstreamMergeStage(new StaticSourceRegistry(wrapped)).MergeAsync(Query);
 
         Assert.Equal(2, merged.Releases.Count);
         Assert.Contains(merged.Releases, r => r.Candidate.Title == "From the first source");
@@ -833,6 +932,61 @@ public sealed class BudgetedUpstreamSourceTests : IDisposable
         {
             FetchCalls++;
             return Task.FromResult<Stream>(new MemoryStream(new byte[] { 1, 2, 3 }));
+        }
+    }
+
+    /// <summary>
+    /// Hands out a distinct <see cref="HttpClient"/> per call, as <see cref="IHttpClientFactory"/>
+    /// itself does, over a handler that never sends. The registry only needs to CONSTRUCT adapters
+    /// here; a handler that answered would let these tests depend on a fake upstream without saying
+    /// so, and one that reached the network would make them slow and nondeterministic.
+    /// </summary>
+    private sealed class RecordingHttpClientFactory : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) =>
+            new(new NeverSendsHandler(), disposeHandler: true);
+
+        private sealed class NeverSendsHandler : HttpMessageHandler
+        {
+            protected override Task<HttpResponseMessage> SendAsync(
+                HttpRequestMessage request,
+                CancellationToken cancellationToken) =>
+                throw new InvalidOperationException(
+                    "These tests construct sources and gate them; no request leaves the process.");
+        }
+    }
+
+    /// <summary>Closed circuit, so nothing here is gated on breaker state.</summary>
+    private sealed class AlwaysClosedCircuitBreaker : IAsyncCircuitBreaker
+    {
+        public Task<bool> CanCallAsync(string sourceName, CancellationToken cancellationToken = default) =>
+            Task.FromResult(true);
+
+        public Task RecordSuccessAsync(string sourceName, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task RecordFailureAsync(string sourceName, Exception exception, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Discards the registry's log output. No test in this class asserts on it — the registry's own
+    /// warning behaviour is <c>SourceRegistryTests</c>' subject — so this deliberately records
+    /// nothing rather than offering a collection nobody reads.
+    /// </summary>
+    private sealed class SilentLogger : ILogger<SourceRegistry>
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
         }
     }
 }

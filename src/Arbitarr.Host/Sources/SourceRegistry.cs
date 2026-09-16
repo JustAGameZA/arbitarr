@@ -86,8 +86,22 @@ public sealed class SourceRegistry : ISourceRegistry
     /// <para>No lock. A scoped service is resolved from a scope that is not shared across requests,
     /// and the consumers within one request await this sequentially at the top of their own work.
     /// Adding a lock here would suggest a concurrency this type does not have.</para>
+    ///
+    /// <para><b>It holds the ROW ID alongside each adapter</b> (arb-x7w8.10). The interface still
+    /// yields bare sources, but <see cref="BudgetedSourceRegistry"/> has to pair each one with the
+    /// <see cref="Source"/> row whose limits govern it, and <see cref="IUpstreamSource"/> exposes
+    /// only an operator-editable <see cref="IUpstreamSource.Name"/> — matching on that would make a
+    /// rename a silent way to produce an ungated source. Carrying the id from the row this
+    /// resolution already read removes the second lookup rather than relocating it.</para>
     /// </remarks>
-    private IReadOnlyList<IUpstreamSource>? _resolved;
+    private IReadOnlyList<ResolvedSource>? _resolved;
+
+    /// <summary>
+    /// <see cref="ResolveAsync"/>'s projection of <see cref="_resolved"/>, memoised so the interface
+    /// hands back the same LIST instance per scope and not merely the same adapters inside a fresh
+    /// one. See that method for why the distinction is the contract.
+    /// </summary>
+    private IReadOnlyList<IUpstreamSource>? _projected;
 
     public SourceRegistry(
         ArbitarrDbContext dbContext,
@@ -126,6 +140,35 @@ public sealed class SourceRegistry : ISourceRegistry
     /// </remarks>
     public async Task<IReadOnlyList<IUpstreamSource>> ResolveAsync(CancellationToken cancellationToken)
     {
+        if (_projected is not null)
+        {
+            return _projected;
+        }
+
+        var resolved = await ResolveWithRowIdsAsync(cancellationToken).ConfigureAwait(false);
+
+        // THE PROJECTION IS MEMOISED TOO, not only the resolution behind it. Two consumers in one
+        // scope must get the same LIST as well as the same adapters — projecting afresh would hand
+        // back an equal-but-distinct array per call, and the one-resolution-per-scope contract this
+        // interface states is about identity rather than equality.
+        return _projected = resolved.Select(r => r.Source).ToArray();
+    }
+
+    /// <summary>
+    /// The same resolution <see cref="ResolveAsync"/> returns, each adapter still paired with the
+    /// <see cref="Source.Id"/> of the row it was built from (arb-x7w8.10).
+    /// </summary>
+    /// <remarks>
+    /// This is how <see cref="BudgetedSourceRegistry"/> finds each source's limits row WITHOUT
+    /// re-querying by <see cref="IUpstreamSource.Name"/>. The id is the identity this type's own skip
+    /// warnings and <c>ResolvedSourceSetFingerprintSource</c> already use; the display name is
+    /// operator-editable, so a name match would turn a rename into an ungated source. It is not on
+    /// <see cref="ISourceRegistry"/> because no CONSUMER of the search path wants it — only a
+    /// decorator composed over this concrete type does, and that interface is kept at one method for
+    /// exactly the decoration its own doc describes.
+    /// </remarks>
+    public async Task<IReadOnlyList<ResolvedSource>> ResolveWithRowIdsAsync(CancellationToken cancellationToken)
+    {
         // One resolution per scope. See the memo field: this is what stops two consumers in one
         // request each re-reading every enabled row and every source's key.
         if (_resolved is not null)
@@ -141,7 +184,7 @@ public sealed class SourceRegistry : ISourceRegistry
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var sources = new List<IUpstreamSource>(rows.Count);
+        var sources = new List<ResolvedSource>(rows.Count);
 
         foreach (var row in rows)
         {
@@ -156,7 +199,7 @@ public sealed class SourceRegistry : ISourceRegistry
     /// Maps one row onto its adapter and appends it, or logs why it was skipped — the one place the
     /// kind mapping, the per-source client and the skip rules are expressed.
     /// </summary>
-    private void Add(List<IUpstreamSource> sources, Source row, string? storedApiKey)
+    private void Add(List<ResolvedSource> sources, Source row, string? storedApiKey)
     {
         if (!Uri.TryCreate(row.BaseUrl, UriKind.Absolute, out var baseUrl))
         {
@@ -180,14 +223,14 @@ public sealed class SourceRegistry : ISourceRegistry
         switch (row.Kind)
         {
             case SourceRepository.NzbHydraKind:
-                sources.Add(new NzbHydraSource(
+                sources.Add(new ResolvedSource(row.Id, new NzbHydraSource(
                     new NzbHydraSourceOptions(
                         baseUrl,
                         apiKey,
                         row.DisplayName,
                         RequestTimeout: RequestTimeoutFor(row)),
                     CreateClient(nameof(NzbHydraSource)),
-                    _circuitBreaker));
+                    _circuitBreaker)));
                 break;
 
             case SourceRepository.NewznabKind:
@@ -221,7 +264,7 @@ public sealed class SourceRegistry : ISourceRegistry
                 // how a download is served, neither of which is a branch this construction takes:
                 // the endpoint arrives as the row's ApiPath and the attrs are handled by the
                 // parser's namespace matching.
-                sources.Add(new NewznabSource(
+                sources.Add(new ResolvedSource(row.Id, new NewznabSource(
                     new NewznabSourceOptions(
                         baseUrl,
                         row.ApiPath,
@@ -229,7 +272,7 @@ public sealed class SourceRegistry : ISourceRegistry
                         row.DisplayName,
                         RequestTimeout: RequestTimeoutFor(row)),
                     CreateClient(NewznabHttpClientName),
-                    _circuitBreaker));
+                    _circuitBreaker)));
                 break;
 
             default:
@@ -309,3 +352,18 @@ public sealed class SourceRegistry : ISourceRegistry
     /// </summary>
     private HttpClient CreateClient(string name) => _httpClientFactory.CreateClient(name);
 }
+
+/// <summary>
+/// One resolved adapter together with the <see cref="Source.Id"/> of the row it was built from
+/// (arb-x7w8.10).
+/// </summary>
+/// <remarks>
+/// It exists so a decorator over <see cref="SourceRegistry"/> can find a source's limits row by ID
+/// rather than by <see cref="IUpstreamSource.Name"/>. The name is the display name an operator can
+/// edit at any time, so a name match turns a rename into a source that quietly stops being gated;
+/// the id cannot be edited and is already what this registry's skip warnings and
+/// <c>ResolvedSourceSetFingerprintSource</c> identify a source by.
+/// </remarks>
+/// <param name="SourceId">The <c>Sources</c> row this adapter was built from.</param>
+/// <param name="Source">The live adapter.</param>
+public readonly record struct ResolvedSource(long SourceId, IUpstreamSource Source);
