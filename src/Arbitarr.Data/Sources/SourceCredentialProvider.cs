@@ -37,14 +37,22 @@ public sealed record SourceCredential(string BaseUrl, string ApiKey)
     /// <c>$"probe failed for {credential}"</c> compiles, reads as harmless, and is a durable
     /// disclosure.</para>
     ///
-    /// <para><b>NOTHING ELSE COVERS IT (CLAUDE.md §1).</b> The two mechanisms that scrub secrets
-    /// here are both scoped to query strings: <c>IHttpClientFactory</c>'s URI redaction collapses
-    /// the query of an outbound request URI, and <see cref="Logging.LogMessageCleanser"/> scrubs
-    /// credentials in query strings. A bare <c>ApiKey = …</c> in a log message is in neither shape,
-    /// so it would land verbatim in the persistent log store served at
-    /// <c>/api/admin/logs</c> — the same gap §1 describes for a secret in a URL path. The override
-    /// is the mechanism; deleting it as redundant reopens the hole silently, which is why the
-    /// marker's PRESENCE is asserted in the tests rather than merely the key's absence.</para>
+    /// <para><b>NOTHING ELSE OWNS IT (CLAUDE.md §1).</b> The two mechanisms that scrub secrets here
+    /// are NOT equivalent in reach. <c>IHttpClientFactory</c>'s URI redaction collapses the query of
+    /// an outbound request URI and nothing else, so a log message that is not a URI at all is
+    /// outside it. <see cref="Logging.LogMessageCleanser"/> is broader than that: its
+    /// <c>NamedCredential</c> arm matches a credential-shaped NAME followed by <c>:</c> or <c>=</c>
+    /// ANYWHERE in the text, not only inside a query string, and (arb-cia3, measured) it does match
+    /// <c>ApiKey = …</c> in this record's rendering.</para>
+    ///
+    /// <para>That does not make the override redundant, because the cleanser's reach is keyed on
+    /// the member NAME appearing in a fixed alternation — a sink-side denylist that its own remarks
+    /// call defence in depth rather than the control. <c>CreatedApiKey.PlaintextKey</c> is the
+    /// worked example: named just outside that list, it matched no arm and landed verbatim in the
+    /// persistent log store served at <c>/api/admin/logs</c> until arb-cia3. The override is the
+    /// mechanism that does not depend on the name; deleting it as redundant reopens the hole
+    /// silently, which is why the marker's PRESENCE is asserted in the tests rather than merely the
+    /// key's absence.</para>
     ///
     /// <para>Scoped to this type on purpose: <see cref="Media.SonarrCredential"/> carries the same
     /// hazard and is being handled separately under arb-1ox9, so it is deliberately not touched
