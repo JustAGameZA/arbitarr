@@ -1,5 +1,5 @@
 import { PageHeader } from '../../components/shell/PageHeader';
-import { TabPanel, Tabs, useTabs } from '../../components/Tabs/Tabs';
+import { TabPanel, Tabs, useTabs } from '../../components/Tabs';
 import { QueryState } from '../QueryState';
 import { BackupTab } from './BackupTab';
 import { LogsTab } from './LogsTab';

@@ -9,7 +9,13 @@ export interface TabItem<TabId extends string> {
   label: string;
 }
 
-interface UseTabsResult<TabId extends string> {
+/**
+ * Selection is uncontrolled today (owned inside `useTabs`); a controlled mode
+ * (caller-supplied `activeId`/`onChange`) is tracked separately (arb-gfnj).
+ * Exported so a future controlled-mode caller can name the shape `Tabs` and
+ * `TabPanel` accept without reaching into this module's internals.
+ */
+export interface UseTabsResult<TabId extends string> {
   /** The currently selected tab id. */
   activeId: TabId;
   /** Selects a tab directly (used by the tablist's click handler). */
@@ -72,16 +78,30 @@ export function Tabs<TabId extends string>({ label, items, tabs }: TabsProps<Tab
    * prevents.
    */
   const onTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
-    const delta = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
-    if (delta === 0) {
+    const moveTo = (next: TabId) => {
+      event.preventDefault();
+      setActiveId(next);
+      document.getElementById(getTabId(next))?.focus();
+    };
+
+    if (event.key === 'Home') {
+      moveTo(items[0].id);
+      return;
+    }
+    if (event.key === 'End') {
+      moveTo(items[items.length - 1].id);
       return;
     }
 
-    event.preventDefault();
+    const delta = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+    if (delta === 0) {
+      // Enter/Space activate the focused tab natively (it's a <button>); every
+      // other key is left alone rather than preventing its default behaviour.
+      return;
+    }
+
     const index = items.findIndex((item) => item.id === activeId);
-    const next = items[(index + delta + items.length) % items.length].id;
-    setActiveId(next);
-    document.getElementById(getTabId(next))?.focus();
+    moveTo(items[(index + delta + items.length) % items.length].id);
   };
 
   return (

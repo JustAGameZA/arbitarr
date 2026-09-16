@@ -169,10 +169,9 @@ and a future caller with cheaper panels is free to keep all of them mounted and 
 hide the inactive ones. `Tabs` never sees panel content at all.
 
 **Roving tabindex, not `tabIndex=0` on every tab.** Only the active tab is a tab stop;
-arrow keys move both focus and selection between tabs, wrapping at both ends. `Tabs` do
-not scroll into view via `Tab` alone — that is the point: a tablist that let every tab
-consume a stop would make it slower to Tab past on a page with several tabs, which is not
-what a sighted user's mental model of "tabs" promises a keyboard user.
+inactive tabs are not tab stops — that is the point: a tablist that let every tab consume
+a stop would make it slower to Tab past on a page with several tabs, which is not what a
+sighted user's mental model of "tabs" promises a keyboard user.
 
 **Generalise the tab id type, don't reach for `string`.** Each caller passes its own union
 (`'status' | 'logs' | 'backup'`), so `items` and `tabs` stay in sync at the type level — a
@@ -181,7 +180,33 @@ typo'd id fails to compile rather than silently rendering an empty panel.
 **Promote a tablist here only when it has a real second caller**, the same rule
 `SectionNav` documents for staying local until it does. This one already has one: the
 Library surface (arb-6l9b.6) was about to grow an independent second implementation of
-System's tablist before this primitive existed to reuse instead.
+System's tablist before this primitive existed to reuse instead. PRD recommendation 6's
+"keep tabs under `surfaces/Library/`" is superseded by this shared primitive.
+
+**Accessibility contract.** The WAI-ARIA tabs pattern, in full, because a future edit to
+any one piece breaks the others silently:
+
+- **`label` is required**, not optional, and renders as the tablist's `aria-label`. A
+  tablist with no accessible name reads to a screen reader as an unlabelled group of
+  buttons — there is no visible `<label>` element a tabbed UI would otherwise supply one
+  from, so the prop has no fallback.
+- **`aria-controls` on the tab and `aria-labelledby` on the panel round-trip to the same
+  id pair**, both derived from `useTabs`'s per-instance `useId` base so two tablists on
+  one page never collide. `aria-controls` names which panel a tab owns; `aria-labelledby`
+  is the reverse link a screen reader uses to announce the panel by its tab's label.
+- **`aria-selected`** marks exactly one tab `true` at a time; it is the semantic state a
+  screen reader announces, independent of visual styling.
+- **Roving tabindex**: only the active tab has `tabIndex={0}`; every inactive tab has
+  `tabIndex={-1}` and so is not a tab stop — `Tab` alone moves past the whole tablist in
+  one stop, the arrow keys move *within* it.
+- **`tabIndex={-1}` on the panel too**, so the panel itself (not merely some focusable
+  descendant) is reachable in one step after selecting a tab, without becoming an extra
+  `Tab` stop of its own.
+- **Keyboard**: `ArrowRight`/`ArrowLeft` move focus and selection one tab at a time,
+  wrapping at both ends (past the last tab returns to the first, and vice versa);
+  `Home`/`End` jump directly to the first/last tab; `Enter`/`Space` activate the focused
+  tab natively, because it is a real `<button>` — `Tabs` does not intercept or
+  `preventDefault` those keys, or any key besides the four it handles.
 
 ---
 

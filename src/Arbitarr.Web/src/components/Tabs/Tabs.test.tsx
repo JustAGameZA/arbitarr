@@ -105,6 +105,32 @@ describe('Tabs', () => {
     expect(screen.getByRole('tabpanel')).toHaveTextContent('Content for three');
   });
 
+  it('selects and focuses the first tab on Home, starting from a middle tab', async () => {
+    render(<Harness initial="two" />);
+    const user = userEvent.setup();
+
+    const two = screen.getByRole('tab', { name: 'Two' });
+    two.focus();
+
+    await user.keyboard('{Home}');
+    const one = screen.getByRole('tab', { name: 'One' });
+    expect(one).toHaveAttribute('aria-selected', 'true');
+    expect(one).toHaveFocus();
+  });
+
+  it('selects and focuses the last tab on End, starting from a middle tab', async () => {
+    render(<Harness initial="two" />);
+    const user = userEvent.setup();
+
+    const two = screen.getByRole('tab', { name: 'Two' });
+    two.focus();
+
+    await user.keyboard('{End}');
+    const three = screen.getByRole('tab', { name: 'Three' });
+    expect(three).toHaveAttribute('aria-selected', 'true');
+    expect(three).toHaveFocus();
+  });
+
   it('ignores keys other than the arrow keys', async () => {
     render(<Harness />);
     const user = userEvent.setup();
