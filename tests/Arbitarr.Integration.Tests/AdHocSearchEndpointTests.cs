@@ -47,7 +47,7 @@ public sealed class AdHocSearchEndpointTests : IAsyncLifetime
                 // that echoes back one release, so this test exercises the endpoint's live merge
                 // path without depending on any real upstream (NZBHydra2) being reachable.
                 services.RemoveAll<IUpstreamSource>();
-                services.RemoveAll<IReadOnlyList<IUpstreamSource>>();
+                services.RemoveAll<ISourceRegistry>();
                 services.AddSingleton<IUpstreamSource>(new SecondFakeUpstreamSource(
                     "adhoc-fake-source",
                     searchResults: new[]
@@ -63,7 +63,7 @@ public sealed class AdHocSearchEndpointTests : IAsyncLifetime
                             Protocol = ProtocolKind.Usenet,
                         },
                     }));
-                services.AddSingleton<IReadOnlyList<IUpstreamSource>>(sp => sp.GetServices<IUpstreamSource>().ToArray());
+                services.AddSingleton<ISourceRegistry>(sp => new StaticSourceRegistry(sp.GetServices<IUpstreamSource>().ToArray()));
 
                 // AC14b: replace the real (Arbitarr.Ai-backed) ISyncReleaseArbiter registration with
                 // a deterministic fake, so these tests never need a live Ollama and can assert the
@@ -223,11 +223,11 @@ public sealed class AdHocSearchEndpointTests : IAsyncLifetime
         var factory = _factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
         {
             services.RemoveAll<IUpstreamSource>();
-            services.RemoveAll<IReadOnlyList<IUpstreamSource>>();
+            services.RemoveAll<ISourceRegistry>();
             services.AddSingleton<IUpstreamSource>(new SecondFakeUpstreamSource(
                 "adhoc-observing-source",
                 onSearch: query => observed = query));
-            services.AddSingleton<IReadOnlyList<IUpstreamSource>>(sp => sp.GetServices<IUpstreamSource>().ToArray());
+            services.AddSingleton<ISourceRegistry>(sp => new StaticSourceRegistry(sp.GetServices<IUpstreamSource>().ToArray()));
         }));
         return (factory, () => observed);
     }

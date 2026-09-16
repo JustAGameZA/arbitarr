@@ -81,7 +81,7 @@ public sealed class DownloadRefusalNotificationTests : IAsyncLifetime
                 // configured source name and an int status code — which is the property the
                 // Location-header assertion below is really about.
                 services.RemoveAll<IUpstreamSource>();
-                services.RemoveAll<IReadOnlyList<IUpstreamSource>>();
+                services.RemoveAll<ISourceRegistry>();
                 services.AddSingleton<IUpstreamSource>(new SecondFakeUpstreamSource(
                     SourceName,
                     searchResults: new[]
@@ -98,7 +98,7 @@ public sealed class DownloadRefusalNotificationTests : IAsyncLifetime
                         },
                     },
                     downloadException: new UpstreamRedirectRefusedException(SourceName, 302)));
-                services.AddSingleton<IReadOnlyList<IUpstreamSource>>(sp => sp.GetServices<IUpstreamSource>().ToArray());
+                services.AddSingleton<ISourceRegistry>(sp => new StaticSourceRegistry(sp.GetServices<IUpstreamSource>().ToArray()));
 
                 // The ONLY notification-path substitution: the transport's HTTP handler. The
                 // transport type, the notifier, the tracker decorator and the settings gate are all

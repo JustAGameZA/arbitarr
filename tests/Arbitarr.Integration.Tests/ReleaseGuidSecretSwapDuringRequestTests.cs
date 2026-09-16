@@ -151,9 +151,10 @@ public sealed class ReleaseGuidSecretSwapDuringRequestTests : IAsyncLifetime
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IUpstreamSource>();
-                services.RemoveAll<IReadOnlyList<IUpstreamSource>>();
-                services.AddSingleton<IReadOnlyList<IUpstreamSource>>(
-                    new IUpstreamSource[] { new PayloadServingSource(SourceName, Candidate(), PayloadBytes) });
+                services.RemoveAll<ISourceRegistry>();
+                services.AddSingleton<ISourceRegistry>(
+                    new StaticSourceRegistry(
+                        new IUpstreamSource[] { new PayloadServingSource(SourceName, Candidate(), PayloadBytes) }));
 
                 // Decorate the real store so the secret changes mid-request, at the one point that
                 // sits between the persisted-key evaluation and the URL evaluation. The real store
