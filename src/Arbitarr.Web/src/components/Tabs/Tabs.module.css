@@ -1,0 +1,45 @@
+/*
+ * Tabs primitive (arb-9igu), extracted from System.module.css's `.tabs`/`.tab`/
+ * `.tabActive` (#65) with no visual change at the extraction site.
+ *
+ * Colours come only from the theme.css custom properties (AC3): no #hex, rgb()
+ * or hsl() literal appears here, and theme.test.ts enforces that across every
+ * *.module.css in the tree.
+ */
+
+/* The tab strip sits between the page header and the panels, sharing the panel
+   chrome's border so the active tab reads as continuous with the content below
+   it rather than as a floating control group. */
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+
+.tab {
+  padding: 8px 16px;
+  background: transparent;
+  border: none;
+  /* A transparent underline on the inactive tab, replaced rather than added on
+     the active one: a border that appears only when active would shift the label
+     by 2px on every tab change. */
+  border-bottom: 2px solid transparent;
+  color: var(--fg-muted);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  /* Pulls the strip's own 1px rule under the active tab's 2px one so they read
+     as a single edge instead of a double line. */
+  margin-bottom: -1px;
+}
+
+.tab:hover {
+  color: var(--fg-primary);
+}
+
+.tabActive {
+  color: var(--fg-primary);
+  border-bottom-color: var(--accent);
+}
