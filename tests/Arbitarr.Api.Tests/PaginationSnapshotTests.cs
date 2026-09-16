@@ -32,7 +32,7 @@ public class PaginationSnapshotTests
     public async Task Offset_0_then_offset_50_over_100_items_yields_a_disjoint_union_complete_pair_of_pages()
     {
         var source = MakeSourceWithReleases("eztv", 100);
-        var mergeStage = new UpstreamMergeStage(new[] { source });
+        var mergeStage = new UpstreamMergeStage(new StaticSourceRegistry(new[] { source }));
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var service = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);
@@ -54,7 +54,7 @@ public class PaginationSnapshotTests
     public async Task Second_page_request_for_the_same_query_hits_the_snapshot_and_does_not_re_merge()
     {
         var source = MakeSourceWithReleases("eztv", 10);
-        var mergeStage = new UpstreamMergeStage(new[] { source });
+        var mergeStage = new UpstreamMergeStage(new StaticSourceRegistry(new[] { source }));
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var service = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);
@@ -70,7 +70,7 @@ public class PaginationSnapshotTests
     public async Task Different_query_text_produces_a_different_snapshot_and_triggers_a_fresh_merge()
     {
         var source = MakeSourceWithReleases("eztv", 10);
-        var mergeStage = new UpstreamMergeStage(new[] { source });
+        var mergeStage = new UpstreamMergeStage(new StaticSourceRegistry(new[] { source }));
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var service = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);
@@ -93,7 +93,7 @@ public class PaginationSnapshotTests
         int episode)
     {
         var source = MakeSourceWithReleases("eztv", 10);
-        var mergeStage = new UpstreamMergeStage(new[] { source });
+        var mergeStage = new UpstreamMergeStage(new StaticSourceRegistry(new[] { source }));
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var service = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);
@@ -108,7 +108,7 @@ public class PaginationSnapshotTests
     public async Task Expired_snapshot_triggers_a_fresh_merge_instead_of_serving_stale_data()
     {
         var source = MakeSourceWithReleases("eztv", 10);
-        var mergeStage = new UpstreamMergeStage(new[] { source });
+        var mergeStage = new UpstreamMergeStage(new StaticSourceRegistry(new[] { source }));
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var service = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time, ttl: TimeSpan.FromSeconds(60));
@@ -126,7 +126,7 @@ public class PaginationSnapshotTests
     public async Task Fully_rate_limited_merge_with_zero_results_is_not_cached()
     {
         var source = new FakeUpstreamSource("eztv", searchException: new RequestLimitReachedException("eztv"));
-        var mergeStage = new UpstreamMergeStage(new[] { source });
+        var mergeStage = new UpstreamMergeStage(new StaticSourceRegistry(new[] { source }));
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var service = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);
@@ -142,7 +142,7 @@ public class PaginationSnapshotTests
     public async Task Offset_and_limit_do_not_affect_the_snapshot_token()
     {
         var source = MakeSourceWithReleases("eztv", 10);
-        var mergeStage = new UpstreamMergeStage(new[] { source });
+        var mergeStage = new UpstreamMergeStage(new StaticSourceRegistry(new[] { source }));
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var service = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);
@@ -173,7 +173,7 @@ public class PaginationSnapshotTests
     public async Task A_resolved_title_produces_a_different_snapshot_than_the_unresolved_request()
     {
         var source = MakeSourceWithReleases("eztv", 10);
-        var mergeStage = new UpstreamMergeStage(new[] { source });
+        var mergeStage = new UpstreamMergeStage(new StaticSourceRegistry(new[] { source }));
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var service = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);
@@ -197,7 +197,7 @@ public class PaginationSnapshotTests
     public async Task An_unchanged_anime_query_still_shares_one_snapshot()
     {
         var source = MakeSourceWithReleases("eztv", 10);
-        var mergeStage = new UpstreamMergeStage(new[] { source });
+        var mergeStage = new UpstreamMergeStage(new StaticSourceRegistry(new[] { source }));
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var service = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);
@@ -222,7 +222,7 @@ public class PaginationSnapshotTests
     public async Task A_different_absolute_episode_produces_a_different_snapshot()
     {
         var source = MakeSourceWithReleases("eztv", 10);
-        var mergeStage = new UpstreamMergeStage(new[] { source });
+        var mergeStage = new UpstreamMergeStage(new StaticSourceRegistry(new[] { source }));
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var service = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);
@@ -245,7 +245,7 @@ public class PaginationSnapshotTests
     public async Task Queries_that_set_neither_new_component_keep_the_snapshot_they_had()
     {
         var source = MakeSourceWithReleases("eztv", 10);
-        var mergeStage = new UpstreamMergeStage(new[] { source });
+        var mergeStage = new UpstreamMergeStage(new StaticSourceRegistry(new[] { source }));
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var service = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);
@@ -325,7 +325,7 @@ public class PaginationSnapshotTests
 
         // The pre-existing five-argument constructor, then the same thing said explicitly.
         var implicitDefault = new PaginationSnapshotService(
-            new UpstreamMergeStage(new[] { MakeSourceWithReleases("eztv", 10) }),
+            new UpstreamMergeStage(new StaticSourceRegistry(new[] { MakeSourceWithReleases("eztv", 10) })),
             TestCacheStage.Create(time),
             store,
             time);
@@ -346,7 +346,7 @@ public class PaginationSnapshotTests
         ManualTimeProvider time,
         string fingerprint) =>
         new(
-            new UpstreamMergeStage(new[] { MakeSourceWithReleases("eztv", 10) }),
+            new UpstreamMergeStage(new StaticSourceRegistry(new[] { MakeSourceWithReleases("eztv", 10) })),
             TestCacheStage.Create(time),
             store,
             time,

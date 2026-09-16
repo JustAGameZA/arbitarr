@@ -37,7 +37,7 @@ public sealed class DownloadLinkPerClientTests : IDisposable
     private async Task<string> RenderWithCallerKeyAsync(string callerApiKey)
     {
         var source = new FakeUpstreamSource("eztv", searchResults: new[] { TestReleases.Torrent().Candidate });
-        var mergeStage = new UpstreamMergeStage(new[] { (IUpstreamSource)source });
+        var mergeStage = new UpstreamMergeStage(new StaticSourceRegistry(new[] { (IUpstreamSource)source }));
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var snapshotService = new PaginationSnapshotService(mergeStage, TestCacheStage.Create(time), store, time);

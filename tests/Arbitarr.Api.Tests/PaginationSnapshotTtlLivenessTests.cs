@@ -40,7 +40,7 @@ public class PaginationSnapshotTtlLivenessTests
     public async Task A_ttl_changed_on_the_source_between_calls_is_observed_by_the_very_next_save_without_reconstruction()
     {
         var source = MakeSourceWithReleases("eztv", 10);
-        var mergeStage = new UpstreamMergeStage(new[] { source });
+        var mergeStage = new UpstreamMergeStage(new StaticSourceRegistry(new[] { source }));
         var store = new FakeQuerySnapshotStore();
         var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
         var ttlSource = new MutableSnapshotTtlSource { Ttl = TimeSpan.FromSeconds(60) };

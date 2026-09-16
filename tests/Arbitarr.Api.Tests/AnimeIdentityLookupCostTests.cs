@@ -185,7 +185,7 @@ public class AnimeIdentityLookupCostTests : IDisposable
 
         var time = new ManualTimeProvider(Now);
         return new PaginationSnapshotService(
-            new UpstreamMergeStage(new[] { (IUpstreamSource)new FakeUpstreamSource("eztv", searchResults: releases) }),
+            new UpstreamMergeStage(new StaticSourceRegistry(new[] { (IUpstreamSource)new FakeUpstreamSource("eztv", searchResults: releases) })),
             TestCacheStage.Create(time),
             new FakeQuerySnapshotStore(),
             time);

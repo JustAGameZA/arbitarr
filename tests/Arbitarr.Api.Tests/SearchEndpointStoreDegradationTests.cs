@@ -65,7 +65,7 @@ public sealed class SearchEndpointStoreDegradationTests : IDisposable
         CancellationToken cancellationToken = default)
     {
         var source = new SingleReleaseUpstreamSource(Candidate());
-        var mergeStage = new UpstreamMergeStage(new[] { (IUpstreamSource)source });
+        var mergeStage = new UpstreamMergeStage(new StaticSourceRegistry(new[] { (IUpstreamSource)source }));
         var time = new FakeTimeProvider(Now);
         var snapshotService = new PaginationSnapshotService(
             mergeStage,
