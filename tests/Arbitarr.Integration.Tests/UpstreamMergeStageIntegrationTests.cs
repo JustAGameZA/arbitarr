@@ -143,6 +143,56 @@ public class UpstreamMergeStageIntegrationTests
     }
 
     /// <summary>
+    /// The other side of the timeout clause, and what pins its IDENTITY test. A source that ran out
+    /// of time under its OWN budget is TimedOut; the CALLER abandoning the whole request is not a
+    /// source's fault and must leave MergeAsync as an OperationCanceledException rather than be
+    /// swallowed into any of the three name lists.
+    ///
+    /// This is the case that the timeout clause's token-IDENTITY test cannot decide on its own, and
+    /// the reason that clause also guards on the caller's token. The source models a real adapter:
+    /// it LINKS its own cancellation to the caller's, so the exception that escapes carries the
+    /// LINKED token — which is not reference-equal to the caller's raw token even though the caller
+    /// is precisely who cancelled. An identity-only filter reads that as "not the caller's, so this
+    /// source timed out", swallows it, and the merge returns a result for a request nobody is
+    /// waiting for any more. Asserting that MergeAsync THROWS is what pins the guard that prevents
+    /// it; this test fails against the identity-only form.
+    ///
+    /// Non-vacuity (CLAUDE.md §4): a healthy source runs alongside, so the merge HAD a result it
+    /// could have returned instead — and the identity-only form did exactly that, failing this
+    /// assertion with "No exception was thrown" rather than passing by nothing happening.
+    /// </summary>
+    [Fact]
+    public async Task MergeAsync_propagates_caller_cancellation_rather_than_naming_the_source()
+    {
+        using var cts = new CancellationTokenSource();
+
+        // Cancels the caller as its own leg begins, then waits behind a CTS linked to the caller's
+        // token — no budget of its own, so the ONLY thing that can cancel it is the caller.
+        var waitsForCaller = new SecondFakeUpstreamSource(
+            "source-waits",
+            onSearch: _ => cts.Cancel(),
+            searchDelay: TimeSpan.FromSeconds(20));
+        var healthy = new SecondFakeUpstreamSource(
+            "source-healthy",
+            searchResults: new[] { MakeRelease("source-healthy-1", "Release From Healthy Source") });
+
+        var mergeStage = new UpstreamMergeStage(new StaticSourceRegistry(
+            new IUpstreamSource[] { waitsForCaller, healthy }));
+
+        var cancelled = await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => mergeStage.MergeAsync(
+                new SearchQuery(null, Array.Empty<int>(), 50, SearchProtocol.Torznab),
+                cts.Token));
+
+        // The cancellation that escaped is the caller's, observed through the caller's own token.
+        // Deliberately NOT asserted: that cancelled.CancellationToken equals cts.Token. It does not
+        // — it is the adapter's linked token — and that inequality is the whole reason the stage
+        // cannot classify this by token identity alone.
+        Assert.True(cts.Token.IsCancellationRequested);
+        Assert.NotEqual(cts.Token, cancelled.CancellationToken);
+    }
+
+    /// <summary>
     /// arb-x7w8.7's load-bearing invariant: a partial merge is a protocol answer, not an
     /// infrastructure error (CONTEXT.md; see SearchEndpoint.InfrastructureErrorResult's remarks).
     /// At THIS level that means MergeAsync itself does not throw — with a majority of its sources

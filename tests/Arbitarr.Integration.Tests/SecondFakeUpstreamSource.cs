@@ -98,7 +98,18 @@ internal sealed class SecondFakeUpstreamSource : IUpstreamSource
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested is false)
             {
-                throw new TaskCanceledException($"The source '{Name}' exceeded its configured timeout.");
+                // The budget token is passed to the exception ON PURPOSE. HttpClient's real timeout
+                // throw carries the token that cancelled it, and the merge stage classifies a
+                // timeout by the IDENTITY of that token (is it the caller's, or not?). A
+                // TaskCanceledException constructed WITHOUT one carries CancellationToken.None,
+                // which compares EQUAL to the caller's token in the common case where the caller
+                // passed CancellationToken.None — so the stage would read this source's own timeout
+                // as a caller cancellation and classify it Failed rather than TimedOut. Dropping
+                // this argument makes the fake stop modelling HttpClient.
+                throw new TaskCanceledException(
+                    $"The source '{Name}' exceeded its configured timeout.",
+                    innerException: null,
+                    budget.Token);
             }
         }
 
