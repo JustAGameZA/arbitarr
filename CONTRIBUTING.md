@@ -70,6 +70,27 @@ The same `.githooks` path also carries `pre-push`, which rejects any pushed ref 
 guard is the mechanism keeping its Dolt store off the public remote (see CLAUDE.md's
 Beads section). `git config core.hooksPath .githooks` installs both hooks at once.
 
+### GitHub Issues mirror
+
+Stealth mode is unchanged by this: the Dolt store and `.beads/issues.jsonl` stay excluded,
+`refs/dolt/*` is still never pushed, and `.githooks/pre-push` still rejects it. Separately,
+open beads are mirrored to GitHub Issues with `bd github sync`. Each clone sets the target
+repo once with `bd config set github.repository JustAGameZA/arbitarr`. The token is never
+stored in bd config — run every sync as `GITHUB_TOKEN=$(gh auth token) bd github sync ...`.
+
+What syncs: title, description, labels (`type::`, `priority::`, plus bead labels), and
+state. Bead comments are not pushed, and closed beads that never had an issue are not
+pushed. Each pushed bead gets `external_ref` set to its issue URL. Running `bd github sync`
+with no flags is two-way: it pulls new/updated GitHub issues into beads and pushes local
+changes, with conflicts resolved by `--prefer-newer`; pass `--dry-run` first when unsure.
+Working from another machine or as another contributor: file or edit the GitHub issue
+directly and the next `bd github sync` pulls it into beads.
+
+Because of this mirror, bead text is public. The secrets policy — no keys, IPs, hostnames,
+local paths, or worktree names — applies to bead titles and descriptions exactly as it does
+to PR bodies. Comments stay local but should be treated the same way, since that could
+change.
+
 ## Project conventions
 
 ### Architecture boundaries
