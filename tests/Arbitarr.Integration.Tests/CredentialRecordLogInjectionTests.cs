@@ -31,11 +31,15 @@ namespace Arbitarr.Integration.Tests;
 /// by the sink today, contrary to the premise arb-1ox9 was filed on.</para>
 ///
 /// <para>That does not make the overrides redundant, for two reasons this file pins rather than
-/// argues. First, the coverage is INCOMPLETE in a way that matters most:
-/// <c>PlaintextKey = …</c> matches no arm, so the two types carrying a live admin credential were
-/// genuinely uncovered — see
-/// <see cref="The_cleanser_does_not_cover_the_PlaintextKey_rendering_which_is_why_that_override_carries_the_weight"/>,
-/// which asserts that leak as a fact about this pipeline. Second, the cleanser only runs in the LOG
+/// argues. First, the coverage is INCOMPLETE, and it is incomplete by SHAPE rather than only by
+/// vocabulary. <c>PlaintextKey = …</c> used to be the worked example — it matched no arm, so the two
+/// types carrying a live admin credential were genuinely uncovered — until arb-cia3 taught the arm
+/// <c>plaintext…</c>; that vocabulary gap is closed, but the structural one is not, because every arm
+/// still needs a credential-shaped NAME or SCHEME adjacent to the value and a bare URL PATH SEGMENT
+/// has neither. See
+/// <see cref="The_cleanser_does_not_cover_a_path_segment_secret_which_is_why_the_overrides_carry_the_weight"/>,
+/// which asserts that leak as a fact about this pipeline, alongside the now-covered
+/// <c>PlaintextKey</c> shape as its positive control. Second, the cleanser only runs in the LOG
 /// SINK: a credential interpolated into an exception message, a console line, or any other
 /// non-sink surface never reaches it, while <c>ToString</c> is where every one of those shapes is
 /// formed. Redacting at the source is the layer that covers all of them.</para>
@@ -147,12 +151,23 @@ public sealed class CredentialRecordLogInjectionTests : IAsyncLifetime
     /// pipeline does not leak — worth keeping — but they do not attribute the redaction to the
     /// override, and taken alone they would let the override be deleted silently.</para>
     ///
-    /// <para><c>CreatedApiKey</c> renders <c>PlaintextKey = …</c>, which matches NO arm of the
-    /// cleanser (see
-    /// <see cref="The_cleanser_does_not_cover_the_PlaintextKey_rendering_which_is_why_that_override_carries_the_weight"/>).
-    /// Its override is the only thing standing between that value and the store, so THIS test goes
-    /// red the moment the override is removed — which is what the equivalent unit test cannot show
-    /// and what makes the logging stack's use of the formatter a proven fact.</para>
+    /// <para><b>arb-cia3 changed what this test attributes, and the honest statement is narrower
+    /// than the one it replaced.</b> It used to read: <c>CreatedApiKey</c> renders
+    /// <c>PlaintextKey = …</c>, which matches NO arm of the cleanser, so THIS test goes red the
+    /// moment the override is removed. The first clause is no longer true — arb-cia3 taught
+    /// <c>NamedCredential</c> the <c>plaintext…</c> alternative precisely because that shape was
+    /// reaching the store verbatim — and therefore the second clause is not true AT THIS SINK
+    /// either: with the override deleted, the cleanser would now scrub the rendering on the way in
+    /// and these rows would stay green. Left unedited, this paragraph would have been a comforting
+    /// half-truth of exactly the kind the file's own remarks warn about.</para>
+    ///
+    /// <para>What the test still proves is the end-to-end fact: this pipeline does not leak the
+    /// plaintext of a minted admin key in any of the three shapes. What now carries the ATTRIBUTION
+    /// — that the override, not the sink, is the mechanism — is
+    /// <c>CredentialRecordToStringTests</c> (the source-side sweep, arb-1ox9) together with
+    /// <see cref="The_cleanser_does_not_cover_a_path_segment_secret_which_is_why_the_overrides_carry_the_weight"/>,
+    /// whose control is a URL PATH SEGMENT: a structural gap no future widening of a name
+    /// alternation can close, unlike the vocabulary gap arb-cia3 just closed under this one.</para>
     ///
     /// <para>All three shapes are driven, not just one: the structured argument, the pre-interpolated
     /// message, and the destructuring <c>@</c> prefix, for the same reasons they are asserted
@@ -237,26 +252,37 @@ public sealed class CredentialRecordLogInjectionTests : IAsyncLifetime
     /// <c>ApiKey = …</c> and <c>PlaintextToken = …</c> ARE scrubbed by the sink, because
     /// "apikey" and "token" appear in that arm's alternation.</para>
     ///
-    /// <para><b>But <c>PlaintextKey = …</c> is NOT</b>, and that is the finding. The alternation is
-    /// <c>api_key|apikey|token|passkey|password|secret</c>; the string "plaintextkey" contains none
-    /// of them (it contains "key", which is deliberately absent from this arm so that ordinary
-    /// identifiers are not mangled). So <c>CreatedApiKey</c> and <c>CreatedApiKeyResponse</c> — the
-    /// two types carrying a live ADMIN credential — had a rendering that NOTHING in the pipeline
-    /// covered. Their overrides are the only thing standing between that shape and the persistent
-    /// store.</para>
+    /// <para><b>Where it stops is no longer <c>PlaintextKey</c> (arb-cia3).</b> When this test was
+    /// written the alternation was <c>api_key|apikey|token|passkey|password|secret</c>, "plaintextkey"
+    /// contained none of them, and <c>CreatedApiKey</c> / <c>CreatedApiKeyResponse</c> — the two types
+    /// carrying a live ADMIN credential — had a rendering NOTHING in the pipeline covered. arb-cia3
+    /// taught the arm <c>plaintext…</c>, so that specific shape IS now scrubbed by the sink. This test
+    /// took the RED its own closing paragraph predicted, and was rewritten rather than deleted,
+    /// exactly as that paragraph instructed.</para>
     ///
-    /// <para><b>Why this test asserts a leak rather than a redaction.</b> Every other assertion in
-    /// this file would look identical if the cleanser were quietly doing the work, which would make
-    /// the overrides decorative. This drives the one shape the cleanser demonstrably does NOT cover
-    /// through the same sink with no override in play, and asserts it lands VERBATIM — so the
-    /// redactions above are attributable to the overrides and not to a layer beneath them.</para>
+    /// <para><b>Why this test still asserts a leak rather than a redaction.</b> Every other assertion
+    /// in this file would look identical if the cleanser were quietly doing the work, which would make
+    /// the overrides decorative. The attribution argument therefore needs SOME shape the cleanser
+    /// demonstrably does not cover, driven through the same sink with no override in play, landing
+    /// VERBATIM. A secret in a URL PATH SEGMENT is that shape and is a structural gap rather than a
+    /// vocabulary one: every arm requires a credential-shaped NAME or SCHEME adjacent to the value,
+    /// and a bare path segment has neither — which is the same gap CLAUDE.md §1 and
+    /// <c>docs/standards/architecture.md</c> point at when they say such registrations need
+    /// <c>.RemoveAllLoggers()</c>. Widening a name alternation can never close it, so this control
+    /// cannot be invalidated by the next word added to the list.</para>
     ///
-    /// <para>If this test ever goes RED, the cleanser has gained coverage of this shape. That is not
-    /// a regression, but it does mean this file's attribution argument needs rereading rather than
-    /// the test being deleted.</para>
+    /// <para>The <c>PlaintextKey</c> half is kept below as a POSITIVE control on arb-cia3's arm: the
+    /// same sink, the same raw text, now redacted. Keeping both in one test is what makes the two
+    /// assertions comparable — same host, same flush, same reader — so "the sink scrubs this but not
+    /// that" is measured rather than inferred from two separate runs.</para>
+    ///
+    /// <para>If the path-segment assertion ever goes RED, the cleanser has gained structural coverage
+    /// of URL paths. That is not a regression, but this file's attribution argument, CLAUDE.md §1 and
+    /// architecture.md's logging section all need rereading together rather than the test being
+    /// deleted.</para>
     /// </summary>
     [Fact]
-    public async Task The_cleanser_does_not_cover_the_PlaintextKey_rendering_which_is_why_that_override_carries_the_weight()
+    public async Task The_cleanser_does_not_cover_a_path_segment_secret_which_is_why_the_overrides_carry_the_weight()
     {
         const string LoggerName = "Arbitarr.Test.CredentialRecord.CleanserControl";
 
@@ -270,8 +296,16 @@ public sealed class CredentialRecordLogInjectionTests : IAsyncLifetime
         var store = _root.Services.GetRequiredService<LogStore>();
         var logger = _root.Services.GetRequiredService<ILoggerFactory>().CreateLogger(LoggerName);
 
-        // Exactly what CreatedApiKey's SYNTHESISED ToString would have produced. No record is
-        // involved — this is the raw text, so the only thing that could redact it is the sink.
+        // THE CONTROL: the same key as a bare URL PATH SEGMENT. No credential-shaped name or scheme
+        // sits next to it, so no arm of the cleanser can reach it. No record is involved — this is
+        // raw text, so the only thing that could redact it is the sink.
+        logger.LogWarning(
+            "probe failed for https://media.example.invalid/feed/{0}/rss", ApiKey);
+
+        // POSITIVE CONTROL on arb-cia3's arm, through the SAME sink: exactly what CreatedApiKey's
+        // SYNTHESISED ToString would have produced. Before arb-cia3 this landed verbatim; it is here
+        // so the contrast below is measured against a shape the sink demonstrably DOES cover, rather
+        // than the leak assertion passing because the sink stopped working altogether.
         logger.LogWarning(
             "created CreatedApiKey {{ Entry = ..., PlaintextKey = {0} }}", ApiKey);
 
@@ -280,8 +314,15 @@ public sealed class CredentialRecordLogInjectionTests : IAsyncLifetime
         var entries = await ReadEntriesForLoggerAsync(store, LoggerName);
         Assert.NotEmpty(entries);
 
-        // The key survives the sink untouched: "plaintextkey" matches no arm of the cleanser.
-        Assert.Contains(entries, e => e.Message.Contains(ApiKey, StringComparison.Ordinal));
+        // The path-segment key survives the sink untouched: no arm has a name or scheme to anchor on.
+        var pathEntry = Assert.Single(entries, e => e.Message.Contains("/feed/", StringComparison.Ordinal));
+        Assert.Contains(ApiKey, pathEntry.Message, StringComparison.Ordinal);
+
+        // The PlaintextKey rendering does NOT — arb-cia3's arm scrubs it, and the replacement marker
+        // proves the arm fired rather than the text never having arrived (CLAUDE.md §4).
+        var recordEntry = Assert.Single(entries, e => e.Message.Contains("PlaintextKey", StringComparison.Ordinal));
+        Assert.Contains(LogMessageCleanser.Replacement, recordEntry.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(ApiKey, recordEntry.Message, StringComparison.Ordinal);
     }
 
     /// <summary>

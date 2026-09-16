@@ -31,16 +31,23 @@ public sealed record CreatedApiKey(ApiKeyEntry Entry, string PlaintextKey)
     /// accidental <c>$"created {result}"</c> is a permanent admin credential in the persistent log
     /// store served at <c>/api/admin/logs</c> (#65).</para>
     ///
-    /// <para><b>AND NOTHING ELSE COVERS IT — THIS ONE IS NOT DEFENCE IN DEPTH, IT IS THE ONLY
-    /// DEFENCE</b> (CLAUDE.md §1). <c>IHttpClientFactory</c>'s URI redaction collapses an outbound
-    /// request's QUERY STRING and nothing else. <see cref="Logging.LogMessageCleanser"/> does scrub
-    /// some inline <c>name = value</c> shapes — its <c>NamedCredential</c> arm matches the
-    /// alternation <c>api_key|apikey|token|passkey|password|secret</c> — but <b>"plaintextkey"
-    /// contains none of those</b>. ("key" alone is deliberately absent from that arm so ordinary
-    /// identifiers are not mangled into unreadability.) So the synthesised rendering of THIS type
-    /// walked straight through the sink and into the persistent store verbatim. Measured, not
-    /// assumed: <c>CredentialRecordLogInjectionTests</c> asserts that leak against the real pipeline
-    /// as the control that makes this override's necessity a fact rather than a claim.</para>
+    /// <para><b>THIS OVERRIDE WAS ONCE THE ONLY DEFENCE, AND IS NOW THE PRIMARY ONE</b>
+    /// (CLAUDE.md §1). <c>IHttpClientFactory</c>'s URI redaction collapses an outbound request's
+    /// QUERY STRING and nothing else, so it never covered this. <see cref="Logging.LogMessageCleanser"/>
+    /// scrubs inline <c>name = value</c> shapes through its <c>NamedCredential</c> arm, and when this
+    /// type was written that arm's alternation was
+    /// <c>api_key|apikey|token|passkey|password|secret</c> — <b>"plaintextkey" contained none of
+    /// those</b> ("key" alone is deliberately absent so ordinary identifiers are not mangled into
+    /// unreadability), so the synthesised rendering of THIS type walked straight through the sink
+    /// into the persistent store verbatim.</para>
+    ///
+    /// <para>arb-cia3 taught that arm the <c>plaintext…</c> alternative, so the sink now catches this
+    /// shape too. That is defence in depth ADDED BENEATH this override, not a replacement for it:
+    /// the cleanser runs only in the log sink, so an interpolation into an exception message or a
+    /// console line still reaches nothing but <c>ToString</c>, and the cleanser's reach depends on
+    /// this member continuing to be NAMED in a way its alternation lists — which is exactly the
+    /// coupling that failed here in the first place. Deleting this override because the sink now
+    /// covers it would reinstate the original bug one rename later.</para>
     ///
     /// <para>The row's id and label ARE printed: they are not credentials, they are what makes a
     /// diagnostic line about a creation useful at all, and printing them is what keeps this override

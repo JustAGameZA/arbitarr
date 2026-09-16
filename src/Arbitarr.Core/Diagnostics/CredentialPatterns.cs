@@ -133,9 +133,31 @@ public static partial class CredentialPatterns
     /// in the alternation below silently drops the coverage. See
     /// <c>ProductionProcessGlobalStateTests</c> in <c>Arbitarr.Architecture.Tests</c> for the fuller
     /// account.</para>
+    ///
+    /// <para><b>arb-cia3: the <c>plaintext…</c> alternative, and why it is suffixed.</b> The name
+    /// <c>PlaintextKey</c> matched NOTHING here before — <c>key</c> alone is deliberately excluded
+    /// from the alternation (that exclusion is what keeps a release GUID readable), and
+    /// "plaintext" is not one of the other six words. So the synthesised <c>ToString</c> of
+    /// <c>CreatedApiKey</c> / <c>CreatedApiKeyResponse</c> rendered a live admin key past BOTH
+    /// sinks verbatim. Note the asymmetry it exposed: <c>PlaintextToken</c> and
+    /// <c>PlaintextPassword</c> were always covered, because they carry <c>token</c> and
+    /// <c>password</c> — only the <c>…Key</c> spelling fell through.</para>
+    ///
+    /// <para>The alternative requires a credential NOUN after the word rather than being a bare
+    /// <c>plaintext</c>, because "plaintext" is ordinary prose in this codebase: three probe
+    /// outcomes say "https pointed at a plaintext port". Measured, a bare alternative redacted
+    /// "TLS disabled, plaintext: true" into "plaintext: &lt;redacted&gt;" — over-redaction is the
+    /// failure this type's own remarks warn a new pattern must be tested against. The negative rows
+    /// in <c>CredentialPatternsTests.Ordinary_text_is_left_intact</c> pin that.</para>
+    ///
+    /// <para>This is defence in depth ONLY. The primary control is the <c>ToString</c> override on
+    /// each secret-bearing record (arb-1ox9, swept by <c>CredentialRecordToStringTests</c>);
+    /// removing an override because this arm now catches its rendering would trade a source-side
+    /// guarantee for a sink-side denylist, which is exactly the inversion the type's remarks above
+    /// caution against.</para>
     /// </summary>
     [GeneratedRegex(
-        @"(?<prefix>\b[\w-]*(?:api[_-]?key|apikey|token|passkey|password|secret)[\w-]*""?\s*[:=]\s*""?)(?<value>[^\s,;""'}\]]{4,})",
+        @"(?<prefix>\b[\w-]*(?:api[_-]?key|apikey|token|passkey|password|secret|plaintext[_-]?(?:key|token|secret|password|passkey))[\w-]*""?\s*[:=]\s*""?)(?<value>[^\s,;""'}\]]{4,})",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds)]
     private static partial Regex NamedCredential();
