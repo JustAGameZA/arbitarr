@@ -248,10 +248,13 @@ builder.Services.AddHttpClient(Arbitarr.Host.Sources.SourceRegistry.NewznabHttpC
 // of their own work. It is SCOPED and memoises within the scope, so two consumers in one request
 // share one resolution and the per-source keys are read once.
 //
-// arb-x7w8.10's per-indexer budgets and durable backoff decorate at THIS boundary.
+// arb-x7w8.10's per-indexer budgets and durable backoff decorate at THIS boundary: the concrete
+// registry is registered under its OWN type and BudgetedSourceRegistry under the INTERFACE, so every
+// consumer that asks for ISourceRegistry gets the gated set and none of them has to remember to wrap
+// anything. The decorator is the only thing that resolves the concrete type, so no source reaches
+// the search path ungated by taking a different registration.
 builder.Services.AddScoped<Arbitarr.Host.Sources.SourceRegistry>();
-builder.Services.AddScoped<ISourceRegistry>(sp =>
-    sp.GetRequiredService<Arbitarr.Host.Sources.SourceRegistry>());
+builder.Services.AddScoped<ISourceRegistry, Arbitarr.Host.Sources.BudgetedSourceRegistry>();
 builder.Services.AddScoped<UpstreamMergeStage>();
 builder.Services.AddScoped<IQuerySnapshotStore, QuerySnapshotStore>();
 
@@ -340,6 +343,38 @@ builder.Services.AddSingleton(sp => new Arbitarr.Core.Diagnostics.PersistentDown
             .ConfigureAwait(false);
     },
     sp.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(Arbitarr.Core.Diagnostics.PersistentDownloadRefusalTracker).FullName!)));
+
+// arb-x7w8.10: per-source API-hit budgets and durable backoff. The two stores are SCOPED because
+// they hold the scoped ArbitarrDbContext, which is not thread-safe — the same reason every other
+// store here is. The decorator they serve is attached at the ISourceRegistry boundary above — the
+// interface every search-path consumer already takes — and NOT to any particular list or typed
+// source registration. That is what arb-x7w8.4 settled: it removed the list registration an earlier
+// revision of this bead decorated, which would have left the gate registered and never called, with
+// every test still green. See BudgetedSourceRegistry.
+//
+// THE GATE NEVER HOLDS ONE OF THESE ACROSS A CALL. UpstreamMergeStage fans out to all N sources
+// concurrently under one Task.WhenAll, so the decorators run simultaneously; sharing one scoped
+// context across them throws EF's "a second operation was started on this context" as soon as a
+// second source is configured. SourceGateScopeFactory is therefore a SINGLETON over
+// IServiceScopeFactory and opens one scope per gate operation, the same shape DbClientApiKeyResolver
+// and ScopedEventSink use. These scoped registrations exist to be resolved FROM that per-operation
+// scope, never captured by the request.
+//
+// hostStartedAt is captured HERE, once, at composition time, and passed in rather than read from
+// the TimeProvider inside the scoped store. That is what makes the startup grace window a property
+// of the PROCESS: a store that captured "now" in its own constructor would restart the window on
+// every request and suppress escalation forever, which is a defect no test of a single request can
+// see.
+var hostStartedAt = TimeProvider.System.GetUtcNow();
+builder.Services.AddScoped(sp => new Arbitarr.Data.Sources.SourceApiHitCounter(
+    sp.GetRequiredService<ArbitarrDbContext>(),
+    sp.GetRequiredService<TimeProvider>()));
+builder.Services.AddScoped(sp => new Arbitarr.Data.Sources.SourceBackoffStore(
+    sp.GetRequiredService<ArbitarrDbContext>(),
+    sp.GetRequiredService<TimeProvider>(),
+    hostStartedAt));
+builder.Services.AddSingleton<Arbitarr.Host.Sources.ISourceGateScopeFactory,
+    Arbitarr.Host.Sources.SourceGateScopeFactory>();
 
 // arb-apj: what the rest of the app resolves is that state holder WRAPPED in a transition observer,
 // so one notification goes out when a source's health item appears and one when it clears — and

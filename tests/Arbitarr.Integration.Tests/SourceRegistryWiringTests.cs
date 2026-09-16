@@ -166,7 +166,13 @@ public sealed class SourceRegistryWiringTests : IAsyncLifetime
     public async Task Every_resolved_source_refuses_to_follow_redirects()
     {
         using var scope = _factory.Services.CreateScope();
-        var registry = scope.ServiceProvider.GetRequiredService<ISourceRegistry>();
+
+        // THE CONCRETE registry, not ISourceRegistry, and that is deliberate. arb-x7w8.10 registers
+        // BudgetedSourceRegistry under the interface, so ISourceRegistry now hands back gate
+        // DECORATORS — and this assertion is about the ADAPTER's own client, which a decorator does
+        // not have. That the interface IS decorated is pinned by BudgetedSourceRegistryWiringTests;
+        // this is the adapter-level property underneath it.
+        var registry = scope.ServiceProvider.GetRequiredService<SourceRegistry>();
         var sources = await registry.ResolveAsync(CancellationToken.None);
 
         // The control: there is more than one source and both kinds are represented, so "every
@@ -188,7 +194,10 @@ public sealed class SourceRegistryWiringTests : IAsyncLifetime
     public async Task Each_resolved_source_carries_its_own_rows_timeout()
     {
         using var scope = _factory.Services.CreateScope();
-        var registry = scope.ServiceProvider.GetRequiredService<ISourceRegistry>();
+
+        // The CONCRETE registry, for the same reason as the redirect test above: the timeout lives
+        // on the adapter's own HttpClient, and ISourceRegistry now yields gate decorators.
+        var registry = scope.ServiceProvider.GetRequiredService<SourceRegistry>();
 
         var sources = await registry.ResolveAsync(CancellationToken.None);
 
