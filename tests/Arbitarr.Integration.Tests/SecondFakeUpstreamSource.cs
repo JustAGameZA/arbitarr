@@ -19,6 +19,7 @@ internal sealed class SecondFakeUpstreamSource : IUpstreamSource
     private readonly Exception? _searchException;
     private readonly TimeSpan? _searchBudget;
     private readonly TimeSpan? _searchDelay;
+    private readonly byte[] _downloadPayload;
 
     /// <param name="downloadException">
     /// Thrown by <see cref="FetchDownloadAsync"/> instead of returning a payload (arb-apj), so a
@@ -44,6 +45,12 @@ internal sealed class SecondFakeUpstreamSource : IUpstreamSource
     /// the merge returns, which is what makes "the merge did not wait for the slow source" an
     /// assertion about elapsed time rather than about ordering.
     /// </param>
+    /// <param name="downloadPayload">
+    /// The bytes <see cref="FetchDownloadAsync"/> returns when <paramref name="downloadException"/>
+    /// is null (arb-vlsu). Defaults to empty, matching every pre-existing caller's behaviour byte for
+    /// byte; a test that needs to prove WHICH source served a grab (rather than only that one did)
+    /// supplies a payload identifying itself.
+    /// </param>
     public SecondFakeUpstreamSource(
         string name,
         IReadOnlyList<ReleaseCandidate>? searchResults = null,
@@ -52,7 +59,8 @@ internal sealed class SecondFakeUpstreamSource : IUpstreamSource
         Exception? downloadException = null,
         Exception? searchException = null,
         TimeSpan? searchBudget = null,
-        TimeSpan? searchDelay = null)
+        TimeSpan? searchDelay = null,
+        byte[]? downloadPayload = null)
     {
         Name = name;
         _searchResults = searchResults ?? Array.Empty<ReleaseCandidate>();
@@ -62,6 +70,7 @@ internal sealed class SecondFakeUpstreamSource : IUpstreamSource
         _searchException = searchException;
         _searchBudget = searchBudget;
         _searchDelay = searchDelay;
+        _downloadPayload = downloadPayload ?? Array.Empty<byte>();
     }
 
     public string Name { get; }
@@ -132,6 +141,6 @@ internal sealed class SecondFakeUpstreamSource : IUpstreamSource
             throw _downloadException;
         }
 
-        return Task.FromResult<Stream>(new MemoryStream());
+        return Task.FromResult<Stream>(new MemoryStream(_downloadPayload));
     }
 }
