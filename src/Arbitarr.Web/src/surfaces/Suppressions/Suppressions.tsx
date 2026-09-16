@@ -80,11 +80,13 @@ function SuppressionsTable({ entries }: { entries: SuppressionViewEntry[] }) {
         <tbody>
           {entries.map((entry, index) => {
             const isOpen = openRow === index;
-            // Stable across a re-render of the same row (occurredAt +
-            // releaseIdentifier + index, matching the Fragment key), and
-            // unique enough for aria-controls to point at without collision
-            // when the same release appears twice in the log.
-            const detailId = `suppression-titles-${entry.occurredAt}-${entry.releaseIdentifier}-${index}`;
+            // index alone is unique within this rendered array -- that is
+            // all aria-controls needs. The ISO timestamp's ':' and '+' are
+            // valid there (getElementById and AT IDREF resolution do not
+            // care), but they make the id unsafe to use in a bare '#id' CSS
+            // selector, so they are left out rather than included for
+            // "extra" uniqueness the index doesn't need.
+            const detailId = `suppression-titles-${index}`;
 
             return (
               <Fragment key={`${entry.occurredAt}:${entry.releaseIdentifier}:${index}`}>
