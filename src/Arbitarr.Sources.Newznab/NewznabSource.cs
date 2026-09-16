@@ -7,7 +7,9 @@ namespace Arbitarr.Sources.Newznab;
 
 /// <summary>
 /// <see cref="IUpstreamSource"/> implementation backed by a DIRECT Newznab or Torznab indexer —
-/// one adapter for both families (arb-x7w8.2), covering search and caps.
+/// one adapter for both families (arb-x7w8.2), covering search, caps and the proxy-mode download
+/// (arb-x7w8.13). Redirect mode is arb-x7w8.14 and is deliberately not here: the access-mode
+/// decision belongs to the download route, not to the adapter that fetches bytes.
 ///
 /// <para><b>Why one adapter and not two.</b> The two families share a request grammar and a
 /// response schema; they differ in the endpoint an indexer publishes and in which
@@ -165,17 +167,89 @@ public sealed class NewznabSource : IUpstreamSource
     }
 
     /// <summary>
-    /// Not implemented in arb-x7w8.2, whose scope is search and caps. The download path for direct
-    /// indexers is its own bead, because it carries the proxy/redirect access-mode decision
-    /// (Source.NzbAccessMode) and the fetch-time re-validation of the origin-pinned link — neither
-    /// of which is a parse concern, and both of which have their own security tests.
+    /// PROXY MODE (arb-x7w8.13): fetches this release's payload FROM THIS INDEXER and hands the body
+    /// stream to <c>DownloadProxyEndpoint</c>, which bounds it and serves the bytes. The indexer key
+    /// never leaves the process — the caller receives BYTES, never a URL that would carry the key.
+    ///
+    /// <para><b>SEC-M1: the link is re-validated HERE, at fetch time, not only at parse time.</b>
+    /// <see cref="TorznabFeedParser.TryValidateOriginPinnedLink"/> ran when the feed was parsed, and
+    /// that only ever guaranteed the link was same-origin AT THAT MOMENT. The candidate is a mutable
+    /// record that has since travelled through the merge, dedup and lookup stores, and a future code
+    /// path could reach here without having parsed a feed at all, so the parse-time result is not a
+    /// fetch-time guarantee. Re-pinning against this source's OWN
+    /// <see cref="NewznabSourceOptions.BaseUrl"/> is what stops a substituted link turning the proxy
+    /// into an SSRF fetch of an arbitrary host.</para>
+    ///
+    /// <para><b>The pin is PER SOURCE, and with N direct indexers that is the load-bearing part.</b>
+    /// Each adapter instance pins to the origin of the row it was built from, so one indexer's feed
+    /// can never name another indexer's host — nor any host the operator never configured. A single
+    /// shared allow-list of every configured origin would accept exactly the cross-source
+    /// substitution this refuses, and it would get strictly weaker with every source added.</para>
+    ///
+    /// <para>The refusal is an <see cref="HttpRequestException"/> rather than a bespoke type because
+    /// <c>DownloadProxyEndpoint</c> maps it to a clean 502, deliberately indistinguishable from an
+    /// upstream that simply failed: the caller learns nothing about which links were refused. The
+    /// message names the CONFIGURED source only — never the link, which is upstream-supplied text
+    /// that would otherwise land verbatim in the persistent log store (CLAUDE.md §1).</para>
     /// </summary>
-    /// <exception cref="NotSupportedException">Always. This adapter does not serve downloads yet.</exception>
-    public Task<Stream> FetchDownloadAsync(ReleaseCandidate release, CancellationToken cancellationToken = default) =>
-        throw new NotSupportedException(
-            $"Source '{Name}' does not serve downloads: the direct-indexer download path is arb-x7w8.13 (Proxy) and arb-x7w8.14 (Redirect), " +
-            "not this adapter. Refusing rather than fetching, so a caller that reaches here fails " +
-            "loudly instead of bypassing the access-mode decision that path exists to make.");
+    public async Task<Stream> FetchDownloadAsync(ReleaseCandidate release, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(release);
+
+        if (!TorznabFeedParser.TryValidateOriginPinnedLink(release.Link?.ToString(), _options.BaseUrl, out var validatedLink))
+        {
+            throw new HttpRequestException(
+                $"Refusing to fetch download link for source '{Name}': link is not same-origin with the configured indexer at fetch time.");
+        }
+
+        if (!await _circuitBreaker.CanCallAsync(Name, cancellationToken).ConfigureAwait(false))
+        {
+            throw new SourceUnavailableException(Name);
+        }
+
+        try
+        {
+            await _rateLimiter.WaitForTokenAsync(cancellationToken).ConfigureAwait(false);
+
+            // ResponseHeadersRead so the guards below run before the body is pulled. The proxy is
+            // what bounds the payload (SEC-L3, MaxLengthStream); buffering it here would put an
+            // unbounded read in front of that cap.
+            var response = await _httpClient.GetAsync(validatedLink, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                ThrowIfRateLimited(response);
+                ThrowIfRedirected(response);
+                response.EnsureSuccessStatusCode();
+            }
+            catch
+            {
+                // Deliberately not using-scoped: on success the content stream is handed to the
+                // caller, so nothing here may dispose it. When a guard throws nobody else will, and
+                // a refused redirect repeats on every retry until the operator changes the setting —
+                // an undisposed connection would be a sustained leak rather than a one-off.
+                response.Dispose();
+                throw;
+            }
+
+            var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            await _circuitBreaker.RecordSuccessAsync(Name, cancellationToken).ConfigureAwait(false);
+            return stream;
+        }
+        catch (UpstreamRedirectRefusedException)
+        {
+            // Recorded as a success, not merely left alone: the upstream answered promptly, and the
+            // breaker's HalfOpen state is only left by a RecordSuccess or a RecordFailure. A probe
+            // that recorded neither would strand the breaker HalfOpen, refusing every caller —
+            // search included — until something else on this source recorded an outcome.
+            await _circuitBreaker.RecordSuccessAsync(Name, cancellationToken).ConfigureAwait(false);
+            throw;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await _circuitBreaker.RecordFailureAsync(Name, ex, cancellationToken).ConfigureAwait(false);
+            throw;
+        }
+    }
 
     /// <summary>
     /// Refuses a redirect as a typed, non-breaker answer. The client is built with
