@@ -28,12 +28,11 @@ namespace Arbitarr.Api.Rendering;
 /// 0003's de-rank-never-discard to this axis: the ordering carries the preference, the set carries
 /// the options. Dropping them would express the preference by destroying the alternative.</para>
 ///
-/// <para><b>The fallback grab is NOT reachable yet, and this note must not be read as saying it
-/// is.</b> Retaining the members is what makes it possible to OFFER one later; it does not offer
-/// one today, because <c>SearchEndpoint</c> registers only each group's representative in the
-/// release lookup, so a member's <see cref="ProxyGuid"/> resolves to nothing at the download proxy.
-/// Registering members is a follow-up (its own bead), deliberately not done here. What ships is the
-/// retention and the ordering; the affordance that consumes them is the next step.</para>
+/// <para><b>The fallback grab is reachable (arb-vlsu).</b> Retaining the members is what makes it
+/// possible to OFFER one, and <c>SearchEndpoint</c> now registers every group member — not only the
+/// representative — in the release lookup (both the in-memory tier and the durable
+/// <c>IReleaseLookupStore</c>), each under its own <see cref="ProxyGuid"/>, so a member resolves at
+/// the download proxy exactly as its representative does.</para>
 ///
 /// <para>Held on the representative rather than as a side record because the source name dedup
 /// orders by already lives here, not on <see cref="ReleaseCandidate"/>, and because every

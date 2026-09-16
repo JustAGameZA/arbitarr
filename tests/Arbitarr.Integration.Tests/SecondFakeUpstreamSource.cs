@@ -16,24 +16,33 @@ internal sealed class SecondFakeUpstreamSource : IUpstreamSource
     private readonly bool _throwsRequestLimitReached;
     private readonly Action<SearchQuery>? _onSearch;
     private readonly Exception? _downloadException;
+    private readonly byte[] _downloadPayload;
 
     /// <param name="downloadException">
     /// Thrown by <see cref="FetchDownloadAsync"/> instead of returning a payload (arb-apj), so a
     /// test can drive the download proxy's refusal path through the REAL host composition rather
     /// than calling the endpoint directly. Null keeps the original behaviour: an empty stream.
     /// </param>
+    /// <param name="downloadPayload">
+    /// The bytes <see cref="FetchDownloadAsync"/> returns when <paramref name="downloadException"/>
+    /// is null (arb-vlsu). Defaults to empty, matching every pre-existing caller's behaviour byte for
+    /// byte; a test that needs to prove WHICH source served a grab (rather than only that one did)
+    /// supplies a payload identifying itself.
+    /// </param>
     public SecondFakeUpstreamSource(
         string name,
         IReadOnlyList<ReleaseCandidate>? searchResults = null,
         bool throwsRequestLimitReached = false,
         Action<SearchQuery>? onSearch = null,
-        Exception? downloadException = null)
+        Exception? downloadException = null,
+        byte[]? downloadPayload = null)
     {
         Name = name;
         _searchResults = searchResults ?? Array.Empty<ReleaseCandidate>();
         _throwsRequestLimitReached = throwsRequestLimitReached;
         _onSearch = onSearch;
         _downloadException = downloadException;
+        _downloadPayload = downloadPayload ?? Array.Empty<byte>();
     }
 
     public string Name { get; }
@@ -66,6 +75,6 @@ internal sealed class SecondFakeUpstreamSource : IUpstreamSource
             throw _downloadException;
         }
 
-        return Task.FromResult<Stream>(new MemoryStream());
+        return Task.FromResult<Stream>(new MemoryStream(_downloadPayload));
     }
 }
