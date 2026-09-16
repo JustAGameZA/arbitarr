@@ -78,51 +78,64 @@ function SuppressionsTable({ entries }: { entries: SuppressionViewEntry[] }) {
           </tr>
         </thead>
         <tbody>
-          {entries.map((entry, index) => (
-            <Fragment key={`${entry.occurredAt}:${entry.releaseIdentifier}:${index}`}>
-              <tr>
-                <td>{formatTimestamp(entry.occurredAt)}</td>
-                <td className={local.identifier}>{entry.releaseIdentifier}</td>
-                <td>{entry.queryKey}</td>
-                {/* The layer that acted: a rule name for the rule-engine
-                    layers, or a stable label such as "ai"/"pass" for the
-                    others. This is the attribution AC11 asks for. */}
-                <td>
-                  <span className={styles.badge}>{entry.layer}</span>
-                </td>
-                <td>{entry.reason}</td>
-                {/* shadowMode means the decision was RECORDED BUT NOT ENFORCED.
-                    The legacy page printed the raw flag as "yes"/"no" under a
-                    "Shadow Mode" heading, which inverts the sense an operator
-                    reads at a glance: "yes" looked like the suppression
-                    happened. Naming the column for the consequence removes the
-                    double negative. */}
-                <td>
-                  {entry.shadowMode ? (
-                    <span className={`${styles.badge} ${styles.badgeWarn}`}>Shadow only</span>
-                  ) : (
-                    <span className={`${styles.badge} ${styles.badgeDanger}`}>Suppressed</span>
-                  )}
-                </td>
-                <td>
-                  <button
-                    type="button"
-                    className={styles.buttonSecondary}
-                    onClick={() => setOpenRow(openRow === index ? null : index)}
-                  >
-                    {openRow === index ? 'Hide titles' : 'Show titles'}
-                  </button>
-                </td>
-              </tr>
-              {openRow === index && (
+          {entries.map((entry, index) => {
+            const isOpen = openRow === index;
+            // index alone is unique within this rendered array -- that is
+            // all aria-controls needs. The ISO timestamp's ':' and '+' are
+            // valid there (getElementById and AT IDREF resolution do not
+            // care), but they make the id unsafe to use in a bare '#id' CSS
+            // selector, so they are left out rather than included for
+            // "extra" uniqueness the index doesn't need.
+            const detailId = `suppression-titles-${index}`;
+
+            return (
+              <Fragment key={`${entry.occurredAt}:${entry.releaseIdentifier}:${index}`}>
                 <tr>
-                  <td colSpan={7}>
-                    <Explanation releaseIdentifier={entry.releaseIdentifier} />
+                  <td>{formatTimestamp(entry.occurredAt)}</td>
+                  <td className={local.identifier}>{entry.releaseIdentifier}</td>
+                  <td>{entry.queryKey}</td>
+                  {/* The layer that acted: a rule name for the rule-engine
+                      layers, or a stable label such as "ai"/"pass" for the
+                      others. This is the attribution AC11 asks for. */}
+                  <td>
+                    <span className={styles.badge}>{entry.layer}</span>
+                  </td>
+                  <td>{entry.reason}</td>
+                  {/* shadowMode means the decision was RECORDED BUT NOT ENFORCED.
+                      The legacy page printed the raw flag as "yes"/"no" under a
+                      "Shadow Mode" heading, which inverts the sense an operator
+                      reads at a glance: "yes" looked like the suppression
+                      happened. Naming the column for the consequence removes the
+                      double negative. */}
+                  <td>
+                    {entry.shadowMode ? (
+                      <span className={`${styles.badge} ${styles.badgeWarn}`}>Shadow only</span>
+                    ) : (
+                      <span className={`${styles.badge} ${styles.badgeDanger}`}>Suppressed</span>
+                    )}
+                  </td>
+                  <td>
+                    <button
+                      type="button"
+                      className={styles.buttonSecondary}
+                      aria-expanded={isOpen}
+                      aria-controls={isOpen ? detailId : undefined}
+                      onClick={() => setOpenRow(isOpen ? null : index)}
+                    >
+                      {isOpen ? 'Hide titles' : 'Show titles'}
+                    </button>
                   </td>
                 </tr>
-              )}
-            </Fragment>
-          ))}
+                {isOpen && (
+                  <tr>
+                    <td id={detailId} colSpan={7}>
+                      <Explanation releaseIdentifier={entry.releaseIdentifier} />
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
         </tbody>
       </table>
     </div>

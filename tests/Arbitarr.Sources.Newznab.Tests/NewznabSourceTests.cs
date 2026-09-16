@@ -265,23 +265,132 @@ public class NewznabSourceTests
         Assert.Equal(NewznabSourceOptions.DefaultRequestTimeout, client.Timeout);
     }
 
+    // ---------------------------------------------------------------------
+    // Proxy-mode download (arb-x7w8.13). Redirect mode is arb-x7w8.14 and is
+    // deliberately not exercised here — this adapter only ever fetches bytes.
+    // ---------------------------------------------------------------------
+
+    private static Arbitarr.Core.Releases.ReleaseCandidate Candidate(string link) =>
+        new()
+        {
+            Title = "Example",
+            Guid = "guid-1",
+            PubDate = DateTimeOffset.UnixEpoch,
+            Link = new Uri(link),
+        };
+
+    private static FakeHttpMessageHandler AnsweringWithPayload(byte[] payload) =>
+        new(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(payload),
+        });
+
+    [Fact]
+    public async Task FetchDownloadAsync_FetchesTheOriginPinnedLinkAndReturnsTheBody()
+    {
+        var payload = "nzb-bytes"u8.ToArray();
+        var handler = AnsweringWithPayload(payload);
+        var source = new NewznabSource(MakeOptions(), new HttpClient(handler), new FakeCircuitBreaker());
+
+        await using var stream = await source.FetchDownloadAsync(Candidate("http://indexer.example:9117/download/1"));
+        using var buffer = new MemoryStream();
+        await stream.CopyToAsync(buffer);
+
+        Assert.Equal(payload, buffer.ToArray());
+        Assert.Equal(
+            new Uri("http://indexer.example:9117/download/1"),
+            Assert.Single(handler.RequestedUris));
+    }
+
     /// <summary>
-    /// Downloads are arb-x7w8.13/.14, not this adapter. The refusal is asserted so the unimplemented
-    /// path fails loudly rather than being reachable and silently bypassing the access-mode
-    /// decision that bead exists to make.
+    /// SEC-M1 at FETCH time. The candidate is mutable and has travelled through the merge, dedup and
+    /// lookup stores since its link was pinned at parse time, so the pin is re-asserted here. Each
+    /// case is a separate origin component because <see cref="Uri"/> treats them differently, and a
+    /// guard that compared only the host would pass three of these while sending this source's
+    /// request to a host the operator never configured.
+    ///
+    /// <para><b>No request may be issued at all.</b> Asserting only the throw would pass against an
+    /// implementation that fetched first and refused afterwards — by which point the request has
+    /// already gone. The handler's recorded URI list is what makes the refusal mean "did not
+    /// fetch".</para>
+    /// </summary>
+    [Theory]
+    // A different host entirely: the SSRF case the pin exists for.
+    [InlineData("http://attacker.example:9117/download/1")]
+    // Same host, different port — a different origin, and commonly a different service on a LAN.
+    [InlineData("http://indexer.example:9999/download/1")]
+    // Scheme upgrade: same host and port, but not the configured origin (arb-07ei).
+    [InlineData("https://indexer.example:9117/download/1")]
+    // Userinfo: Uri.Host excludes it, so scheme/host/port all match while a Basic-auth credential
+    // this deployment never configured rides into the request's authority — which is logged in full
+    // (neither the framework's query-string redaction nor LogMessageCleanser covers it, CLAUDE.md §1).
+    [InlineData("http://user:pw@indexer.example:9117/download/1")]
+    public async Task FetchDownloadAsync_RefusesALinkThatIsNotOnThisSourcesOrigin_WithoutIssuingARequest(string link)
+    {
+        var handler = AnsweringWithPayload("nzb-bytes"u8.ToArray());
+        var source = new NewznabSource(MakeOptions(), new HttpClient(handler), new FakeCircuitBreaker());
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => source.FetchDownloadAsync(Candidate(link)));
+
+        Assert.Empty(handler.RequestedUris);
+    }
+
+    /// <summary>
+    /// The refusal message names the CONFIGURED source and nothing else. The link is
+    /// upstream-supplied text, and rendering it here would print an attacker-chosen host into the
+    /// persistent log store served at <c>/api/admin/logs</c> (CLAUDE.md §1) by way of the exception's
+    /// own rendering.
     /// </summary>
     [Fact]
-    public async Task FetchDownloadAsync_IsRefused()
+    public async Task FetchDownloadAsync_RefusalMessage_DoesNotRenderTheRefusedLink()
     {
         var source = new NewznabSource(MakeOptions(), new HttpClient(Answering(HttpStatusCode.OK)), new FakeCircuitBreaker());
 
-        await Assert.ThrowsAsync<NotSupportedException>(
-            () => source.FetchDownloadAsync(new Arbitarr.Core.Releases.ReleaseCandidate
-            {
-                Title = "Example",
-                Guid = "guid-1",
-                PubDate = DateTimeOffset.UnixEpoch,
-                Link = new Uri("http://indexer.example:9117/download/1"),
-            }));
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(
+            () => source.FetchDownloadAsync(Candidate("http://attacker.example:9117/download/1")));
+
+        Assert.Contains("test-indexer", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("attacker.example", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// A 3xx on the download path is refused as the typed, non-breaker answer rather than followed —
+    /// following it would carry the request to whatever host the Location header named. The breaker
+    /// records a SUCCESS: the upstream answered, and HalfOpen is only left by a recorded outcome.
+    /// </summary>
+    [Fact]
+    public async Task FetchDownloadAsync_Refuses3xx_AsUpstreamRedirectRefused_AndRecordsASuccess()
+    {
+        var breaker = new FakeCircuitBreaker();
+        var source = new NewznabSource(MakeOptions(), new HttpClient(Answering(HttpStatusCode.Found)), breaker);
+
+        await Assert.ThrowsAsync<UpstreamRedirectRefusedException>(
+            () => source.FetchDownloadAsync(Candidate("http://indexer.example:9117/download/1")));
+
+        Assert.Equal(1, breaker.SuccessCount);
+        Assert.Empty(breaker.Failures);
+    }
+
+    [Fact]
+    public async Task FetchDownloadAsync_Upstream429_SurfacesAsRequestLimitReached()
+    {
+        var source = new NewznabSource(MakeOptions(), new HttpClient(Answering(HttpStatusCode.TooManyRequests)), new FakeCircuitBreaker());
+
+        await Assert.ThrowsAsync<RequestLimitReachedException>(
+            () => source.FetchDownloadAsync(Candidate("http://indexer.example:9117/download/1")));
+    }
+
+    [Fact]
+    public async Task FetchDownloadAsync_WithAnOpenBreaker_ThrowsSourceUnavailable_WithoutIssuingARequest()
+    {
+        var handler = AnsweringWithPayload("nzb-bytes"u8.ToArray());
+        var breaker = new FakeCircuitBreaker();
+        breaker.SetCanCall(false);
+        var source = new NewznabSource(MakeOptions(), new HttpClient(handler), breaker);
+
+        await Assert.ThrowsAsync<SourceUnavailableException>(
+            () => source.FetchDownloadAsync(Candidate("http://indexer.example:9117/download/1")));
+
+        Assert.Empty(handler.RequestedUris);
     }
 }

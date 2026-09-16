@@ -631,13 +631,16 @@ public sealed class BudgetedUpstreamSourceTests : IDisposable
         await Assert.ThrowsAsync<SourceUnavailableException>(
             () => resolved[0].FetchDownloadAsync(CreateRelease("Blocked")));
 
-        // The unlimited source is let THROUGH the gate and reaches the ADAPTER, which refuses a
-        // direct-indexer download itself (NewznabSource: that path is arb-x7w8.13/.14). That the
-        // refusal comes from the adapter and NOT from the gate is the assertion — a different
-        // exception type, thrown from a different layer, so the two cannot be confused. Nothing
+        // The unlimited source is let THROUGH the gate and reaches NewznabSource.FetchDownloadAsync,
+        // which refuses the fetch itself: the release's link is not same-origin with the configured
+        // indexer's BaseUrl, so the adapter's own origin pin (arb-x7w8.13/.14) throws before any
+        // network call. That the refusal comes from the ADAPTER and NOT from the gate — a different
+        // exception type (HttpRequestException, not SourceUnavailableException), thrown from a
+        // different layer — is itself the proof that the gate let this source through. Nothing
         // reaches the network either way.
-        await Assert.ThrowsAsync<NotSupportedException>(
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(
             () => resolved[1].FetchDownloadAsync(CreateRelease("Allowed")));
+        Assert.Contains("is not same-origin", ex.Message);
     }
 
     // ---- Concurrency: the search fan-out is parallel --------------------------------------------

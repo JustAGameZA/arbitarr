@@ -163,7 +163,7 @@ public static class DownloadProxyEndpoint
         catch (HttpRequestException)
         {
             // SEC-M1: covers both a genuinely failed upstream request and the origin-mismatch
-            // guard NzbHydraSource.FetchDownloadAsync throws when the resolved link's
+            // guard the source adapters' FetchDownloadAsync throws when the resolved link's
             // scheme/host/port no longer matches the configured upstream origin at fetch time.
             return Results.StatusCode(StatusCodes.Status502BadGateway);
         }
