@@ -194,17 +194,10 @@ public sealed class ProxyDownloadIndexerKeyNeverLeavesTheProcessTests : IAsyncLi
         Assert.Contains(_handler.RequestedUris, uri => uri.Query.Contains(IndexerKey, StringComparison.Ordinal));
 
         // SURFACE 1: every response header, name and value, on the download response.
-        foreach (var header in response.Headers.Concat(response.Content.Headers))
-        {
-            Assert.DoesNotContain(IndexerKey, header.Key, StringComparison.OrdinalIgnoreCase);
-            foreach (var value in header.Value)
-            {
-                Assert.DoesNotContain(IndexerKey, value, StringComparison.OrdinalIgnoreCase);
-            }
-        }
+        AssertNoHeaderCarriesTheKey(response.Headers.Concat(response.Content.Headers));
 
         // SURFACE 2: the response body.
-        Assert.DoesNotContain(IndexerKey, body, StringComparison.OrdinalIgnoreCase);
+        AssertBodyDoesNotCarryTheKey(body);
 
         // SURFACE 3: the persistent log store, PER ROW. "Some row is clean" would pass against an
         // implementation that redacted one row and leaked on every other one.
@@ -254,27 +247,22 @@ public sealed class ProxyDownloadIndexerKeyNeverLeavesTheProcessTests : IAsyncLi
         using var client = host.CreateClient();
         _ = await client.GetAsync("/api/health");
 
-        // CONTROL 1 — HEADERS. A response carrying the key in a header fails the header loop above.
+        // CONTROL 1 — HEADERS. Feeds a response carrying the key in a header through the SAME
+        // helper the main test's header scan calls, so a change to that helper's enumeration
+        // invalidates this control too, rather than the control drifting from what is actually
+        // asserted above.
         using var leakyResponse = new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent("body"),
         };
         leakyResponse.Headers.Add("X-Upstream-Key", IndexerKey);
-        Assert.Throws<Xunit.Sdk.DoesNotContainException>(() =>
-        {
-            foreach (var header in leakyResponse.Headers.Concat(leakyResponse.Content.Headers))
-            {
-                foreach (var value in header.Value)
-                {
-                    Assert.DoesNotContain(IndexerKey, value, StringComparison.OrdinalIgnoreCase);
-                }
-            }
-        });
-
-        // CONTROL 2 — BODY. A body carrying the key fails the body assertion above.
-        var leakyBody = $"<nzb url=\"{IndexerBaseUrl}getnzb/1?apikey={IndexerKey}\" />";
         Assert.Throws<Xunit.Sdk.DoesNotContainException>(
-            () => Assert.DoesNotContain(IndexerKey, leakyBody, StringComparison.OrdinalIgnoreCase));
+            () => AssertNoHeaderCarriesTheKey(leakyResponse.Headers.Concat(leakyResponse.Content.Headers)));
+
+        // CONTROL 2 — BODY. Feeds a body carrying the key through the SAME helper the main test's
+        // body assertion calls.
+        var leakyBody = $"<nzb url=\"{IndexerBaseUrl}getnzb/1?apikey={IndexerKey}\" />";
+        Assert.Throws<Xunit.Sdk.DoesNotContainException>(() => AssertBodyDoesNotCarryTheKey(leakyBody));
 
         // CONTROL 3 — LOG STORE. Written through the REAL logger, so this proves the sink is wired
         // and that the cleanser ran on the way in, rather than that the line never arrived.
@@ -309,6 +297,30 @@ public sealed class ProxyDownloadIndexerKeyNeverLeavesTheProcessTests : IAsyncLi
         var fields = await ReadEventFieldsAsync(host);
         Assert.NotEmpty(fields);
         Assert.Contains(fields, field => field.Contains(IndexerKey, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// SURFACE 1's assertion, shared by the main test and by CONTROL 1 so the two can never drift:
+    /// a change to this enumeration changes what both check.
+    /// </summary>
+    private static void AssertNoHeaderCarriesTheKey(IEnumerable<KeyValuePair<string, IEnumerable<string>>> headers)
+    {
+        foreach (var header in headers)
+        {
+            Assert.DoesNotContain(IndexerKey, header.Key, StringComparison.OrdinalIgnoreCase);
+            foreach (var value in header.Value)
+            {
+                Assert.DoesNotContain(IndexerKey, value, StringComparison.OrdinalIgnoreCase);
+            }
+        }
+    }
+
+    /// <summary>
+    /// SURFACE 2's assertion, shared by the main test and by CONTROL 2.
+    /// </summary>
+    private static void AssertBodyDoesNotCarryTheKey(string body)
+    {
+        Assert.DoesNotContain(IndexerKey, body, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
