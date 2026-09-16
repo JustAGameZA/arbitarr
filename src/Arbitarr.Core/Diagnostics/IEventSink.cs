@@ -35,6 +35,29 @@ public enum RecordedEventKind
     /// record a failure without arming the fold.
     /// </summary>
     SourceFailed,
+
+    /// <summary>
+    /// One outbound SEARCH call to one source (arb-x7w8.10) — the per-source API hit the query
+    /// budget counts. Written at the outbound call site, never at the endpoint: see
+    /// <c>Arbitarr.Data.Entities.EventKind.SourceQueryHit</c> for why <see cref="SearchServed"/>
+    /// cannot serve this purpose.
+    /// </summary>
+    SourceQueryHit,
+
+    /// <summary>
+    /// One outbound GRAB call to one source (arb-x7w8.10) — the per-source API hit the grab budget
+    /// counts. A successful grab was recorded nowhere before this kind existed.
+    /// </summary>
+    SourceGrabHit,
+
+    /// <summary>
+    /// A source was skipped without being called (arb-x7w8.10) — budgeted, backing off, or
+    /// permanently disabled. Distinct from <see cref="SourceFailed"/> on purpose: a skip is not a
+    /// fault, and only <see cref="SourceFailed"/> arms the consecutive-failure notification fold.
+    /// Unlike a non-fault written as that kind, <c>SourceDisplayName</c> IS populated here — see
+    /// <c>Arbitarr.Data.Entities.EventKind.SourceSkipped</c>.
+    /// </summary>
+    SourceSkipped,
 }
 
 /// <summary>
