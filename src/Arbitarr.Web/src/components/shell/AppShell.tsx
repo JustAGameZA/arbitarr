@@ -37,6 +37,7 @@ export function AppShell({ children }: AppShellProps) {
   const { pathname } = useLocation();
   const density = useTableDensityStore((state) => state.density);
   const liveStatusMessage = useLiveStatusStore((state) => state.message);
+  const liveStatusSeq = useLiveStatusStore((state) => state.seq);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawerRef = useRef<HTMLElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
@@ -91,8 +92,22 @@ export function AppShell({ children }: AppShellProps) {
         per-page hook: a per-surface region is the thing this bead replaces,
         and a component that unmounts on navigation would drop whatever
         announcement was in flight when a route change happens to land.
+
+        `key={liveStatusSeq}` forces React to tear down and remount this
+        element on every `announce`, even when the new message string is
+        identical to the last one (liveStatusStore.ts's `seq`) -- without it,
+        two consecutive identical "Saved." announcements leave `state.message`
+        unchanged, AppShell (which selects the primitive `state.message`)
+        never re-renders, and the second announcement never reaches the DOM
+        for a screen reader to pick up. `seq` itself never renders, only the
+        message text does, so this does not change what is announced -- only
+        that a repeat is guaranteed to produce a DOM mutation an assistive
+        technology can detect. A live region briefly leaving and re-entering
+        the accessibility tree on each announcement is how AT already expects
+        to pick up a change to one; that already happens for every attribute
+        or text change, keyed or not.
       */}
-      <p className={styles.liveStatus} role="status" aria-live="polite">
+      <p key={liveStatusSeq} className={styles.liveStatus} role="status" aria-live="polite">
         {liveStatusMessage}
       </p>
       {/*

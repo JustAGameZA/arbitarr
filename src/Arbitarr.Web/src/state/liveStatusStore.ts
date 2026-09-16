@@ -20,10 +20,21 @@ import { create } from 'zustand';
  */
 interface LiveStatusState {
   message: string;
+  /**
+   * Monotonically increasing on every `announce`, including a repeat of the
+   * same text (Account and Notifications' "Saved." are two of seven `.success`
+   * call sites that can each fire it). `message` alone does not change on a
+   * repeat, and AppShell selects the primitive `state.message`, so a second
+   * identical announcement produced no re-render and a screen reader heard
+   * only the first "Saved." -- `seq` gives the consumer a value that always
+   * changes, keyed into the DOM so React is forced to touch the text node.
+   */
+  seq: number;
   announce: (message: string) => void;
 }
 
 export const useLiveStatusStore = create<LiveStatusState>((set) => ({
   message: '',
-  announce: (message) => set({ message }),
+  seq: 0,
+  announce: (message) => set((state) => ({ message, seq: state.seq + 1 })),
 }));

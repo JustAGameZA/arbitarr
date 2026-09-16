@@ -90,4 +90,54 @@ describe('AppShell live status region (arb-tku8)', () => {
 
     expect(screen.getByRole('status')).toHaveTextContent('Saved.');
   });
+
+  it('re-announces two consecutive identical messages, not just the first', () => {
+    // Regression test for arb-tku8's codereview-454 finding: `announce`
+    // previously only did `set({ message })`, and AppShell selected the
+    // primitive `state.message`, so a second "Saved." right after the first
+    // (Account's own save, then Notifications' test-webhook success, or the
+    // same surface saved twice) left `state.message` unchanged and produced
+    // NO DOM mutation for the second announcement -- a screen reader user
+    // hears the first "Saved." and then silence on the repeat, which looks
+    // identical to nothing having happened. This test FAILS against that
+    // implementation: a MutationObserver on the live region records exactly
+    // one mutation instead of two, because React bails out of the second
+    // render when neither `message` nor any other selected primitive changed.
+    renderShell(<p>content</p>);
+
+    const region = screen.getByRole('status');
+    const observer = new MutationObserver(() => {});
+    observer.observe(region.parentElement ?? document.body, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+    });
+
+    act(() => {
+      useLiveStatusStore.getState().announce('Saved.');
+    });
+    // takeRecords() drains synchronously so the first announcement's
+    // mutation is not merged with the second's by the observer's own
+    // microtask batching, which would undercount identical back-to-back
+    // announcements the same way the real bug does.
+    const firstAnnounceMutations = observer.takeRecords();
+
+    act(() => {
+      useLiveStatusStore.getState().announce('Saved.');
+    });
+    const secondAnnounceMutations = observer.takeRecords();
+
+    observer.disconnect();
+
+    expect(screen.getByRole('status')).toHaveTextContent('Saved.');
+    // Both announcements must be individually detectable in the DOM -- not
+    // merely "the text still says Saved." at the end, which a no-op second
+    // render would also satisfy.
+    expect(firstAnnounceMutations.length).toBeGreaterThan(0);
+    expect(secondAnnounceMutations.length).toBeGreaterThan(0);
+    // The region must still render only the message text: no visible counter
+    // or nonce alongside it. Re-queried rather than reusing `region`, which
+    // may now be a stale reference to a remounted node.
+    expect(screen.getByRole('status')).toHaveTextContent(/^Saved\.$/);
+  });
 });
