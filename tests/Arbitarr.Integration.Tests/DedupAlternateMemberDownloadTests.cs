@@ -71,9 +71,10 @@ public sealed class DedupAlternateMemberDownloadTests : IAsyncLifetime
             {
                 // Two independent fake sources, each returning one release with the same normalised
                 // title, an equal size and the same known protocol — DedupStage's three conditions —
-                // so they collapse into a single dedup group with a non-empty AlternateMembers. Source
-                // name (alphabetical: "dedup-alt-source-a" < "-b") together with AllEqualSourcePriority
-                // (Program.cs's default) makes the "a" source the deterministic representative.
+                // so they collapse into a single dedup group with a non-empty AlternateMembers. Neither
+                // fake source name is seeded as a row, so DbSourcePriorityLookup answers 0 for both, and
+                // the ordinal name tiebreak (alphabetical: "dedup-alt-source-a" < "-b") makes the "a"
+                // source the deterministic representative.
                 services.RemoveAll<IUpstreamSource>();
                 services.RemoveAll<ISourceRegistry>();
                 services.AddSingleton<IUpstreamSource>(new SecondFakeUpstreamSource(

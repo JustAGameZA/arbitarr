@@ -348,7 +348,7 @@ public static class SearchEndpoint
                 // carries the source URL, which is the one thing that must not be written there.
                 logger?.LogWarning(
                     ex,
-                    "Release lookup store write failed for {ReleaseCount} releases; the search still answered and the in-memory tier still resolves these links.",
+                    "Release lookup store write failed for {EntryCount} lookup entries (including dedup-group members); the search still answered and the in-memory tier still resolves these links.",
                     releasesToRegister.Length);
                 // See docs/adr/0015-persist-release-lookup.md's "Degradation contract" table (write side).
             }
