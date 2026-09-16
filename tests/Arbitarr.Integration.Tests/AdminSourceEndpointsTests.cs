@@ -59,6 +59,10 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
     [InlineData("PUT", SourcesRoute + "/1")]
     [InlineData("DELETE", SourcesRoute + "/1")]
     [InlineData("POST", SourcesRoute + "/1/test")]
+    // arb-x7w8.5's per-indexer caps refresh. Listed HERE by name and not covered by the sweep: it is
+    // templated, and AdminApiKeyRouteEnumerationTests skips every '{'-containing route (see the guard
+    // at its ~line 203). That sweep passing is not evidence for this route — CLAUDE.md §2.
+    [InlineData("POST", SourcesRoute + "/1/caps/refresh")]
     public async Task Every_source_route_requires_the_admin_key(string method, string path)
     {
         // AC6/D2. This covers the {id}-templated routes by name, which
@@ -121,6 +125,15 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
         // the key into an error message.
         using var testResponse = await client.PostAsync($"{SourcesRoute}/{created.Id}/test", content: null);
         bodies.Add(("POST (test)", await testResponse.Content.ReadAsStringAsync()));
+
+        // arb-x7w8.5's refresh belongs in this sweep for the same reason the test route does: it is
+        // the OTHER path that reads the key back out of storage to send it upstream. 192.0.2.30 is
+        // unroutable, so this too exercises the failure path, which is where an implementation that
+        // surfaced the fetch exception would echo the request URI — and these adapters carry the key
+        // in that URI's query string (CLAUDE.md §1: the framework's redaction covers its own log
+        // line, not an exception message a handler chose to interpolate).
+        using var refreshResponse = await client.PostAsync($"{SourcesRoute}/{created.Id}/caps/refresh", content: null);
+        bodies.Add(("POST (caps refresh)", await refreshResponse.Content.ReadAsStringAsync()));
 
         // And the settings surface, which must never carry the source:{id}:api_key row: that name
         // cannot be produced by any SettingKey enum value and GET /api/admin/settings projects from
@@ -1059,6 +1072,46 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
         // And the body really is the refusal, so the check ran against the right payload rather than
         // an empty one.
         Assert.NotEmpty(realBody);
+    }
+
+    /// <summary>
+    /// arb-x7w8.5. The refresh route answers from the source ROW, so a 404 means the row is gone —
+    /// and a real, enabled row against an unroutable address answers 200 with every family reported
+    /// as not-refreshed rather than erroring.
+    ///
+    /// <para>Both halves in one test on purpose: the 404 alone would pass identically if the route
+    /// had been mapped to something that 404s unconditionally, and the 200 alone would not show that
+    /// a missing source is distinguishable from an unreachable one. 192.0.2.30 is RFC 5737
+    /// documentation space and unroutable, so "not refreshed" here is the genuine fetch-failure
+    /// path, not a mock.</para>
+    /// </summary>
+    [Fact]
+    public async Task Caps_refresh_404s_for_an_unknown_source_and_reports_not_refreshed_for_an_unreachable_one()
+    {
+        await SeedAdminKeyAsync();
+        using var client = CreateAdminClient();
+
+        using var missing = await client.PostAsync($"{SourcesRoute}/999999/caps/refresh", content: null);
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+
+        var created = await CreateSourceAsync(
+            client, "Caps refresh probe " + Guid.NewGuid().ToString("N"), apiKey: null);
+
+        using var response = await client.PostAsync($"{SourcesRoute}/{created.Id}/caps/refresh", content: null);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var refresh = await response.Content.ReadFromJsonAsync<SourceCapsRefreshResponse>();
+        Assert.NotNull(refresh);
+
+        // Both protocol families were attempted — a route that silently refreshed one would report
+        // a single entry, and the stale half is the one a later fallback would serve (#99).
+        Assert.Equal(2, refresh!.Protocols.Count);
+        Assert.Contains(refresh.Protocols, p => p.Protocol == nameof(SearchProtocol.Torznab));
+        Assert.Contains(refresh.Protocols, p => p.Protocol == nameof(SearchProtocol.Newznab));
+
+        // Unroutable address, so nothing was fetched and nothing was written.
+        Assert.False(refresh.Refreshed);
+        Assert.All(refresh.Protocols, p => Assert.False(p.Refreshed));
     }
 
     private HttpClient CreateAdminClient()

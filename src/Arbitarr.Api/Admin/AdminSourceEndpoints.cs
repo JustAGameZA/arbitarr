@@ -143,6 +143,32 @@ public sealed record UpdateSourceRequest(
 public sealed record SourceTestResponse(bool Success, string Outcome, string Message);
 
 /// <summary>
+/// arb-x7w8.5: one protocol family's share of a caps refresh. Like <see cref="SourceTestResponse"/>
+/// this carries no upstream-derived text — see <see cref="CapsRefreshOutcome"/> for why a failed
+/// fetch is reported as a flag and never as a message.
+/// </summary>
+/// <param name="Protocol">The protocol family whose caps endpoint was asked, as its enum name.</param>
+/// <param name="Refreshed">
+/// True when the upstream answered and the stored entry was replaced. False leaves whatever was
+/// stored before untouched — a failed refresh can never blank a working entry.
+/// </param>
+public sealed record SourceCapsRefreshEntry(string Protocol, bool Refreshed);
+
+/// <summary>
+/// arb-x7w8.5: the outcome of a caps refresh — both the explicit
+/// <c>POST /api/admin/sources/{id}/caps/refresh</c> action and the fetch the create/update flow
+/// performs.
+/// </summary>
+/// <param name="Refreshed">
+/// True when at least ONE protocol family was refreshed, not an AND across the two. The families are
+/// independent endpoints, and an indexer serving only one of them — a torrent-only tracker answering
+/// torznab and 404ing newznab — has genuinely refreshed everything it has; reporting that as a
+/// failure would train an operator to ignore the indicator. Per-family detail is in
+/// <paramref name="Protocols"/> for whoever needs to see which half answered.
+/// </param>
+public sealed record SourceCapsRefreshResponse(bool Refreshed, IReadOnlyList<SourceCapsRefreshEntry> Protocols);
+
+/// <summary>
 /// #53 stage 53c: the admin-gated CRUD surface for sources, plus the §3.3 connectivity test.
 /// Every route is <c>.RequireAdminApiKey()</c> — the gate is by path prefix, never by verb, so the
 /// read (<c>GET</c>) is gated exactly like the writes: this is admin configuration, not the lite
@@ -199,6 +225,16 @@ public static class AdminSourceEndpoints
 
         endpoints.MapPost($"{SourcesRoute}/{{id:long}}/test", TestSourceAsync)
             .RequireAdminApiKey();
+
+        // arb-x7w8.5. Gated exactly like its siblings, by RequireAdminApiKey (which attaches
+        // RouteClassification.AdminMutating and the scope alongside the filter) and never by verb.
+        //
+        // TEMPLATED, SO THE ENUMERATION SWEEP DOES NOT COVER IT.
+        // AdminApiKeyRouteEnumerationTests skips every route containing '{' — a templated route
+        // needs a real value to resolve — so this route's gating is asserted BY NAME in
+        // AdminSourceEndpointsTests. The sweep passing is not evidence for this route (CLAUDE.md §2).
+        endpoints.MapPost($"{SourcesRoute}/{{id:long}}/caps/refresh", RefreshSourceCapsAsync)
+            .RequireAdminApiKey();
     }
 
     private static async Task<IResult> GetSourcesAsync(
@@ -220,6 +256,8 @@ public static class AdminSourceEndpoints
     private static async Task<IResult> CreateSourceAsync(
         [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] CreateSourceRequest? request,
         SourceRepository repository,
+        ISourceRegistry registry,
+        CapsRefresher refresher,
         CancellationToken cancellationToken)
     {
         if (request is null)
@@ -256,6 +294,22 @@ public static class AdminSourceEndpoints
                 });
 
             var response = await ToResponseAsync(source, repository, cancellationToken);
+
+            // arb-x7w8.5: the add-indexer flow fetches caps in the same round trip that saved the
+            // row, so a newly added indexer is searchable on its real capabilities immediately
+            // rather than on the first background pass — both NZBHydra2 and Prowlarr do this.
+            //
+            // AFTER the write, necessarily: the registry resolves once per scope, so resolving it
+            // earlier in this request would memoise a source set without the row just committed and
+            // this would silently refresh nothing.
+            //
+            // THE RESULT IS DISCARDED HERE ON PURPOSE, and that is a scope boundary rather than an
+            // oversight. The fetch's product is the STORED entry, which is what the search and caps
+            // paths read; returning it would change this route's 201 body, and the add-indexer FORM
+            // that would consume it is arb-x7w8.16's bead. The operator-facing per-family detail is
+            // already available, unchanged, from the explicit refresh route below.
+            _ = await RefreshCapsForAsync(source, registry, refresher, cancellationToken);
+
             return Results.Created($"{SourcesRoute}/{source.Id}", response);
         }
         catch (SourceValidationException ex)
@@ -269,6 +323,8 @@ public static class AdminSourceEndpoints
         long id,
         [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] UpdateSourceRequest? request,
         SourceRepository repository,
+        ISourceRegistry registry,
+        CapsRefresher refresher,
         CancellationToken cancellationToken)
     {
         if (request is null)
@@ -314,7 +370,15 @@ public static class AdminSourceEndpoints
                     NzbAccessMode = request.NzbAccessMode,
                 });
 
-            return Results.Ok(await ToResponseAsync(source, repository, cancellationToken));
+            var response = await ToResponseAsync(source, repository, cancellationToken);
+
+            // arb-x7w8.5, same reasoning as the create path above, and needed for the same reason it
+            // is there: an edit can change the base URL, the API path or the key, any of which makes
+            // the stored caps describe an endpoint this row no longer points at. Discarded here for
+            // the same scope reason — the stored entry is the product.
+            _ = await RefreshCapsForAsync(source, registry, refresher, cancellationToken);
+
+            return Results.Ok(response);
         }
         catch (SourceValidationException ex)
         {
@@ -377,6 +441,73 @@ public static class AdminSourceEndpoints
             Success: outcome == SourceProbeOutcome.Ok,
             Outcome: outcome.ToString(),
             Message: DescribeOutcome(outcome)));
+    }
+
+    /// <summary>
+    /// arb-x7w8.5's explicit per-indexer "Refresh caps" action. Takes no body — like the test route
+    /// the source is identified by the route id, so there is nothing to submit and therefore no
+    /// model binding that could run ahead of the admin filter.
+    ///
+    /// <para><b>The 404 is answered from the ROW, not from the registry.</b> A source that exists but
+    /// is DISABLED resolves to no adapter, and reporting that as "source 7 does not exist" would tell
+    /// an operator their indexer had been deleted. The row lookup answers existence; the registry
+    /// answers reachability, and a disabled or unresolvable source refreshes nothing — reported as
+    /// <c>refreshed: false</c> on both families, which is the honest answer and the same shape a
+    /// reachable-but-down indexer produces.</para>
+    /// </summary>
+    private static async Task<IResult> RefreshSourceCapsAsync(
+        long id,
+        SourceRepository repository,
+        ISourceRegistry registry,
+        CapsRefresher refresher,
+        CancellationToken cancellationToken)
+    {
+        var source = await repository.GetAsync(id, cancellationToken);
+        if (source is null)
+        {
+            return Results.NotFound(new { error = $"Source {id} does not exist." });
+        }
+
+        return Results.Ok(await RefreshCapsForAsync(source, registry, refresher, cancellationToken));
+    }
+
+    /// <summary>
+    /// Refreshes the stored caps for one just-written or just-identified source row, shared by the
+    /// create, update and explicit-refresh paths so all three produce the same shape and the same
+    /// failure posture.
+    ///
+    /// <para><b>Matched out of the registry by <see cref="IUpstreamSource.Name"/>, which is the row's
+    /// display name</b> — the registry is the only thing that knows how to build an adapter from a
+    /// row (its kind mapping, its per-source HttpClient and its off-origin guard all live there), and
+    /// duplicating that construction here to get one adapter would mean a second place for those
+    /// guards to be forgotten. Display names are unique: <c>SourceRepository</c> rejects a colliding
+    /// one at both write paths, so this match cannot be ambiguous.</para>
+    ///
+    /// <para><b>A source that resolves to no adapter refreshes nothing and does not fail.</b> That
+    /// covers a disabled row, an unknown kind, and a row the registry skipped for an off-origin API
+    /// path. Each is reported as not-refreshed per family rather than as an error, because the caller
+    /// here is an operator saving a form: failing the save because the new indexer was unreachable
+    /// would discard a correct configuration over a transient upstream.</para>
+    /// </summary>
+    private static async Task<SourceCapsRefreshResponse> RefreshCapsForAsync(
+        Source source,
+        ISourceRegistry registry,
+        CapsRefresher refresher,
+        CancellationToken cancellationToken)
+    {
+        var resolved = await registry.ResolveAsync(cancellationToken);
+        var upstream = resolved.FirstOrDefault(s =>
+            string.Equals(s.Name, source.DisplayName, StringComparison.Ordinal));
+
+        var outcomes = upstream is null
+            ? Array.Empty<CapsRefreshOutcome>()
+            : await refresher.RefreshAsync(upstream, cancellationToken);
+
+        return new SourceCapsRefreshResponse(
+            Refreshed: outcomes.Any(o => o.Refreshed),
+            Protocols: outcomes
+                .Select(o => new SourceCapsRefreshEntry(o.Protocol.ToString(), o.Refreshed))
+                .ToArray());
     }
 
     /// <summary>

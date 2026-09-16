@@ -32,6 +32,11 @@ namespace Arbitarr.Host.Maintenance;
 /// fail for a reason outside this process's control — a full config volume — and a box that cannot
 /// write a backup must still prune its database.
 ///
+/// arb-x7w8.5 added a FOURTH, again on the same reasoning and again isolated: re-fetching every
+/// enabled source's caps into the caps cache (<see cref="RefreshSourceCapsAsync"/>). It is the only
+/// pass here that reaches the network, so its own try/catch is what keeps a box with unreachable
+/// indexers pruning its database normally.
+///
 /// Every pass therefore touches all THREE stores under the config directory in a deliberate order:
 /// arbitarr.db (prune + vacuum), the separate log database named by
 /// <see cref="LogStore.DatabaseFileName"/> (trim), and the backup directory (take + prune). The two
@@ -131,6 +136,24 @@ public sealed class MaintenanceHostedService(
 
             try
             {
+                await RefreshSourceCapsAsync(stoppingToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                // Fourth separate catch, same rule as the three above. This is the only pass that
+                // reaches the NETWORK, so it is the one most likely to fail on a box whose indexers
+                // are down — and pruning the database must not be hostage to that.
+                // CapsRefresher already absorbs a per-source fetch failure without writing, so
+                // anything landing here is a failure to resolve the source SET at all.
+                _logger.LogError(ex, "Source caps refresh failed; will retry next cycle.");
+            }
+
+            try
+            {
                 await Task.Delay(interval, timeProvider, stoppingToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
@@ -209,6 +232,42 @@ public sealed class MaintenanceHostedService(
             .ConfigureAwait(false);
 
         await job.RunAsync(retainedCount, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// arb-x7w8.5: re-fetches every enabled source's caps into <see cref="Arbitarr.Core.Sources.ICapsCacheStore"/>
+    /// on this same cadence, so the stored value the search and caps paths serve keeps up with an
+    /// upstream that added a category — without any search ever making a live caps call.
+    ///
+    /// <para><b>It rides this timer rather than getting one of its own</b>, for the same reason the
+    /// log trim and the backup do: caps change on the order of MONTHLY (which is the whole premise of
+    /// storing them), so any cadence a maintenance pass runs at is far more frequent than the value
+    /// changes, and a second scheduler would be a second thing to reason about for no gain.</para>
+    ///
+    /// <para><b>THE LAST-KNOWN-GOOD ENTRY IS NEVER BLANKED BY A FAILED PASS.</b>
+    /// <see cref="Arbitarr.Core.Sources.CapsRefresher"/> writes only on a successful fetch, so a run
+    /// against a down indexer leaves the previous entry in place — a background pass that overwrote
+    /// the store with an empty result would defeat the aggregator's fallback on exactly the schedule
+    /// designed to keep it fresh.</para>
+    ///
+    /// <para>Resolved with <c>GetService</c> and skipped when absent, for the same reason the log trim
+    /// and the backup are: several narrower test hosts register no source registry, and maintenance of
+    /// the main database must not fail merely because one of them cannot resolve an indexer.</para>
+    /// </summary>
+    private async Task RefreshSourceCapsAsync(CancellationToken cancellationToken)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var provider = scope.ServiceProvider;
+
+        var registry = provider.GetService<Arbitarr.Core.Sources.ISourceRegistry>();
+        var refresher = provider.GetService<Arbitarr.Core.Sources.CapsRefresher>();
+        if (registry is null || refresher is null)
+        {
+            return;
+        }
+
+        var sources = await registry.ResolveAsync(cancellationToken).ConfigureAwait(false);
+        await refresher.RefreshAllAsync(sources, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

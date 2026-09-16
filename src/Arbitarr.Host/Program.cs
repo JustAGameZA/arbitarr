@@ -171,6 +171,9 @@ builder.Services.AddScoped<SourceHealthRepository>();
 builder.Services.AddScoped<IAsyncCircuitBreaker, PersistentSourceCircuitBreaker>();
 builder.Services.AddScoped<ICapsCacheStore, CapsCacheStore>();
 builder.Services.AddScoped<CapsAggregator>();
+// arb-x7w8.5: the writer side of the same store. Scoped because ICapsCacheStore is, and it holds no
+// state of its own between calls.
+builder.Services.AddScoped<CapsRefresher>();
 
 builder.Services.AddSingleton<RecentSearchLog>();
 builder.Services.AddSingleton<ObservabilityCounters>();

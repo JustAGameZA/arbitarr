@@ -7,6 +7,11 @@ namespace Arbitarr.Core.Sources;
 /// Aggregation rules (AC5):
 /// - Categories: UNION across all sources, retaining upstream names. Where sources disagree on a
 ///   name for an ID, the first configured source wins.
+/// - Book categories (the 7000 family): ALWAYS EXCLUDED, unconditionally, whatever any upstream
+///   advertises. This is not a union member that happens to be absent — it is a subtraction applied
+///   after the union, so a source advertising 7020 (even the only source doing so) cannot put it
+///   back. Arbitarr fronts Sonarr and Radarr, neither of which can act on a book result, so
+///   offering the category only produces searches whose every result is unusable.
 /// - SupportedParams: INTERSECTION across sources. A param missing from the merged set means at
 ///   least one source doesn't support it; callers should degrade to keyword search plus local
 ///   post-filtering for that source when using it — that degradation logic is out of scope here.
@@ -24,6 +29,34 @@ public sealed class CapsAggregator
 {
     /// <summary>Our own enforced limits-max value, independent of any upstream's advertised value.</summary>
     public const int EnforcedMaxPageSize = 100;
+
+    /// <summary>
+    /// Inclusive lower bound of the Newznab book category family; <see cref="BookCategoryMaxExclusive"/>
+    /// is its exclusive upper bound. The whole family is dropped from the merge — see
+    /// <see cref="IsBookCategory"/> for why the test is the FAMILY rather than an enumerated list.
+    /// </summary>
+    public const int BookCategoryMin = 7000;
+
+    /// <summary>Exclusive upper bound of the book category family. See <see cref="BookCategoryMin"/>.</summary>
+    public const int BookCategoryMaxExclusive = 8000;
+
+    /// <summary>
+    /// Whether a Newznab category id belongs to the book family, which the merge excludes
+    /// unconditionally (CONTEXT.md "Caps aggregation").
+    ///
+    /// <para>The test is the RANGE, never a list of the ids anyone has actually seen. Upstreams mint
+    /// sub-categories in this family freely (7000 Books, 7020 EBook, 7030 Comics, 7060 Mags, and
+    /// whatever a given tracker adds next), so an enumerated list is wrong the first time an upstream
+    /// advertises an id nobody wrote down — and it is wrong in the direction that FAILS OPEN, quietly
+    /// offering *arr a category whose every result it cannot act on. A range cannot be missed that
+    /// way.</para>
+    ///
+    /// <para>Public because the exclusion is a documented property of the merged caps, so a test
+    /// asserting it per category id has to agree with what this type actually does rather than
+    /// re-deriving the bound and drifting from it.</para>
+    /// </summary>
+    public static bool IsBookCategory(int categoryId) =>
+        categoryId >= BookCategoryMin && categoryId < BookCategoryMaxExclusive;
 
     private readonly ICapsCacheStore _cacheStore;
 
@@ -76,10 +109,15 @@ public sealed class CapsAggregator
                 SupportsAnimeSearch: false);
         }
 
-        // Categories: preserve everything the configured sources expose, including books.
+        // Categories: union across sources, MINUS the book family. The subtraction is applied to the
+        // union rather than to each source's list so it reads as what it is — the documented
+        // exception carved out of "offered if ANY source supports it" (CONTEXT.md "Caps
+        // aggregation"), not a per-source quirk. It is unconditional: neither the number of sources
+        // advertising 7020 nor its being advertised by only one of them can put it back.
         var unionCategories = perSourceCaps
             .SelectMany(c => c.SupportedCategories)
             .Distinct()
+            .Where(id => IsBookCategory(id) is false)
             .OrderBy(id => id)
             .ToArray();
 
