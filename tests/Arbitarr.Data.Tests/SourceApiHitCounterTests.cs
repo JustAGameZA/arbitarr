@@ -2,6 +2,7 @@ using Arbitarr.Data.Entities;
 using Arbitarr.Data.Events;
 using Arbitarr.Data.Sources;
 using Arbitarr.TestSupport;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
@@ -373,68 +374,141 @@ public sealed class SourceApiHitCounterTests : IDisposable
     }
 
     /// <summary>
-    /// arb-15u3's falsifiability requirement: measure CountAsync's wall-clock time on a table shaped
-    /// like a busy, long-lived deployment BEFORE and AFTER the (Kind, SourceDisplayName) index, and
-    /// assert the after-measurement is not slower than a generous multiple of a fresh, empty-table
-    /// baseline. Folded rows (RepeatCount), not 100k literal rows, because that is the shape
-    /// production actually produces — see SourceApiHitCounter's own doc comment on why a busy
-    /// indexer folds onto one row rather than emitting 100k distinct ones.
+    /// arb-15u3's index guard. This asserts the QUERY PLAN, not a wall-clock duration: it opens the
+    /// same real migrated SQLite database the tests above use and asks SQLite, via
+    /// <c>EXPLAIN QUERY PLAN</c>, which access path it chooses for the exact WHERE shape
+    /// <see cref="SourceApiHitCounter.CountAsync"/> issues (<c>Kind = ? AND SourceDisplayName = ?</c>),
+    /// then requires the answer to name <c>IX_Events_Kind_SourceDisplayName</c>.
     ///
-    /// Seeded across many OTHER sources and kinds so the missing index's real cost shows: without it,
-    /// CountAsync's WHERE clause on SourceDisplayName cannot narrow the scan and SQLite walks the
-    /// whole Kind partition, not just the one source under test. 100k rows split across 500 sources
-    /// approximates a long-lived multi-indexer deployment.
+    /// <para><b>It replaces a timing test that could not fail.</b> That test seeded 100k rows across
+    /// 500 sources and asserted CountAsync finished inside 2000ms. Measured on the same shape, the
+    /// UNINDEXED scan takes ~66ms and the indexed lookup ~24ms — so the ceiling it asserted was
+    /// roughly thirty times the cost of the regression it claimed to catch, and it passed just as
+    /// happily with the index dropped. Tightening the number cannot rescue it: no threshold separates
+    /// 66ms from 24ms while staying robust on a loaded CI runner. A plan assertion is what actually
+    /// distinguishes the two, and it needs no seed at all.</para>
+    ///
+    /// <para>The positive control below is what makes this one bite: it runs the same
+    /// <c>EXPLAIN QUERY PLAN</c> against a schema with the index dropped and asserts the name is
+    /// ABSENT, proving the assertion is capable of failing rather than matching something SQLite
+    /// would have said either way.</para>
     /// </summary>
     [Fact]
-    public async Task CountAsync_stays_fast_against_a_100k_row_table_dominated_by_other_sources()
+    public async Task CountAsync_query_shape_is_served_by_the_Kind_SourceDisplayName_index()
     {
-        using var context = await CreateMigratedContextAsync();
+        // Applying the migrations is what creates the index. The context is opened only for that
+        // side effect: the assertion below is about the SCHEMA the migration left on disk, which is
+        // why it goes back to the file through a raw connection rather than through EF.
+        using var migrated = await CreateMigratedContextAsync();
 
-        const int totalRows = 100_000;
-        const int otherSourceCount = 500;
+        var plan = ExplainCountAsyncQueryPlan();
 
-        for (var i = 0; i < totalRows; i++)
+        Assert.Contains("IX_Events_Kind_SourceDisplayName", plan, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The positive control for the guard above, and the whole reason it is evidence. It drops
+    /// <c>IX_Events_Kind_SourceDisplayName</c>, re-asks SQLite for the plan of the SAME query, and
+    /// asserts the name is gone — demonstrating that the assertion above would fail if the index were
+    /// ever removed, rather than passing vacuously against a string SQLite never emits either way.
+    ///
+    /// <para><b>The DROP runs inside a transaction that is always rolled back</b>, so the schema this
+    /// test observes never survives it. SQLite's DDL is transactional, which is what makes the
+    /// mutation observable without leaving a mutated schema behind; the rollback is in a
+    /// <c>finally</c> so an assertion failure cannot leak the dropped index to a later test sharing
+    /// this class's database file.</para>
+    /// </summary>
+    [Fact]
+    public async Task The_index_guard_fails_when_the_index_is_absent()
+    {
+        // Applying the migrations is what creates the index. The context is opened only for that
+        // side effect: the assertion below is about the SCHEMA the migration left on disk, which is
+        // why it goes back to the file through a raw connection rather than through EF.
+        using var migrated = await CreateMigratedContextAsync();
+
+        // Sanity: the index is present before the mutation, so the difference below is attributable
+        // to the DROP and not to a database that never had it.
+        Assert.Contains("IX_Events_Kind_SourceDisplayName", ExplainCountAsyncQueryPlan(), StringComparison.Ordinal);
+
+        using var connection = new SqliteConnection(_database.ConnectionString);
+        connection.Open();
+        using var transaction = connection.BeginTransaction();
+
+        try
         {
-            var sourceName = $"other-{i % otherSourceCount}";
-            PlantHit(
-                context,
-                sourceName,
-                EventKind.SourceQueryHit,
-                repeatCount: 1 + (i % 5),
-                occurredAt: Now.AddMinutes(-(i % 1440)));
+            using (var drop = connection.CreateCommand())
+            {
+                drop.Transaction = transaction;
+                drop.CommandText = "DROP INDEX IX_Events_Kind_SourceDisplayName;";
+                drop.ExecuteNonQuery();
+            }
+
+            var planWithoutIndex = ExplainCountAsyncQueryPlan(connection, transaction);
+
+            Assert.DoesNotContain("IX_Events_Kind_SourceDisplayName", planWithoutIndex, StringComparison.Ordinal);
+        }
+        finally
+        {
+            transaction.Rollback();
         }
 
-        PlantHit(
-            context,
-            "indexer",
-            EventKind.SourceQueryHit,
-            repeatCount: 3,
-            occurredAt: Now.AddMinutes(-5));
+        // And the schema is intact afterwards: the rollback restored the index, so this class's
+        // database file is left exactly as the migration made it.
+        Assert.Contains("IX_Events_Kind_SourceDisplayName", ExplainCountAsyncQueryPlan(), StringComparison.Ordinal);
+    }
 
-        await context.SaveChangesAsync();
+    /// <summary>
+    /// Runs <c>EXPLAIN QUERY PLAN</c> for the WHERE shape CountAsync issues and returns SQLite's
+    /// plan rows joined into one string.
+    ///
+    /// <para>The SQL here deliberately mirrors CountAsync's translated predicate —
+    /// <c>Kind = ? AND SourceDisplayName = ?</c> over <c>Events</c> — rather than reusing EF's
+    /// generated text, because the point is to pin the ACCESS PATH for that shape. If CountAsync's
+    /// filter ever changes columns, this query must change with it or the guard stops describing the
+    /// query it claims to protect.</para>
+    /// </summary>
+    private string ExplainCountAsyncQueryPlan(
+        SqliteConnection? existingConnection = null,
+        SqliteTransaction? transaction = null)
+    {
+        SqliteConnection connection;
+        SqliteConnection? owned = null;
 
-        var counter = CreateCounter(context);
+        if (existingConnection is null)
+        {
+            owned = new SqliteConnection(_database.ConnectionString);
+            owned.Open();
+            connection = owned;
+        }
+        else
+        {
+            connection = existingConnection;
+        }
 
-        // Warm up the connection/query plan once outside the timed region.
-        await counter.CountAsync("indexer", EventKind.SourceQueryHit, TimeSpan.FromHours(24));
+        try
+        {
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText =
+                "EXPLAIN QUERY PLAN " +
+                "SELECT \"OccurredAt\", \"LastRepeatedAt\", \"RepeatCount\" FROM \"Events\" " +
+                "WHERE \"Kind\" = $kind AND \"SourceDisplayName\" = $source;";
+            command.Parameters.AddWithValue("$kind", (int)EventKind.SourceQueryHit);
+            command.Parameters.AddWithValue("$source", "indexer");
 
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        var count = await counter.CountAsync("indexer", EventKind.SourceQueryHit, TimeSpan.FromHours(24));
-        stopwatch.Stop();
+            var rows = new List<string>();
+            using var reader = command.ExecuteReader();
 
-        Assert.Equal(3, count);
+            while (reader.Read())
+            {
+                rows.Add(reader.GetString(reader.GetOrdinal("detail")));
+            }
 
-        // Generous ceiling, not a tight benchmark assertion: this exists to catch a regression back
-        // to an unindexed table-wide scan, not to pin an exact number that would flake on a loaded CI
-        // runner. Measured locally against this same 100k-row/500-source shape: ~66ms with the
-        // (Kind, SourceDisplayName) index removed (temporarily reverting ArbitarrDbContext's index
-        // registration and this migration to probe), ~24ms with it in place. 2 seconds leaves wide
-        // headroom while still failing hard if the index is ever dropped and CountAsync goes back to
-        // materializing the whole Kind partition.
-        Assert.True(
-            stopwatch.ElapsedMilliseconds < 2000,
-            $"CountAsync took {stopwatch.ElapsedMilliseconds}ms against a 100k-row table across " +
-            $"{otherSourceCount} other sources; expected the (Kind, SourceDisplayName) index to keep " +
-            "this well under the ceiling.");
+            return string.Join(Environment.NewLine, rows);
+        }
+        finally
+        {
+            owned?.Dispose();
+        }
     }
 }
