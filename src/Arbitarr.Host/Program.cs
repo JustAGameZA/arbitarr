@@ -267,11 +267,12 @@ builder.Services.AddScoped<SearchResultCacheStage>();
 
 // arb-x7w8.8 / ADR 0019: the dedup stage, registered beside the cache stage it runs immediately
 // before -- PaginationSnapshotService deduplicates the merge output on the way INTO the cache, so
-// the cache holds groups. AllEqualSourcePriority is the neutral placeholder: the source registry
-// (arb-x7w8.4) replaces THIS ONE LINE with the real name->Source.Priority lookup and nothing else
-// changes, because DedupStage depends on the interface and never on a concrete lookup.
-builder.Services.AddScoped<Arbitarr.Core.Pipeline.ISourcePriorityLookup>(
-    _ => Arbitarr.Core.Pipeline.AllEqualSourcePriority.Instance);
+// the cache holds groups. arb-cvru replaces the AllEqualSourcePriority placeholder with the real
+// name->Source.Priority lookup now that the source registry (arb-x7w8.4) exposes it: DedupStage's
+// constructor never changed, because it depends only on ISourcePriorityLookup and never on a
+// concrete implementation. Scoped, matching ISourceRegistry and DedupStage's own lifetime, so a
+// priority edit is visible on the next request rather than cached for the process lifetime.
+builder.Services.AddScoped<Arbitarr.Core.Pipeline.ISourcePriorityLookup, Arbitarr.Host.Sources.DbSourcePriorityLookup>();
 builder.Services.AddScoped<DedupStage>();
 
 builder.Services.AddScoped<SearchResultRefresher>();

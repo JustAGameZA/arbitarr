@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 
-import { QueryState, errorMessage } from '../../QueryState';
+import { QueryState, errorMessage, useAnnounceOnChange } from '../../QueryState';
 import type {
   NotificationConfig,
   NotificationDeliveryOutcome,
@@ -198,6 +198,11 @@ function NotificationForm({
   const [evaluationWindow, setEvaluationWindow] = useState(config.suppressionRateWindow);
   const [triggers, setTriggers] = useState<string[]>(config.enabledTriggers);
   const [confirmingClear, setConfirmingClear] = useState(false);
+  useAnnounceOnChange(saved && rejection === null, 'Saved.');
+  useAnnounceOnChange(
+    test.isSuccess && test.data.success,
+    test.isSuccess && test.data.success ? test.data.message : '',
+  );
 
   const toggleTrigger = (name: string) =>
     setTriggers((current) =>

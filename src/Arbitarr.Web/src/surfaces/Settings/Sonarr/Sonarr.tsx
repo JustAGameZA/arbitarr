@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 
-import { QueryState, errorMessage } from '../../QueryState';
+import { QueryState, errorMessage, useAnnounceOnChange } from '../../QueryState';
 import styles from '../../surface.module.css';
 import local from './Sonarr.module.css';
 import {
@@ -102,6 +102,11 @@ function SonarrForm({
   // Starts EMPTY and is never seeded from `config` — there is nothing to seed it
   // from. See the type doc.
   const [apiKey, setApiKey] = useState('');
+  useAnnounceOnChange(saved, 'Saved.');
+  useAnnounceOnChange(
+    test.isSuccess && test.data.success,
+    test.isSuccess && test.data.success ? test.data.message : '',
+  );
 
   const submit = (event: FormEvent) => {
     event.preventDefault();

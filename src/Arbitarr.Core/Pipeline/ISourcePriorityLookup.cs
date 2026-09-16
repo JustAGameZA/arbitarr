@@ -28,11 +28,15 @@ public interface ISourcePriorityLookup
 /// the merge produced) and is still deterministic.
 /// </summary>
 /// <remarks>
-/// Registered as the default in <c>Program.cs</c> so the dedup stage is wired and testable before
-/// the source registry (arb-x7w8.4) exists to expose real priorities. When that lands it replaces
-/// this registration and nothing else changes: the stage reads the interface, never a concrete
-/// type. Zero is deliberately the same neutral value <c>Source.Priority</c> defaults to, so
-/// swapping the real lookup in cannot reorder a group whose sources were all left unranked.
+/// It was the registered default in <c>Program.cs</c> so the dedup stage could be wired and
+/// testable before the source registry (arb-x7w8.4) existed to expose real priorities; arb-cvru
+/// bound the real <c>DbSourcePriorityLookup</c> in its place. Swapping the registration was the
+/// whole change, because <see cref="IDedupStage"/> reads the interface and never a concrete type.
+///
+/// <para>It is retained as the explicit no-opinion lookup — for tests and for any caller with no
+/// stated ordering policy, as <c>DedupStage</c>'s constructor doc names it. Zero is deliberately
+/// the same neutral value <c>Source.Priority</c> defaults to, so a caller that passes this instance
+/// cannot reorder a group whose sources were all left unranked.</para>
 /// </remarks>
 public sealed class AllEqualSourcePriority : ISourcePriorityLookup
 {

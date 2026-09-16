@@ -1,7 +1,9 @@
 import type { ReactNode } from 'react';
+import { useEffect, useRef } from 'react';
 
 import { AdminKeyNotConfiguredError, AdminKeyRejectedError, ApiError } from '../api/client';
 import { serverReason } from '../api/types';
+import { useLiveStatusStore } from '../state/liveStatusStore';
 import styles from './surface.module.css';
 
 /**
@@ -43,6 +45,34 @@ interface QueryStateProps<T> {
 }
 
 /**
+ * Announces `message` through the shell's shared live region (arb-tku8) the
+ * moment `active` becomes true, and never on unmount or while `active` stays
+ * false.
+ *
+ * Deliberately keyed on the true->true edge staying silent: without the ref
+ * guard, two unrelated surfaces that both happen to render "Loading…" while
+ * mounted would each re-announce on every re-render their query causes
+ * (density toggle, an unrelated refetch), turning a screen reader's polite
+ * queue into noise. The effect fires again once `active` has been false in
+ * between, which is what a fresh pending/success cycle looks like.
+ *
+ * `role="alert"` errors are NOT routed through this -- they already interrupt
+ * on their own (25+ existing call sites), and an assertive alert queued
+ * behind a polite announcement would only delay it.
+ */
+export function useAnnounceOnChange(active: boolean, message: string): void {
+  const announce = useLiveStatusStore((state) => state.announce);
+  const wasActive = useRef(false);
+
+  useEffect(() => {
+    if (active && !wasActive.current) {
+      announce(message);
+    }
+    wasActive.current = active;
+  }, [active, message, announce]);
+}
+
+/**
  * Renders the loading / error / loaded triad for one query.
  *
  * Every admin surface needs the same three branches and the same AC6-503
@@ -51,8 +81,16 @@ interface QueryStateProps<T> {
  * exact state the review environment is always in. Centralising it means the
  * 503 affordance is proven once per surface by a test that exercises the real
  * component, not a per-surface reimplementation.
+ *
+ * The pending branch also announces "Loading…" through the shared live
+ * region (arb-tku8) -- previously a screen reader operator heard every error
+ * (role="alert") but nothing else, so a pending state that resolves into a
+ * silent success looked identical to nothing having happened at all.
  */
 export function QueryState<T>({ isPending, error, data, children }: QueryStateProps<T>) {
+  const pending = isPending || data === undefined;
+  useAnnounceOnChange(error === null || error === undefined ? pending : false, 'Loading…');
+
   if (error !== null && error !== undefined) {
     return (
       <p className={styles.error} role="alert">
@@ -61,7 +99,7 @@ export function QueryState<T>({ isPending, error, data, children }: QueryStatePr
     );
   }
 
-  if (isPending || data === undefined) {
+  if (pending) {
     return <p className={styles.muted}>Loading…</p>;
   }
 
