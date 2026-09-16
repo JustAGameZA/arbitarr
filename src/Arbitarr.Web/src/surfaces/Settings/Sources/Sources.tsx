@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { errorMessage } from '../../QueryState';
+import { QueryState, errorMessage } from '../../QueryState';
 import styles from '../../surface.module.css';
 import { useSecretEvictingMutation } from '../useSecretEvictingMutation';
 import local from './Sources.module.css';
@@ -368,131 +368,136 @@ export function SourcesSection() {
           </p>
         )}
 
-        {sources.error !== null && sources.error !== undefined ? (
-          <p className={styles.error} role="alert">
-            {errorMessage(sources.error)}
-          </p>
-        ) : sources.isPending || sources.data === undefined ? (
-          <p className={styles.muted}>Loading…</p>
-        ) : sources.data.length === 0 ? (
-          <p className={styles.empty}>
-            No sources configured — add an NZBHydra2 base URL and API key below to start searching.
-          </p>
-        ) : (
-          <div className={styles.tableScroll}>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th>Kind</th>
-                  <th>Name</th>
-                  <th>Base URL</th>
-                  <th>Enabled</th>
-                  <th>API key</th>
-                  <th>Created</th>
-                  <th>Updated</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {sources.data.map((source) => (
-                  <tr key={source.id}>
-                    <td>{source.kind}</td>
-                    <td>{source.displayName}</td>
-                    <td>
-                      <code className={local.url}>{source.baseUrl}</code>
-                    </td>
-                    <td>
-                      <span className={`${styles.badge} ${source.enabled ? styles.badgeOk : ''}`}>
-                        {source.enabled ? 'Enabled' : 'Disabled'}
-                      </span>
-                    </td>
-                    <td>
-                      {/* The entire read surface for the secret: a boolean the
-                          server derived. There is no value here to reveal,
-                          mask, or copy — SourceResponse has no field that could
-                          carry one. */}
-                      <span
-                        className={`${styles.badge} ${source.hasApiKey ? styles.badgeOk : styles.badgeWarn}`}
-                      >
-                        {source.hasApiKey ? 'Configured' : 'Not configured'}
-                      </span>
-                    </td>
-                    <td className={styles.muted}>{new Date(source.createdAt).toLocaleString()}</td>
-                    <td className={styles.muted}>{new Date(source.updatedAt).toLocaleString()}</td>
-                    <td className={local.rowActions}>
-                      <button
-                        type="button"
-                        className={styles.buttonSecondary}
-                        onClick={() => {
-                          setTestedId(source.id);
-                          test.mutate(source.id);
-                        }}
-                        disabled={test.isPending}
-                      >
-                        Test
-                      </button>
-                      <button
-                        type="button"
-                        className={styles.buttonSecondary}
-                        onClick={() => toggleEnabled(source)}
-                        disabled={update.isPending}
-                      >
-                        {source.enabled ? 'Disable' : 'Enable'}
-                      </button>
-                      <button
-                        type="button"
-                        className={styles.buttonSecondary}
-                        onClick={() => startEditing(source)}
-                      >
-                        Edit
-                      </button>
-                      {confirmingId === source.id ? (
-                        <>
+        {/* The list's pending/error/503 treatment is QueryState's, not this
+            file's (arb-z505): the four-arm ternary this replaces was a fourth
+            private copy of it, and a copy is a place the shared treatment can
+            be improved everywhere except here. The empty-list arm is NOT part
+            of that triad — an empty list is a loaded state, so it stays a
+            surface concern inside `children(data)`. */}
+        <QueryState isPending={sources.isPending} error={sources.error} data={sources.data}>
+          {(loaded) =>
+            loaded.length === 0 ? (
+              <p className={styles.empty}>
+                No sources configured — add an NZBHydra2 base URL and API key below to start
+                searching.
+              </p>
+            ) : (
+              <div className={styles.tableScroll}>
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th>Kind</th>
+                      <th>Name</th>
+                      <th>Base URL</th>
+                      <th>Enabled</th>
+                      <th>API key</th>
+                      <th>Created</th>
+                      <th>Updated</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loaded.map((source) => (
+                      <tr key={source.id}>
+                        <td>{source.kind}</td>
+                        <td>{source.displayName}</td>
+                        <td>
+                          <code className={local.url}>{source.baseUrl}</code>
+                        </td>
+                        <td>
+                          <span className={`${styles.badge} ${source.enabled ? styles.badgeOk : ''}`}>
+                            {source.enabled ? 'Enabled' : 'Disabled'}
+                          </span>
+                        </td>
+                        <td>
+                          {/* The entire read surface for the secret: a boolean the
+                              server derived. There is no value here to reveal,
+                              mask, or copy — SourceResponse has no field that could
+                              carry one. */}
+                          <span
+                            className={`${styles.badge} ${source.hasApiKey ? styles.badgeOk : styles.badgeWarn}`}
+                          >
+                            {source.hasApiKey ? 'Configured' : 'Not configured'}
+                          </span>
+                        </td>
+                        <td className={styles.muted}>{new Date(source.createdAt).toLocaleString()}</td>
+                        <td className={styles.muted}>{new Date(source.updatedAt).toLocaleString()}</td>
+                        <td className={local.rowActions}>
                           <button
                             type="button"
-                            className={styles.buttonDanger}
+                            className={styles.buttonSecondary}
                             onClick={() => {
-                              setConfirmingId(null);
-                              // remove carries only an id, never a key, so it
-                              // needs no gcTime/reset treatment — but its
-                              // rejection still has to reach the same banner.
-                              remove.mutate(source.id, {
-                                onSettled: (_data, error) =>
-                                  setWriteError(
-                                    error === null || error === undefined
-                                      ? null
-                                      : errorMessage(error),
-                                  ),
-                              });
+                              setTestedId(source.id);
+                              test.mutate(source.id);
                             }}
-                            disabled={remove.isPending}
+                            disabled={test.isPending}
                           >
-                            Confirm remove
+                            Test
                           </button>
                           <button
                             type="button"
                             className={styles.buttonSecondary}
-                            onClick={() => setConfirmingId(null)}
+                            onClick={() => toggleEnabled(source)}
+                            disabled={update.isPending}
                           >
-                            Keep
+                            {source.enabled ? 'Disable' : 'Enable'}
                           </button>
-                        </>
-                      ) : (
-                        <button
-                          type="button"
-                          className={styles.buttonDanger}
-                          onClick={() => setConfirmingId(source.id)}
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                          <button
+                            type="button"
+                            className={styles.buttonSecondary}
+                            onClick={() => startEditing(source)}
+                          >
+                            Edit
+                          </button>
+                          {confirmingId === source.id ? (
+                            <>
+                              <button
+                                type="button"
+                                className={styles.buttonDanger}
+                                onClick={() => {
+                                  setConfirmingId(null);
+                                  // remove carries only an id, never a key, so it
+                                  // needs no gcTime/reset treatment — but its
+                                  // rejection still has to reach the same banner.
+                                  remove.mutate(source.id, {
+                                    onSettled: (_data, error) =>
+                                      setWriteError(
+                                        error === null || error === undefined
+                                          ? null
+                                          : errorMessage(error),
+                                      ),
+                                  });
+                                }}
+                                disabled={remove.isPending}
+                              >
+                                Confirm remove
+                              </button>
+                              <button
+                                type="button"
+                                className={styles.buttonSecondary}
+                                onClick={() => setConfirmingId(null)}
+                              >
+                                Keep
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              className={styles.buttonDanger}
+                              onClick={() => setConfirmingId(source.id)}
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+          }
+        </QueryState>
 
         {/* Removing a source deletes its stored key with it, and the key cannot
             be read back out to restore it — so the destructive action is
