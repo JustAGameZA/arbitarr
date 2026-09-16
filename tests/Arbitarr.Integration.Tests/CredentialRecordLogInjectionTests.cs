@@ -34,9 +34,11 @@ namespace Arbitarr.Integration.Tests;
 /// argues. First, the coverage is INCOMPLETE, and it is incomplete by SHAPE rather than only by
 /// vocabulary. <c>PlaintextKey = …</c> used to be the worked example — it matched no arm, so the two
 /// types carrying a live admin credential were genuinely uncovered — until arb-cia3 taught the arm
-/// <c>plaintext…</c>; that vocabulary gap is closed, but the structural one is not, because every arm
-/// still needs a credential-shaped NAME or SCHEME adjacent to the value and a bare URL PATH SEGMENT
-/// has neither. See
+/// <c>plaintext…</c>; that vocabulary gap is closed, but the structural one is not, because every one
+/// of the four SHARED <c>CredentialPatterns</c> arms needs a credential-shaped NAME or SCHEME adjacent
+/// to the value and a bare URL PATH SEGMENT has neither. The cleanser's own fifth arm,
+/// <c>WebhookUrl</c>, is the sole exception and closes nothing here: it is HOST-scoped to Discord and
+/// Telegram webhook URLs, so it does not reach the <c>.invalid</c> host the control below uses. See
 /// <see cref="The_cleanser_does_not_cover_a_path_segment_secret_which_is_why_the_overrides_carry_the_weight"/>,
 /// which asserts that leak as a fact about this pipeline, alongside the now-covered
 /// <c>PlaintextKey</c> shape as its positive control. Second, the cleanser only runs in the LOG
@@ -265,8 +267,11 @@ public sealed class CredentialRecordLogInjectionTests : IAsyncLifetime
     /// the overrides decorative. The attribution argument therefore needs SOME shape the cleanser
     /// demonstrably does not cover, driven through the same sink with no override in play, landing
     /// VERBATIM. A secret in a URL PATH SEGMENT is that shape and is a structural gap rather than a
-    /// vocabulary one: every arm requires a credential-shaped NAME or SCHEME adjacent to the value,
-    /// and a bare path segment has neither — which is the same gap CLAUDE.md §1 and
+    /// vocabulary one: every one of the four SHARED <c>CredentialPatterns</c> arms requires a
+    /// credential-shaped NAME or SCHEME adjacent to the value, and a bare path segment has neither.
+    /// The cleanser's own fifth arm, <c>WebhookUrl</c>, DOES match a bare path segment without any
+    /// such name — but only behind a HOST-scoped prefix (Discord and Telegram webhook URLs), so it
+    /// does not reach the <c>.invalid</c> host below — which is the same gap CLAUDE.md §1 and
     /// <c>docs/standards/architecture.md</c> point at when they say such registrations need
     /// <c>.RemoveAllLoggers()</c>. Widening a name alternation can never close it, so this control
     /// cannot be invalidated by the next word added to the list.</para>
