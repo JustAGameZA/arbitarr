@@ -86,9 +86,10 @@ public sealed class ReleaseLookupPayloadSecretTests : IAsyncLifetime
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IUpstreamSource>();
-                services.RemoveAll<IReadOnlyList<IUpstreamSource>>();
-                services.AddSingleton<IReadOnlyList<IUpstreamSource>>(
-                    new IUpstreamSource[] { new SecondFakeUpstreamSource(SourceName, new[] { candidate }) });
+                services.RemoveAll<ISourceRegistry>();
+                services.AddSingleton<ISourceRegistry>(
+                    new StaticSourceRegistry(
+                        new IUpstreamSource[] { new SecondFakeUpstreamSource(SourceName, new[] { candidate }) }));
             });
         });
 

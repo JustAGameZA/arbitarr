@@ -39,7 +39,9 @@ public class SearchResultRefresherTests
         var entry = MakeEntry(new CachedSearchPayload(query, Array.Empty<RenderedRelease>()).Serialize());
 
         var source = new FakeUpstreamSource("eztv", searchResults: new[] { MakeCandidate("fresh") });
-        var refresher = new SearchResultRefresher(new UpstreamMergeStage(new[] { source }), new DedupStage(AllEqualSourcePriority.Instance));
+        var refresher = new SearchResultRefresher(
+            new UpstreamMergeStage(new StaticSourceRegistry(new[] { source })),
+            new DedupStage(AllEqualSourcePriority.Instance));
 
         var payloadJson = await refresher.RefreshAsync(entry);
 
@@ -65,7 +67,9 @@ public class SearchResultRefresherTests
     public async Task Refresh_returns_null_when_the_stored_payload_cannot_be_read()
     {
         var source = new FakeUpstreamSource("eztv", searchResults: new[] { MakeCandidate("fresh") });
-        var refresher = new SearchResultRefresher(new UpstreamMergeStage(new[] { source }), new DedupStage(AllEqualSourcePriority.Instance));
+        var refresher = new SearchResultRefresher(
+            new UpstreamMergeStage(new StaticSourceRegistry(new[] { source })),
+            new DedupStage(AllEqualSourcePriority.Instance));
 
         Assert.Null(await refresher.RefreshAsync(MakeEntry("{not valid json")));
     }
@@ -77,7 +81,9 @@ public class SearchResultRefresherTests
         var entry = MakeEntry(new CachedSearchPayload(query, Array.Empty<RenderedRelease>()).Serialize());
 
         var source = new FakeUpstreamSource("eztv", searchException: new RequestLimitReachedException());
-        var refresher = new SearchResultRefresher(new UpstreamMergeStage(new[] { source }), new DedupStage(AllEqualSourcePriority.Instance));
+        var refresher = new SearchResultRefresher(
+            new UpstreamMergeStage(new StaticSourceRegistry(new[] { source })),
+            new DedupStage(AllEqualSourcePriority.Instance));
 
         Assert.Null(await refresher.RefreshAsync(entry));
     }
@@ -88,7 +94,9 @@ public class SearchResultRefresherTests
         var query = new SearchQuery("bleach", Array.Empty<int>(), 50, SearchProtocol.Torznab);
         var entry = MakeEntry(new CachedSearchPayload(query, Array.Empty<RenderedRelease>()).Serialize());
 
-        var refresher = new SearchResultRefresher(new UpstreamMergeStage(new[] { new FakeUpstreamSource("eztv") }), new DedupStage(AllEqualSourcePriority.Instance));
+        var refresher = new SearchResultRefresher(
+            new UpstreamMergeStage(new StaticSourceRegistry(new[] { new FakeUpstreamSource("eztv") })),
+            new DedupStage(AllEqualSourcePriority.Instance));
 
         var payloadJson = await refresher.RefreshAsync(entry);
 
@@ -119,11 +127,11 @@ public class SearchResultRefresherTests
         var entry = MakeEntry(new CachedSearchPayload(query, Array.Empty<RenderedRelease>()).Serialize());
 
         var refresher = new SearchResultRefresher(
-            new UpstreamMergeStage(new[]
+            new UpstreamMergeStage(new StaticSourceRegistry(new IUpstreamSource[]
             {
                 new FakeUpstreamSource("alpha", searchResults: new[] { DuplicateOf("alpha") }),
                 new FakeUpstreamSource("beta", searchResults: new[] { DuplicateOf("beta") }),
-            }),
+            })),
             new DedupStage(AllEqualSourcePriority.Instance));
 
         var payloadJson = await refresher.RefreshAsync(entry);
@@ -206,14 +214,14 @@ public class SearchResultRefresherTests
         var entry = MakeEntry(new CachedSearchPayload(query, Array.Empty<RenderedRelease>()).Serialize());
 
         var refresher = new SearchResultRefresher(
-            new UpstreamMergeStage(new[]
+            new UpstreamMergeStage(new StaticSourceRegistry(new IUpstreamSource[]
             {
                 new FakeUpstreamSource("alpha", searchResults: new[] { DuplicateOf("alpha") }),
                 new FakeUpstreamSource("beta", searchResults: new[]
                 {
                     DuplicateOf("beta", title: "Something Else Entirely S01E01"),
                 }),
-            }),
+            })),
             new DedupStage(AllEqualSourcePriority.Instance));
 
         var payloadJson = await refresher.RefreshAsync(entry);
