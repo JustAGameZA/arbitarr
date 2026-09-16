@@ -78,6 +78,8 @@ public sealed record CreateSourceRequest(
     /// the key's redacted presence is what a diagnostic line needs; anything more belongs in a
     /// structured log argument naming the field it cares about.</para>
     /// </remarks>
+    // The null arm is deliberate and must not be unified with the unconditional overrides on
+    // SonarrCredential / NamedClientApiKey — see UpdateArrConfigRequest.ToString for why.
     public override string ToString() =>
         $"{nameof(CreateSourceRequest)} {{ {nameof(Kind)} = {Kind}, {nameof(DisplayName)} = {DisplayName}, "
         + $"{nameof(BaseUrl)} = {BaseUrl}, "
@@ -120,6 +122,8 @@ public sealed record UpdateSourceRequest(
     /// <see cref="CreateSourceRequest.ToString"/>, whose remarks carry the full reasoning — including
     /// why only the identifying fields are rendered rather than every member.
     /// </summary>
+    // The null arm is deliberate and must not be unified with the unconditional overrides on
+    // SonarrCredential / NamedClientApiKey — see UpdateArrConfigRequest.ToString for why.
     public override string ToString() =>
         $"{nameof(UpdateSourceRequest)} {{ {nameof(Kind)} = {Kind}, {nameof(DisplayName)} = {DisplayName}, "
         + $"{nameof(BaseUrl)} = {BaseUrl}, "

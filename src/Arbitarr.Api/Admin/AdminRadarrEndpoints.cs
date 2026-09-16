@@ -52,6 +52,8 @@ public sealed record UpdateRadarrConfigRequest(string? BaseUrl, string? ApiKey =
     /// <c>IHttpClientFactory</c> URI redaction nor <c>LogMessageCleanser</c> covers a value that is
     /// not in a query string (CLAUDE.md §1).
     /// </summary>
+    // The null arm is deliberate and must not be unified with the unconditional overrides on
+    // SonarrCredential / NamedClientApiKey — see UpdateArrConfigRequest.ToString for why.
     public override string ToString() =>
         $"{nameof(UpdateRadarrConfigRequest)} {{ {nameof(BaseUrl)} = {BaseUrl}, "
         + $"{nameof(ApiKey)} = {(ApiKey is null ? "null" : CredentialPatterns.Replacement)} }}";

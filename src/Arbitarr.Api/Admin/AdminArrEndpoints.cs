@@ -63,6 +63,15 @@ public sealed record UpdateArrConfigRequest(string? BaseUrl, string? ApiKey = nu
     /// nothing while making the type look safe to log. This one's address is genuinely useful and
     /// genuinely not a credential, so a safe render exists and is worth having.</para>
     /// </remarks>
+    // THE NULL ARM IS DELIBERATE, and it is NOT the unconditional posture of
+    // Arbitarr.Data.Media.SonarrCredential or Arbitarr.Host.Security.NamedClientApiKey. Do not
+    // unify the two shapes. This is a PARTIAL-UPDATE request body: a null ApiKey means "the operator
+    // submitted no key, leave the stored one alone", which is a fact about the REQUEST rather than
+    // about the secret's value — and it is the fact a "what did the client send us?" diagnostic is
+    // being read for. Rendering the marker unconditionally here would erase it; conversely, adding a
+    // presence bit to the unconditional overrides would invent a distinction their non-nullable
+    // members cannot have. The three siblings sharing this shape (UpdateRadarrConfigRequest,
+    // CreateSourceRequest, UpdateSourceRequest) point back here.
     public override string ToString() =>
         $"{nameof(UpdateArrConfigRequest)} {{ {nameof(BaseUrl)} = {BaseUrl}, "
         + $"{nameof(ApiKey)} = {(ApiKey is null ? "null" : CredentialPatterns.Replacement)} }}";
