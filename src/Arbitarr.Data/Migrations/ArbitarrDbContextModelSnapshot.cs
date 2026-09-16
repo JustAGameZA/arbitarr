@@ -191,6 +191,8 @@ namespace Arbitarr.Data.Migrations
 
                     b.HasIndex("Kind", "OccurredAt");
 
+                    b.HasIndex("Kind", "SourceDisplayName");
+
                     b.ToTable("Events");
                 });
 
