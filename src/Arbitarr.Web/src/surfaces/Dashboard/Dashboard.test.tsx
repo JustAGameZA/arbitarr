@@ -11,11 +11,16 @@ import surfaceStyles from '../surface.module.css';
 
 const status = {
   status: 'ok',
+  // `state` values match `StatusEndpoint.cs`'s `ToStateLabel` exactly: `closed` |
+  // `open` | `half-open`, lower-case with a hyphen. The fixture previously used
+  // `Healthy`/`Failed`, which that endpoint never emits -- so every source badge
+  // rendered the warn treatment regardless of its real state, and no test caught
+  // it because nothing here matched the real wire shape.
   sources: [
-    { sourceName: 'nzbhydra', state: 'Healthy', consecutiveFailures: 0, lastError: null },
+    { sourceName: 'nzbhydra', state: 'closed', consecutiveFailures: 0, lastError: null },
     {
       sourceName: 'flaky-indexer',
-      state: 'Failed',
+      state: 'open',
       consecutiveFailures: 3,
       lastError: 'upstream timed out',
     },
@@ -449,6 +454,196 @@ describe('Dashboard', () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/No sources configured/)).not.toBeInTheDocument();
+  });
+
+  /**
+   * UX candidates 8+9. `stateBadgeClass` used to match `healthy`/`failed`/`unhealthy`,
+   * which `StatusEndpoint.cs`'s `ToStateLabel` never emits -- it emits exactly
+   * `closed` | `open` | `half-open` -- so every source rendered the warn badge
+   * regardless of its real state. Asserted PER ROW, with three rows in different
+   * states in the same render, because a table-wide assertion ("some row says
+   * Healthy") would still pass an implementation that wrote one label to every row.
+   */
+  describe('source state badge (UX candidates 8+9)', () => {
+    const threeStates = {
+      ...status,
+      sources: [
+        { sourceName: 'closed-source', state: 'closed', consecutiveFailures: 0, lastError: null },
+        { sourceName: 'open-source', state: 'open', consecutiveFailures: 5, lastError: 'boom' },
+        {
+          sourceName: 'half-open-source',
+          state: 'half-open',
+          consecutiveFailures: 1,
+          lastError: null,
+        },
+      ],
+    };
+
+    it('maps each of the endpoint three states to its own operator label and badge class, per row', async () => {
+      mockApi({ ...allOk, '/api/status': { body: threeStates } });
+      renderSurface(<DashboardPage />);
+
+      const closedRow = (await screen.findByText('closed-source')).closest('tr');
+      const openRow = screen.getByText('open-source').closest('tr');
+      const halfOpenRow = screen.getByText('half-open-source').closest('tr');
+      expect(closedRow).not.toBeNull();
+      expect(openRow).not.toBeNull();
+      expect(halfOpenRow).not.toBeNull();
+
+      const closedBadge = within(closedRow as HTMLElement).getByText('Healthy');
+      expect(closedBadge.classList).toContain(surfaceStyles.badge);
+      expect(closedBadge.classList).toContain(surfaceStyles.badgeOk);
+      expect(closedBadge.classList).not.toContain(surfaceStyles.badgeWarn);
+      expect(closedBadge.classList).not.toContain(surfaceStyles.badgeDanger);
+      // The raw wire value stays available per row via the title attribute.
+      expect(closedBadge).toHaveAttribute('title', 'closed');
+
+      const openBadge = within(openRow as HTMLElement).getByText('Paused after failures');
+      expect(openBadge.classList).toContain(surfaceStyles.badge);
+      expect(openBadge.classList).toContain(surfaceStyles.badgeDanger);
+      expect(openBadge.classList).not.toContain(surfaceStyles.badgeOk);
+      expect(openBadge.classList).not.toContain(surfaceStyles.badgeWarn);
+      expect(openBadge).toHaveAttribute('title', 'open');
+
+      const halfOpenBadge = within(halfOpenRow as HTMLElement).getByText('Retrying');
+      expect(halfOpenBadge.classList).toContain(surfaceStyles.badge);
+      expect(halfOpenBadge.classList).toContain(surfaceStyles.badgeWarn);
+      expect(halfOpenBadge.classList).not.toContain(surfaceStyles.badgeOk);
+      expect(halfOpenBadge.classList).not.toContain(surfaceStyles.badgeDanger);
+      expect(halfOpenBadge).toHaveAttribute('title', 'half-open');
+    });
+
+    it('renders an unrecognised state verbatim with no ok/warn/danger badge class', async () => {
+      // A distinctive marker string rather than a plausible-looking state name, so
+      // this cannot pass by accident if some future rename of a KNOWN state happens
+      // to collide with the fixture.
+      const marker = 'quarantined-zzq47';
+      mockApi({
+        ...allOk,
+        '/api/status': {
+          body: {
+            ...status,
+            sources: [
+              { sourceName: 'mystery-source', state: marker, consecutiveFailures: 0, lastError: null },
+            ],
+          },
+        },
+      });
+      renderSurface(<DashboardPage />);
+
+      const badge = await screen.findByText(marker);
+      expect(badge.classList).toContain(surfaceStyles.badge);
+      expect(badge.classList).not.toContain(surfaceStyles.badgeOk);
+      expect(badge.classList).not.toContain(surfaceStyles.badgeWarn);
+      expect(badge.classList).not.toContain(surfaceStyles.badgeDanger);
+    });
+
+    /**
+     * `constructor` and `__proto__` are own-property misses on a plain-object
+     * lookup table that nonetheless resolve through `Object.prototype`, so a
+     * naive `table[state]` reads `Object.prototype.constructor` /
+     * `Object.prototype.__proto__` instead of hitting `=== undefined` and
+     * falling through to the verbatim-unknown-state branch. Both are asserted
+     * beside a known state in the SAME render (arb-dash-state-badge review
+     * fixup): the sibling row is the positive control proving a real state
+     * still resolves through this table while the two adversarial names do
+     * not borrow anything from its prototype chain.
+     */
+    it('renders constructor and __proto__ state values verbatim, not an inherited prototype member', async () => {
+      const withPrototypeNames = {
+        ...status,
+        sources: [
+          { sourceName: 'closed-source', state: 'closed', consecutiveFailures: 0, lastError: null },
+          {
+            sourceName: 'constructor-source',
+            state: 'constructor',
+            consecutiveFailures: 0,
+            lastError: null,
+          },
+          {
+            sourceName: 'proto-source',
+            state: '__proto__',
+            consecutiveFailures: 0,
+            lastError: null,
+          },
+        ],
+      };
+      mockApi({ ...allOk, '/api/status': { body: withPrototypeNames } });
+      renderSurface(<DashboardPage />);
+
+      // Positive control: a known state in a sibling row still renders its mapped label.
+      const closedRow = (await screen.findByText('closed-source')).closest('tr');
+      expect(closedRow).not.toBeNull();
+      const closedBadge = within(closedRow as HTMLElement).getByText('Healthy');
+      expect(closedBadge.classList).toContain(surfaceStyles.badgeOk);
+
+      const constructorRow = screen.getByText('constructor-source').closest('tr');
+      expect(constructorRow).not.toBeNull();
+      const constructorBadge = within(constructorRow as HTMLElement).getByText('constructor');
+      expect(constructorBadge.classList).toContain(surfaceStyles.badge);
+      expect(constructorBadge.classList).not.toContain(surfaceStyles.badgeOk);
+      expect(constructorBadge.classList).not.toContain(surfaceStyles.badgeWarn);
+      expect(constructorBadge.classList).not.toContain(surfaceStyles.badgeDanger);
+      expect(constructorRow?.textContent).not.toContain('undefined');
+
+      const protoRow = screen.getByText('proto-source').closest('tr');
+      expect(protoRow).not.toBeNull();
+      const protoBadge = within(protoRow as HTMLElement).getByText('__proto__');
+      expect(protoBadge.classList).toContain(surfaceStyles.badge);
+      expect(protoBadge.classList).not.toContain(surfaceStyles.badgeOk);
+      expect(protoBadge.classList).not.toContain(surfaceStyles.badgeWarn);
+      expect(protoBadge.classList).not.toContain(surfaceStyles.badgeDanger);
+      expect(protoRow?.textContent).not.toContain('undefined');
+    });
+  });
+
+  /**
+   * The blank-cell convention (`format.ts`'s U+2014) applies to all three `?? ''`
+   * cells this surface used to render, or none -- Last error, Resolved identity and
+   * Band. Asserted together so a fix that only reaches one of the three cannot pass.
+   */
+  it('renders the em-dash, not a blank cell, for a missing last error, identity and band', async () => {
+    mockApi({
+      ...allOk,
+      '/api/status': {
+        body: {
+          ...status,
+          sources: [
+            { sourceName: 'quiet-source', state: 'closed', consecutiveFailures: 0, lastError: null },
+          ],
+        },
+      },
+      '/api/searches/recent': {
+        body: [
+          {
+            receivedAt: '2026-09-06T09:59:00+00:00',
+            query: 'no identity or band',
+            resolvedIdentity: null,
+            resultCount: 0,
+            elapsedMilliseconds: 5,
+            band: null,
+          },
+        ],
+      },
+    });
+    renderSurface(<DashboardPage />);
+
+    await screen.findByText('quiet-source');
+    // Asserted per cell, not as a page-wide count: a global toHaveLength(3)
+    // proves only that three em-dashes exist SOMEWHERE, which still passes if
+    // one of the three intended cells renders something else and an unrelated
+    // fourth cell happens to also render '—'. Naming each cell's row and
+    // header column pins the dash to the specific field this bead touches.
+    const sourceRow = screen.getByText('quiet-source').closest('tr');
+    expect(sourceRow).not.toBeNull();
+    const [, , , lastErrorCell] = within(sourceRow as HTMLElement).getAllByRole('cell');
+    expect(lastErrorCell).toHaveTextContent('—');
+
+    const searchRow = screen.getByText('no identity or band').closest('tr');
+    expect(searchRow).not.toBeNull();
+    const [, , identityCell, , , bandCell] = within(searchRow as HTMLElement).getAllByRole('cell');
+    expect(identityCell).toHaveTextContent('—');
+    expect(bandCell).toHaveTextContent('—');
   });
 
   it('renders the sources table, not an empty message, when sources are present', async () => {
