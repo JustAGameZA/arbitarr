@@ -1,3 +1,4 @@
+using Arbitarr.Core.Sources;
 using Arbitarr.Data.Sources;
 using Arbitarr.TestSupport;
 using Microsoft.EntityFrameworkCore;
@@ -515,8 +516,20 @@ public sealed class SourceRepositoryTests : IDisposable
     [InlineData("Passthrough")]
     // The numeric forms, per CLAUDE.md §3: "1" is exactly how an Enum.TryParse-style reader would
     // mint the second member of a two-value set — here, the key-exposing one.
+    //
+    // EVERY ROW ABOVE AND BELOW SURVIVED arb-x7w8.14 DELIBERATELY. "redirect" and "REDIRECT" are
+    // casing variants of a value that IS now accepted in its exact form, and they must stay 400s:
+    // ordinal exact match is the mechanism, so a row is not to be deleted because its value has
+    // started to "look accepted". The numeric rows matter MORE than they did, not less — before the
+    // widening the worst a lenient parse could do was land outside a one-entry set; now there is a
+    // second member for it to mint, and it is the key-exposing one.
     [InlineData("1")]
     [InlineData("+1")]
+    // Whitespace around the numeric form, per the same §3 note: trimming does not close this hole
+    // either, because " 1 " and "+1" both parse.
+    [InlineData(" 1 ")]
+    // And whitespace around the accepted spelling itself, which is the nearest miss of all.
+    [InlineData(" Redirect ")]
     public async Task AddAsync_rejects_an_nzb_access_mode_outside_the_known_set(string accessMode)
     {
         using var context = CreateContext();
@@ -535,38 +548,56 @@ public sealed class SourceRepositoryTests : IDisposable
     }
 
     /// <summary>
-    /// The correctly-spelled <c>"Redirect"</c> is rejected too, and that is the POINT rather than an
-    /// oversight: Redirect ships OFF until arb-x7w8.14 brings the Settings UI warning that the key is
-    /// exposed to the client in that mode. Leaving it out of <c>KnownNzbAccessModes</c> makes the
-    /// owner's ship-OFF ruling a mechanism — a write is a 400 by construction — rather than a note
-    /// somebody has to remember, the same posture <c>ValidateBaseUrl</c> takes toward <c>.invalid</c>.
+    /// THE INVERSION arb-x7w8.14 OWED. This test used to assert that the correctly-spelled
+    /// <c>"Redirect"</c> was REJECTED on both write paths, and its own doc named itself as the thing
+    /// that must be changed deliberately when the bead landed — which is exactly the review step the
+    /// omission existed to force. It has now been changed, deliberately, and this is what it became.
     ///
-    /// <para>Asserted for both write paths, since either one storing it would produce a source that
-    /// exposes its key. When arb-x7w8.14 admits the value, THIS test is what must be changed
-    /// deliberately — which is exactly the review step the omission is there to force.</para>
+    /// <para><b>The both-write-paths structure is KEPT and its reason is unchanged</b>: either path
+    /// storing this value produces a source that exposes its key, so both must be exercised. Only the
+    /// expected answer flipped — a write now SUCCEEDS and the stored value actually changes, which is
+    /// the mirror image of the old test's closing <c>Assert.Equal(ProxyAccessMode, unchanged)</c>.
+    /// Reading back from the STORE rather than trusting the returned entity is what stops this passing
+    /// against an implementation that accepts the value at the validator and then drops it on the way
+    /// to the row.</para>
+    ///
+    /// <para><b>This test is not the whole of the opt-in and must not be read as it.</b> The
+    /// repository accepting the value is safe only because the Settings UI warning and the
+    /// Location-never-logged positive control shipped in the SAME commit — see
+    /// <c>SourceRepository.KnownNzbAccessModes</c>' doc, which records what had to exist together
+    /// before the guard could retire. The casing and numeric forms are still 400s, asserted by
+    /// <see cref="AddAsync_rejects_an_nzb_access_mode_outside_the_known_set"/>, whose rows were kept
+    /// deliberately and matter MORE now than they did before.</para>
     /// </summary>
     [Fact]
-    public async Task Redirect_access_mode_is_rejected_until_arb_x7w8_14_ships_its_warning()
+    public async Task Redirect_access_mode_is_accepted_on_both_write_paths_since_arb_x7w8_14()
     {
         using var context = CreateContext();
         var repository = new SourceRepository(context);
 
-        // It is not in the accepted set, by construction.
-        Assert.DoesNotContain(SourceRepository.RedirectAccessMode, SourceRepository.KnownNzbAccessModes);
+        // In the accepted set by construction — the exact inverse of what this asserted before.
+        Assert.Contains(SourceRepository.RedirectAccessMode, SourceRepository.KnownNzbAccessModes);
 
-        await Assert.ThrowsAsync<SourceValidationException>(() => repository.AddAsync(
+        // Proxy is STILL accepted and still the default. Asserted rather than assumed, because
+        // "ships OFF by default" is the owner's ruling and is what a widening like this is most
+        // likely to break without anyone noticing.
+        Assert.Contains(SourceRepository.ProxyAccessMode, SourceRepository.KnownNzbAccessModes);
+
+        var created = await repository.AddAsync(
             kind: SourceRepository.NewznabKind,
             displayName: "Redirect on create",
             baseUrl: "http://indexer.example/",
             apiKey: null,
             enabled: true,
             CancellationToken.None,
-            new SourceOptions { NzbAccessMode = SourceRepository.RedirectAccessMode }));
+            new SourceOptions { NzbAccessMode = SourceRepository.RedirectAccessMode });
 
-        Assert.Empty(await repository.GetAllAsync(CancellationToken.None));
+        context.ChangeTracker.Clear();
+        var storedAfterCreate = await repository.GetAsync(created.Id, CancellationToken.None);
+        Assert.Equal(SourceRepository.RedirectAccessMode, storedAfterCreate!.NzbAccessMode);
 
-        // And the update path cannot smuggle it in either: a source created legitimately as Proxy
-        // must not be rewritable to Redirect while the warning does not exist.
+        // The update path admits it too — and that is the ordinary route to this mode, since a source
+        // added without an opinion is created as Proxy.
         var existing = await repository.AddAsync(
             kind: SourceRepository.NewznabKind,
             displayName: "Proxy source",
@@ -575,7 +606,9 @@ public sealed class SourceRepositoryTests : IDisposable
             enabled: true,
             CancellationToken.None);
 
-        await Assert.ThrowsAsync<SourceValidationException>(() => repository.UpdateAsync(
+        Assert.Equal(SourceRepository.ProxyAccessMode, existing.NzbAccessMode);
+
+        await repository.UpdateAsync(
             existing.Id,
             kind: SourceRepository.NewznabKind,
             displayName: "Proxy source",
@@ -583,11 +616,29 @@ public sealed class SourceRepositoryTests : IDisposable
             apiKey: null,
             enabled: true,
             CancellationToken.None,
-            new SourceOptions { NzbAccessMode = SourceRepository.RedirectAccessMode }));
+            new SourceOptions { NzbAccessMode = SourceRepository.RedirectAccessMode });
 
         context.ChangeTracker.Clear();
-        var unchanged = await repository.GetAsync(existing.Id, CancellationToken.None);
-        Assert.Equal(SourceRepository.ProxyAccessMode, unchanged!.NzbAccessMode);
+        var changed = await repository.GetAsync(existing.Id, CancellationToken.None);
+        Assert.Equal(SourceRepository.RedirectAccessMode, changed!.NzbAccessMode);
+    }
+
+    /// <summary>
+    /// The mode the download route falls back to when it cannot match a source to a row is the SAME
+    /// string this repository calls its default. Pinned because the two constants live in assemblies
+    /// that cannot reference each other: <c>Arbitarr.Core</c> has no dependency on
+    /// <c>Arbitarr.Data</c>, so <c>StaticSourceRegistry.DefaultNzbAccessMode</c> has to spell
+    /// <c>"Proxy"</c> out rather than reuse <c>SourceRepository.ProxyAccessMode</c>.
+    ///
+    /// <para>Without this, renaming either constant would leave the registry's fail-closed default
+    /// naming a mode this repository does not accept — and the download route would then take its
+    /// "not exactly Redirect" branch for the right answer by accident rather than by agreement.</para>
+    /// </summary>
+    [Fact]
+    public void The_proxy_access_mode_constant_matches_the_registry_default()
+    {
+        Assert.Equal(SourceRepository.ProxyAccessMode, StaticSourceRegistry.DefaultNzbAccessMode);
+        Assert.Contains(StaticSourceRegistry.DefaultNzbAccessMode, SourceRepository.KnownNzbAccessModes);
     }
 
     /// <summary>

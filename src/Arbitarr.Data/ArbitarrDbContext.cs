@@ -360,6 +360,16 @@ public sealed class ArbitarrDbContext : DbContext
             // defaults so a row migrated in from the previous schema gets the safe value rather than
             // NULL — notably NzbAccessMode "Proxy", the mode that does NOT expose the key to the
             // client, so an upgrade never turns an existing source into an exposing one.
+            //
+            // arb-x7w8.14: that sentence now has a SIBLING and stays true because of it. "Redirect"
+            // became an accepted value, so "the mode that does not expose the key" is a real choice
+            // between two rather than a description of the only one — which is exactly why THIS
+            // DEFAULT MUST NOT CHANGE. It is what makes the owner's ship-OFF ruling hold for rows
+            // nobody edits: an existing row and a row created without an explicit mode both stay
+            // Proxy. No migration was needed for the widening (the column is already nvarchar(16)
+            // and only the ACCEPTED SET changed, in SourceRepository.KnownNzbAccessModes), and none
+            // should be added — a migration touching this default would silently opt every existing
+            // source into exposing its key.
             entity.Property(e => e.ApiPath).IsRequired().HasMaxLength(256).HasDefaultValue("/api");
             entity.Property(e => e.Priority).IsRequired().HasDefaultValue(0);
             // TimeoutSeconds, QueryLimit and GrabLimit are deliberately nullable with NO default: for

@@ -430,15 +430,36 @@ that kind selects at runtime. A kind never implements anything itself.
 (`Source.NzbAccessMode`): `Proxy`, where Arbitarr fetches the file upstream and streams
 the bytes so the indexer key never leaves the server, or `Redirect`, where Arbitarr
 answers with a `Location` pointing at the upstream URL, which carries the key to the
-client. `Proxy` is the default and today the **only accepted value** —
-`SourceRepository.RedirectAccessMode` is named but deliberately absent from
-`KnownNzbAccessModes`, so a write of it is rejected by construction; arb-x7w8.14 admits
-it together with the Settings warning, neither arriving without the other. Admitting it
-would **not** relax [ADR 0014](docs/adr/0014-refuse-upstream-download-redirects.md),
+client. Both are accepted values since arb-x7w8.14; `Proxy` remains the **default**, and
+`Redirect` is a per-indexer opt-in that ships OFF, admitted to
+`SourceRepository.KnownNzbAccessModes` in the same change as the Settings warning that
+states the key exposure — neither arrived without the other. Matched by **exact ordinal
+name**: `redirect`, `REDIRECT`, `" Redirect "` and `1` are all rejected, and the column is
+deliberately not an enum (CLAUDE.md §3).
+
+**The definition above holds for a file; it does not hold for a magnet.** A magnet link is
+answered by a redirect under **either** access mode, because it carries no fetchable body —
+so "Arbitarr fetches the file upstream and streams the bytes" is simply not available in
+that case. Nor is it a disclosure: a magnet carries an info hash and trackers, never an
+indexer credential. See **Magnet passthrough** below.
+
+`Redirect` does **not** relax [ADR 0014](docs/adr/0014-refuse-upstream-download-redirects.md),
 which refuses a 3xx in the **upstream** direction (indexer → Arbitarr). The two are
 opposite legs of the same download and the shared word "redirect" is the whole reason to
 say which leg is meant: **Upstream redirect refusal** above is about what Arbitarr will
 follow, Access mode about what Arbitarr will answer.
+[ADR 0023](docs/adr/0023-nzb-access-mode-redirect.md) carries the trade-off.
+
+**Magnet passthrough.** Arbitarr answering a download with a redirect to the release's own
+`magnet:` URI, passed through unchanged. It is **not** the `Redirect` access mode and is not
+governed by it: it happens under `Proxy` too, because a magnet names content by info hash and
+has no body to proxy. Detected on the **link's scheme**, never on the declared
+`ProtocolKind` — a protocol-silent feed item defaults to Usenet, so branching on the declared
+protocol would send a magnet down the proxy path and make Arbitarr issue an HTTP request
+against a `magnet:` URI. Unlike the `Redirect` access mode it leaks nothing confidential, so it
+needs no opt-in and no warning; like it, the URI is upstream-supplied text and must reach the
+`Location` header and nowhere else — no event, no health item, no `/api/activity`, no
+`/api/status`.
 
 **Limits unit.** The rolling window `QueryLimit` and `GrabLimit` are both counted over —
 `Hour` or `Day`, the two entries in `SourceRepository.KnownLimitsUnits`. There is **one
