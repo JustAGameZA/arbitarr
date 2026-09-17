@@ -102,7 +102,10 @@ public sealed class BudgetedSourceRegistry : ISourceRegistry
 
         var wrapped = new List<IUpstreamSource>(resolved.Count);
 
-        foreach (var (sourceId, source) in resolved)
+        // The mode is discarded here on purpose: this decorator wraps for BUDGETS, and an access
+        // mode is not a budget decision. ResolveNzbAccessModeAsync forwards to the inner registry
+        // rather than re-deriving it from the wrapped set — see that method.
+        foreach (var (sourceId, source, _) in resolved)
         {
             // configurations[sourceId] rather than TryGetValue: the id came from a row this same
             // context can read, so a miss is a broken invariant and not a case to degrade through.
@@ -115,4 +118,22 @@ public sealed class BudgetedSourceRegistry : ISourceRegistry
 
         return _wrapped = wrapped;
     }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// <para><b>FORWARDED STRAIGHT THROUGH TO THE INNER REGISTRY, and the gate deliberately does not
+    /// touch it.</b> This decorator exists to drop or throttle a source that is over its budget or
+    /// in backoff; an access mode is not a budget decision, and the wrapping does not change which
+    /// row a source came from. Answering it here from <c>_wrapped</c> instead would mean re-deriving
+    /// a row property from the decorators, which is strictly more machinery for the same
+    /// answer.</para>
+    ///
+    /// <para><b>A source the gate would DROP still answers its real mode here, and that is
+    /// correct.</b> The download route calls this only after <see cref="ResolveAsync"/> has already
+    /// handed it that source — a source the gate dropped never gets this far, because the route
+    /// answers 404 when the resolved set does not contain it. There is no path on which this returns
+    /// a mode for a source the caller was not already holding.</para>
+    /// </remarks>
+    public Task<string> ResolveNzbAccessModeAsync(string sourceName, CancellationToken cancellationToken) =>
+        _inner.ResolveNzbAccessModeAsync(sourceName, cancellationToken);
 }

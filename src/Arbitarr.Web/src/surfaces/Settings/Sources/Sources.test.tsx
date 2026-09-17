@@ -21,6 +21,9 @@ const sources = [
     baseUrl: 'http://192.0.2.10:5076',
     enabled: true,
     hasApiKey: true,
+    // The default. The second fixture is Redirect, so the edit form's seeding is
+    // exercised for BOTH modes rather than for whichever happens to come first.
+    nzbAccessMode: 'Proxy',
     createdAt: '2026-09-01T10:00:00Z',
     updatedAt: '2026-09-02T11:00:00Z',
   },
@@ -31,6 +34,7 @@ const sources = [
     baseUrl: 'http://192.0.2.20:5076',
     enabled: false,
     hasApiKey: false,
+    nzbAccessMode: 'Redirect',
     createdAt: '2026-09-03T10:00:00Z',
     updatedAt: '2026-09-04T11:00:00Z',
   },
@@ -132,6 +136,9 @@ describe('Sources section', () => {
       baseUrl: 'http://192.0.2.30:5076',
       enabled: true,
       apiKey: 'placeholder-new-key',
+      // arb-x7w8.14: always sent, and 'Proxy' unless the operator chose otherwise
+      // — the wire half of "Redirect ships OFF by default".
+      nzbAccessMode: 'Proxy',
     });
   }, TEST_TIMEOUT_MS);
 
@@ -532,5 +539,124 @@ describe('Sources section', () => {
     expect(
       await screen.findByText('Base URL must be an absolute http or https URL.'),
     ).toBeInTheDocument();
+  }, TEST_TIMEOUT_MS);
+
+  /**
+   * arb-x7w8.14 — THE EXPOSURE WARNING, WHICH IS WHY THE SERVER ACCEPTS
+   * 'Redirect' AT ALL.
+   *
+   * `SourceRepository` refused this value outright until this control existed,
+   * because the owner's ruling is that the mode ships OFF, per-indexer opt-in,
+   * AND that the operator is told what it costs. This test is the UI half of
+   * that pairing: if it is deleted, the repository's array entry has lost the
+   * thing that justified it.
+   *
+   * ASSOCIATED WITH THE CONTROL, NOT MERELY PRESENT ON THE PAGE. The assertion
+   * reads the select's `aria-describedby` and resolves it to the warning's id,
+   * because a warning a screen reader never reaches while the control has focus
+   * is decoration. Asserting only `getByText(/visible to Sonarr/)` would pass
+   * against a warning rendered in a footer three sections away.
+   */
+  it('warns that the indexer key is exposed when Redirect is chosen, and ties the warning to the control', async () => {
+    const user = userEvent.setup({ delay: null });
+    mockApi({ [SOURCES]: { body: [] } });
+    renderSurface(<SourcesSection />);
+
+    const select = await screen.findByLabelText('New source nzb access mode');
+
+    // Proxy is the initial value, and it carries NO warning -- a permanent
+    // warning beside a safe default trains an operator to ignore it.
+    expect(select).toHaveValue('Proxy');
+    expect(select).not.toHaveAttribute('aria-describedby');
+    expect(screen.queryByText(/will be visible to Sonarr/)).not.toBeInTheDocument();
+
+    await user.selectOptions(select, 'Redirect');
+
+    // THE ASSOCIATION: the id the control points at is the element carrying the
+    // warning text. Resolved through the DOM rather than asserted as a literal,
+    // so a renamed id fails here rather than silently breaking the link.
+    const describedBy = select.getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+
+    const warning = document.getElementById(describedBy!);
+    expect(warning).not.toBeNull();
+    expect(warning).toHaveTextContent(/API key will be visible to Sonarr, Radarr/);
+
+    // The consequence, the mechanism, and the way back are all stated: an
+    // operator is never shown a bare, unexplained value.
+    expect(warning).toHaveTextContent(/redirect to the indexer/);
+    expect(warning).toHaveTextContent(/Choose Proxy to keep the key on the server/);
+  }, TEST_TIMEOUT_MS);
+
+  /**
+   * The warning is on the EDIT form too, seeded from the stored mode — which is
+   * the path by which an existing source actually reaches Redirect, since a new
+   * one is created as Proxy. A test covering only the add form would leave the
+   * realistic opt-in route unwarned.
+   */
+  it('seeds the stored mode on the edit form and warns when it is Redirect', async () => {
+    const user = userEvent.setup({ delay: null });
+    mockApi({ [SOURCES]: { body: sources } });
+    renderSurface(<SourcesSection />);
+
+    // 'Spare hydra' is the Redirect fixture: the warning is present on open,
+    // without the operator touching anything.
+    await user.click(within(await rowFor('Spare hydra')).getByRole('button', { name: 'Edit' }));
+
+    const select = await screen.findByLabelText('Edit source nzb access mode');
+    expect(select).toHaveValue('Redirect');
+
+    const describedBy = select.getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+    expect(document.getElementById(describedBy!)).toHaveTextContent(
+      /API key will be visible to Sonarr, Radarr/,
+    );
+
+    // And switching back to Proxy withdraws it, so the warning tracks the
+    // current choice rather than latching on first sight of Redirect.
+    await user.selectOptions(select, 'Proxy');
+    expect(select).not.toHaveAttribute('aria-describedby');
+    expect(screen.queryByText(/will be visible to Sonarr/)).not.toBeInTheDocument();
+  }, TEST_TIMEOUT_MS);
+
+  /**
+   * The chosen mode actually reaches the wire, on both write paths. Without this
+   * the two tests above would pass against a form that displayed the control,
+   * warned correctly, and then dropped the value — the setting would read as
+   * applied while every download stayed in proxy mode.
+   *
+   * The edit body is asserted to CARRY the field, unlike `apiKey` which must be
+   * absent when untouched: the form always displays a mode, so the save must
+   * always mean it. See `UpdateSourceRequest`'s doc.
+   */
+  it('sends the chosen access mode on create and on edit', async () => {
+    const user = userEvent.setup({ delay: null });
+    const api = mockApi({ [SOURCES]: { body: [] } });
+    renderSurface(<SourcesSection />);
+
+    await user.type(await screen.findByLabelText('New source display name'), 'Redirecting hydra');
+    await user.type(screen.getByLabelText('New source base URL'), 'http://192.0.2.30:5076');
+    await user.selectOptions(screen.getByLabelText('New source nzb access mode'), 'Redirect');
+    await user.click(screen.getByRole('button', { name: 'Add source' }));
+
+    const post = api.calls.find((call) => call.method === 'POST');
+    expect(JSON.parse(post!.body!).nzbAccessMode).toBe('Redirect');
+
+    // The exact ordinal spelling the server accepts -- 'redirect' and '1' are
+    // both 400s, so this is asserted as the literal rather than case-insensitively.
+    expect(JSON.parse(post!.body!).nzbAccessMode).not.toBe('redirect');
+  }, TEST_TIMEOUT_MS);
+
+  it('sends the access mode on an edit even when the operator did not change it', async () => {
+    const user = userEvent.setup({ delay: null });
+    const api = mockApi({ [SOURCES]: { body: sources } });
+    renderSurface(<SourcesSection />);
+
+    await user.click(within(await rowFor('Spare hydra')).getByRole('button', { name: 'Edit' }));
+    await screen.findByLabelText('Edit source nzb access mode');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    const put = api.calls.find((call) => call.method === 'PUT');
+    expect(JSON.parse(put!.body!).nzbAccessMode).toBe('Redirect');
   }, TEST_TIMEOUT_MS);
 });

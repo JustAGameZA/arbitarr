@@ -385,12 +385,25 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
     }
 
     /// <summary>
-    /// arb-x7w8.14's ship-OFF ruling, enforced at the wire. The correctly-spelled <c>"Redirect"</c>
-    /// is refused on BOTH write paths, so no request shape produces a source that exposes its key to
-    /// the client. When arb-x7w8.14 lands the Settings UI warning, this test changes deliberately.
+    /// arb-x7w8.14 AT THE WIRE, INVERTED DELIBERATELY. This test previously asserted that the
+    /// correctly-spelled <c>"Redirect"</c> was refused with a 400 on BOTH write paths, and its own
+    /// doc named the arrival of the Settings UI warning as the condition under which it must change.
+    /// That warning shipped in the same commit as this change, so the opt-in is now reachable over
+    /// the wire, and this is what the test became.
+    ///
+    /// <para><b>Both paths are still exercised and the read-back still matters.</b> Only the
+    /// expected answer flipped: the writes succeed and the projected value actually changes. Reading
+    /// it back through <c>GET</c> rather than trusting the write responses is what stops this passing
+    /// against an implementation that accepted the value and then failed to project it — which would
+    /// leave the UI showing Proxy for a source that serves redirects.</para>
+    ///
+    /// <para>The mis-cased and numeric forms are unaffected and remain 400s, asserted by
+    /// <see cref="A_closed_set_column_outside_its_known_values_is_rejected_with_400"/> above. Exact
+    /// ordinal matching is still the mechanism and it matters MORE now than it did: with a second
+    /// accepted value, a lenient parse can actually reach the key-exposing mode.</para>
     /// </summary>
     [Fact]
-    public async Task Setting_the_redirect_access_mode_is_rejected_with_400_on_both_write_paths()
+    public async Task Setting_the_redirect_access_mode_is_accepted_on_both_write_paths()
     {
         await SeedAdminKeyAsync();
         using var client = CreateAdminClient();
@@ -402,9 +415,13 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
             baseUrl = "http://127.0.0.1:39",
             nzbAccessMode = SourceRepository.RedirectAccessMode,
         });
-        Assert.Equal(HttpStatusCode.BadRequest, createResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
 
-        // And a legitimately-created Proxy source cannot be rewritten to Redirect.
+        var createdRedirect = await createResponse.Content.ReadFromJsonAsync<SourceResponse>();
+        Assert.Equal(SourceRepository.RedirectAccessMode, createdRedirect!.NzbAccessMode);
+
+        // A source created WITHOUT an opinion is still Proxy, and is then opted in by update — the
+        // ordinary route an operator takes, since the add form defaults to Proxy.
         var created = await CreateSourceAsync(client, "Redirect update " + Guid.NewGuid().ToString("N"), SecretApiKey);
         Assert.Equal(SourceRepository.ProxyAccessMode, created.NzbAccessMode);
 
@@ -416,14 +433,20 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
             enabled = true,
             nzbAccessMode = SourceRepository.RedirectAccessMode,
         });
-        Assert.Equal(HttpStatusCode.BadRequest, updateResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, updateResponse.StatusCode);
 
-        // The stored source is still Proxy — the rejected update changed nothing.
+        // The stored source really changed, read back through the list projection the UI reads.
         using var readBack = await client.GetAsync(SourcesRoute);
         var sources = await readBack.Content.ReadFromJsonAsync<List<SourceResponse>>();
         Assert.Equal(
-            SourceRepository.ProxyAccessMode,
+            SourceRepository.RedirectAccessMode,
             sources!.Single(s => s.Id == created.Id).NzbAccessMode);
+
+        // PER ROW, not "some row has it" (CLAUDE.md §4): the source created as Redirect still
+        // carries its own value after the other one's update.
+        Assert.Equal(
+            SourceRepository.RedirectAccessMode,
+            sources!.Single(s => s.Id == createdRedirect.Id).NzbAccessMode);
     }
 
     /// <summary>

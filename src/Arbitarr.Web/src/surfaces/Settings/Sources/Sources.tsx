@@ -11,7 +11,36 @@ import {
   useTestSourceMutation,
   useUpdateSourceMutation,
 } from './queries';
-import type { CreateSourceRequest, SourceSummary, UpdateSourceRequest } from './types';
+import {
+  PROXY_ACCESS_MODE,
+  REDIRECT_ACCESS_MODE,
+  type CreateSourceRequest,
+  type SourceSummary,
+  type UpdateSourceRequest,
+} from './types';
+
+/**
+ * The two NZB access modes the form offers, in the order they are shown — Proxy
+ * first, because it is the default and the one that does not expose the indexer
+ * key.
+ *
+ * SPELLED EXACTLY AS THE SERVER ACCEPTS THEM. `SourceRepository` matches this
+ * value by exact ordinal name and rejects `'redirect'`, `'REDIRECT'`, `' 1 '`
+ * and `'1'` alike, so a casing or whitespace "tidy-up" here turns every save
+ * into a 400.
+ */
+const ACCESS_MODES = [PROXY_ACCESS_MODE, REDIRECT_ACCESS_MODE] as const;
+
+/**
+ * The operator-facing label for each mode. Each says what ARBITARR does, not
+ * what the setting is called, because "Redirect" alone does not tell an operator
+ * that a credential changes hands — the warning below the control carries the
+ * consequence, and this carries the behaviour.
+ */
+const ACCESS_MODE_LABELS: Record<string, string> = {
+  [PROXY_ACCESS_MODE]: 'Proxy — Arbitarr downloads the file and serves it',
+  [REDIRECT_ACCESS_MODE]: 'Redirect — send the client to the indexer',
+};
 
 /**
  * The operator-facing label for each probe outcome, keyed by the server's
@@ -59,6 +88,14 @@ interface SourceDraft {
    * nothing", which the request builders translate into an ABSENT field.
    */
   apiKey: string;
+  /**
+   * `'Proxy'` or `'Redirect'`. Seeded from the stored value on the edit form and
+   * from `PROXY_ACCESS_MODE` on the add form — never left empty, because an
+   * empty string is a 400 at the server and, more importantly, because there is
+   * no "unset" state an operator should be able to leave this in: the column
+   * always holds one of the two.
+   */
+  nzbAccessMode: string;
 }
 
 const BLANK_DRAFT: SourceDraft = {
@@ -67,6 +104,12 @@ const BLANK_DRAFT: SourceDraft = {
   baseUrl: '',
   enabled: true,
   apiKey: '',
+  /**
+   * PROXY, NOT REDIRECT, and this line is the UI half of the owner's ship-OFF
+   * ruling. A new source must never expose its indexer key because the operator
+   * added it and touched nothing else; opting in has to be a deliberate act.
+   */
+  nzbAccessMode: PROXY_ACCESS_MODE,
 };
 
 /**
@@ -82,6 +125,10 @@ const draftOf = (source: SourceSummary): SourceDraft => ({
   baseUrl: source.baseUrl,
   enabled: source.enabled,
   apiKey: '',
+  // Unlike apiKey, this DOES seed from the server value: it is not a secret, it
+  // has no write-only contract, and showing the stored mode is the whole point
+  // of putting the control on the edit form.
+  nzbAccessMode: source.nzbAccessMode,
 });
 
 /**
@@ -95,6 +142,10 @@ function toCreateRequest(draft: SourceDraft): CreateSourceRequest {
     displayName: draft.displayName,
     baseUrl: draft.baseUrl,
     enabled: draft.enabled,
+    // Always sent, unlike apiKey: the form showed the operator a mode, so the
+    // save must mean it rather than leaning on the server default happening to
+    // agree with the control's initial value.
+    nzbAccessMode: draft.nzbAccessMode,
   };
   if (draft.apiKey !== '') {
     request.apiKey = draft.apiKey;
@@ -112,6 +163,13 @@ function toCreateRequest(draft: SourceDraft): CreateSourceRequest {
  * alone" and sending an empty string would blank a working credential on an
  * unrelated edit. Three fields where absence is fatal, one where presence is —
  * see `UpdateSourceRequest`'s doc for why the contract is shaped that way.
+ *
+ * `nzbAccessMode` is a FOURTH case and is always sent. Server-side its absence
+ * means "leave the stored mode alone", so omitting it would be safe in the
+ * `apiKey` sense — but the form always DISPLAYS a mode, and a displayed value
+ * that a save does not carry is a value that can silently diverge from what is
+ * stored. For this column that divergence is the difference between the indexer
+ * key staying server-side and being handed to the client.
  */
 function toUpdateRequest(draft: SourceDraft): UpdateSourceRequest {
   const request: UpdateSourceRequest = {
@@ -119,6 +177,7 @@ function toUpdateRequest(draft: SourceDraft): UpdateSourceRequest {
     displayName: draft.displayName,
     baseUrl: draft.baseUrl,
     enabled: draft.enabled,
+    nzbAccessMode: draft.nzbAccessMode,
   };
   if (draft.apiKey !== '') {
     request.apiKey = draft.apiKey;
@@ -207,6 +266,50 @@ function SourceForm({
           onChange={(event) => set('apiKey', event.target.value)}
         />
       </label>
+      {/*
+        arb-x7w8.14 — THE EXPOSURE WARNING, AND IT IS A CO-REQUIREMENT OF THE
+        SERVER ACCEPTING 'Redirect' AT ALL. `SourceRepository` refused this value
+        outright until this control existed, because the owner's ruling is that
+        the mode ships OFF and per-indexer opt-in AND that the operator is told
+        what it costs. SettingsCatalog's discipline applied to a source column:
+        an operator is never shown a bare, unexplained value.
+
+        THE WARNING IS ASSOCIATED WITH THE CONTROL VIA aria-describedby, not
+        merely placed next to it. A warning a screen reader never reaches while
+        the select has focus is decoration; this one is announced with the
+        control, which is what makes the opt-in informed for every operator
+        rather than only the sighted ones.
+
+        RENDERED ONLY WHEN Redirect IS SELECTED. A permanent warning beside a
+        setting that is safe by default trains an operator to ignore it, and it
+        would then be ignored at the one moment it matters.
+      */}
+      <label className={styles.field}>
+        NZB access mode
+        <select
+          className={styles.input}
+          aria-label={`${idPrefix} nzb access mode`}
+          aria-describedby={
+            draft.nzbAccessMode === REDIRECT_ACCESS_MODE ? `${idPrefix}-access-mode-warning` : undefined
+          }
+          value={draft.nzbAccessMode}
+          onChange={(event) => set('nzbAccessMode', event.target.value)}
+        >
+          {ACCESS_MODES.map((mode) => (
+            <option key={mode} value={mode}>
+              {ACCESS_MODE_LABELS[mode] ?? mode}
+            </option>
+          ))}
+        </select>
+      </label>
+      {draft.nzbAccessMode === REDIRECT_ACCESS_MODE && (
+        <p id={`${idPrefix}-access-mode-warning`} className={local.accessModeWarning} role="note">
+          This indexer&rsquo;s API key will be visible to Sonarr, Radarr and anything else that can
+          read the download response: Arbitarr answers with a redirect to the indexer&rsquo;s own
+          URL, and that URL contains the key. Redirect mode saves Arbitarr the download bandwidth.
+          Choose Proxy to keep the key on the server.
+        </p>
+      )}
       <label className={styles.checkboxField}>
         <input
           type="checkbox"

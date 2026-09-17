@@ -74,3 +74,4 @@ of a superseded ADR is what stops the same rejected option being proposed again.
 | [0020](0020-api-hit-budget-and-durable-backoff.md) | API-hit budgets and backoff state are durable and operator-visible, derived from the events store, and separate from the circuit breaker |
 | [0021](0021-cardigann-out-of-v1.md) | Cardigann definitions are out of v1; Prowlarr and Jackett remain usable as ordinary Torznab sources |
 | [0022](0022-one-adapter-for-newznab-and-torznab.md) | One adapter, `NewznabSource`, serves both the `Newznab` and `Torznab` Source kinds |
+| [0023](0023-nzb-access-mode-redirect.md) | NZB access mode `Redirect` answers a download with a 302 at the indexer's own URL, disclosing that indexer's key to the client -- per indexer, off by default, with the Settings warning and the Location-never-logged test shipped in the same change |
