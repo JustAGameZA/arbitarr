@@ -385,6 +385,14 @@ builder.Services.AddScoped(sp => new Arbitarr.Data.Sources.SourceBackoffStore(
     sp.GetRequiredService<ArbitarrDbContext>(),
     sp.GetRequiredService<TimeProvider>(),
     hostStartedAt));
+// arb-x7w8.11: the READ side of the two mechanisms registered above, joining the durable backoff row
+// with the event-derived budget counts so GET /api/admin/sources can report the four operator-facing
+// states distinctly. Scoped, matching both of its dependencies — it is resolved from the request
+// scope by the admin list handler and is never held by the gate, which opens its own scopes.
+builder.Services.AddScoped(sp => new Arbitarr.Data.Sources.SourceRuntimeStateReader(
+    sp.GetRequiredService<Arbitarr.Data.Sources.SourceBackoffStore>(),
+    sp.GetRequiredService<Arbitarr.Data.Sources.SourceApiHitCounter>(),
+    sp.GetRequiredService<TimeProvider>()));
 builder.Services.AddSingleton<Arbitarr.Host.Sources.ISourceGateScopeFactory,
     Arbitarr.Host.Sources.SourceGateScopeFactory>();
 
