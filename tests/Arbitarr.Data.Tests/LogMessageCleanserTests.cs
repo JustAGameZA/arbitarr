@@ -266,9 +266,27 @@ public sealed class LogMessageCleanserTests
     }
 
     // arb-qafw: a regex timeout on one text degrades to a fixed placeholder for THAT text only.
-    // Cleanse cannot be made to time out from outside without an injectable probe (the compiled
-    // arms' matchTimeoutMilliseconds is fixed at compile time), so this drives the test-only
-    // overload the same way SanitizedErrorDescription's timeoutProbe does.
+    //
+    // arb-gbj0 — CORRECTION. The note that stood here claimed Cleanse "cannot be made to time out
+    // from outside without an injectable probe". THAT WAS FALSE, and it was measured to be false
+    // rather than argued: a single repeated word token grown to just under MaxCleanseInputLength is
+    // an unterminated [\w-] run, CredentialPatterns' NamedCredential arm scans it quadratically,
+    // and the PUBLIC single-argument Cleanse threw RegexMatchTimeoutException internally on every
+    // one of three runs. The public entry point reaches this path on its own; only the DETERMINISM
+    // needs the probe.
+    //
+    // Which is why the test below still uses the probe, and why no timing-driven test was added in
+    // its place. A test that fed a pathological string to the public overload and asserted the
+    // placeholder came back would be asserting a race against PublicMatchTimeoutMilliseconds: it
+    // passes on a slow agent and, on a faster one or a future runtime whose regex engine gets
+    // cheaper, completes the scan and returns ordinary scrubbed text. That is a flake that reads as
+    // a security regression. The probe drives the same catch with no clock in the assertion.
+    //
+    // There is also no seam that would let a test lower the timeout instead. All five arms are
+    // [GeneratedRegex] with matchTimeoutMilliseconds baked in at compile time, and the framework's
+    // REGEX_DEFAULT_MATCH_TIMEOUT override is process-global AppDomain state, which
+    // ProductionProcessGlobalStateTests exists to keep out. The probe is the seam, the same shape
+    // and for the same reason as SanitizedErrorDescription's.
 
     [Fact]
     public void A_regex_timeout_degrades_to_the_timeout_placeholder()

@@ -131,7 +131,11 @@ public static class DownloadProxyEndpoint
         // the same rule the two comments below state for a Location header and a refusal reason.
         if (release.Candidate.Link.Scheme.Equals("magnet", StringComparison.OrdinalIgnoreCase))
         {
-            return Results.Redirect(release.Candidate.Link.OriginalString);
+            // Not Results.Redirect: see RedirectWithoutLogging. A magnet carries no indexer
+            // credential, so this arm is not the one the change was made for — but it goes through
+            // the same helper anyway, because two redirect arms one screen apart with different
+            // mechanisms is how the wrong one gets copied later.
+            return RedirectWithoutLogging(release.Candidate.Link.OriginalString);
         }
 
         // arb-x7w8.14: the REDIRECT access mode. The operator has opted this source into answering
@@ -161,7 +165,17 @@ public static class DownloadProxyEndpoint
         //
         // NO LOG LINE IS WRITTEN HERE, AND THAT ABSENCE IS THE SECURITY MECHANISM — not an omission
         // to be helpfully filled in later. NZBHydra2's FileHandler logs "Redirecting to {}", i.e. it
-        // logs the key; this deliberately does not. A READER CHECKING TODAY'S PIPELINE WILL FIND
+        // logs the key; this deliberately does not.
+        //
+        // AND "HERE" ONCE MEANT ONLY THIS FILE, WHICH WAS NOT ENOUGH. This arm returned
+        // Results.Redirect, and the framework's RedirectResult logs the full destination before
+        // writing the header — so the key reached a log sink on every download while this comment
+        // truthfully said no line was written in this method. The lesson is the one the paragraph
+        // below already gives about relying on the cleanser: what matters is what the RESPONSE
+        // PIPELINE emits, not what this source file contains. See RedirectWithoutLogging for why the
+        // fix is to stop calling that helper rather than to filter the category it logs under.
+        //
+        // A READER CHECKING TODAY'S PIPELINE WILL FIND
         // NOTHING THAT WOULD LOG A Location HEADER and may conclude the guarding test is pointless:
         // it is not, and neither existing layer makes it so. DisableUriRedaction collapses the query
         // of an OUTBOUND IHttpClientFactory request URI, and in redirect mode there is no outbound
@@ -200,7 +214,10 @@ public static class DownloadProxyEndpoint
         // fail-closed answer is the one a malformed, empty or unrecognised value lands on.
         if (string.Equals(accessMode, SourceRepository.RedirectAccessMode, StringComparison.Ordinal))
         {
-            return Results.Redirect(release.Candidate.Link.OriginalString);
+            // Not Results.Redirect, and on THIS arm that is the security mechanism rather than
+            // tidiness: the framework's RedirectResult logs the whole destination, and here the
+            // destination carries the indexer's API key. See RedirectWithoutLogging.
+            return RedirectWithoutLogging(release.Candidate.Link.OriginalString);
         }
 
         try
@@ -314,6 +331,64 @@ public static class DownloadProxyEndpoint
             // guard the source adapters' FetchDownloadAsync throws when the resolved link's
             // scheme/host/port no longer matches the configured upstream origin at fetch time.
             return Results.StatusCode(StatusCodes.Status502BadGateway);
+        }
+    }
+
+    /// <summary>
+    /// A 302 at <paramref name="location"/>, written directly, USED BY BOTH REDIRECT ARMS ABOVE
+    /// INSTEAD OF <c>Results.Redirect</c>.
+    ///
+    /// <para><b>WHY NOT <c>Results.Redirect</c>, WHICH IS THE OBVIOUS CALL AND WAS WHAT THIS CODE
+    /// USED.</b> That helper returns the framework's <c>RedirectResult</c>, and that type LOGS ITS
+    /// DESTINATION — the whole URL, at <c>Information</c>, under the
+    /// <c>Microsoft.AspNetCore.Http.Result.RedirectResult</c> category, before it writes the header.
+    /// For the redirect-mode arm that URL is the indexer's own link and it carries the indexer's API
+    /// key, so the credential reached a log sink on every download. The arm's own comment above,
+    /// which says no log line is written here, was true of the code in this file and false of the
+    /// response it produced.</para>
+    ///
+    /// <para><b>Why the fix is to stop calling it rather than to filter that category out.</b> A
+    /// log-level filter is configuration, so it is operator-overridable, and a control that a
+    /// setting can switch off is not a control. It would also have to be a per-provider filter to be
+    /// worth anything, and the console provider is registered deliberately unfiltered so
+    /// <c>docker logs</c> stays the raw view — so the line would still be printed to stdout. Nor
+    /// does the sink-side scrub help: <c>LogMessageCleanser</c> runs inside
+    /// <c>SqliteLoggerProvider</c> on the way into the log store, and console output never passes
+    /// through it. Not producing the line is the only form of this that an operator cannot
+    /// accidentally undo.</para>
+    ///
+    /// <para><b>The response must stay byte-identical to what <c>Results.Redirect</c> emitted</b>,
+    /// because the existing redirect tests assert on it and because a caller is a download client:
+    /// status 302 (<c>Results.Redirect</c> with its default arguments is non-permanent and
+    /// non-preserve-method, which is 302 Found), and <c>Location</c> set to the link's
+    /// <c>OriginalString</c> VERBATIM. Assigning the raw string rather than round-tripping it
+    /// through <see cref="Uri"/> matters: re-encoding could normalise escaping inside the query and
+    /// change the key the indexer has to parse back.</para>
+    ///
+    /// <para>No logger is taken as a parameter, and that is deliberate rather than an oversight —
+    /// there is nothing here that should log, and having no <c>ILogger</c> in scope is what keeps a
+    /// later edit from helpfully adding a line. <c>RedirectAccessModeKeyNeverReachesLogsTests</c>
+    /// scans every line this host emits, at every level and every category, and is what holds
+    /// that.</para>
+    /// </summary>
+    private static IResult RedirectWithoutLogging(string location) =>
+        new NonLoggingRedirectResult(location);
+
+    /// <summary>
+    /// The minimal <see cref="IResult"/> behind <see cref="RedirectWithoutLogging"/>: it sets the
+    /// status code and the <c>Location</c> header and does nothing else. Private and nested so it
+    /// cannot become a general-purpose redirect helper elsewhere — the reasoning above is specific
+    /// to a Location that carries a credential.
+    /// </summary>
+    private sealed class NonLoggingRedirectResult(string location) : IResult
+    {
+        public Task ExecuteAsync(HttpContext httpContext)
+        {
+            ArgumentNullException.ThrowIfNull(httpContext);
+
+            httpContext.Response.StatusCode = StatusCodes.Status302Found;
+            httpContext.Response.Headers.Location = location;
+            return Task.CompletedTask;
         }
     }
 }

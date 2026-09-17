@@ -12,8 +12,13 @@ import {
   useUpdateSourceMutation,
 } from './queries';
 import {
+  DAY_LIMITS_UNIT,
+  HOUR_LIMITS_UNIT,
+  NEWZNAB_KIND,
+  NZBHYDRA_KIND,
   PROXY_ACCESS_MODE,
   REDIRECT_ACCESS_MODE,
+  TORZNAB_KIND,
   type CreateSourceRequest,
   type SourceSummary,
   type UpdateSourceRequest,
@@ -30,6 +35,47 @@ import {
  * into a 400.
  */
 const ACCESS_MODES = [PROXY_ACCESS_MODE, REDIRECT_ACCESS_MODE] as const;
+
+/**
+ * arb-x7w8.1 — the three kinds the form offers, in `SourceRepository.KnownKinds`
+ * order.
+ *
+ * SPELLED EXACTLY AS THE SERVER ACCEPTS THEM, on the same terms as
+ * `ACCESS_MODES` above: `ValidateKind` compares ordinally against this exact
+ * set, so `'nzbhydra'` is a 400 rather than a tolerated variant.
+ *
+ * A PICKER AND NOT A TEXT BOX, and that is the point of this constant. Kind was
+ * free text until arb-x7w8.16, which meant the only way to discover the three
+ * accepted spellings was to submit a wrong one and read the rejection — and a
+ * typo that reached the database would be listed forever while never matching
+ * the ordinal comparison any resolver makes. A closed set of options cannot
+ * produce a value the server will refuse, so the rejection stops being something
+ * an operator has to learn their way around.
+ */
+const KINDS = [NZBHYDRA_KIND, NEWZNAB_KIND, TORZNAB_KIND] as const;
+
+/**
+ * The operator-facing label for each kind. Names the PROTOCOL the value selects
+ * rather than restating the enum, because "Newznab" and "Torznab" differ in what
+ * they return and an operator choosing between them is choosing usenet or
+ * torrents, which the bare name does not say.
+ */
+const KIND_LABELS: Record<string, string> = {
+  [NZBHYDRA_KIND]: 'NZBHydra2 — an aggregator in front of other indexers',
+  [NEWZNAB_KIND]: 'Newznab — a usenet indexer, queried directly',
+  [TORZNAB_KIND]: 'Torznab — a torrent indexer, queried directly',
+};
+
+/**
+ * arb-x7w8.1 — the two accepted rolling windows the query and grab limits are
+ * counted over, matched by the server exactly and ordinally like the kinds.
+ */
+const LIMITS_UNITS = [HOUR_LIMITS_UNIT, DAY_LIMITS_UNIT] as const;
+
+const LIMITS_UNIT_LABELS: Record<string, string> = {
+  [HOUR_LIMITS_UNIT]: 'per hour',
+  [DAY_LIMITS_UNIT]: 'per day',
+};
 
 /**
  * The operator-facing label for each mode. Each says what ARBITARR does, not
@@ -143,10 +189,47 @@ interface SourceDraft {
    * always holds one of the two.
    */
   nzbAccessMode: string;
+  /** arb-x7w8.1 — appended to `baseUrl` to reach the indexer's API. */
+  apiPath: string;
+  /**
+   * The search weight, as typed. Held as a string like every other numeric
+   * field here — see `timeoutSeconds` for why — but unlike the three below it
+   * has no unset state: the column is non-nullable and `0` is an ordinary
+   * weight, so an empty box here simply means the operator has not typed a
+   * replacement for what is stored.
+   */
+  priority: string;
+  /**
+   * The per-source timeout in seconds, as typed, or `''`.
+   *
+   * A STRING AND NOT A `number | null`, and this is the load-bearing half of the
+   * unlimited rule. A numeric draft field has to represent an empty box as
+   * something, and every available candidate lies: `0` is a real cap of zero and
+   * a real rejected timeout, `NaN` cannot survive a round trip, and `null`
+   * cannot be told apart from "the operator cleared it" versus "there was never
+   * a value". The raw string keeps the empty box EMPTY all the way to the
+   * request builders, which is where the three-way decision actually belongs
+   * because only they know what was stored before.
+   */
+  timeoutSeconds: string;
+  /**
+   * The query cap as typed, or `''` for NO CAP.
+   *
+   * NULL IS UNLIMITED AND IS NOT ZERO, restated here because this field is where
+   * the two are most easily conflated: `''` and `'0'` are different strings and
+   * must stay different all the way to the wire. `Number('')` is `0`, so any
+   * builder that coerces this field without first testing for the empty string
+   * turns every uncapped source into one capped at nothing.
+   */
+  queryLimit: string;
+  /** The grab cap as typed, under exactly the same rule as `queryLimit`. */
+  grabLimit: string;
+  /** `'Hour'` or `'Day'` — the window both caps are counted over. */
+  limitsUnit: string;
 }
 
 const BLANK_DRAFT: SourceDraft = {
-  kind: 'NzbHydra',
+  kind: NZBHYDRA_KIND,
   displayName: '',
   baseUrl: '',
   enabled: true,
@@ -157,6 +240,25 @@ const BLANK_DRAFT: SourceDraft = {
    * added it and touched nothing else; opting in has to be a deliberate act.
    */
   nzbAccessMode: PROXY_ACCESS_MODE,
+  /**
+   * EVERY TUNING FIELD STARTS EMPTY, and none of them is seeded with the
+   * server's own default value.
+   *
+   * Reproducing `/api`, `0` and `Day` here would make this file a second copy of
+   * `Source.cs`'s initialisers that the server could change out from under — and
+   * the create builder sends only what was typed, so an empty box genuinely
+   * takes the entity default rather than sending a guess at it. `limitsUnit` is
+   * the one exception in appearance only: the select must show a value, so it
+   * shows the same `'Day'` the column defaults to, and the builder sends it for
+   * the same reason `nzbAccessMode` is always sent — a field the operator can
+   * see is a field the submit must mean.
+   */
+  apiPath: '',
+  priority: '',
+  timeoutSeconds: '',
+  queryLimit: '',
+  grabLimit: '',
+  limitsUnit: DAY_LIMITS_UNIT,
 };
 
 /**
@@ -166,6 +268,20 @@ const BLANK_DRAFT: SourceDraft = {
  * would mean either inventing a value or round-tripping a real one through the
  * browser. Both are the thing the write-only contract exists to prevent.
  */
+/**
+ * A stored nullable column as the text of its input box.
+ *
+ * NULL BECOMES `''` AND NEVER `'0'`. This is the read half of the unlimited
+ * rule: a stored null is no cap at all, so its box is empty, and a stored `0` is
+ * a real cap of zero, so its box reads `0`. `String(limit ?? '')` would be the
+ * same thing written shorter, but it puts a `??` on a nullable limit — the
+ * spelling `formatUsage`'s doc bans for being one careless edit away from
+ * `?? 0`, which is the collapse itself. Testing for null explicitly leaves
+ * nowhere for that edit to land.
+ */
+const numberFieldValue = (stored: number | null): string =>
+  stored === null ? '' : String(stored);
+
 const draftOf = (source: SourceSummary): SourceDraft => ({
   kind: source.kind,
   displayName: source.displayName,
@@ -176,6 +292,17 @@ const draftOf = (source: SourceSummary): SourceDraft => ({
   // has no write-only contract, and showing the stored mode is the whole point
   // of putting the control on the edit form.
   nzbAccessMode: source.nzbAccessMode,
+  // The tuning fields all seed from the server value, like nzbAccessMode and
+  // unlike apiKey: none is a secret and none has a write-only contract. The
+  // three nullable ones go through `numberFieldValue`, so a stored null arrives
+  // as an EMPTY box that the update builder will read back as "unlimited" —
+  // never as a `0` the operator never typed.
+  apiPath: source.apiPath,
+  priority: String(source.priority),
+  timeoutSeconds: numberFieldValue(source.timeoutSeconds),
+  queryLimit: numberFieldValue(source.queryLimit),
+  grabLimit: numberFieldValue(source.grabLimit),
+  limitsUnit: source.limitsUnit,
 });
 
 /**
@@ -193,9 +320,37 @@ function toCreateRequest(draft: SourceDraft): CreateSourceRequest {
     // save must mean it rather than leaning on the server default happening to
     // agree with the control's initial value.
     nzbAccessMode: draft.nzbAccessMode,
+    // Same reasoning, and the select always holds one of the two values.
+    limitsUnit: draft.limitsUnit,
   };
   if (draft.apiKey !== '') {
     request.apiKey = draft.apiKey;
+  }
+  // arb-x7w8.1 — the typed-only fields. EACH IS ADDED ONLY WHEN NON-EMPTY, and
+  // an empty one is left off the body entirely rather than sent as `0`. For
+  // `apiPath` and `priority` that means the entity default applies; for the two
+  // limits and the timeout it means the column's NULL applies, which is
+  // UNLIMITED for the caps and "use the global default" for the timeout.
+  //
+  // The `!== ''` test before every Number() is the load-bearing part and not a
+  // tidy-up-able guard clause: `Number('')` is `0`, so a builder that coerced
+  // unconditionally would send `queryLimit: 0` for every source the operator
+  // left uncapped — storing a cap of nothing on a source that was meant to have
+  // no cap at all.
+  if (draft.apiPath !== '') {
+    request.apiPath = draft.apiPath;
+  }
+  if (draft.priority !== '') {
+    request.priority = Number(draft.priority);
+  }
+  if (draft.timeoutSeconds !== '') {
+    request.timeoutSeconds = Number(draft.timeoutSeconds);
+  }
+  if (draft.queryLimit !== '') {
+    request.queryLimit = Number(draft.queryLimit);
+  }
+  if (draft.grabLimit !== '') {
+    request.grabLimit = Number(draft.grabLimit);
   }
   return request;
 }
@@ -217,17 +372,72 @@ function toCreateRequest(draft: SourceDraft): CreateSourceRequest {
  * that a save does not carry is a value that can silently diverge from what is
  * stored. For this column that divergence is the difference between the indexer
  * key staying server-side and being handed to the client.
+ *
+ * `apiPath`, `priority` and `limitsUnit` are a FIFTH case that behaves like
+ * `nzbAccessMode`: absence would leave the stored value alone, but the form
+ * displays all three, so all three are sent.
+ *
+ * THE THREE NULLABLE COLUMNS ARE THE SIXTH AND THE DANGEROUS ONE, and they are
+ * why this function now needs `stored` as well as `draft`. For them the wire has
+ * three states where the fields above have two, and the draft alone cannot tell
+ * them apart — an empty box means "there was never a value" or "the operator
+ * just emptied it", and those are a no-op and a destructive write respectively.
+ * Comparing against what the server last said is the only thing that separates
+ * them. Per column:
+ *
+ * - box empty, stored already null — SEND NOTHING. Neither the value nor the
+ *   flag. There is nothing to change, and a clear flag here would be a write
+ *   where the operator made no edit.
+ * - box empty, stored had a value — send `clear*: true` and NO value. This is
+ *   the only spelling of "make this unlimited again", and the reason it exists
+ *   at all: `0` would store a cap of zero, which is a source that can never be
+ *   searched rather than one with no cap.
+ * - box has text — send the number. A typed `0` IS sent as `0`, deliberately:
+ *   it is a real cap of zero and the server decides whether to accept it. This
+ *   is the one place `0` is a legitimate value on these columns, and it arrives
+ *   only because somebody typed it.
+ *
+ * The timeout follows the same three states even though its null means "fall
+ * back to the global default" rather than "unlimited": the shape of the contract
+ * is what is shared, not the meaning of the null.
  */
-function toUpdateRequest(draft: SourceDraft): UpdateSourceRequest {
+function toUpdateRequest(draft: SourceDraft, stored: SourceSummary): UpdateSourceRequest {
   const request: UpdateSourceRequest = {
     kind: draft.kind,
     displayName: draft.displayName,
     baseUrl: draft.baseUrl,
     enabled: draft.enabled,
     nzbAccessMode: draft.nzbAccessMode,
+    apiPath: draft.apiPath,
+    limitsUnit: draft.limitsUnit,
   };
   if (draft.apiKey !== '') {
     request.apiKey = draft.apiKey;
+  }
+  // Priority is sent whenever the box holds anything, and that is nearly always
+  // — `draftOf` seeds it from the stored weight, so it is empty only if the
+  // operator deleted the digits. That case sends nothing rather than `0`: an
+  // emptied box is an unfinished edit, and `Number('')` being `0` would turn it
+  // into a real write demoting the source to the lowest weight. Priority has no
+  // clear flag because it has no null state to return to, so "leave it alone"
+  // is the only safe reading of an empty box.
+  if (draft.priority !== '') {
+    request.priority = Number(draft.priority);
+  }
+  if (draft.timeoutSeconds !== '') {
+    request.timeoutSeconds = Number(draft.timeoutSeconds);
+  } else if (stored.timeoutSeconds !== null) {
+    request.clearTimeoutSeconds = true;
+  }
+  if (draft.queryLimit !== '') {
+    request.queryLimit = Number(draft.queryLimit);
+  } else if (stored.queryLimit !== null) {
+    request.clearQueryLimit = true;
+  }
+  if (draft.grabLimit !== '') {
+    request.grabLimit = Number(draft.grabLimit);
+  } else if (stored.grabLimit !== null) {
+    request.clearGrabLimit = true;
   }
   return request;
 }
@@ -272,12 +482,34 @@ function SourceForm({
     >
       <label className={styles.field}>
         Kind
-        <input
+        {/*
+          arb-x7w8.16 — A PICKER, AND NO FREE-TEXT PATH SURVIVES. The server
+          matches this value ordinally against exactly three spellings and
+          rejects everything else, so a text box could only ever produce a
+          correct value by the operator already knowing the answer. See `KINDS`.
+
+          A stored value outside the three is shown AS-IS via the extra option
+          below rather than silently rewritten to the first of them. Such a row
+          should not exist — every write path validates — but if one does, an
+          operator who opens the form must see what is actually stored, and a
+          select that quietly re-selected `NzbHydra` would make an unrelated
+          save rewrite a column nobody looked at.
+        */}
+        <select
           className={styles.input}
           aria-label={`${idPrefix} kind`}
           value={draft.kind}
           onChange={(event) => set('kind', event.target.value)}
-        />
+        >
+          {KINDS.map((kind) => (
+            <option key={kind} value={kind}>
+              {KIND_LABELS[kind] ?? kind}
+            </option>
+          ))}
+          {!KINDS.includes(draft.kind as (typeof KINDS)[number]) && (
+            <option value={draft.kind}>{draft.kind}</option>
+          )}
+        </select>
       </label>
       <label className={styles.field}>
         Display name
@@ -295,6 +527,24 @@ function SourceForm({
           aria-label={`${idPrefix} base URL`}
           value={draft.baseUrl}
           onChange={(event) => set('baseUrl', event.target.value)}
+        />
+      </label>
+      <label className={styles.field}>
+        API path
+        {/*
+          Appended to the base URL to reach the indexer's API. Empty on the add
+          form means the server's own default, which is why there is no `/api`
+          placeholder value seeded into the draft: showing the default as if the
+          operator had typed it would send it, and this file would then be a
+          copy of the entity initialiser. The server rejects an empty stored
+          value and one carrying a query string; both rejections render below.
+        */}
+        <input
+          className={styles.input}
+          aria-label={`${idPrefix} API path`}
+          placeholder="/api"
+          value={draft.apiPath}
+          onChange={(event) => set('apiPath', event.target.value)}
         />
       </label>
       <label className={styles.field}>
@@ -357,6 +607,110 @@ function SourceForm({
           Choose Proxy to keep the key on the server.
         </p>
       )}
+      <label className={styles.field}>
+        Priority
+        {/*
+          The search weight. No `min`, because the column is a plain signed int
+          and a negative weight is a legitimate way to push a source last -- an
+          attribute narrowing it here would be a client-side rule the server
+          does not have, and this form deliberately carries none of those.
+        */}
+        <input
+          type="number"
+          className={styles.input}
+          aria-label={`${idPrefix} priority`}
+          value={draft.priority}
+          onChange={(event) => set('priority', event.target.value)}
+        />
+      </label>
+      <label className={styles.field}>
+        Timeout (seconds)
+        {/*
+          THE ONLY CLIENT-SIDE VALIDATION IN THIS FORM IS THIS PAIR OF NATIVE
+          ATTRIBUTES, and they mirror `SourceRepository.MinTimeoutSeconds` and
+          `MaxTimeoutSeconds` rather than inventing a bound. The server REJECTS
+          anything outside 1..30 and never clamps (AC24), and these attributes
+          MIRROR that rule rather than being a second one: an out-of-range value
+          is refused by the browser's own constraint validation before submit,
+          so the operator is told at the control instead of after a round trip.
+
+          THEY ARE THE ONLY CLIENT-SIDE VALIDATION HERE, and nothing above them
+          re-checks. Every other rejection -- an empty API path, a query string
+          in it, a bad base URL, a duplicate name -- reaches the wire and comes
+          back as a 400 whose own message renders in the banner above. Adding a
+          validation layer for those would replace the server's exact words with
+          ours and put a second copy of each rule in the tree, one that drifts
+          the moment the server's changes.
+
+          Empty means fall back to the global default. That is a real stored
+          state, not an absence, which is why clearing this box sends
+          `clearTimeoutSeconds` rather than a value -- see `toUpdateRequest`.
+        */}
+        <input
+          type="number"
+          min={1}
+          max={30}
+          className={styles.input}
+          aria-label={`${idPrefix} timeout seconds`}
+          placeholder="Global default"
+          value={draft.timeoutSeconds}
+          onChange={(event) => set('timeoutSeconds', event.target.value)}
+        />
+      </label>
+      <label className={styles.field}>
+        Query limit
+        {/*
+          EMPTY IS UNLIMITED AND IS NOT ZERO, stated in the placeholder because
+          the distinction is invisible in an empty box and an operator typing 0
+          to mean "no limit" would be configuring the opposite: a cap of nothing,
+          on a source that can then never be searched. `min={0}` and not `min={1}`
+          -- a cap of zero is a value the server accepts, and the form does not
+          get to decide it is a mistake.
+        */}
+        <input
+          type="number"
+          min={0}
+          className={styles.input}
+          aria-label={`${idPrefix} query limit`}
+          placeholder="Unlimited"
+          value={draft.queryLimit}
+          onChange={(event) => set('queryLimit', event.target.value)}
+        />
+      </label>
+      <label className={styles.field}>
+        Grab limit
+        {/* Same unlimited-is-empty rule as the query limit above. */}
+        <input
+          type="number"
+          min={0}
+          className={styles.input}
+          aria-label={`${idPrefix} grab limit`}
+          placeholder="Unlimited"
+          value={draft.grabLimit}
+          onChange={(event) => set('grabLimit', event.target.value)}
+        />
+      </label>
+      <label className={styles.field}>
+        Limits window
+        {/*
+          The rolling window BOTH caps are counted over -- one setting for the
+          two, matching the single `LimitsUnit` column, rather than a unit beside
+          each box implying they can differ. Spelled exactly as the server
+          accepts, like the kinds and the access modes.
+        */}
+        <select
+          className={styles.input}
+          aria-label={`${idPrefix} limits window`}
+          value={draft.limitsUnit}
+          onChange={(event) => set('limitsUnit', event.target.value)}
+        >
+          {LIMITS_UNITS.map((unit) => (
+            <option key={unit} value={unit}>
+              {LIMITS_UNIT_LABELS[unit] ?? unit}
+            </option>
+          ))}
+        </select>
+      </label>
       <label className={styles.checkboxField}>
         <input
           type="checkbox"
@@ -478,6 +832,13 @@ export function SourcesSection() {
    * full body — `kind`, `displayName` and `baseUrl` included — because omitting
    * them is a validation failure, not a no-op. `apiKey` stays absent, which is
    * what keeps a toggle from wiping the stored credential.
+   *
+   * IT DELIBERATELY DOES NOT GO THROUGH `toUpdateRequest`, and every arb-x7w8.1
+   * tuning field is absent here on purpose. This path shows the operator no form
+   * and therefore no tuning value, so the argument that makes those fields
+   * always-sent on the edit form — a displayed value the save must mean — does
+   * not apply. Absence leaves each stored value alone, and no clear flag is sent
+   * for the nullable three, so flipping Enabled cannot disturb a limit.
    */
   const toggleEnabled = (source: SourceSummary) =>
     update.mutate(
@@ -783,7 +1144,12 @@ export function SourcesSection() {
             onCancel={() => setEditingId(null)}
             onSubmit={() =>
               update.mutate(
-                { id: editingId, source: toUpdateRequest(editDraft) },
+                // `editing` is the row this form was seeded from, and
+                // `toUpdateRequest` needs it: an empty limit box means "leave
+                // the null alone" or "clear the stored value" depending on what
+                // the server last said, and the draft alone cannot tell those
+                // apart. See that function.
+                { id: editingId, source: toUpdateRequest(editDraft, editing) },
                 {
                   // The editor stays open on failure, holding what was typed, so
                   // the operator can correct it against the server's own reason.

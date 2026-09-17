@@ -60,6 +60,11 @@ public sealed class ReleaseGuidSecretValidationTests : IDisposable
     /// <summary>Valid base64 decoding to exactly 32 bytes: the supported shape, and the control.</summary>
     private const string ThirtyTwoByteValue = "YXJiLXB1amstc2VjcmV0LWV4YWN0bHktMzJieXRlcyE=";
 
+    /// <summary>
+    /// The per-CLASS root. Every host gets its OWN subdirectory under it (see
+    /// <see cref="PerHostConfigDirectory"/>); this level exists so teardown has a single path to
+    /// delete.
+    /// </summary>
     private readonly string _configDirectory = Path.Combine(
         Path.GetTempPath(), "arbitarr-guid-secret-validation-tests", Guid.NewGuid().ToString("N"));
 
@@ -73,7 +78,12 @@ public sealed class ReleaseGuidSecretValidationTests : IDisposable
         // gives: the env var is process-wide and this assembly runs classes in parallel.
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
-            builder.UseSetting("Arbitarr:ConfigDir", _configDirectory);
+            // arb-j4hq: this host's OWN database, not one shared with the other hosts this class
+            // builds. It matters more here than elsewhere: two of the three hosts are expected to
+            // FAIL startup, and a host that faults partway through composition is exactly the one
+            // most likely to leave a handle on a store a later host then has to open. See
+            // PerHostConfigDirectory.
+            builder.UseSetting("Arbitarr:ConfigDir", PerHostConfigDirectory.Create(_configDirectory));
             builder.UseSetting("Arbitarr:ReleaseGuidSecret", releaseGuidSecret);
         });
         _factories.Add(factory);
