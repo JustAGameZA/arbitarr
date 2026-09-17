@@ -125,21 +125,23 @@ public static partial class LogMessageCleanser
     /// from that arm is the <c>https?://</c> anchor in front: <c>NamedCredential</c>'s prefix opens at
     /// every word boundary, whereas this one can only open where a literal scheme appears, so a long
     /// run supplies one candidate start rather than one per position. Measured outside this repo (a
-    /// throwaway console project, deleted after, no code from it in this repository) at 2k, 4k, 8k,
-    /// 16k and 32k characters across four adversarial shapes for THIS prefix: a single
-    /// <c>https://</c> followed by a <c>[\w.-]</c> variety run; a near-miss host repeating
-    /// <c>discord</c> fragments; MANY <c>https://</c> starts each opening a fresh <c>[\w.-]*</c> scan
-    /// (the shape that removes the single-candidate-start advantage); and an unterminated
-    /// discord-like run. All four stay under 1 ms at 32,000 characters with the time merely doubling
-    /// as the input doubles. In the same run the pre-#546 backtracking <c>NamedCredential</c> pattern
-    /// served as a positive control and did reach the match timeout at 16,000 characters, so the
-    /// harness was capable of observing a blowup and these results are not vacuous. No engine switch
-    /// was applied.</para>
+    /// throwaway console project, deleted after, no code from it in this repository) from 2k to
+    /// 32k characters across four adversarial shapes for THIS prefix: a single <c>https://</c>
+    /// followed by a <c>[\w.-]</c> variety run; a near-miss host repeating <c>discord</c> fragments;
+    /// MANY <c>https://</c> starts each opening a fresh <c>[\w.-]*</c> scan (the shape that removes
+    /// the single-candidate-start advantage); and an unterminated discord-like run. All four are
+    /// linear across that range, the time merely doubling as the input doubles. The same run's
+    /// positive control, the pre-#546 backtracking <c>NamedCredential</c> pattern, grew roughly
+    /// fivefold per doubling and reached the match timeout, so the harness was capable of observing
+    /// a blowup and these results are not vacuous. No engine switch was applied.</para>
     ///
-    /// <para>This arm is not pinned by a test in <c>CredentialPatternsTests</c>: it lives here in
-    /// <c>Arbitarr.Data</c>, which <c>Arbitarr.Core.Tests</c> cannot reference. The fail-closed
-    /// guarantee in <see cref="Cleanse(string?, Func{string, string}?)"/> still covers it either way
-    /// — a timeout from THIS arm, like one from any shared arm, replaces the row's text with
+    /// <para>This arm's redaction is pinned in <c>Arbitarr.Data.Tests</c>, since it lives here in
+    /// <c>Arbitarr.Data</c>, which <c>Arbitarr.Core.Tests</c> cannot reference, by
+    /// <c>LogMessageCleanserTests.Redacts_a_webhook_url_whose_secret_is_in_the_path</c>. The
+    /// adversarial long-input theory for this arm specifically (as opposed to the correctness of its
+    /// redaction) was scoped out of arb-0na2 and is tracked as a follow-up. The fail-closed guarantee
+    /// in <see cref="Cleanse(string?, Func{string, string}?)"/> covers it either way: a timeout from
+    /// THIS arm, like one from any shared arm, replaces the row's text with
     /// <see cref="TimeoutPlaceholder"/> and never passes it through unscrubbed.</para>
     /// </summary>
     [GeneratedRegex(

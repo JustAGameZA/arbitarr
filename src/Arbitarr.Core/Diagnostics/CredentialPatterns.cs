@@ -64,9 +64,11 @@ public static partial class CredentialPatterns
     ///
     /// <para>arb-0na2: those other three arms have since been measured against the adversarial input
     /// for each one's OWN prefix shape and are linear, so none of them was switched — this timeout is
-    /// not currently load-bearing for any known shape. Keep it anyway: it is the ceiling for the
-    /// shapes nobody has found yet, in all four arms, and it is what makes
-    /// <c>LogMessageCleanser</c>'s per-row fail-closed path reachable at all.</para>
+    /// not currently load-bearing for any known shape in these four shared arms. This value is also
+    /// shared with <see cref="SanitizedErrorDescription"/>'s local arms (see the arb-hihr remark
+    /// below); arb-0na2 did not measure those, so no claim is made about them here. Keep the timeout
+    /// anyway: it is the ceiling for the shapes nobody has found yet, in all four shared arms, and it
+    /// is what makes <c>LogMessageCleanser</c>'s per-row fail-closed path reachable at all.</para>
     ///
     /// <para>arb-hihr: <c>internal</c> rather than <c>private</c> so <see cref="SanitizedErrorDescription"/>'s
     /// nine local host/URL arms — which face the same attacker-influenced <c>/api/status</c> input as
@@ -120,11 +122,11 @@ public static partial class CredentialPatterns
     /// literal <c>[?&amp;]</c>, so each candidate start is a single character the engine can reject
     /// or commit on immediately. Measured outside this repo against the adversarial shape for THIS
     /// prefix — a dense field of <c>?</c>/<c>&amp;</c> starts each followed by near-keyword text that
-    /// fails as late as possible — it is linear: under 1 ms at 32,000 characters, with the time
-    /// merely doubling as the input doubles. The same harness run drove the pre-#546 backtracking
-    /// <see cref="NamedCredential"/> pattern as a positive control and saw it reach
-    /// <see cref="MatchTimeoutMilliseconds"/>, so the linear result here is evidence, not an
-    /// unexercised harness. No engine switch was applied. Pinned by
+    /// fails as late as possible: it is linear from 2k to 32k characters, with the time merely
+    /// doubling as the input doubles. The same harness run drove the pre-#546 backtracking
+    /// <see cref="NamedCredential"/> pattern as a positive control and saw it grow roughly fivefold
+    /// per doubling and reach <see cref="MatchTimeoutMilliseconds"/>, so the linear result here is
+    /// evidence, not an unexercised harness. No engine switch was applied. Pinned by
     /// <c>CredentialPatternsTests.An_adversarial_run_for_each_shared_arms_own_prefix_shape_completes_and_still_redacts</c>.</para>
     /// </summary>
     [GeneratedRegex(
@@ -145,10 +147,11 @@ public static partial class CredentialPatterns
     /// characters against both adversarial shapes for THIS arm — a dense field of
     /// <c>bearer</c>/<c>basic</c> near-misses at word boundaries, and one keyword followed by an
     /// unterminated run of this arm's own <c>[A-Za-z0-9+/=._~-]</c> value class (the shape that would
-    /// backtrack if a variable value sat next to a variable prefix) — it is linear in both, under
-    /// 1 ms at 32,000 characters. The same run's positive control (the pre-#546 backtracking
-    /// <see cref="NamedCredential"/> pattern) did reach <see cref="MatchTimeoutMilliseconds"/>, so
-    /// the harness demonstrably observes a blowup when one exists. No engine switch was applied.
+    /// backtrack if a variable value sat next to a variable prefix): it is linear in both from 2k to
+    /// 32k characters, the time merely doubling as the input doubles. The same run's positive control
+    /// (the pre-#546 backtracking <see cref="NamedCredential"/> pattern) grew roughly fivefold per
+    /// doubling and did reach <see cref="MatchTimeoutMilliseconds"/>, so the harness demonstrably
+    /// observes a blowup when one exists. No engine switch was applied.
     /// Pinned by the two <c>arb-0na2</c> adversarial theories in <c>CredentialPatternsTests</c>.</para>
     /// </summary>
     [GeneratedRegex(
@@ -272,10 +275,11 @@ public static partial class CredentialPatterns
     /// bare credential nouns at word boundaries each failing on the <c>{12,}</c> value floor, one
     /// keyword followed by an unterminated run of this arm's own <c>[A-Za-z0-9_.+-]</c> value class,
     /// and the separator-less variety run that defeats <see cref="NamedCredential"/> — it is linear
-    /// in all three, at most 1.5 ms at 32,000 characters with the time doubling as the input doubles.
+    /// in all three from 2k to 32k characters, the time merely doubling as the input doubles.
     /// The same run's positive control (the pre-#546 backtracking <see cref="NamedCredential"/>
-    /// pattern) went 8 ms, 43 ms, 198 ms and then reached <see cref="MatchTimeoutMilliseconds"/>, so
-    /// the harness was demonstrably capable of seeing a blowup here and did not. No engine switch was
+    /// pattern) grew roughly fivefold per doubling and then reached
+    /// <see cref="MatchTimeoutMilliseconds"/>, so the harness was demonstrably capable of seeing a
+    /// blowup here and did not. No engine switch was
     /// applied, and none should be applied without a measurement that shows one is needed: the
     /// non-backtracking engine is not free, and this arm has no case to spend it on. Pinned by the
     /// two <c>arb-0na2</c> adversarial theories in <c>CredentialPatternsTests</c>.</para>
