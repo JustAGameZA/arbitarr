@@ -95,14 +95,23 @@ public sealed class ReleaseLookupStore : IReleaseLookupStore
             }
             else
             {
-                _dbContext.ReleaseLookupEntries.Add(new ReleaseLookupEntry
+                var added = new ReleaseLookupEntry
                 {
                     ProxyGuid = release.ProxyGuid,
                     SourceName = release.SourceName,
                     PayloadJson = payloadJson,
                     RecordedAt = now,
                     ExpiresAt = expiresAt,
-                });
+                };
+                _dbContext.ReleaseLookupEntries.Add(added);
+
+                // arb-c4wh: register the newly-Added entity in the same lookup used for duplicate
+                // detection, so a LATER occurrence of this guid later in this same batch takes the
+                // update branch above instead of a second Add — which would violate the unique
+                // index on ProxyGuid. The later occurrence's fields win, exactly as they would if
+                // the two occurrences arrived in separate batches (the update branch above always
+                // overwrites with the incoming release's fields).
+                existing[release.ProxyGuid] = added;
             }
         }
 
