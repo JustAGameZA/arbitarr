@@ -456,4 +456,144 @@ describe('Rules', () => {
     // clear a refusal it did not own.
     expect(screen.getByText(refusalB)).toBeInTheDocument();
   });
+
+  it('prunes a refusal once its row leaves the list, but keeps it for a row that stays (arb-gn4z)', async () => {
+    // Two rows are refused (A and B). A then leaves the list on a refetch a
+    // THIRD row's action triggers -- not A's own retry, which is already
+    // covered above -- and later returns under the SAME id via a later fetch.
+    // The stale refusal must not resurface. B never leaves, so its refusal
+    // must survive every refetch untouched.
+    const user = userEvent.setup();
+    const threeRules = [
+      ...rules,
+      { id: 3, name: 'deny-x265', isAllow: false, pattern: 'x265', precedence: 30, enabled: true },
+    ];
+    const refusalA = 'Rule A refusal: referenced by an active dry run.';
+    const refusalB = 'Rule B refusal: precedence collides with another enabled rule.';
+    const api = mockApi({
+      '/api/admin/rules': { body: threeRules },
+      '/api/admin/rules/1': { status: 400, body: { error: refusalA } },
+      '/api/admin/rules/2': { status: 400, body: { error: refusalB } },
+    });
+    renderSurface(<RulesPage />);
+    await screen.findByText('block-cam');
+
+    // Refuse A and B, both left unresolved.
+    await user.click(screen.getByRole('button', { name: 'Delete block-cam' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm delete block-cam' }));
+    await findCall(api, 'DELETE');
+
+    await user.click(screen.getByRole('button', { name: 'Delete allow-1080p' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm delete allow-1080p' }));
+    await waitFor(() => {
+      expect(api.calls.filter((call) => call.method === 'DELETE')).toHaveLength(2);
+    });
+
+    // POSITIVE CONTROL: A's refusal really is shown before the row vanishes.
+    await waitFor(() => {
+      expect(screen.getByText(refusalA)).toBeInTheDocument();
+    });
+    expect(screen.getByText(refusalB)).toBeInTheDocument();
+
+    // Row C's own delete succeeds and its refetch's response no longer
+    // includes row A at all -- the row left the list through an action that
+    // has nothing to do with A's own refusal or retry.
+    api.set('/api/admin/rules/3', { status: 204 });
+    api.set('/api/admin/rules', { body: threeRules.filter((rule) => rule.id !== 1 && rule.id !== 3) });
+    await user.click(screen.getByRole('button', { name: 'Delete deny-x265' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm delete deny-x265' }));
+
+    await waitFor(() => {
+      expect(screen.queryByText('deny-x265')).not.toBeInTheDocument();
+    });
+    // A's row is also gone, and so is its refusal text, pruned rather than
+    // merely unrendered because nothing keys back to a row anymore.
+    expect(screen.queryByText('block-cam')).not.toBeInTheDocument();
+    expect(screen.queryByText(refusalA)).not.toBeInTheDocument();
+    // B never left: its refusal survives this refetch untouched.
+    expect(screen.getByText(refusalB)).toBeInTheDocument();
+
+    // Row A returns under the SAME id (1) via a later fetch -- a rule
+    // recreated by another admin session, say. A NEW rule create is used to
+    // cause the invalidation (a mutation whose own success is unrelated to
+    // A or B), so B's still-unresolved refusal is untouched by anything
+    // this step does directly.
+    api.set('/api/admin/rules', {
+      body: [
+        { id: 1, name: 'block-cam', isAllow: false, pattern: 'CAM|TS', precedence: 10, enabled: true },
+        threeRules[1],
+        { id: 4, name: 'allow-remux', isAllow: true, pattern: 'REMUX', precedence: 40, enabled: true },
+      ],
+    });
+    const addPanel = screen.getByRole('heading', { name: 'Add rule' }).closest('section')!;
+    await user.type(within(addPanel).getByLabelText('Name'), 'allow-remux');
+    await user.type(within(addPanel).getByLabelText('Pattern'), 'REMUX');
+    await user.click(within(addPanel).getByRole('button', { name: 'Add rule' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('block-cam')).toBeInTheDocument();
+    });
+    // The old refusal for id 1 must NOT resurface just because the id is back.
+    expect(screen.queryByText(refusalA)).not.toBeInTheDocument();
+    // B's own, still-unresolved refusal is unaffected by A's return.
+    expect(screen.getByText(refusalB)).toBeInTheDocument();
+  });
+
+  it('keeps every refusal through a refetch that reorders or edits rows without changing membership (arb-gn4z)', async () => {
+    // The prune effect keys off row ids present vs. absent -- a refetch that
+    // changes row ORDER or an unrelated FIELD, but not which ids are present,
+    // must not disturb any refusal. This is also the no-render-loop case: the
+    // effect's functional setState must return the SAME Map reference when
+    // membership is unchanged, or a naive "always build a new Map" version
+    // would pass the assertions below while still re-rendering every refetch.
+    const user = userEvent.setup();
+    const refusalA = 'Rule A refusal: referenced by an active dry run.';
+    const refusalB = 'Rule B refusal: precedence collides with another enabled rule.';
+    const api = mockApi({
+      '/api/admin/rules': { body: rules },
+      '/api/admin/rules/1': { status: 400, body: { error: refusalA } },
+      '/api/admin/rules/2': { status: 400, body: { error: refusalB } },
+    });
+    renderSurface(<RulesPage />);
+    await screen.findByText('block-cam');
+
+    await user.click(screen.getByRole('button', { name: 'Delete block-cam' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm delete block-cam' }));
+    await findCall(api, 'DELETE');
+
+    await user.click(screen.getByRole('button', { name: 'Delete allow-1080p' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm delete allow-1080p' }));
+    await waitFor(() => {
+      expect(api.calls.filter((call) => call.method === 'DELETE')).toHaveLength(2);
+    });
+
+    // POSITIVE CONTROL: both refusals really are shown before the no-op refetch.
+    await waitFor(() => {
+      expect(screen.getByText(refusalA)).toBeInTheDocument();
+    });
+    expect(screen.getByText(refusalB)).toBeInTheDocument();
+
+    // Trigger a refetch via a successful, unrelated create -- same two ids
+    // (1 and 2) are still present, reordered, and one field (precedence) on a
+    // row that was never refused changed. No id present in the refusal Maps
+    // left or returned.
+    api.set('/api/admin/rules', {
+      body: [
+        { ...rules[1], precedence: 99 },
+        rules[0],
+      ],
+    });
+    const addPanel = screen.getByRole('heading', { name: 'Add rule' }).closest('section')!;
+    await user.type(within(addPanel).getByLabelText('Name'), 'allow-remux');
+    await user.type(within(addPanel).getByLabelText('Pattern'), 'REMUX');
+    await user.click(within(addPanel).getByRole('button', { name: 'Add rule' }));
+
+    await waitFor(() => {
+      expect(api.calls.some((call) => call.method === 'POST')).toBe(true);
+    });
+
+    // Both refusals survive the reorder/field-edit refetch untouched.
+    expect(screen.getByText(refusalA)).toBeInTheDocument();
+    expect(screen.getByText(refusalB)).toBeInTheDocument();
+  });
 });

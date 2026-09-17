@@ -13,10 +13,7 @@ import styles from '../surface.module.css';
 import local from './Suppressions.module.css';
 import { DecisionReviewPanel } from './DecisionReview';
 import { useSuppressionsQuery } from './queries';
-
-function formatTimestamp(value: string): string {
-  return new Date(value).toLocaleString();
-}
+import { formatTimestamp, formatTimestampTitle } from '../../format';
 
 function SuppressionsTable({ entries }: { entries: SuppressionViewEntry[] }) {
   if (entries.length === 0) {
@@ -49,7 +46,9 @@ function SuppressionsTable({ entries }: { entries: SuppressionViewEntry[] }) {
         <tbody>
           {entries.map((entry, index) => (
             <tr key={`${entry.occurredAt}:${entry.releaseIdentifier}:${index}`}>
-              <td>{formatTimestamp(entry.occurredAt)}</td>
+              <td title={formatTimestampTitle(entry.occurredAt)}>
+                {formatTimestamp(entry.occurredAt)}
+              </td>
               {/* KNOWN BACKEND GAP: this is the raw upstream identifier the
                   audit log stores (Candidate.Guid), never a release title, and
                   no lookup can resolve it to one. The chain: (1) the

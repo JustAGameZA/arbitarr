@@ -12,6 +12,7 @@ import {
   useRemoveApiKeyMutation,
   useRevokeApiKeyMutation,
 } from './queries';
+import { formatTimestamp, formatTimestampTitle } from '../../../format';
 
 /**
  * What each scope actually reaches, in the vocabulary the routing layer uses.
@@ -28,13 +29,6 @@ const SCOPE_EXPLANATION: Record<ApiKeyScope, string> = {
   Admin:
     'Reaches public search and download routes, read-only admin routes, and every mutating admin route — rules, settings, sources, and this key list itself. Give it only to a caller you would trust with the box.',
 };
-
-function formatTimestamp(value: string | null): string {
-  if (value === null) {
-    return '—';
-  }
-  return new Date(value).toLocaleString();
-}
 
 /**
  * The two routes an *arr client is pointed at, as path literals.
@@ -385,8 +379,8 @@ function KeyRow({
         <span className={local.label}>{entry.label}</span>
       </td>
       <td>{entry.scope === 'Admin' ? 'Admin' : 'Read only'}</td>
-      <td>{formatTimestamp(entry.createdAt)}</td>
-      <td>{formatTimestamp(entry.lastUsedAt)}</td>
+      <td title={formatTimestampTitle(entry.createdAt)}>{formatTimestamp(entry.createdAt)}</td>
+      <td title={formatTimestampTitle(entry.lastUsedAt)}>{formatTimestamp(entry.lastUsedAt)}</td>
       <td>
         {revoked ? (
           <span className={`${styles.badge} ${styles.badgeDanger}`}>
@@ -558,6 +552,51 @@ export function ApiKeysSection() {
   // are both undefined, so a render that consulted them would show neither
   // the key nor the server's refusal.
   const [createFailure, setCreateFailure] = useState<unknown>(null);
+
+  // Prune `revokeFailures`/`removeFailures` entries whose row has left the
+  // list -- converged with Rules's identical fix (arb-gn4z). A refusal for an
+  // id no longer present renders nowhere, but stays keyed to that id forever
+  // otherwise; if the SAME id is later reused (a legacy row aside, ids come
+  // from the server) a stale refusal would surface again under a fetch the
+  // operator has nothing to do with. Runs off `keys.data` rather than the
+  // per-call callbacks, since a row can also vanish through another admin
+  // session's action with no local callback of this component's own to hook.
+  //
+  // Guarded by a functional update that returns the SAME Map reference when
+  // nothing needs pruning, so a fetch that changes unrelated fields (not row
+  // membership) does not produce a new Map identity and does not re-trigger
+  // this effect's own setState -- no render loop. A row that is still
+  // present is left untouched: this only ever deletes, it never clears or
+  // rewrites a surviving entry.
+  useEffect(() => {
+    const data = keys.data;
+    if (data === undefined) {
+      return;
+    }
+    const liveIds = new Set(data.map((entry) => entry.id).filter((id): id is number => id !== null));
+    setRevokeFailures((failures) => {
+      let changed = false;
+      const next = new Map(failures);
+      for (const id of failures.keys()) {
+        if (!liveIds.has(id)) {
+          next.delete(id);
+          changed = true;
+        }
+      }
+      return changed ? next : failures;
+    });
+    setRemoveFailures((failures) => {
+      let changed = false;
+      const next = new Map(failures);
+      for (const id of failures.keys()) {
+        if (!liveIds.has(id)) {
+          next.delete(id);
+          changed = true;
+        }
+      }
+      return changed ? next : failures;
+    });
+  }, [keys.data]);
 
   const { settle } = useSecretEvictingMutation();
 
@@ -795,7 +834,11 @@ export function ApiKeysSection() {
                           failure={
                             entry.id === null
                               ? null
-                              : (removeFailures.get(entry.id) ?? revokeFailures.get(entry.id) ?? null)
+                              : removeFailures.has(entry.id)
+                                ? removeFailures.get(entry.id)
+                                : revokeFailures.has(entry.id)
+                                  ? revokeFailures.get(entry.id)
+                                  : null
                           }
                         />
                       ))}

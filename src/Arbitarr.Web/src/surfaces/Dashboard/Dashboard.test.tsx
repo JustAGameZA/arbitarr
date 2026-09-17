@@ -646,6 +646,37 @@ describe('Dashboard', () => {
     expect(bandCell).toHaveTextContent('—');
   });
 
+  /**
+   * arb-p94u: the recent-searches row's timestamp used to be a bare
+   * `new Date(v).toLocaleString()`, which is exactly the ambiguity Activity's
+   * AC9 forbids for the same underlying data an operator correlates against
+   * logs. The `title` assertion below is what actually pins the fix; the text
+   * assertion is an EXACT match against `toLocaleString(undefined, {
+   * timeZoneName: 'short' })`, with a positive control proving that string
+   * differs from the bare rendering on the CURRENT runner -- a `/[A-Za-z]/`
+   * "has a letter" check would be vacuous on an AM/PM (en-US-ish) locale, where
+   * the bare rendering already contains letters with no zone information.
+   */
+  it('renders the recent-search timestamp with a timezone abbreviation and the raw instant in title', async () => {
+    mockApi(allOk);
+    renderSurface(<DashboardPage />);
+
+    const searchRow = await screen.findByText('some series s01e02');
+    const row = searchRow.closest('tr');
+    expect(row).not.toBeNull();
+    const [timeCell] = within(row as HTMLElement).getAllByRole('cell');
+
+    const iso = '2026-09-06T09:59:00+00:00';
+    const parsed = new Date(iso);
+    const expected = parsed.toLocaleString(undefined, { timeZoneName: 'short' });
+    // Positive control: proves the exact-match assertion below could not have
+    // passed against the old bare rendering on this runner.
+    expect(expected).not.toBe(parsed.toLocaleString(undefined));
+
+    expect(timeCell).toHaveAttribute('title', iso);
+    expect(timeCell.textContent).toBe(expected);
+  });
+
   it('renders the sources table, not an empty message, when sources are present', async () => {
     mockApi(allOk);
     renderSurface(<DashboardPage />);
