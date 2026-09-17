@@ -441,7 +441,11 @@ public sealed class SourceRepositoryTests : IDisposable
             {
                 ApiPath = "/api/v2.0/indexers/all/results/torznab",
                 Priority = 25,
-                TimeoutSeconds = 45,
+                // Distinct from every other number here so a column swap shows up, and inside
+                // [MinTimeoutSeconds, MaxTimeoutSeconds] since arb-2cjk bounded the write path. The
+                // subject of this test is that each column ROUND-TRIPS, not which durations are
+                // legal — that is Both_write_paths_accept_a_timeout_on_the_boundary_and_round_trip_it.
+                TimeoutSeconds = 23,
                 SetTimeoutSeconds = true,
                 QueryLimit = 100,
                 SetQueryLimit = true,
@@ -459,7 +463,7 @@ public sealed class SourceRepositoryTests : IDisposable
         Assert.NotNull(stored);
         Assert.Equal("/api/v2.0/indexers/all/results/torznab", stored!.ApiPath);
         Assert.Equal(25, stored.Priority);
-        Assert.Equal(45, stored.TimeoutSeconds);
+        Assert.Equal(23, stored.TimeoutSeconds);
         Assert.Equal(100, stored.QueryLimit);
         Assert.Equal(10, stored.GrabLimit);
         Assert.Equal("Hour", stored.LimitsUnit);
@@ -664,7 +668,9 @@ public sealed class SourceRepositoryTests : IDisposable
             {
                 ApiPath = "/api/v2.0/indexers/example/results/torznab",
                 Priority = 40,
-                TimeoutSeconds = 90,
+                // Non-default and distinct (that is this fixture's whole job — see the remarks), and
+                // inside the range arb-2cjk added on the write path.
+                TimeoutSeconds = 27,
                 SetTimeoutSeconds = true,
                 QueryLimit = 250,
                 SetQueryLimit = true,
@@ -707,7 +713,7 @@ public sealed class SourceRepositoryTests : IDisposable
             Assert.NotNull(stored);
             Assert.Equal("/api/v2.0/indexers/example/results/torznab", stored!.ApiPath);
             Assert.Equal(40, stored.Priority);
-            Assert.Equal(90, stored.TimeoutSeconds);
+            Assert.Equal(27, stored.TimeoutSeconds);
             Assert.Equal(250, stored.QueryLimit);
             Assert.Equal(25, stored.GrabLimit);
             Assert.Equal("Hour", stored.LimitsUnit);
@@ -1016,5 +1022,184 @@ public sealed class SourceRepositoryTests : IDisposable
             CancellationToken.None);
 
         Assert.False(await repository.HasApiKeyAsync(source.Id, CancellationToken.None));
+    }
+
+    // ---- arb-2cjk: TimeoutSeconds is bounded at the write boundary ---------------------------
+    //
+    // Both write paths are covered, because both funnel through the same private ApplyOptions and a
+    // test of only one would keep passing if that sharing were ever undone. The accepted-boundary
+    // test is the positive control: without it, "out-of-range is rejected" would hold just as well
+    // for a validator that rejected EVERY value, which would silently make the column unusable.
+    // Each rejection additionally asserts nothing was written, so a value that threw after a partial
+    // write would fail (AC24 reject-never-clamp).
+
+    /// <summary>
+    /// Values outside [<see cref="SourceRepository.MinTimeoutSeconds"/>,
+    /// <see cref="SourceRepository.MaxTimeoutSeconds"/>] are rejected on CREATE.
+    ///
+    /// <para>Both boundaries are driven one step outside, which is what pins the comparisons as
+    /// <c>&lt;</c> and <c>&gt;</c> rather than <c>&lt;=</c> and <c>&gt;=</c> — paired with the
+    /// accepted-boundary test below, an off-by-one in either direction fails one of the two. 0 and a
+    /// negative are included specifically because they were previously ACCEPTED here and then
+    /// silently demoted to "adapter default" by <c>SourceRegistry.RequestTimeoutFor</c>: storing a
+    /// value nobody honours is the outcome this validation exists to stop.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(SourceRepository.MinTimeoutSeconds - 1)]
+    [InlineData(-1)]
+    [InlineData(-30)]
+    [InlineData(SourceRepository.MaxTimeoutSeconds + 1)]
+    [InlineData(300)]
+    [InlineData(86_400)]
+    public async Task AddAsync_rejects_a_timeout_outside_the_accepted_range(int timeoutSeconds)
+    {
+        using var context = CreateContext();
+        var repository = new SourceRepository(context);
+
+        await Assert.ThrowsAsync<SourceValidationException>(() => repository.AddAsync(
+            kind: SourceRepository.NewznabKind,
+            displayName: "Bad timeout " + timeoutSeconds,
+            baseUrl: "http://indexer.example/",
+            apiKey: null,
+            enabled: true,
+            CancellationToken.None,
+            new SourceOptions { TimeoutSeconds = timeoutSeconds, SetTimeoutSeconds = true }));
+
+        Assert.Empty(await repository.GetAllAsync(CancellationToken.None));
+    }
+
+    /// <summary>
+    /// The same range is enforced on UPDATE, and a rejected update leaves the STORED value intact.
+    ///
+    /// <para>That second assertion is the one with teeth: a validator that ran after assignment
+    /// would throw exactly as expected here while having already overwritten the row, and every
+    /// assertion but this one would still pass.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(SourceRepository.MinTimeoutSeconds - 1)]
+    [InlineData(-1)]
+    [InlineData(SourceRepository.MaxTimeoutSeconds + 1)]
+    [InlineData(86_400)]
+    public async Task UpdateAsync_rejects_a_timeout_outside_the_accepted_range(int timeoutSeconds)
+    {
+        using var context = CreateContext();
+        var repository = new SourceRepository(context);
+
+        var source = await repository.AddAsync(
+            kind: SourceRepository.NewznabKind,
+            displayName: "Tuned source",
+            baseUrl: "http://indexer.example/",
+            apiKey: null,
+            enabled: true,
+            CancellationToken.None,
+            new SourceOptions { TimeoutSeconds = 15, SetTimeoutSeconds = true });
+
+        await Assert.ThrowsAsync<SourceValidationException>(() => repository.UpdateAsync(
+            source.Id,
+            kind: SourceRepository.NewznabKind,
+            displayName: "Tuned source",
+            baseUrl: "http://indexer.example/",
+            apiKey: null,
+            enabled: true,
+            CancellationToken.None,
+            new SourceOptions { TimeoutSeconds = timeoutSeconds, SetTimeoutSeconds = true }));
+
+        var stored = Assert.Single(await repository.GetAllAsync(CancellationToken.None));
+        Assert.Equal(15, stored.TimeoutSeconds);
+    }
+
+    /// <summary>
+    /// POSITIVE CONTROL for both rejection tests: the boundary values themselves are ACCEPTED and
+    /// round-trip, on both write paths. Without this the rejections above are consistent with a
+    /// validator that refused everything.
+    /// </summary>
+    [Theory]
+    [InlineData(SourceRepository.MinTimeoutSeconds)]
+    [InlineData(10)]
+    [InlineData(SourceRepository.MaxTimeoutSeconds)]
+    public async Task Both_write_paths_accept_a_timeout_on_the_boundary_and_round_trip_it(int timeoutSeconds)
+    {
+        using var context = CreateContext();
+        var repository = new SourceRepository(context);
+
+        var created = await repository.AddAsync(
+            kind: SourceRepository.NewznabKind,
+            displayName: "Boundary " + timeoutSeconds,
+            baseUrl: "http://indexer.example/",
+            apiKey: null,
+            enabled: true,
+            CancellationToken.None,
+            new SourceOptions { TimeoutSeconds = timeoutSeconds, SetTimeoutSeconds = true });
+
+        Assert.Equal(timeoutSeconds, created.TimeoutSeconds);
+
+        var updated = await repository.UpdateAsync(
+            created.Id,
+            kind: SourceRepository.NewznabKind,
+            displayName: "Boundary " + timeoutSeconds,
+            baseUrl: "http://indexer.example/",
+            apiKey: null,
+            enabled: true,
+            CancellationToken.None,
+            new SourceOptions { TimeoutSeconds = timeoutSeconds, SetTimeoutSeconds = true });
+
+        Assert.Equal(timeoutSeconds, updated.TimeoutSeconds);
+
+        var stored = Assert.Single(await repository.GetAllAsync(CancellationToken.None));
+        Assert.Equal(timeoutSeconds, stored.TimeoutSeconds);
+    }
+
+    /// <summary>
+    /// <c>null</c> still passes, on both write paths, and still means "take the adapter's default"
+    /// rather than a duration to bound (see <see cref="Entities.Source.TimeoutSeconds"/>).
+    ///
+    /// <para>This pins the validation's guard to <c>SetTimeoutSeconds</c> AND a non-null value.
+    /// Bounding the null too — the obvious simplification, since <c>null</c> is neither &gt;= 1 nor
+    /// &lt;= 30 — would make CLEARING an override impossible, so an operator could never undo a
+    /// per-source timeout once set.</para>
+    /// </summary>
+    [Fact]
+    public async Task Both_write_paths_accept_a_null_timeout_meaning_the_adapter_default()
+    {
+        using var context = CreateContext();
+        var repository = new SourceRepository(context);
+
+        var created = await repository.AddAsync(
+            kind: SourceRepository.NewznabKind,
+            displayName: "Untuned source",
+            baseUrl: "http://indexer.example/",
+            apiKey: null,
+            enabled: true,
+            CancellationToken.None,
+            new SourceOptions { TimeoutSeconds = null, SetTimeoutSeconds = true });
+
+        Assert.Null(created.TimeoutSeconds);
+
+        // Set a real value, then clear it back to null through the same flag — the round trip an
+        // operator makes when they undo a per-source override.
+        await repository.UpdateAsync(
+            created.Id,
+            kind: SourceRepository.NewznabKind,
+            displayName: "Untuned source",
+            baseUrl: "http://indexer.example/",
+            apiKey: null,
+            enabled: true,
+            CancellationToken.None,
+            new SourceOptions { TimeoutSeconds = 20, SetTimeoutSeconds = true });
+
+        var cleared = await repository.UpdateAsync(
+            created.Id,
+            kind: SourceRepository.NewznabKind,
+            displayName: "Untuned source",
+            baseUrl: "http://indexer.example/",
+            apiKey: null,
+            enabled: true,
+            CancellationToken.None,
+            new SourceOptions { TimeoutSeconds = null, SetTimeoutSeconds = true });
+
+        Assert.Null(cleared.TimeoutSeconds);
+
+        var stored = Assert.Single(await repository.GetAllAsync(CancellationToken.None));
+        Assert.Null(stored.TimeoutSeconds);
     }
 }
