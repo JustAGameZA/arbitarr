@@ -42,6 +42,23 @@ interface QueryStateProps<T> {
   error: unknown;
   data: T | undefined;
   children: (data: T) => ReactNode;
+  /**
+   * Replaces the TEXT of the error branch, never its treatment (arb-z505).
+   *
+   * Two surfaces answer a 404 with a sentence that names their own cause --
+   * Search's "ad-hoc results are not recorded in the release lookup" and
+   * Suppressions' "the audit log records the upstream guid only" -- and each
+   * is correct only where it is written. Before this prop, those sentences
+   * were the reason both surfaces hand-rolled the whole triad, which is
+   * exactly the drift QueryState exists to prevent; routing them through here
+   * keeps the pending/error/503 treatment proven once while the wording stays
+   * local to the surface that knows the cause.
+   *
+   * Defaulted to `errorMessage`, so the 25+ existing call sites are untouched
+   * and an omitted prop cannot quietly change what a surface says. The
+   * `role="alert"` stays QueryState's own and is not the caller's to forget.
+   */
+  renderError?: (error: unknown) => ReactNode;
 }
 
 /**
@@ -87,14 +104,20 @@ export function useAnnounceOnChange(active: boolean, message: string): void {
  * (role="alert") but nothing else, so a pending state that resolves into a
  * silent success looked identical to nothing having happened at all.
  */
-export function QueryState<T>({ isPending, error, data, children }: QueryStateProps<T>) {
+export function QueryState<T>({
+  isPending,
+  error,
+  data,
+  children,
+  renderError = errorMessage,
+}: QueryStateProps<T>) {
   const pending = isPending || data === undefined;
   useAnnounceOnChange(error === null || error === undefined ? pending : false, 'Loading…');
 
   if (error !== null && error !== undefined) {
     return (
       <p className={styles.error} role="alert">
-        {errorMessage(error)}
+        {renderError(error)}
       </p>
     );
   }
