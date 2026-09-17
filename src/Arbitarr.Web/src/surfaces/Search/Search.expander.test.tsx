@@ -23,6 +23,8 @@ const response = {
     cacheAge: '00:01:30.5000000',
     cacheBand: 0,
     rateLimitedSources: [],
+    timedOutSources: [],
+    failedSources: [],
   },
 };
 

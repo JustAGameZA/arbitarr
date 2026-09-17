@@ -8,23 +8,6 @@
   white-space: nowrap;
 }
 
-.titles {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 4px 14px;
-  margin: 0;
-  padding: 8px 0;
-  font-size: 12px;
-}
-
-.titles dt {
-  color: var(--fg-muted);
-}
-
-.titles dd {
-  margin: 0;
-}
-
 /* The shadow-mode filter above the decisions table. Its own row so the select
    does not stretch to the panel width the way a bare .field would. */
 .filterRow {
