@@ -182,6 +182,24 @@ public static partial class LogMessageCleanser
         {
             // Per-row fail-closed (arb-qafw): this text becomes a fixed marker, but the caller's
             // batch transaction still commits the other rows.
+            //
+            // arb-gbj0 — THE GUARANTEE THIS LINE MAKES, restated because a security review asked
+            // whether the timeout path is the one way a secret bypasses the sink. IT IS NOT. The
+            // raw, partly-scrubbed or unscrubbed text is DROPPED here: it is not returned, not
+            // logged, and not carried out of this method in any form. What the caller receives, and
+            // therefore what LogStore.WriteAsync persists for this row, is the fixed
+            // TimeoutPlaceholder literal and nothing else. There is no arm of this method that can
+            // return `truncated` or `text` once CleanseCore has thrown, so a credential inside a
+            // pathological input cannot reach the store by exhausting the match timeout.
+            //
+            // The timeout is reachable from OUTSIDE this type, not only through the test-only
+            // timeoutProbe overload: CredentialPatterns' NamedCredential arm scans quadratically
+            // against a long unterminated [\w-] run, and an input just under MaxCleanseInputLength
+            // exceeds PublicMatchTimeoutMilliseconds. That is precisely why this arm exists and why
+            // it must keep returning a constant. Bounding that prefix to remove the quadratic scan
+            // is tracked separately and needs corpus evidence that no current positive row
+            // regresses; it is deliberately NOT done here, because doing it would not change what
+            // this catch must guarantee.
             return TimeoutPlaceholder;
         }
 

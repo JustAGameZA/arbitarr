@@ -585,11 +585,17 @@ public class DownloadProxyTests
     }
 
     /// <summary>
-    /// Proxy mode serves BYTES and never a Location header — the property the whole bead rests on,
-    /// asserted on the result type rather than on a status code. <c>FileContentHttpResult</c> carries
-    /// a byte body and has no redirect affordance at all; the redirect results
-    /// (<c>RedirectHttpResult</c>) are a different type, so a change to redirect mode fails here
-    /// rather than passing silently. Redirect mode is arb-x7w8.14's bead, not this one's.
+    /// Proxy mode serves BYTES and never a Location header — the property the whole bead rests on.
+    /// <c>FileContentHttpResult</c> carries a byte body and has no redirect affordance at all, and
+    /// the RESPONSE is additionally asserted to carry no 3xx and no <c>Location</c>, so a change to
+    /// redirect mode fails here rather than passing silently. Redirect mode is arb-x7w8.14's bead,
+    /// not this one's.
+    ///
+    /// <para>arb-j4hq: the "never a redirect" half is asserted on the response rather than by ruling
+    /// out the framework's redirect TYPE. The endpoint no longer returns that type — it writes the
+    /// 302 itself, because the framework's version logs its destination — and a type-based assertion
+    /// would now pass against any other result that set a Location header. See
+    /// <c>RedirectResponseAssertions</c>.</para>
     /// </summary>
     [Fact]
     public async Task Proxy_mode_serves_bytes_and_never_a_redirect_result()
@@ -607,16 +613,21 @@ public class DownloadProxyTests
 
         var bytes = Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.FileContentHttpResult>(result);
         Assert.Equal(payload, bytes.FileContents);
-        Assert.IsNotType<Microsoft.AspNetCore.Http.HttpResults.RedirectHttpResult>(result);
+        await RedirectResponseAssertions.AssertIsNotARedirectAsync(result);
     }
 
     /// <summary>
     /// arb-x7w8.14 — THE SIBLING OF THE TEST ABOVE, asserting the inverse for redirect mode. The pair
-    /// is the point: proxy mode must never redirect and redirect mode must never serve bytes. Each
-    /// half is stated on the RESULT TYPE rather than on a status code, because
-    /// <c>FileContentHttpResult</c> has no redirect affordance and <c>RedirectHttpResult</c> has no
-    /// body — so a mode branch wired the wrong way round fails here instead of passing silently
-    /// behind a plausible-looking 200 or 302.
+    /// is the point: proxy mode must never redirect and redirect mode must never serve bytes. The
+    /// bytes half is stated on the RESULT TYPE (<c>FileContentHttpResult</c> has no redirect
+    /// affordance) and the redirect half on the RESPONSE the result writes — a 302 with the link in
+    /// <c>Location</c> — so a mode branch wired the wrong way round fails here instead of passing
+    /// silently behind a plausible-looking 200 or 302.
+    ///
+    /// <para>arb-j4hq: the redirect half no longer names the framework's redirect type, because the
+    /// endpoint no longer returns it — it writes the 302 itself, the framework's version having
+    /// logged its destination. Asserting the response is what keeps this test meaning the same thing
+    /// across that change. See <c>RedirectResponseAssertions</c>.</para>
     ///
     /// <para><b>The Location is the release's own link, passed through UNCHANGED.</b> No URL is built
     /// and no key is appended, because the indexer already put its key into that link when it
@@ -649,8 +660,7 @@ public class DownloadProxyTests
         var result = await DownloadProxyEndpoint.HandleAsync(
             release.ProxyGuid, ValidApiKey, Resolver(), lookup, registry, NullEventSink.Instance, CancellationToken.None);
 
-        var redirect = Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.RedirectHttpResult>(result);
-        Assert.Equal(release.Candidate.Link.OriginalString, redirect.Url);
+        await RedirectResponseAssertions.AssertRedirectsToAsync(result, release.Candidate.Link.OriginalString);
         Assert.IsNotType<Microsoft.AspNetCore.Http.HttpResults.FileContentHttpResult>(result);
 
         // Nothing was fetched, so the indexer was never asked for the payload.
@@ -696,7 +706,7 @@ public class DownloadProxyTests
 
         var bytes = Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.FileContentHttpResult>(result);
         Assert.Equal(payload, bytes.FileContents);
-        Assert.IsNotType<Microsoft.AspNetCore.Http.HttpResults.RedirectHttpResult>(result);
+        await RedirectResponseAssertions.AssertIsNotARedirectAsync(result);
     }
 
     /// <summary>
@@ -745,7 +755,8 @@ public class DownloadProxyTests
             release.ProxyGuid, ValidApiKey, Resolver(), lookup, redirectRegistry, NullEventSink.Instance,
             CancellationToken.None, tracker);
 
-        Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.RedirectHttpResult>(redirectResult);
+        await RedirectResponseAssertions.AssertRedirectsToAsync(
+            redirectResult, release.Candidate.Link.OriginalString);
         Assert.Single(tracker.Snapshot());
 
         // THE CONTRAST: the same source, same tracker, proxy mode — a payload really does come back,
