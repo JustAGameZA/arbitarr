@@ -190,7 +190,7 @@ public sealed class ArbitarrWebApplicationFactory : WebApplicationFactory<Progra
         using var scope = Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ArbitarrDbContext>();
 
-        var maintenanceFirstPassCompleted = IsMaintenanceFirstPassCompleted();
+        var maintenanceFirstPassCompletedBefore = IsMaintenanceFirstPassCompleted();
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
         try
@@ -201,7 +201,22 @@ public sealed class ArbitarrWebApplicationFactory : WebApplicationFactory<Progra
         catch (SqliteException ex)
         {
             stopwatch.Stop();
-            throw SeedDiagnostics.Wrap(ex, stopwatch.Elapsed, maintenanceFirstPassCompleted, _configDirectory);
+
+            // arb-tdc4 review: sampled a SECOND time here, after the failure. A single sample taken
+            // only before the seed cannot tell "the pass had not started" from "the pass ran (and
+            // possibly held the lock) while the seed was in flight" -- both read as false at that one
+            // point. Two samples turn that into an observable before/after transition. Deliberately
+            // NOT a query against the failed connection (no PRAGMA, no retry): reading this in-process
+            // flag cannot itself contend for the lock or move the elapsed time being reported, which a
+            // query against a locked database could.
+            var maintenanceFirstPassCompletedAfter = IsMaintenanceFirstPassCompleted();
+
+            throw SeedDiagnostics.Wrap(
+                ex,
+                stopwatch.Elapsed,
+                maintenanceFirstPassCompletedBefore,
+                maintenanceFirstPassCompletedAfter,
+                _configDirectory);
         }
     }
 
