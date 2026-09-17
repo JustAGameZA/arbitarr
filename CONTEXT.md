@@ -155,6 +155,15 @@ appears, one when it clears, pushed from a decorator rather than through
 `NotificationPolicy.FoldSourceFailure` — see
 [ADR 0014](docs/adr/0014-refuse-upstream-download-redirects.md).
 
+**One item is a known exception to that.** The permanently-disabled-source item
+(`source-permanently-disabled`, arb-x7w8.11) is **read-derived**: it is projected
+from the durable backoff row each time `/api/status` is served, rather than owned
+by a tracker. There is therefore no edge for a decorator to observe, and it
+**deliberately does not notify today**. That is the accepted cost of the
+projection, which is also what makes the item impossible to expire by elapsed
+time. Giving it an edge is bead **arb-rx1f**; mirroring the row into a second
+tracker to obtain one is specifically not the fix.
+
 ---
 
 ## Probe outcome
@@ -538,20 +547,30 @@ short-window fault detector — ADR 0020's whole point is that these are not the
 thing). Backoff escalates on failure and **resets to zero on success**, never decrementing
 one step at a time.
 
-**Three backoff states.** ADR 0020 requires a source's condition to be one of three,
-kept distinguishable to the operator rather than collapsed into one "unavailable":
-**skipped** (budget exhausted, not a fault), **backing off** (escalating after a
-transient fault, expected to recover), and **permanently disabled** (an authentication
-failure, which no amount of waiting fixes). Collapsing any two of these removes the
-signal that tells an operator whether to wait or to act.
+**Three backoff states, plus the healthy baseline.** ADR 0020 requires a source's
+condition to be one of three, kept distinguishable to the operator rather than
+collapsed into one "unavailable": **Budgeted** (called *skipped* in ADR 0020, which
+named the action rather than the state: allowance exhausted, not a fault), **backing
+off** (escalating after a transient fault, expected to recover), and **permanently
+disabled** (an authentication failure, which no amount of waiting fixes). Collapsing
+any two of these removes the signal that tells an operator whether to wait or to act.
+
+**Healthy** is a named fourth wire value rather than the absence of the other three:
+`SourceRuntimeState` carries it by name and consumers branch on it, so it is part of
+the closed set even though it is not itself a backoff state.
+
+A source is **Budgeted** when EITHER its query or its grab allowance is spent, since
+the budget gate refuses by kind. One badge covers both, and the per-kind tallies sit
+beside it on the admin sources surface.
 
 **Startup grace window.** The period after host start during which backoff escalation is
 suppressed, per ADR 0020, so that every source failing at once on a cold start — upstreams
 not yet reachable — does not disable the whole set simultaneously.
 
-The concrete shape of the durable backoff row and the budget check itself is **defined
-when arb-x7w8.10 lands**; this section records only the vocabulary ADR 0020 already
-defines.
+The concrete shape of the durable backoff row and the budget check itself landed with
+arb-x7w8.10: see `SourceBackoffState` for the row and `SourceBackoffStore` for the
+reads and writes over it, with `SourceApiHitCounter` holding the budget comparison and
+`SourceRuntimeState` the derived per-source value the surfaces render.
 
 ---
 

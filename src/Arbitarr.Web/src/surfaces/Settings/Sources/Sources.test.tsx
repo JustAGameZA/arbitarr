@@ -203,6 +203,60 @@ describe('Sources section', () => {
   }, TEST_TIMEOUT_MS);
 
   /**
+   * THE GRABS COLUMN, per row, under the same null-is-unlimited rule.
+   *
+   * It exists because EITHER allowance being spent renders the one Budgeted
+   * badge (SourceRuntimeStateReader.Derive): without grabs on the row that
+   * badge is unattributable, since an operator sees Budgeted beside a queries
+   * cell that is nowhere near its cap.
+   *
+   * Both cases in one render, and every number distinct from the queries cell
+   * in the same row. Sharing a figure between the two columns is what would let
+   * a surface rendering `queriesUsed` under BOTH headings pass: `within(row)`
+   * finds the text either way. Here the query and grab cells cannot be
+   * confused, so each assertion is evidence about its own column.
+   */
+  it('renders grabs against a cap and an unconfigured grab limit as unlimited', async () => {
+    mockApi({
+      [SOURCES]: {
+        body: [
+          {
+            ...sources[0],
+            id: 41,
+            displayName: 'Capped grabs hydra',
+            queriesUsed: 3,
+            queryLimit: 50,
+            grabsUsed: 7,
+            grabLimit: 20,
+          },
+          {
+            ...sources[0],
+            id: 42,
+            displayName: 'Uncapped grabs hydra',
+            queriesUsed: 4,
+            queryLimit: 60,
+            grabsUsed: 9,
+            grabLimit: null,
+          },
+        ],
+      },
+    });
+    renderSurface(<SourcesSection />);
+
+    const capped = await rowFor('Capped grabs hydra');
+    expect(within(capped).getByText('7 of 20')).toBeInTheDocument();
+    // The queries cell in the same row still reads its own figure, so the grab
+    // cell above is genuinely a second column and not the first one relabelled.
+    expect(within(capped).getByText('3 of 50')).toBeInTheDocument();
+
+    const uncapped = await rowFor('Uncapped grabs hydra');
+    expect(within(uncapped).getByText('9 used, unlimited')).toBeInTheDocument();
+    // Never "9 of 0": the `?? 0` collapse is the defect on this column too.
+    expect(within(uncapped).queryByText('9 of 0')).not.toBeInTheDocument();
+    expect(within(uncapped).getByText('4 of 60')).toBeInTheDocument();
+  }, TEST_TIMEOUT_MS);
+
+  /**
    * A `disabledUntil` IN THE PAST is not a backoff.
    *
    * The row keeps the instant after the hold-off elapses, because the level it

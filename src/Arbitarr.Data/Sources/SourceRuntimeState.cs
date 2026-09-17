@@ -144,7 +144,13 @@ public sealed class SourceRuntimeStateReader
             states.TryGetValue(source.DisplayName, out var state);
 
             result[source.DisplayName] = new SourceRuntimeStatus(
-                State: Derive(state, source.QueryLimit, queriesUsed, _timeProvider.GetUtcNow()),
+                State: Derive(
+                    state,
+                    source.QueryLimit,
+                    queriesUsed,
+                    source.GrabLimit,
+                    grabsUsed,
+                    _timeProvider.GetUtcNow()),
                 DisabledUntil: state?.DisabledUntil,
                 DisabledLevel: state?.DisabledLevel ?? 0,
                 LastOutcome: state?.LastOutcome,
@@ -167,13 +173,26 @@ public sealed class SourceRuntimeStateReader
     /// any non-null value as "backing off" would show a recovered source as broken indefinitely.
     /// Budgeted is checked LAST because it is the mildest and the most transient: a source that is
     /// also failing has a more urgent thing to say about itself.</para>
+    ///
+    /// <para><b>BOTH allowances are read, and EITHER one spent is Budgeted.</b> The refusal this
+    /// renders is <see cref="Arbitarr.Data.Entities.EventKind"/>-scoped upstream: the budget gate
+    /// asks the QUERY allowance for a search and the GRAB allowance for a download, so a source
+    /// whose grabs are spent while its queries are not really does refuse every download. Deriving
+    /// from the query pair alone rendered that source Healthy, which is the one reading an operator
+    /// watching downloads fail cannot act on. One badge still, and deliberately: the two allowances
+    /// share a window and a remedy, so splitting the badge would ask the operator to distinguish
+    /// between two states with the same fix while the per-kind tallies are already on the row.</para>
     /// </summary>
-    /// <param name="limit">
+    /// <param name="queryLimit">
     /// The source's query cap. <b>Null is UNLIMITED and is not zero</b> (see
     /// <see cref="Source.QueryLimit"/>): an unconfigured limit can never be budgeted, whereas a limit
     /// of zero always is. Pattern-matched rather than written <c>limit ?? 0</c> precisely because
     /// that spelling is the defect — it would report every indexer whose limit an operator never set
     /// as budgeted from its first search.
+    /// </param>
+    /// <param name="grabLimit">
+    /// The source's grab cap, under the identical null-is-unlimited rule as
+    /// <paramref name="queryLimit"/> and for the identical reason (see <see cref="Source.GrabLimit"/>).
     /// </param>
     /// <remarks>
     /// <para><c>public</c>, not <c>internal</c>: there is no <c>InternalsVisibleTo</c> from this
@@ -184,8 +203,10 @@ public sealed class SourceRuntimeStateReader
     /// </remarks>
     public static SourceRuntimeState Derive(
         SourceBackoffState? state,
-        int? limit,
-        int used,
+        int? queryLimit,
+        int queriesUsed,
+        int? grabLimit,
+        int grabsUsed,
         DateTimeOffset now)
     {
         if (state is { IsPermanentlyDisabled: true })
@@ -200,12 +221,22 @@ public sealed class SourceRuntimeStateReader
 
         // Greater than or equal, matching SourceApiHitCounter's `used < cap` budget test exactly: at
         // the cap the allowance is spent, so the next call would exceed it. Deriving the same
-        // boundary twice from one rule is why this comparison is written to mirror that one.
-        if (limit is { } cap && used >= cap)
+        // boundary twice from one rule is why this comparison is written to mirror that one. The
+        // SAME mirror applies to each allowance, because upstream the same `used < cap` answers both
+        // HasQueryBudgetAsync and HasGrabBudgetAsync.
+        if (IsSpent(queryLimit, queriesUsed) || IsSpent(grabLimit, grabsUsed))
         {
             return SourceRuntimeState.Budgeted;
         }
 
         return SourceRuntimeState.Healthy;
     }
+
+    /// <summary>
+    /// One allowance's spent test, written once so the query and grab arms cannot drift apart: a
+    /// null cap is unlimited and can never be spent, and a configured cap is spent at the cap
+    /// rather than past it. The <c>is { } cap</c> pattern is the whole point of extracting it: a
+    /// second hand-written copy is where a <c>?? 0</c> would eventually appear in only one of them.
+    /// </summary>
+    private static bool IsSpent(int? limit, int used) => limit is { } cap && used >= cap;
 }

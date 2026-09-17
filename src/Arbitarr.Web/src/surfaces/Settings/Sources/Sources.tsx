@@ -514,12 +514,12 @@ export function SourcesSection() {
 
         {/* arb-x7w8.11. The "Restart required" badge on the heading describes the
             CONFIGURATION columns, and a reader who carried that reading across
-            would take Status and Queries for two more values awaiting a restart —
+            would take Status, Queries and Grabs for three more values awaiting a restart —
             they are the opposite, changing continuously while the process runs.
             Saying so once here is cheaper than a second badge per row, and it
             also states what clears the one state nothing clears by itself. */}
         <p className={styles.muted}>
-          Status and Queries are live and refresh when this page is loaded, unlike the settings
+          Status, Queries and Grabs are live and refresh when this page is loaded, unlike the settings
           above them. A source that is backing off recovers on its own; one that is permanently
           disabled had its API key rejected and stays disabled until a corrected key succeeds.
         </p>
@@ -563,6 +563,7 @@ export function SourcesSection() {
                           one word costs more than the width it saves. */}
                       <th>Status</th>
                       <th>Queries</th>
+                      <th>Grabs</th>
                       <th>API key</th>
                       <th>Created</th>
                       <th>Updated</th>
@@ -621,6 +622,16 @@ export function SourcesSection() {
                             null-is-unlimited rule; do not inline a `?? 0` here. */}
                         <td className={styles.muted}>
                           {formatUsage(source.queriesUsed, source.queryLimit)}
+                        </td>
+                        {/* Grabs alongside queries because EITHER allowance being
+                            spent renders the single Budgeted badge above (see
+                            SourceRuntimeStateReader.Derive). Without this column
+                            that badge is unattributable: an operator seeing
+                            Budgeted while queries read "3 of 50" has nothing on
+                            the row explaining it. Same `formatUsage`, same
+                            null-is-unlimited rule, still no `?? 0`. */}
+                        <td className={styles.muted}>
+                          {formatUsage(source.grabsUsed, source.grabLimit)}
                         </td>
                         <td>
                           {/* The entire read surface for the secret: a boolean the

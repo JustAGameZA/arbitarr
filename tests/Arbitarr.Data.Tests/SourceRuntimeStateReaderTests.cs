@@ -28,6 +28,18 @@ public sealed class SourceRuntimeStateReaderTests
         };
 
     /// <summary>
+    /// <c>Derive</c> with the GRAB allowance left unbounded, so a case written about the query
+    /// allowance is about that allowance alone. Null rather than a large number: unlimited is the
+    /// one grab value that provably cannot contribute a Budgeted of its own, so a query-side case
+    /// reading Healthy here is evidence about the query arm and nothing else.
+    /// </summary>
+    private static SourceRuntimeState DeriveOnQueries(
+        SourceBackoffState? state,
+        int? limit,
+        int used) =>
+        SourceRuntimeStateReader.Derive(state, limit, used, grabLimit: null, grabsUsed: 0, Now);
+
+    /// <summary>
     /// No row at all is HEALTHY, not an error state — a source that has never been called has
     /// nothing wrong with it.
     /// </summary>
@@ -36,7 +48,7 @@ public sealed class SourceRuntimeStateReaderTests
     {
         Assert.Equal(
             SourceRuntimeState.Healthy,
-            SourceRuntimeStateReader.Derive(state: null, limit: null, used: 0, Now));
+            DeriveOnQueries(state: null, limit: null, used: 0));
     }
 
     /// <summary>
@@ -48,11 +60,10 @@ public sealed class SourceRuntimeStateReaderTests
     {
         Assert.Equal(
             SourceRuntimeState.BackingOff,
-            SourceRuntimeStateReader.Derive(
+            DeriveOnQueries(
                 State(disabledUntil: Now.AddMinutes(5), level: 2),
                 limit: null,
-                used: 0,
-                Now));
+                used: 0));
     }
 
     /// <summary>
@@ -66,11 +77,10 @@ public sealed class SourceRuntimeStateReaderTests
     {
         Assert.Equal(
             SourceRuntimeState.Healthy,
-            SourceRuntimeStateReader.Derive(
+            DeriveOnQueries(
                 State(disabledUntil: Now.AddMinutes(-1), level: 3),
                 limit: null,
-                used: 0,
-                Now));
+                used: 0));
     }
 
     /// <summary>
@@ -84,11 +94,10 @@ public sealed class SourceRuntimeStateReaderTests
     {
         Assert.Equal(
             SourceRuntimeState.PermanentlyDisabled,
-            SourceRuntimeStateReader.Derive(
+            DeriveOnQueries(
                 State(permanentlyDisabled: true, disabledUntil: Now.AddMinutes(-1)),
                 limit: null,
-                used: 0,
-                Now));
+                used: 0));
     }
 
     /// <summary>Permanent also beats a LIVE hold-off, so the precedence holds on both sides of the clock.</summary>
@@ -97,11 +106,10 @@ public sealed class SourceRuntimeStateReaderTests
     {
         Assert.Equal(
             SourceRuntimeState.PermanentlyDisabled,
-            SourceRuntimeStateReader.Derive(
+            DeriveOnQueries(
                 State(permanentlyDisabled: true, disabledUntil: Now.AddMinutes(5)),
                 limit: null,
-                used: 0,
-                Now));
+                used: 0));
     }
 
     /// <summary>
@@ -113,11 +121,10 @@ public sealed class SourceRuntimeStateReaderTests
     {
         Assert.Equal(
             SourceRuntimeState.BackingOff,
-            SourceRuntimeStateReader.Derive(
+            DeriveOnQueries(
                 State(disabledUntil: Now.AddMinutes(5)),
                 limit: 10,
-                used: 10,
-                Now));
+                used: 10));
     }
 
     /// <summary>
@@ -133,7 +140,7 @@ public sealed class SourceRuntimeStateReaderTests
     {
         Assert.Equal(
             SourceRuntimeState.Healthy,
-            SourceRuntimeStateReader.Derive(state: null, limit: null, used, Now));
+            DeriveOnQueries(state: null, limit: null, used));
     }
 
     /// <summary>
@@ -153,10 +160,139 @@ public sealed class SourceRuntimeStateReaderTests
     [InlineData(0, 0, true)]
     public void The_budget_boundary_is_at_the_cap_not_past_it(int used, int limit, bool expectBudgeted)
     {
-        var derived = SourceRuntimeStateReader.Derive(state: null, limit, used, Now);
+        var derived = DeriveOnQueries(state: null, limit, used);
 
         Assert.Equal(
             expectBudgeted ? SourceRuntimeState.Budgeted : SourceRuntimeState.Healthy,
             derived);
+    }
+
+    /// <summary>
+    /// <b>A SPENT GRAB ALLOWANCE IS BUDGETED even while the query allowance is untouched.</b> This is
+    /// the defect arch-511 found: the derivation read the query pair alone, while
+    /// <c>BudgetedUpstreamSource</c> refuses BY KIND and asks <c>HasGrabBudgetAsync</c> for a
+    /// download. A source in this state renders Healthy while every download from it is refused,
+    /// which is the one reading an operator watching downloads fail cannot act on.
+    /// </summary>
+    [Fact]
+    public void A_spent_grab_allowance_is_budgeted_while_queries_remain()
+    {
+        Assert.Equal(
+            SourceRuntimeState.Budgeted,
+            SourceRuntimeStateReader.Derive(
+                state: null,
+                queryLimit: 50,
+                queriesUsed: 3,
+                grabLimit: 10,
+                grabsUsed: 10,
+                Now));
+    }
+
+    /// <summary>
+    /// The INVERSE, so neither arm passes against an implementation that reads only the other one. A
+    /// spent query allowance is budgeted while grabs remain: without this case an implementation
+    /// that swapped the query pair for the grab pair would satisfy the case above.
+    /// </summary>
+    [Fact]
+    public void A_spent_query_allowance_is_budgeted_while_grabs_remain()
+    {
+        Assert.Equal(
+            SourceRuntimeState.Budgeted,
+            SourceRuntimeStateReader.Derive(
+                state: null,
+                queryLimit: 50,
+                queriesUsed: 50,
+                grabLimit: 10,
+                grabsUsed: 1,
+                Now));
+    }
+
+    /// <summary>
+    /// The control both cases above need: with BOTH allowances configured and NEITHER spent the
+    /// source is Healthy. Without it, an implementation returning Budgeted whenever any limit is
+    /// configured at all would pass the pair.
+    /// </summary>
+    [Fact]
+    public void Neither_allowance_spent_is_healthy_with_both_configured()
+    {
+        Assert.Equal(
+            SourceRuntimeState.Healthy,
+            SourceRuntimeStateReader.Derive(
+                state: null,
+                queryLimit: 50,
+                queriesUsed: 49,
+                grabLimit: 10,
+                grabsUsed: 9,
+                Now));
+    }
+
+    /// <summary>
+    /// <b>NULL IS UNLIMITED on the GRAB side too</b>, under the same rule as the query side and for
+    /// the same reason. Both unbounded is Healthy however many hits either kind has spent, so the
+    /// <c>?? 0</c> defect cannot be reintroduced on the arm this change added without failing here.
+    /// </summary>
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(1000, 1000)]
+    public void Both_allowances_unbounded_is_never_budgeted(int queriesUsed, int grabsUsed)
+    {
+        Assert.Equal(
+            SourceRuntimeState.Healthy,
+            SourceRuntimeStateReader.Derive(
+                state: null,
+                queryLimit: null,
+                queriesUsed,
+                grabLimit: null,
+                grabsUsed,
+                Now));
+    }
+
+    /// <summary>
+    /// The grab boundary is at the cap, not past it, exactly as the query one is: the mirror of
+    /// <c>SourceApiHitCounter</c>'s <c>used &lt; cap</c> applies to BOTH allowances, since that same
+    /// comparison backs <c>HasGrabBudgetAsync</c>. Queries are left unbounded so each case is
+    /// evidence about the grab arm alone.
+    /// </summary>
+    [Theory]
+    [InlineData(4, 5, false)]
+    [InlineData(5, 5, true)]
+    [InlineData(6, 5, true)]
+    // A grab cap of ZERO means "never download from this indexer", the configured counterpart to
+    // null, and is budgeted from the first render.
+    [InlineData(0, 0, true)]
+    public void The_grab_budget_boundary_is_at_the_cap_not_past_it(
+        int grabsUsed,
+        int grabLimit,
+        bool expectBudgeted)
+    {
+        var derived = SourceRuntimeStateReader.Derive(
+            state: null,
+            queryLimit: null,
+            queriesUsed: 0,
+            grabLimit,
+            grabsUsed,
+            Now);
+
+        Assert.Equal(
+            expectBudgeted ? SourceRuntimeState.Budgeted : SourceRuntimeState.Healthy,
+            derived);
+    }
+
+    /// <summary>
+    /// A fault still outranks a spent GRAB allowance, so adding the second budget arm did not
+    /// disturb the precedence: Budgeted stays last whichever allowance produced it.
+    /// </summary>
+    [Fact]
+    public void A_live_hold_off_wins_over_a_spent_grab_budget()
+    {
+        Assert.Equal(
+            SourceRuntimeState.BackingOff,
+            SourceRuntimeStateReader.Derive(
+                State(disabledUntil: Now.AddMinutes(5)),
+                queryLimit: null,
+                queriesUsed: 0,
+                grabLimit: 10,
+                grabsUsed: 10,
+                Now));
     }
 }

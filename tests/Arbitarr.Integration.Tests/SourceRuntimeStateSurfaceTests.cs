@@ -7,6 +7,7 @@ using Arbitarr.Core.Settings;
 using Arbitarr.Data.Entities;
 using Arbitarr.Data.Sources;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -384,6 +385,104 @@ public sealed class SourceRuntimeStateSurfaceTests : IDisposable
     }
 
     /// <summary>
+    /// <b>A SPENT GRAB ALLOWANCE IS BUDGETED ON THE WIRE</b>, per source, at the boundary.
+    ///
+    /// <para>arch-511's defect end to end: the derivation read the query pair only, so a source whose
+    /// GRABS were spent rendered Healthy while <c>BudgetedUpstreamSource</c> refused every download
+    /// from it. The grab-spent source here has its query allowance deliberately UNDER its cap, so
+    /// nothing but the grab arm can produce the Budgeted it reports.</para>
+    ///
+    /// <para><b>Both directions in one response, per CLAUDE.md §4's per-row rule.</b> The second
+    /// source is at the grab boundary but one UNDER it, which is the positive control the first
+    /// assertion needs: an implementation that called every source with a grab limit budgeted would
+    /// satisfy the first assertion and fail the second, and one that ignored grabs entirely fails the
+    /// first. The tallies are asserted alongside the state so a Budgeted reached with the wrong
+    /// numbers does not pass.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_source_whose_grabs_are_spent_is_budgeted_though_its_queries_are_not()
+    {
+        await SeedAdminKeyAsync();
+        using var admin = CreateAdminClient();
+
+        var spentGrabs = await CreateSourceAsync(admin, "Grabbed hydra", queryLimit: 50, grabLimit: 5);
+        var underGrabs = await CreateSourceAsync(admin, "Grabbing hydra", queryLimit: 50, grabLimit: 5);
+
+        // Queries well under the cap on BOTH, so the query arm cannot account for either verdict.
+        await SeedQueryHitsAsync(spentGrabs.DisplayName, repeatCount: 3);
+        await SeedQueryHitsAsync(underGrabs.DisplayName, repeatCount: 3);
+
+        // AT the grab cap: the allowance is spent and the next download would exceed it.
+        await SeedGrabHitsAsync(spentGrabs.DisplayName, repeatCount: 5);
+        // One UNDER the same cap.
+        await SeedGrabHitsAsync(underGrabs.DisplayName, repeatCount: 4);
+
+        var listed = await admin.GetFromJsonAsync<List<SourceResponse>>(SourcesRoute);
+
+        var budgeted = Single(listed, spentGrabs.DisplayName);
+        Assert.Equal(nameof(SourceRuntimeState.Budgeted), budgeted.RuntimeState);
+        Assert.Equal(5, budgeted.GrabsUsed);
+        // The query allowance really was untouched, so Budgeted above came from the grab arm.
+        Assert.Equal(3, budgeted.QueriesUsed);
+
+        var healthy = Single(listed, underGrabs.DisplayName);
+        Assert.Equal(nameof(SourceRuntimeState.Healthy), healthy.RuntimeState);
+        Assert.Equal(4, healthy.GrabsUsed);
+        Assert.Equal(3, healthy.QueriesUsed);
+    }
+
+    /// <summary>
+    /// <b>THE PUBLIC ITEM MAY NAME ONLY A SOURCE THIS RESPONSE ALREADY NAMES</b> (sec-511).
+    ///
+    /// <para><b>The reused source really is CONFIGURED, which is what makes this bite.</b> The
+    /// pre-existing join already drops a row whose name matches no configured source, so a fixture
+    /// that only planted an orphaned row would pass without the new filter and prove nothing. This
+    /// one reproduces the actual sequence: the row is planted under a name, a NEW source is then
+    /// created taking that name, and its health row is DELETED so it stands for a source that has
+    /// never been called. It passes the configured-source join and is stopped only by the published
+    /// -name filter. Projecting it would publish that name on this un-gated route for the first time
+    /// and blame it for a credential failure that was never its own.</para>
+    ///
+    /// <para><b>The positive control is in the same response and is what makes the absence bite.</b> A
+    /// second source that HAS both rows raises its item normally, so the payload demonstrably does
+    /// carry items of this kind: the first source's absence is the filter's doing rather than an
+    /// endpoint that produced nothing at all. Asserted per source, by name.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_configured_source_this_response_never_names_raises_no_public_item()
+    {
+        await SeedAdminKeyAsync();
+        using var admin = CreateAdminClient();
+
+        // The freed name, taken by a source that has never been called: its backoff row belongs to
+        // the source that was renamed AWAY from this name, not to this one.
+        var reused = await CreateSourceAsync(admin, "Reused name hydra");
+        await SeedBackoffAsync(reused.DisplayName, permanentlyDisabled: true, disabledUntil: null, level: 0);
+        await DeleteSourceHealthAsync(reused.DisplayName);
+
+        var published = await CreateSourceAsync(admin, "Published hydra");
+        await SeedBackoffAsync(published.DisplayName, permanentlyDisabled: true, disabledUntil: null, level: 0);
+
+        using var pub = _factory.CreateClient();
+        using var response = await pub.GetAsync("/api/status");
+        var body = await response.Content.ReadAsStringAsync();
+        var status = await pub.GetFromJsonAsync<StatusResponse>("/api/status");
+
+        // The premise: this response really does not name the reused source, so an item naming it
+        // would be publishing that name for the first time.
+        Assert.DoesNotContain(status!.Sources, s => s.SourceName == reused.DisplayName);
+
+        // The positive control: this response really does carry items of this key, so the absence
+        // asserted below is a filtered item and not an empty health list.
+        var item = Assert.Single(status.Health, h => h.Key == StatusEndpoint.SourcePermanentlyDisabledKey);
+        Assert.Equal(published.DisplayName, item.SourceName);
+
+        // PER SOURCE, and then over the whole body: the name reaches no field of the response.
+        Assert.DoesNotContain(status.Health, h => h.SourceName == reused.DisplayName);
+        Assert.DoesNotContain(reused.DisplayName, body, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// The runtime detail is ADMIN-GATED, asserted BY NAME.
     ///
     /// <para>The list route is concrete rather than templated, so
@@ -457,7 +556,8 @@ public sealed class SourceRuntimeStateSurfaceTests : IDisposable
     private static async Task<SourceResponse> CreateSourceAsync(
         HttpClient client,
         string displayName,
-        int? queryLimit = null)
+        int? queryLimit = null,
+        int? grabLimit = null)
     {
         using var response = await client.PostAsJsonAsync(SourcesRoute, new
         {
@@ -466,6 +566,7 @@ public sealed class SourceRuntimeStateSurfaceTests : IDisposable
             baseUrl = RefusedBaseUrl,
             enabled = true,
             queryLimit,
+            grabLimit,
         });
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -499,6 +600,24 @@ public sealed class SourceRuntimeStateSurfaceTests : IDisposable
         });
 
     /// <summary>
+    /// Removes a source's circuit-breaker row, which is what <c>/api/status</c> builds its
+    /// <c>SourceStatus</c> list from. Creating a source through the admin route records a failed
+    /// inline caps refresh against the refused base URL, so a row exists by the time the fixture
+    /// returns; deleting it is how a source that has genuinely never been called is expressed.
+    /// </summary>
+    private Task DeleteSourceHealthAsync(string sourceName) =>
+        _factory.SeedAsync(async db =>
+        {
+            var record = await db.SourceHealthRecords
+                .SingleOrDefaultAsync(r => r.SourceName == sourceName);
+
+            if (record is not null)
+            {
+                db.SourceHealthRecords.Remove(record);
+            }
+        });
+
+    /// <summary>
     /// Plants query hits as ONE event row carrying <paramref name="repeatCount"/>, which is how a
     /// busy indexer's burst actually lands: <c>EventRepository</c> folds a repeat onto the previous
     /// row rather than appending. A fixture of N separate rows would pass against a counter that
@@ -506,14 +625,25 @@ public sealed class SourceRuntimeStateSurfaceTests : IDisposable
     /// prevent.
     /// </summary>
     private Task SeedQueryHitsAsync(string sourceName, int repeatCount) =>
+        SeedHitsAsync(sourceName, EventKind.SourceQueryHit, repeatCount);
+
+    /// <summary>
+    /// The GRAB counterpart, under the same one-row-carrying-RepeatCount rule and for the same
+    /// reason. A separate KIND rather than a separate table is the whole shape of the budget: the
+    /// counter asks the same question of each kind, which is why the derivation has to ask both.
+    /// </summary>
+    private Task SeedGrabHitsAsync(string sourceName, int repeatCount) =>
+        SeedHitsAsync(sourceName, EventKind.SourceGrabHit, repeatCount);
+
+    private Task SeedHitsAsync(string sourceName, EventKind kind, int repeatCount) =>
         _factory.SeedAsync(async db =>
         {
             var now = DateTimeOffset.UtcNow;
             db.Events.Add(new EventEntry
             {
-                Kind = EventKind.SourceQueryHit,
+                Kind = kind,
                 SourceDisplayName = sourceName,
-                Summary = "Query hit",
+                Summary = "Api hit",
                 OccurredAt = now,
                 LastRepeatedAt = now,
                 RepeatCount = repeatCount,

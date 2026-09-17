@@ -353,7 +353,10 @@ public static class AdminSourceEndpoints
                     NzbAccessMode = request.NzbAccessMode,
                 });
 
-            var response = await ToResponseAsync(source, repository, cancellationToken);
+            // Explicitly no runtime status: a source created in this request has no backoff row and
+            // no hits in the window, so the Healthy arm is the correct reading rather than an
+            // omission. See ToResponseAsync.
+            var response = await ToResponseAsync(source, repository, cancellationToken, runtime: null);
 
             // arb-x7w8.5: the add-indexer flow fetches caps in the same round trip that saved the
             // row, so a newly added indexer is searchable on its real capabilities immediately
@@ -431,7 +434,10 @@ public static class AdminSourceEndpoints
                     NzbAccessMode = request.NzbAccessMode,
                 });
 
-            var response = await ToResponseAsync(source, repository, cancellationToken);
+            // Explicitly no runtime status, as on create: the edit itself reports nothing about the
+            // source's runtime condition, and reading it here would cost two more event scans on a
+            // write path. See ToResponseAsync.
+            var response = await ToResponseAsync(source, repository, cancellationToken, runtime: null);
 
             // A RENAME ORPHANS THE OLD NAME'S CAPS ENTRIES (architect M1, ADR 0016). The cache key is
             // the display name, so after a rename the old name's entries describe a source that no
@@ -665,12 +671,17 @@ public static class AdminSourceEndpoints
     /// been called is not in trouble. The write paths take this arm deliberately: a source that was
     /// just created or edited has, by construction, nothing to report yet, and a second batch read
     /// there would cost two more event scans to produce the same answer.</para>
+    ///
+    /// <para><b>Required rather than defaulted</b>, so taking that Healthy arm is
+    /// something a call site STATES by passing <c>null</c>. With a default a new read path picks the
+    /// arm up by omission and silently reports Healthy for a source whose state it never read, which
+    /// is the one failure this projection cannot detect from the inside.</para>
     /// </summary>
     private static async Task<SourceResponse> ToResponseAsync(
         Source source,
         SourceRepository repository,
         CancellationToken cancellationToken,
-        SourceRuntimeStatus? runtime = null) =>
+        SourceRuntimeStatus? runtime) =>
         new(
             Id: source.Id,
             Kind: source.Kind,
