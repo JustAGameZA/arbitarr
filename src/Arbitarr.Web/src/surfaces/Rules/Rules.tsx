@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { PageHeader } from '../../components/shell/PageHeader';
-import { QueryState, errorMessage } from '../QueryState';
+import { QueryState, errorMessage, pruneToLiveIds } from '../QueryState';
 import type { FilterRule, UpsertFilterRuleRequest } from '../../api/types';
 import styles from '../surface.module.css';
 import local from './Rules.module.css';
@@ -196,29 +196,16 @@ export default function RulesPage() {
   // action -- a concurrent delete from a second admin session -- with no
   // local callback of this component's own to hook.
   //
-  // Guarded by a functional update that returns the SAME Map reference when
-  // nothing needs pruning, so a fetch that changes row order or unrelated
-  // fields (not row membership) does not produce a new Map identity and does
-  // not re-trigger this effect's own setState -- no render loop. A row that
-  // is still present is left untouched: this only ever deletes, it never
-  // clears or rewrites a surviving entry.
+  // Same-reference no-op guarantee lives on `pruneToLiveIds` itself
+  // (QueryState.tsx) -- it is what stops this effect re-triggering its own
+  // setState on a refetch that does not change row membership.
   useEffect(() => {
     const data = rules.data;
     if (data === undefined) {
       return;
     }
     const liveIds = new Set(data.map((rule) => rule.id));
-    setDeleteFailures((failures) => {
-      let changed = false;
-      const next = new Map(failures);
-      for (const id of failures.keys()) {
-        if (!liveIds.has(id)) {
-          next.delete(id);
-          changed = true;
-        }
-      }
-      return changed ? next : failures;
-    });
+    setDeleteFailures((failures) => pruneToLiveIds(failures, liveIds));
   }, [rules.data]);
 
   const startEditing = (rule: FilterRule) => {
