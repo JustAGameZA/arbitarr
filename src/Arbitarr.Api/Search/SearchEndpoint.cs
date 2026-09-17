@@ -99,11 +99,16 @@ public static class SearchEndpoint
     {
         try
         {
-            var (result, rateLimited) = await ExecuteAsync(SearchProtocol.Torznab, searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, eventSink, identityResolver, clientName, releaseLookupStore, logger, cancellationToken).ConfigureAwait(false);
-            if (rateLimited)
+            var (result, outcome) = await ExecuteAsync(SearchProtocol.Torznab, searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, eventSink, identityResolver, clientName, releaseLookupStore, logger, cancellationToken).ConfigureAwait(false);
+            if (outcome == SearchOutcome.RateLimited)
             {
                 var errorXml = TorznabXmlWriter.WriteError(RateLimitErrorCode, "Request limit reached");
                 return Results.Text(XmlDocumentRendering.ToXmlString(errorXml), TorznabXmlWriter.ContentType);
+            }
+
+            if (outcome == SearchOutcome.NoSourceAnswered)
+            {
+                return NoSourceAnsweredResult(SearchProtocol.Torznab, result!.TimedOutSources.Count, result.FailedSources.Count, logger);
             }
 
             var xml = TorznabXmlWriter.WriteSearchResults(result!.Releases, r => DownloadLink(request, r, callerApiKey), result.CacheAge, result.CacheBand);
@@ -151,11 +156,16 @@ public static class SearchEndpoint
     {
         try
         {
-            var (result, rateLimited) = await ExecuteAsync(SearchProtocol.Newznab, searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, eventSink, identityResolver, clientName, releaseLookupStore, logger, cancellationToken).ConfigureAwait(false);
-            if (rateLimited)
+            var (result, outcome) = await ExecuteAsync(SearchProtocol.Newznab, searchType, queryText, categories, limit, offset, tvdbId, tmdbId, season, episode, snapshotService, filterStage, releaseLookup, recentSearchLog, eventSink, identityResolver, clientName, releaseLookupStore, logger, cancellationToken).ConfigureAwait(false);
+            if (outcome == SearchOutcome.RateLimited)
             {
                 var errorXml = NewznabXmlWriter.WriteError(RateLimitErrorCode, "Request limit reached");
                 return Results.Text(XmlDocumentRendering.ToXmlString(errorXml), NewznabXmlWriter.ContentType);
+            }
+
+            if (outcome == SearchOutcome.NoSourceAnswered)
+            {
+                return NoSourceAnsweredResult(SearchProtocol.Newznab, result!.TimedOutSources.Count, result.FailedSources.Count, logger);
             }
 
             var xml = NewznabXmlWriter.WriteSearchResults(result!.Releases, r => DownloadLink(request, r, callerApiKey), result.CacheAge, result.CacheBand);
@@ -235,7 +245,76 @@ public static class SearchEndpoint
             statusCode: StatusCodes.Status500InternalServerError);
     }
 
-    private static async Task<(PagedMergeResult? Result, bool RateLimited)> ExecuteAsync(
+    /// <summary>
+    /// arb-nus0: renders the 900/5xx infrastructure error for a merge in which NO source answered,
+    /// with no exception to report.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>WHY THIS IS SEPARATE FROM <see cref="InfrastructureErrorResult"/> RATHER THAN A
+    /// SYNTHESISED EXCEPTION.</b> The two render the SAME wire response deliberately — an *arr must
+    /// not be able to tell "the pipeline threw" from "every source was unreachable", because both
+    /// mean the same thing to it: this search did not happen, do not record 0 results. They differ
+    /// only in what they LOG, and that difference is the reason for the split. Throwing an exception
+    /// here purely to re-catch it would log a stack trace describing nothing but the throw site, and
+    /// would pay an exception's cost on a path that is a plain conditional. Here there is no fault to
+    /// capture, so the log line names the failure counts instead.</para>
+    ///
+    /// <para><b>THE LOG LINE CARRIES COUNTS, NOT NAMES.</b> Source names are operator-chosen and land
+    /// in the persistent store served at <c>/api/admin/logs</c> (CLAUDE.md §1). Counts answer the
+    /// question an operator actually has here — how much of the install is down — without widening
+    /// what that store holds. It is recorded at Warning rather than Error: unlike an escaping
+    /// exception this is a diagnosed, expected condition with a known remediation (the sources are
+    /// down), and every in-flight search during an upstream outage would otherwise log at Error.</para>
+    /// </remarks>
+    private static IResult NoSourceAnsweredResult(
+        SearchProtocol protocol,
+        int timedOutCount,
+        int failedCount,
+        ILogger? logger)
+    {
+        logger?.LogWarning(
+            "The {Protocol} search returned no releases because no source answered ({TimedOutCount} timed out, {FailedCount} failed); the request was answered with the protocol's infrastructure-error element rather than an empty result set.",
+            protocol,
+            timedOutCount,
+            failedCount);
+
+        var errorXml = protocol == SearchProtocol.Torznab
+            ? TorznabXmlWriter.WriteError(InfrastructureErrorCode, InfrastructureErrorDescription)
+            : NewznabXmlWriter.WriteError(InfrastructureErrorCode, InfrastructureErrorDescription);
+        var contentType = protocol == SearchProtocol.Torznab
+            ? TorznabXmlWriter.ContentType
+            : NewznabXmlWriter.ContentType;
+
+        return Results.Text(
+            XmlDocumentRendering.ToXmlString(errorXml),
+            contentType,
+            statusCode: StatusCodes.Status500InternalServerError);
+    }
+
+    /// <summary>
+    /// arb-nus0: how one search ended, as far as the two protocol handlers need to know. Replaces the
+    /// <c>bool RateLimited</c> this tuple used to carry, which could express only two of the three
+    /// outcomes and therefore forced the third — nothing answered — to render as the second.
+    /// </summary>
+    private enum SearchOutcome
+    {
+        /// <summary>The pipeline produced a result set (possibly empty, possibly partial) to render.</summary>
+        Answered,
+
+        /// <summary>
+        /// No releases, and every non-contributing source was rate-limited: a protocol ANSWER,
+        /// rendered as code <see cref="RateLimitErrorCode"/> at HTTP 200.
+        /// </summary>
+        RateLimited,
+
+        /// <summary>
+        /// No releases, and every non-contributing source timed out or failed outright: a failure to
+        /// produce an answer, rendered as code <see cref="InfrastructureErrorCode"/> at HTTP 5xx.
+        /// </summary>
+        NoSourceAnswered,
+    }
+
+    private static async Task<(PagedMergeResult? Result, SearchOutcome Outcome)> ExecuteAsync(
         SearchProtocol protocol,
         string? searchType,
         string? queryText,
@@ -277,10 +356,46 @@ public static class SearchEndpoint
         // Only surface the rate-limit element when every configured source failed with
         // RequestLimitReachedException and none contributed any results — a partially degraded
         // merge (some sources rate-limited, others succeeded) still renders normally.
-        var rateLimited = result.Releases.Count == 0 && result.RateLimitedSources.Count > 0;
-        if (rateLimited)
+        if (result.Releases.Count == 0 && result.RateLimitedSources.Count > 0)
         {
-            return (null, true);
+            return (null, SearchOutcome.RateLimited);
+        }
+
+        // arb-nus0: the same shape, one step further down CONTEXT.md's classification. "An empty
+        // result set is not an error at all — just a results element with no items" holds only when
+        // the sources ANSWERED and had nothing; when nothing came back because nothing answered,
+        // "the pipeline failed to produce an answer at all: code 900, HTTP 5xx" is the case that
+        // applies. A source that timed out under its own budget, or failed transport/protocol/parse,
+        // produced no answer — so a merge with zero releases and AT LEAST ONE source timed out or
+        // failed is a failure to answer, not an answer of "nothing". A budget-skipped source (one the
+        // registry resolved but the budget/backoff gate skipped, arb-9ael, UpstreamMergeStage.cs
+        // ~182-190) is likewise a non-answer even though MergeResult's three lists are deliberately
+        // not total over the resolved set and carry no fourth list for it today — this test must not
+        // be read as requiring a timeout or failure specifically, and arb-9ael's future SkippedSources
+        // list must not narrow this arm when it lands.
+        //
+        // WHY THIS IS THE ENDPOINT'S CALL AND NOT THE MERGE STAGE'S. UpstreamMergeStage's header is
+        // explicit that its non-escalation is the STAGE's invariant: MergeAsync never throws on a
+        // per-source failure precisely so the classification reaches here as DATA, with every
+        // source's outcome in hand, rather than being pre-empted by an exception escaping the
+        // fan-out. This is the endpoint exercising that choice; the stage is untouched.
+        //
+        // WHY THE RATE-LIMIT ARM STAYS AHEAD OF IT AND KEEPS ITS 200. A rate limit is a protocol
+        // ANSWER (code 500 at HTTP 200) — the source was reached and said "not now", which is a
+        // thing that happened rather than a failure to find out. Ordering matters: a merge that is
+        // BOTH fully rate-limited and partly timed out keeps rendering the rate-limit element it
+        // rendered before this bead, so no pre-existing response shape changes.
+        //
+        // WHY "ZERO RELEASES" IS PART OF THE TEST. A merge where four of six sources timed out but
+        // two returned releases is a PARTIAL degradation, and an *arr is better served by the
+        // releases that exist than by a 5xx that discards them. Only a total absence of answer is
+        // escalated.
+        if (result.Releases.Count == 0
+            && (result.TimedOutSources.Count > 0 || result.FailedSources.Count > 0))
+        {
+            // Kept (not null) so the caller can read TimedOutSources/FailedSources for the log line;
+            // both handlers branch on Outcome before ever touching Result.Releases.
+            return (result, SearchOutcome.NoSourceAnswered);
         }
 
         // Filter before anything downstream sees the set (M4-7): the recorded result count, the
@@ -444,7 +559,7 @@ public static class SearchEndpoint
             detail: SearchQueryDescriptor.DescribeDetail(query),
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
-        return (result with { Releases = filtered }, false);
+        return (result with { Releases = filtered }, SearchOutcome.Answered);
     }
 
     /// <summary>

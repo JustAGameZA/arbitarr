@@ -88,6 +88,82 @@ public class SearchResultRefresherTests
         Assert.Null(await refresher.RefreshAsync(entry));
     }
 
+    /// <summary>
+    /// arb-apm8: the same guard for a source that ran out of time under its own budget. The
+    /// refresher is the writer with the sharper consequence — the inline path merely declines to
+    /// CREATE a row, while this one would overwrite a row that already holds good releases and
+    /// re-stamp it fresh, turning a transient upstream outage into a durably empty answer.
+    ///
+    /// <para>The exception carries a FOREIGN cancellation token on purpose: UpstreamMergeStage
+    /// classifies an OperationCanceledException as a timeout only when the caller's token is not
+    /// cancelled and the exception's token is not the caller's. A plain <c>new
+    /// OperationCanceledException()</c> would carry CancellationToken.None and land in FailedSources
+    /// instead, so this test would silently exercise the other list.</para>
+    /// </summary>
+    [Fact]
+    public async Task Refresh_returns_null_when_the_merge_is_empty_and_the_source_timed_out()
+    {
+        var query = new SearchQuery("bleach", Array.Empty<int>(), 50, SearchProtocol.Torznab);
+        var entry = MakeEntry(new CachedSearchPayload(query, Array.Empty<RenderedRelease>()).Serialize());
+
+        var source = new FakeUpstreamSource(
+            "eztv",
+            searchException: new OperationCanceledException(new CancellationTokenSource().Token));
+        var mergeStage = new UpstreamMergeStage(new StaticSourceRegistry(new[] { source }));
+
+        // NON-VACUITY: the source really does land in TimedOutSources on this run, so the null below
+        // is the guard firing rather than the merge having failed in some other way entirely.
+        var merged = await mergeStage.MergeAsync(query);
+        Assert.Equal(new[] { "eztv" }, merged.TimedOutSources);
+
+        var refresher = new SearchResultRefresher(mergeStage, new DedupStage(AllEqualSourcePriority.Instance));
+
+        Assert.Null(await refresher.RefreshAsync(entry));
+    }
+
+    /// <summary>arb-apm8: and for a transport/protocol/parse failure, the third list.</summary>
+    [Fact]
+    public async Task Refresh_returns_null_when_the_merge_is_empty_and_the_source_failed()
+    {
+        var query = new SearchQuery("bleach", Array.Empty<int>(), 50, SearchProtocol.Torznab);
+        var entry = MakeEntry(new CachedSearchPayload(query, Array.Empty<RenderedRelease>()).Serialize());
+
+        var source = new FakeUpstreamSource("eztv", searchException: new HttpRequestException("connection refused"));
+        var mergeStage = new UpstreamMergeStage(new StaticSourceRegistry(new[] { source }));
+
+        var merged = await mergeStage.MergeAsync(query);
+        Assert.Equal(new[] { "eztv" }, merged.FailedSources);
+
+        var refresher = new SearchResultRefresher(mergeStage, new DedupStage(AllEqualSourcePriority.Instance));
+
+        Assert.Null(await refresher.RefreshAsync(entry));
+    }
+
+    /// <summary>
+    /// The scope limit for the guard above: one source timed out but another returned releases, so
+    /// the refreshed payload is written and carries them. Without this, the two tests above would
+    /// hold just as well against a refresher that had started returning null unconditionally.
+    /// </summary>
+    [Fact]
+    public async Task Refresh_writes_the_payload_when_one_source_timed_out_and_another_returned_releases()
+    {
+        var query = new SearchQuery("bleach", Array.Empty<int>(), 50, SearchProtocol.Torznab);
+        var entry = MakeEntry(new CachedSearchPayload(query, Array.Empty<RenderedRelease>()).Serialize());
+
+        var timedOut = new FakeUpstreamSource(
+            "eztv",
+            searchException: new OperationCanceledException(new CancellationTokenSource().Token));
+        var healthy = new FakeUpstreamSource("nzbgeek", searchResults: new[] { MakeCandidate("fresh") });
+        var refresher = new SearchResultRefresher(
+            new UpstreamMergeStage(new StaticSourceRegistry(new IUpstreamSource[] { timedOut, healthy })),
+            new DedupStage(AllEqualSourcePriority.Instance));
+
+        var payloadJson = await refresher.RefreshAsync(entry);
+
+        Assert.NotNull(payloadJson);
+        Assert.Single(CachedSearchPayload.Deserialize(payloadJson!)!.Releases);
+    }
+
     [Fact]
     public async Task Refresh_returns_an_empty_payload_when_a_healthy_source_genuinely_has_no_results()
     {
