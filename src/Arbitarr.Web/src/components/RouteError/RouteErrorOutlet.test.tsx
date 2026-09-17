@@ -9,8 +9,12 @@ const MARKER = 'route-error-outlet-test-marker-do-not-render';
 
 /**
  * Stands in for AppShell: a persistent nav landmark plus an <Outlet /> for
- * the routed page, without pulling in the real AppShell (out of scope for
- * this bead -- see RouteError.tsx's placement note).
+ * the routed page, without pulling in the real AppShell. This suite is only
+ * exercising nesting/reset behavior that does not depend on AppShell's own
+ * effects, so a stub keeps it independent of AppShell's session/query
+ * dependencies; the document-title behavior that DOES depend on AppShell's
+ * real effect is covered separately, with the real AppShell, in
+ * AppShell.test.tsx (arb-penl).
  */
 function StubShell() {
   return (

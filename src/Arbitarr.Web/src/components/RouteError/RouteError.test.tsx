@@ -2,10 +2,8 @@ import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { RouteError } from './RouteError';
-import { APP_NAME } from '../../routes.titles';
 
 const MARKER = 'route-error-test-marker-do-not-render';
-const ERROR_TITLE = `Something went wrong — ${APP_NAME}`;
 
 function NonThrowingChild() {
   return <p>child content</p>;
@@ -86,51 +84,11 @@ describe('RouteError', () => {
     );
   });
 
-  describe('document title', () => {
-    it('changes the tab title while the panel is shown', () => {
-      // Positive control: prove the surface's own title is really there first,
-      // so the assertion after mount is a change and not a value that was
-      // already ERROR_TITLE by coincidence.
-      document.title = 'Rules — Arbitarr';
-      expect(document.title).toBe('Rules — Arbitarr');
-
-      render(
-        <RouteError>
-          <ThrowingChild />
-        </RouteError>,
-      );
-
-      expect(document.title).toBe(ERROR_TITLE);
-    });
-
-    it('restores the previous title after the boundary unmounts (navigation away)', () => {
-      document.title = 'Rules — Arbitarr';
-
-      const { unmount } = render(
-        <RouteError>
-          <ThrowingChild />
-        </RouteError>,
-      );
-      expect(document.title).toBe(ERROR_TITLE);
-
-      unmount();
-
-      expect(document.title).toBe('Rules — Arbitarr');
-    });
-
-    it('never touches the title when nothing was caught', () => {
-      document.title = 'Rules — Arbitarr';
-
-      const { unmount } = render(
-        <RouteError>
-          <NonThrowingChild />
-        </RouteError>,
-      );
-      expect(document.title).toBe('Rules — Arbitarr');
-
-      unmount();
-
-      expect(document.title).toBe('Rules — Arbitarr');
-    });
-  });
+  // Document-title behavior is no longer this component's to test in
+  // isolation: RouteError only signals RouteErrorContext now (see
+  // RouteError.tsx and RouteErrorContext.tsx), and AppShell is the sole
+  // writer of `document.title`. Those tests live in AppShell.test.tsx, mounted
+  // through the real route tree so AppShell's own effect is actually in play
+  // -- an isolated render here has no AppShell competing for the title and
+  // would prove nothing about the shipped configuration.
 });

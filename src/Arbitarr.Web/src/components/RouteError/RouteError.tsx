@@ -1,15 +1,6 @@
-import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { Component, type ContextType, type ErrorInfo, type ReactNode } from 'react';
 import styles from './RouteError.module.css';
-import { APP_NAME } from '../../routes.titles';
-
-/**
- * The tab title shown while the error panel is up.
- *
- * Built from `APP_NAME` rather than a literal, so it follows the same
- * "<Name> — Arbitarr" suffix convention every other title in routes.titles.ts
- * uses instead of inventing a second one here.
- */
-const ERROR_TITLE = `Something went wrong — ${APP_NAME}`;
+import { RouteErrorContext } from './RouteErrorContext';
 
 interface RouteErrorProps {
   children: ReactNode;
@@ -53,16 +44,8 @@ interface RouteErrorState {
 export class RouteError extends Component<RouteErrorProps, RouteErrorState> {
   state: RouteErrorState = { hasError: false };
 
-  /**
-   * The title AppShell's own pathname-keyed effect had set, captured the
-   * moment the panel takes over -- never read back afterwards, only restored
-   * on unmount. Captured in `componentDidCatch` rather than at construction:
-   * this boundary is remounted per-navigation (`RouteErrorOutlet`'s `key`) and
-   * also wraps the whole route tree at the backstop placement, so the "normal"
-   * title on ANY given mount is whatever AppShell (or Login/Setup) already put
-   * there, not a value this component could know in advance.
-   */
-  private previousTitle: string | null = null;
+  static contextType = RouteErrorContext;
+  declare context: ContextType<typeof RouteErrorContext>;
 
   static getDerivedStateFromError(): RouteErrorState {
     return { hasError: true };
@@ -70,37 +53,50 @@ export class RouteError extends Component<RouteErrorProps, RouteErrorState> {
 
   // Required by React to actually invoke the boundary; intentionally does not
   // log, inspect, or forward the error/errorInfo anywhere (see class comment).
-  // Also where the tab title switches to the fixed error title: this runs
-  // exactly once per caught error, after the render that shows the panel, so
-  // it cannot race the AppShell effect that set the surface's normal title
-  // moments earlier -- it simply overwrites whatever that left behind.
+  //
+  // Also where AppShell is told the panel is up. This boundary used to write
+  // `document.title` directly here, but a class component's `componentDidCatch`
+  // runs during React's commit phase, while AppShell's pathname-keyed title
+  // effect is a passive effect that runs AFTER commit completes for the whole
+  // tree -- and since this boundary is nested INSIDE AppShell at the common
+  // placement (routes.tsx's "Placement 2"), AppShell's effect always ran
+  // after and silently overwrote whatever title this set. Signaling through
+  // context instead removes the race by construction: AppShell is the only
+  // thing that ever assigns `document.title`, keyed on `[pathname,
+  // routeErrored]`, so it is free to fold this state in without anything
+  // downstream racing it.
   componentDidCatch(_error: Error, _errorInfo: ErrorInfo): void {
-    // no-op besides the title swap: no logging, no telemetry -- React's own
+    // no-op besides the signal: no logging, no telemetry -- React's own
     // default console.error for a caught render error is the only trace of
     // this left behind.
-    this.previousTitle = document.title;
-    document.title = ERROR_TITLE;
+    this.context(true);
   }
 
   /**
-   * Restores whatever title was showing before this boundary took over.
+   * Tells AppShell the panel is gone, so its title effect stops substituting
+   * the error title.
    *
    * Only fires when `hasError` is true -- a boundary that never caught
-   * anything never touched `document.title` and must not restore a value it
-   * never captured. The two effects cannot fight: AppShell's own effect is
-   * keyed on `pathname` and reruns independently on every navigation, setting
-   * the NEW route's title regardless of what this restores it to first: since
-   * `RouteErrorOutlet` keys this component on `pathname`, the boundary that
-   * caught the error unmounts (running this) on the very navigation that also
-   * reruns AppShell's effect, so whichever order they land in, AppShell's
-   * write for the destination route is the one left standing.
+   * anything never signaled AppShell and must not un-signal something it
+   * never set. Ordering versus AppShell's own effect does not matter here,
+   * unlike the old direct-title-write design: `RouteErrorOutlet` keys this
+   * component on `pathname`, so on navigation this unmount (and this call)
+   * lands in the same commit as the pathname change that reruns AppShell's
+   * effect. AppShell reads `routeErrored` as plain state, not a value this
+   * component hands it moment-to-moment, so whichever order the unmount and
+   * AppShell's effect run in, AppShell ends up rendering the destination
+   * route's own title with `routeErrored` correctly back at `false`.
    */
   componentWillUnmount(): void {
-    if (this.state.hasError && this.previousTitle !== null) {
-      document.title = this.previousTitle;
+    if (this.state.hasError) {
+      this.context(false);
     }
   }
 
+  // Reload is a full `window.location.reload()`, not an in-place state reset:
+  // the whole page (and this component) is torn down and rebuilt from
+  // scratch, so there is no code path here that could leave AppShell's
+  // `routeErrored` stuck at `true` after the operator reloads.
   private handleReload = (): void => {
     window.location.reload();
   };

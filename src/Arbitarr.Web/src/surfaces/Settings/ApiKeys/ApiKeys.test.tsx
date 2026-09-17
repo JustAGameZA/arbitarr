@@ -1203,6 +1203,64 @@ describe('ApiKeys', () => {
     expect(within(rowFor('Retired laptop')).getByText(refusalB)).toBeInTheDocument();
   });
 
+  it('keeps every refusal through a refetch that reorders or edits rows without changing membership (arb-gn4z)', async () => {
+    // Same shape as Rules' equivalent test: the prune effects (revokeFailures
+    // and removeFailures both) key off row ids present vs. absent, so a
+    // refetch that changes order or an unrelated field, but not which ids are
+    // present, must not disturb either Map. Also the no-render-loop case: the
+    // functional setState in each prune effect must return the SAME Map when
+    // membership is unchanged.
+    const user = userEvent.setup();
+    const refusalA = "'Sonarr' cannot be revoked right now: a positive control refusal for row A.";
+    const refusalB =
+      "'Retired laptop' cannot be removed right now: a positive control refusal for row B.";
+    const api = mockKeysApi({ [`GET ${KEYS}`]: { body: keys } });
+    renderSurface(<ApiKeysSection />);
+
+    await screen.findByRole('cell', { name: 'Sonarr' });
+    await screen.findByRole('cell', { name: 'Retired laptop' });
+
+    api.set(`DELETE ${KEYS}/1`, { status: 400, body: { error: refusalA } });
+    await user.click(screen.getByRole('button', { name: 'Revoke Sonarr' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm revoke Sonarr' }));
+    await waitFor(() => {
+      expect(within(rowFor('Sonarr')).getByText(refusalA)).toBeInTheDocument();
+    });
+
+    api.set(`DELETE ${KEYS}/3/tombstone`, { status: 400, body: { error: refusalB } });
+    await user.click(screen.getByRole('button', { name: 'Remove Retired laptop' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm remove Retired laptop' }));
+    await waitFor(() => {
+      expect(within(rowFor('Retired laptop')).getByText(refusalB)).toBeInTheDocument();
+    });
+
+    // POSITIVE CONTROL: both refusals are really there before the no-op refetch.
+    expect(within(rowFor('Sonarr')).getByText(refusalA)).toBeInTheDocument();
+    expect(within(rowFor('Retired laptop')).getByText(refusalB)).toBeInTheDocument();
+
+    // Trigger a refetch via a successful, unrelated create -- every id (1, 2,
+    // 3, 4, null) is still present, reordered, and one field (lastUsedAt) on
+    // a row that was never refused changed.
+    api.set(`GET ${KEYS}`, {
+      body: [keys[2], keys[0], { ...keys[1], lastUsedAt: '2026-03-01T00:00:00Z' }, keys[3], keys[4]],
+    });
+    api.set(`POST ${KEYS}`, { status: 201, body: created });
+    await user.type(screen.getByLabelText('New key label'), 'Radarr');
+    await user.click(screen.getByRole('button', { name: 'Create key' }));
+
+    await waitFor(() => {
+      expect(api.calls.some((call) => call.method === 'POST')).toBe(true);
+    });
+    // The create's own success reveal panel takes over the view, but the
+    // underlying list refetch (and this effect) already ran off its result --
+    // both refusals below are read from the same DOM the reveal panel sits
+    // alongside, so this is exercising the refetched data, not a stale render.
+    await waitFor(() => {
+      expect(within(rowFor('Sonarr')).getByText(refusalA)).toBeInTheDocument();
+    });
+    expect(within(rowFor('Retired laptop')).getByText(refusalB)).toBeInTheDocument();
+  });
+
   it('does not carry a failed remove message into the next attempt', async () => {
     // The capture-then-reset shape has to clear as well as capture. Without the
     // reset of the previous refusal, the operator reads a rejection the server has
