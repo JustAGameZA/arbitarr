@@ -372,4 +372,64 @@ public sealed class SourceBackoffStoreTests : IDisposable
         using var reader = CreateContext();
         Assert.Equal(1, await reader.SourceBackoffStates.CountAsync(s => s.SourceName == "indexer"));
     }
+
+    /// <summary>
+    /// arb-x7w8.11: the list read returns the ROWS, PER SOURCE, and keeps the three states
+    /// distinguishable — which is the whole reason it exists alongside <c>IsCallableAsync</c>, whose
+    /// bool collapses two of them into one answer.
+    ///
+    /// <para>Asserted per NAME at N=3 rather than as "three rows came back": a read that handed the
+    /// same state back for every key would satisfy a count, and that is precisely the defect a
+    /// per-source surface would then render.</para>
+    /// </summary>
+    [Fact]
+    public async Task Get_all_returns_each_source_its_own_state()
+    {
+        using var context = await CreateMigratedContextAsync();
+        var store = CreateStore(context, AfterGrace);
+
+        await store.RecordOutcomeAsync("healthy", SourceCallOutcome.Success);
+        await store.RecordOutcomeAsync("backing-off", SourceCallOutcome.TransientFailure);
+        await store.RecordOutcomeAsync("rejected", SourceCallOutcome.AuthenticationFailure);
+
+        // Read back through a SEPARATE context, like every other assertion here that claims
+        // something is in the table rather than in the change tracker.
+        using var reader = CreateContext();
+        var states = await CreateStore(reader, AfterGrace).GetAllAsync();
+
+        Assert.Equal(3, states.Count);
+
+        var healthy = states["healthy"];
+        Assert.False(healthy.IsPermanentlyDisabled);
+        Assert.Null(healthy.DisabledUntil);
+        Assert.Equal(nameof(SourceCallOutcome.Success), healthy.LastOutcome);
+
+        // Backing off and permanently disabled are BOTH "not callable", and must not read the same
+        // here: that is the distinction IsCallableAsync's bool discards and this read exists to keep.
+        var backingOff = states["backing-off"];
+        Assert.False(backingOff.IsPermanentlyDisabled);
+        Assert.NotNull(backingOff.DisabledUntil);
+
+        var rejected = states["rejected"];
+        Assert.True(rejected.IsPermanentlyDisabled);
+        Assert.Null(rejected.DisabledUntil);
+    }
+
+    /// <summary>
+    /// A source that has never been called is ABSENT rather than present with a blank state, so
+    /// "never observed" stays distinguishable from "observed healthy".
+    /// </summary>
+    [Fact]
+    public async Task Get_all_omits_a_source_that_has_no_row()
+    {
+        using var context = await CreateMigratedContextAsync();
+        var store = CreateStore(context, AfterGrace);
+
+        await store.RecordOutcomeAsync("observed", SourceCallOutcome.Success);
+
+        var states = await store.GetAllAsync();
+
+        Assert.True(states.ContainsKey("observed"));
+        Assert.False(states.ContainsKey("never-called"));
+    }
 }
