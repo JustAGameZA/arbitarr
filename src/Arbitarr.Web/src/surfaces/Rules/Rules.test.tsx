@@ -390,4 +390,70 @@ describe('Rules', () => {
     const otherRow = screen.getByText('allow-1080p').closest('tr')!;
     expect(within(otherRow).queryByText(refusal)).not.toBeInTheDocument();
   });
+
+  it('keeps two concurrent refusals on their own rows, and clears only the row that retries (arb-39g3)', async () => {
+    // arb-39g3: deleteFailedId/deleteFailure used to be a single shared
+    // scalar, so a second refusal in flight overwrote the first row's text --
+    // row A's message vanished or appeared under row B. This drives two
+    // refusals unresolved AT THE SAME TIME, then a third row untouched
+    // throughout, so the fix has to be proven per row rather than "some row
+    // shows a message".
+    const user = userEvent.setup();
+    const threeRules = [
+      ...rules,
+      { id: 3, name: 'deny-x265', isAllow: false, pattern: 'x265', precedence: 30, enabled: true },
+    ];
+    const refusalA = 'Rule A refusal: referenced by an active dry run.';
+    const refusalB = 'Rule B refusal: precedence collides with another enabled rule.';
+    const api = mockApi({
+      '/api/admin/rules': { body: threeRules },
+      '/api/admin/rules/1': { status: 400, body: { error: refusalA } },
+      '/api/admin/rules/2': { status: 400, body: { error: refusalB } },
+    });
+    renderSurface(<RulesPage />);
+    await screen.findByText('block-cam');
+
+    // Refuse A ("block-cam") and B ("allow-1080p"), both left unresolved.
+    await user.click(screen.getByRole('button', { name: 'Delete block-cam' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm delete block-cam' }));
+    await findCall(api, 'DELETE');
+
+    await user.click(screen.getByRole('button', { name: 'Delete allow-1080p' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm delete allow-1080p' }));
+    await waitFor(() => {
+      expect(api.calls.filter((call) => call.method === 'DELETE')).toHaveLength(2);
+    });
+
+    // POSITIVE CONTROLS first: each row's own message really is there.
+    const rowA = screen.getByText('block-cam').closest('tr')!;
+    const rowB = screen.getByText('allow-1080p').closest('tr')!;
+    const rowC = screen.getByText('deny-x265').closest('tr')!;
+    await waitFor(() => {
+      expect(within(rowA).getByText(refusalA)).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(within(rowB).getByText(refusalB)).toBeInTheDocument();
+    });
+
+    // THEN neither message leaks into the other rows or above the table.
+    expect(within(rowB).queryByText(refusalA)).not.toBeInTheDocument();
+    expect(within(rowC).queryByText(refusalA)).not.toBeInTheDocument();
+    expect(within(rowA).queryByText(refusalB)).not.toBeInTheDocument();
+    expect(within(rowC).queryByText(refusalB)).not.toBeInTheDocument();
+    expect(screen.getAllByText(refusalA)).toHaveLength(1);
+    expect(screen.getAllByText(refusalB)).toHaveLength(1);
+
+    // Retry A successfully: its own refusal clears, B's stays exactly as it was.
+    api.set('/api/admin/rules/1', { status: 204 });
+    api.set('/api/admin/rules', { body: threeRules.filter((rule) => rule.id !== 1) });
+    await user.click(screen.getByRole('button', { name: 'Delete block-cam' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm delete block-cam' }));
+
+    await waitFor(() => {
+      expect(screen.queryByText(refusalA)).not.toBeInTheDocument();
+    });
+    // B's refusal is untouched by A's retry -- another row's success must not
+    // clear a refusal it did not own.
+    expect(screen.getByText(refusalB)).toBeInTheDocument();
+  });
 });

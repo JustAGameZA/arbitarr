@@ -1,6 +1,8 @@
 import { Fragment } from 'react';
 import { Route, Routes } from 'react-router-dom';
 
+import { RouteError } from './components/RouteError/RouteError';
+import { RouteErrorOutlet } from './components/RouteError/RouteErrorOutlet';
 import { AppShell } from './components/shell/AppShell';
 import { RequireSession } from './components/shell/RequireSession';
 import LoginPage from './surfaces/Login/Login';
@@ -67,19 +69,33 @@ export const APP_ROUTE_ELEMENTS = (
         </RequireSession>
       }
     >
-      <Route index element={<DashboardPage />} />
-      <Route path="search" element={<SearchPage />} />
-      <Route path="rules" element={<RulesPage />} />
-      <Route path="suppressions" element={<SuppressionsPage />} />
-      <Route path="activity" element={<ActivityPage />} />
-      <Route path="library" element={<LibraryPage />} />
-      <Route path="settings" element={<SettingsPage />} />
-      <Route path="system" element={<SystemPage />} />
-      <Route path="*" element={<NotFoundPage />} />
+      {/*
+        Pathless layout route: it contributes no path segment of its own, only
+        the RouteErrorOutlet element wrapping every child below via its own
+        <Outlet />. That is what catches a throw from a page surface below the
+        sidebar/top bar rather than at routes.tsx's outer RouteError, which
+        would otherwise unmount the whole shell along with the throwing page.
+        See RouteError.tsx's "Placement 2" note.
+      */}
+      <Route element={<RouteErrorOutlet />}>
+        <Route index element={<DashboardPage />} />
+        <Route path="search" element={<SearchPage />} />
+        <Route path="rules" element={<RulesPage />} />
+        <Route path="suppressions" element={<SuppressionsPage />} />
+        <Route path="activity" element={<ActivityPage />} />
+        <Route path="library" element={<LibraryPage />} />
+        <Route path="settings" element={<SettingsPage />} />
+        <Route path="system" element={<SystemPage />} />
+        <Route path="*" element={<NotFoundPage />} />
+      </Route>
     </Route>
   </Fragment>
 );
 
 export function AppRoutes() {
-  return <Routes>{APP_ROUTE_ELEMENTS}</Routes>;
+  return (
+    <RouteError>
+      <Routes>{APP_ROUTE_ELEMENTS}</Routes>
+    </RouteError>
+  );
 }

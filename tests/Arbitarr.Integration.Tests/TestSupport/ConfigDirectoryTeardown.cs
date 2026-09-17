@@ -136,13 +136,59 @@ internal static class ConfigDirectoryTeardown
     /// </summary>
     public static void ClearPools(string configDirectory)
     {
-        SqlitePoolCleaner.ClearPoolsFor(new BackupPaths(configDirectory).DatabasePath);
+        // arb-j4hq: the FULL-connection-string clear is applied to this directory AND to every
+        // directory nested under it, not to this one alone.
+        //
+        // THE TWO CLEARS BELOW ARE NOT INTERCHANGEABLE, and the difference is what made the nesting
+        // matter. SqlitePoolCleaner.ClearPoolsFor walks DatabaseConnectionStrings.ForDatabase, i.e.
+        // the exact strings the application opens arbitarr.db with, which is the only set that names
+        // the pools actually holding its handles. SqlitePools.ClearPoolsForDirectory recurses, but
+        // clears only the BARE `Data Source=` pool per file — a different pool key, and empty for a
+        // connection the app opened. So before this change a database one level down had its real
+        // pools cleared by nothing at all: the recursive call found the file and cleared a pool
+        // nobody had filled, and the delete lost to a live handle. Measured, not reasoned: giving
+        // each host its own subdirectory turned eleven passing tests across four classes into
+        // "The process cannot access the file 'arbitarr.db' because it is being used by another
+        // process", every one of them naming the MAIN database and never the log one, which is
+        // exactly the asymmetry these two helpers predict.
+        //
+        // Enumerating rather than requiring callers to hand over their per-host paths: a caller that
+        // had to list them could list them incompletely, and the directory is per-class and per-run,
+        // so this still names only databases the caller owns — the property ClearAllPools lacks and
+        // the reason it stays banned here.
+        foreach (var directory in EnumerateSelfAndNestedDirectories(configDirectory))
+        {
+            SqlitePoolCleaner.ClearPoolsFor(new BackupPaths(directory).DatabasePath);
+        }
 
         // The log store is a SECOND database (arbitarr-logs.db) with its own connection shape, and it
         // sits under the same directory — so clearing only the main one leaves a delete losing to a
         // log handle instead. ClearPoolsForDirectory covers it and anything a test restored beside
-        // them.
+        // them, and it already recurses.
         SqlitePools.ClearPoolsForDirectory(configDirectory);
+    }
+
+    /// <summary>
+    /// <paramref name="configDirectory"/> itself followed by every directory beneath it.
+    ///
+    /// <para>The directory itself is yielded unconditionally, even when it does not exist: clearing
+    /// a pool needs no file on disk (<see cref="SqlitePoolCleaner.ClearPoolsFor"/> never opens the
+    /// connection it builds), and a caller whose host was disposed before the directory was created
+    /// must still get its pools cleared.</para>
+    /// </summary>
+    private static IEnumerable<string> EnumerateSelfAndNestedDirectories(string configDirectory)
+    {
+        yield return configDirectory;
+
+        if (!Directory.Exists(configDirectory))
+        {
+            yield break;
+        }
+
+        foreach (var nested in Directory.EnumerateDirectories(configDirectory, "*", SearchOption.AllDirectories))
+        {
+            yield return nested;
+        }
     }
 
     /// <summary>
