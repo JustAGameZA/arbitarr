@@ -1,4 +1,5 @@
 using Arbitarr.Data.Logging;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Arbitarr.Host.Logging;
@@ -62,7 +63,27 @@ public static class LoggingSetup
         ArgumentNullException.ThrowIfNull(logStore);
 
         // Information matches the level Sonarr registers its own database target at.
-        logging.AddProvider(new SqliteLoggerProvider(logStore, LogLevel.Information, onError: onError));
+        //
+        // REGISTERED AS A FACTORY, NOT AS AN INSTANCE, AND THAT IS THE WHOLE POINT (arb-2t9u).
+        // ILoggingBuilder.AddProvider(ILoggerProvider) registers the already-constructed object as a
+        // constant singleton, and the container does not own an instance it did not create:
+        // LoggerFactory receives it through its constructor with ShouldDispose = false, so neither
+        // the factory nor the singleton scope ever calls Dispose on it. For most providers that is
+        // merely untidy; for this one it is a defect, because Dispose is what cancels the pump, and
+        // cancelling the pump is what makes PumpAsync run its FINAL drain. Registered as an
+        // instance, the shutdown lines — the ones explaining why the process is stopping, which is
+        // exactly what that final drain exists to preserve — were lost on every stop, and Dispose's
+        // bounded wait had never once executed in production. Handing the container a FACTORY makes
+        // it the owner, so the provider is disposed with the singleton scope during host teardown.
+        //
+        // SHUTDOWN BUDGET: docs/standards/architecture.md "Shutdown ordering" records the host's
+        // un-overridden 30s ShutdownTimeout that every hosted service shares. This disposal runs
+        // after those have stopped, when the service provider itself is disposed, and is bounded
+        // independently by SqliteLoggerProvider.DefaultShutdownWait (5s) — which sits inside that
+        // budget, and is pinned by a test, since a bound that silently grew past it would
+        // reintroduce the shutdown hang the bound exists to prevent.
+        logging.Services.AddSingleton<ILoggerProvider>(
+            _ => new SqliteLoggerProvider(logStore, LogLevel.Information, onError: onError));
 
         foreach (var category in NoisyFrameworkCategories)
         {

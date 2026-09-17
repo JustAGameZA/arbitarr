@@ -287,15 +287,25 @@ public sealed class ArbitarrWebApplicationFactory : WebApplicationFactory<Progra
     /// <para><b>The providers are DISPOSED here, and that is what makes the completion reachable.</b>
     /// <c>DrainCompleted</c> publishes only once the pump has run its FINAL drain, and the pump only
     /// reaches that drain once it observes cancellation — which is to say once
-    /// <c>SqliteLoggerProvider.Dispose</c> has been called. Nothing else in this teardown calls it:
-    /// the provider is handed to <c>ILoggingBuilder.AddProvider</c> as an ALREADY-CONSTRUCTED
-    /// instance (<c>LoggingSetup.AddArbitarrSqliteLogging</c>). Capturing the task WITHOUT disposing
+    /// <c>SqliteLoggerProvider.Dispose</c> has been called. Capturing the task WITHOUT disposing
     /// therefore hands the teardown a completion nothing will ever complete — measured as every
     /// fixture burning the full <c>ConfigDirectoryTeardown.DrainCompletionWait</c> bound (four
     /// disposal tests took 2m35s, ~30s each) and, worse, a still-live pump writing into the
     /// directory being deleted, which crashed the host with
     /// <c>SQLite Error 14: unable to open database file</c>. Dispose is bounded and idempotent, so
     /// calling it here stays safe if any other path also disposes.</para>
+    ///
+    /// <para><b>arb-2t9u: this is no longer the ONLY caller, and it still must not be removed.</b>
+    /// <c>LoggingSetup.AddArbitarrSqliteLogging</c> now registers the provider as a FACTORY, so the
+    /// container owns it and disposes it during host teardown — which is the whole point of that
+    /// bead, and it means the host would eventually cancel the pump on its own. It does so INSIDE
+    /// <c>base.Dispose</c>, i.e. after this method has already had to run: the completions have to be
+    /// captured from <c>Services</c> while the host is still alive, and a completion captured from a
+    /// provider that has not been disposed yet is one this teardown would then have to wait out. So
+    /// the explicit dispose here is now about ORDER rather than about being the only disposer, and
+    /// the resulting double dispose is safe by construction — <c>SqliteLoggerProvider.Dispose</c> is
+    /// idempotent through an explicit latch, pinned by
+    /// <c>SqliteLoggerProviderTests.Disposing_twice_does_not_throw_and_leaves_the_completion_published</c>.</para>
     ///
     /// <para>Returns null on ANY failure to resolve rather than throwing. Some hosts in this assembly
     /// never start (a test that only builds the factory), and a disposal path must not fault an

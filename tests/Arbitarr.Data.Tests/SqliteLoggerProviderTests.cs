@@ -45,6 +45,26 @@ public sealed class SqliteLoggerProviderTests : IDisposable
         return store;
     }
 
+    /// <summary>
+    /// arb-2t9u: the shutdown bound is FIVE SECONDS, pinned as a value rather than left to whatever
+    /// the constant happens to say.
+    ///
+    /// <para>Until arb-2t9u this bound had never executed in production at all — the provider was
+    /// registered as an instance, so nothing disposed it — and a number no code path reached was
+    /// free to drift unnoticed. Now that host teardown really does wait on it, the value has two
+    /// live constraints that only hold if it stays small: it must sit INSIDE the host's
+    /// un-overridden 30s <c>ShutdownTimeout</c> (docs/standards/architecture.md, "Shutdown
+    /// ordering"), so a wedged log writer cannot be what stops a container from stopping; and
+    /// <c>ConfigDirectoryTeardown</c> reasons about its own longer wait specifically in terms of
+    /// being longer than this one. Neither is checked by a compiler. A change to the constant should
+    /// have to come here and argue with this comment.</para>
+    /// </summary>
+    [Fact]
+    public void The_shutdown_wait_is_bounded_at_five_seconds()
+    {
+        Assert.Equal(TimeSpan.FromSeconds(5), SqliteLoggerProvider.DefaultShutdownWait);
+    }
+
     [Fact]
     public async Task Logged_entries_reach_the_store()
     {
