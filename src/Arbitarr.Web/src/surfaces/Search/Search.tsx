@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 
 import { PageHeader } from '../../components/shell/PageHeader';
 import { ApiError } from '../../api/client';
+import { formatBytes } from '../../format';
 import { QueryState, errorMessage } from '../QueryState';
 import { CACHE_BAND_LABELS } from '../../api/types';
 import type { AdHocRelease, AdHocSearchProvenance, AdHocSearchResponse } from '../../api/types';
@@ -40,21 +41,6 @@ function NoSourcesHint() {
       <Link to="/settings">Settings &gt; Sources</Link>.
     </p>
   );
-}
-
-/** Bytes to a human size. The server sends the byte count untouched (passthrough). */
-function formatSize(bytes: number): string {
-  if (bytes <= 0) {
-    return '—';
-  }
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let value = bytes;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
 /**
@@ -301,7 +287,7 @@ function ariaSortFor(current: SortState, column: SortColumn): 'ascending' | 'des
  * 3): `.slice()` first, since `.sort()` is in place. `null` sorts by the
  * server's own order, i.e. does nothing.
  *
- * Size sorts on the raw byte count, never `formatSize`'s string. Published
+ * Size sorts on the raw byte count, never `formatBytes`'s string. Published
  * sorts on the raw date. Both treat "absent or unparseable" as sorting LAST in
  * BOTH directions, so a comparator returning a fixed +1/-1 for that case would
  * be wrong for desc; the direction is applied only to definite comparisons and
@@ -432,7 +418,7 @@ function Results({
               <tr key={release.guid}>
                 <td>{release.title}</td>
                 <td>{release.sourceName}</td>
-                <td>{formatSize(release.size)}</td>
+                <td>{formatBytes(release.size)}</td>
                 <td>{release.category.join(', ')}</td>
                 <td>{new Date(release.pubDate).toLocaleString()}</td>
                 <td>
