@@ -162,22 +162,44 @@ public static partial class CredentialPatterns
     ///
     /// <para><b>arb-ofz6: <c>RegexOptions.NonBacktracking</c>, pattern text unchanged.</b> The
     /// leading <c>[\w-]*</c> sitting next to the keyword alternation makes this arm's prefix scan
-    /// quadratic against a long separator-less run seeded with near-keyword text (e.g. <c>apikey</c>
-    /// repeated to several thousand characters with no <c>:</c>/<c>=</c>), reliably reaching
-    /// <see cref="MatchTimeoutMilliseconds"/>. Measured outside this repo: a 400,000-input
+    /// quadratic against a long separator-less <c>[\w-]</c> run with enough character variety —
+    /// near-keyword text (<c>apikey</c> repeated) is one instance, but so is a repeated different
+    /// keyword (<c>secret</c>, <c>a-token-b-</c>) and even a run with NO keyword in it at all, as
+    /// long as it cycles through enough distinct characters (measured: a run cycling
+    /// <c>abcdefghijklmnopqrstuvwxyz0123456789_-</c> reaches the timeout too). A single REPEATED
+    /// character (e.g. plain <c>aaaa…</c>) does NOT trigger it — there has to be enough variety for
+    /// the prefix scan to keep finding new candidate start points. Reliably reaches
+    /// <see cref="MatchTimeoutMilliseconds"/> at lengths well inside
+    /// <c>LogMessageCleanser.MaxCleanseInputLength</c>. Measured outside this repo: a 400,000-input
     /// differential fuzz between the backtracking and non-backtracking engines over this exact
     /// pattern produced zero output differences, because the pattern has no lookarounds,
     /// backreferences, or atomic groups — the constructs .NET's non-backtracking engine cannot
-    /// execute. Switching the engine is therefore behaviour-preserving here.
+    /// execute. Switching the engine is therefore behaviour-preserving here.</para>
     ///
-    /// <b>Do NOT "optimise" the pattern text instead.</b> Two alternatives were tried and REJECTED
-    /// because both scrub LESS: an atomic group (<c>(?>[\w-]*)</c>) and a bounded prefix. Both leave
-    /// a credential in the clear when the keyword is followed by more name characters before the
-    /// separator — e.g. a name like <c>x-secret-header-name:</c> or <c>a-token-b-apikey-c:</c>,
-    /// where the greedy backtracking prefix (and the non-backtracking engine, which explores the
-    /// same language) still finds the keyword and matches through to the separator, but an atomic or
-    /// length-bounded prefix commits too early and misses it. See
-    /// <c>CredentialPatternsTests</c>'s prefix-semantics rows for the cases this would break.</para>
+    /// <para><b>Do NOT "optimise" the pattern text instead.</b> Two alternatives were tried and
+    /// REJECTED because both scrub LESS: an atomic group (<c>(?>[\w-]*)</c>) and a bounded prefix
+    /// (e.g. <c>[\w-]{0,8}</c>). Both leave a credential in the clear when the keyword is preceded by
+    /// more name characters than the bound allows and there is no earlier word boundary the engine
+    /// can restart from — e.g. <c>vendorlongprefixapikey:</c>, where the greedy backtracking prefix
+    /// (and the non-backtracking engine, which explores the same language) still finds the keyword
+    /// and matches through to the separator, but an atomic or too-tightly-bounded prefix commits too
+    /// early and misses it. A bound that is merely generous (e.g. <c>{0,8}</c>) can still pass a row
+    /// with a hyphen or underscore earlier in the name, because <c>\b</c> lets the engine restart the
+    /// match closer to the keyword — <c>x-secret-header-name:</c> and <c>a-token-b-apikey-c:</c>
+    /// pass even a `{0,8}` bound for exactly that reason, so they do not by themselves prove a bound
+    /// is safe; <c>vendorlongprefixapikey:</c>, with no boundary between the excess prefix and the
+    /// keyword, is the row that actually discriminates. See <c>CredentialPatternsTests</c>'s
+    /// prefix-semantics rows for the cases this would break.</para>
+    ///
+    /// <para><b>Why this still compiles with <c>[GeneratedRegex]</c>.</b> The source generator does
+    /// not emit generated matching code for a pattern combined with <c>RegexOptions.NonBacktracking</c>;
+    /// it instead emits a thin wrapper that constructs and caches a plain, non-generated
+    /// <see cref="Regex"/> instance at first use — silently, with no compiler warning, because this is
+    /// documented generator behaviour rather than a failure to generate. That is acceptable here: this
+    /// arm is one static, process-lifetime instance (not constructed per-call), and this repository
+    /// does not publish trimmed or Native AOT — the two scenarios where losing generated (reflection-
+    /// free, trimming-safe) code would matter. If either changes, this arm's degrade-to-reflection cost
+    /// is the thing to re-examine, not the correctness of the redaction.</para>
     /// </summary>
     [GeneratedRegex(
         @"(?<prefix>\b[\w-]*(?:api[_-]?key|apikey|token|passkey|password|secret|plaintext[_-]?(?:key|token|secret|password|passkey))[\w-]*""?\s*[:=]\s*""?)(?<value>[^\s,;""'}\]]{4,})",
