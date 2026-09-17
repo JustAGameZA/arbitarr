@@ -196,6 +196,10 @@ Prowlarr's `IndexerLimitService` model, and that attribution stands.)
 - **Skipped, backing off, and permanently disabled are three distinct states** and must stay
   distinguishable to the operator. Collapsing them into one "unavailable" reports a permanently
   broken key as if it were a temporary pause, which removes the signal to go and fix it.
+  - 2026-09-17: the state this clause calls *skipped* ships as **`Budgeted`** in code and UI
+    (`SourceRuntimeState`, since arb-x7w8.10). The name here described the ACTION taken against a
+    source at its limit; the shipped name describes the STATE the source is in. Same state, and
+    the term of record is now Budgeted (see CONTEXT.md).
 - **Null limits are load-bearing.** Any code path that coalesces a null limit to zero turns every
   unconfigured indexer off. The distinction is the difference between "no limit configured" and "do
   not use this indexer".
