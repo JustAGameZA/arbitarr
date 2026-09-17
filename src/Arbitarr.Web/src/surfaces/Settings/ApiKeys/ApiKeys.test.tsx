@@ -1131,6 +1131,78 @@ describe('ApiKeys', () => {
     expect(within(rowFor('Retired laptop')).getByText(refusalB)).toBeInTheDocument();
   });
 
+  it('prunes a refusal once its row leaves the list, but keeps it for a row that stays (arb-gn4z)', async () => {
+    // Two rows are refused (A, a revoke; B, a remove). A then leaves the list
+    // on a refetch a THIRD row's action triggers, and later returns under the
+    // SAME id via a later fetch. The stale refusal must not resurface. B never
+    // leaves, so its refusal must survive every refetch untouched.
+    const user = userEvent.setup();
+    const refusalA = "'Sonarr' cannot be revoked right now: a positive control refusal for row A.";
+    const refusalB =
+      "'Retired laptop' cannot be removed right now: a positive control refusal for row B.";
+    const api = mockKeysApi({ [`GET ${KEYS}`]: { body: keys } });
+    renderSurface(<ApiKeysSection />);
+
+    await screen.findByRole('cell', { name: 'Sonarr' });
+    await screen.findByRole('cell', { name: 'Retired laptop' });
+    await screen.findByRole('cell', { name: 'Old script' });
+
+    // Refuse A ("Sonarr", revoke) and B ("Retired laptop", remove), both left
+    // unresolved.
+    api.set(`DELETE ${KEYS}/1`, { status: 400, body: { error: refusalA } });
+    await user.click(screen.getByRole('button', { name: 'Revoke Sonarr' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm revoke Sonarr' }));
+    await waitFor(() => {
+      expect(within(rowFor('Sonarr')).getByText(refusalA)).toBeInTheDocument();
+    });
+
+    api.set(`DELETE ${KEYS}/3/tombstone`, { status: 400, body: { error: refusalB } });
+    await user.click(screen.getByRole('button', { name: 'Remove Retired laptop' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm remove Retired laptop' }));
+    await waitFor(() => {
+      expect(within(rowFor('Retired laptop')).getByText(refusalB)).toBeInTheDocument();
+    });
+
+    // POSITIVE CONTROL: A's refusal really is there before its row vanishes.
+    expect(within(rowFor('Sonarr')).getByText(refusalA)).toBeInTheDocument();
+
+    // Row 4 ("Old script")'s own remove succeeds, and its refetch's response
+    // no longer includes row 1 ("Sonarr") at all -- the row left the list
+    // through an action that has nothing to do with A's own refusal or retry.
+    api.set(`DELETE ${KEYS}/4/tombstone`, { status: 204 });
+    api.set(`GET ${KEYS}`, { body: keys.filter((entry) => entry.id !== 1 && entry.id !== 4) });
+    await user.click(screen.getByRole('button', { name: 'Remove Old script' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm remove Old script' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('cell', { name: 'Old script' })).not.toBeInTheDocument();
+    });
+    // A's row is also gone, and so is its refusal text, pruned rather than
+    // merely unrendered because nothing keys back to a row anymore.
+    expect(screen.queryByRole('cell', { name: 'Sonarr' })).not.toBeInTheDocument();
+    expect(screen.queryByText(refusalA)).not.toBeInTheDocument();
+    // B never left: its refusal survives this refetch untouched.
+    expect(within(rowFor('Retired laptop')).getByText(refusalB)).toBeInTheDocument();
+
+    // Row 1 ("Sonarr") returns under the SAME id via a later fetch -- a key
+    // recreated by another admin session, say. A fresh create is used to
+    // cause the invalidation, a mutation whose own success is unrelated to
+    // either A or B, so B's still-unresolved refusal is untouched by anything
+    // this step does directly.
+    api.set(`GET ${KEYS}`, { body: [keys[0], keys[2]] });
+    api.set(`POST ${KEYS}`, { status: 201, body: created });
+    await user.type(screen.getByLabelText('New key label'), 'Radarr');
+    await user.click(screen.getByRole('button', { name: 'Create key' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('cell', { name: 'Sonarr' })).toBeInTheDocument();
+    });
+    // The old refusal for id 1 must NOT resurface just because the id is back.
+    expect(screen.queryByText(refusalA)).not.toBeInTheDocument();
+    // B's own, still-unresolved refusal is unaffected by A's return.
+    expect(within(rowFor('Retired laptop')).getByText(refusalB)).toBeInTheDocument();
+  });
+
   it('does not carry a failed remove message into the next attempt', async () => {
     // The capture-then-reset shape has to clear as well as capture. Without the
     // reset of the previous refusal, the operator reads a rejection the server has
