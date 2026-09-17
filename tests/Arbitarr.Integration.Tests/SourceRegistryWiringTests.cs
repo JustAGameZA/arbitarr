@@ -260,7 +260,7 @@ public sealed class SourceRegistryWiringTests : IAsyncLifetime
             Assert.Equal(3, sources.Count);
         }
 
-        await FlushLogSinkAsync();
+        await _factory.Services.FlushLogSinkAsync();
 
         var page = await store.ReadAsync(level: null, logger: null, page: 1, pageSize: LogStore.MaxPageSize);
 
@@ -327,11 +327,4 @@ public sealed class SourceRegistryWiringTests : IAsyncLifetime
                 + "reads the client the adapter was given and must be updated with the field.");
     }
 
-    /// <summary>
-    /// Waits for the sink's background pump to drain. The provider batches on an interval by design
-    /// (it must never write on the caller's thread), so a read taken immediately after would see
-    /// nothing yet — and the positive control above would fail for a reason that is not a leak.
-    /// </summary>
-    private static async Task FlushLogSinkAsync() =>
-        await Task.Delay(SqliteLoggerProvider.FlushInterval + TimeSpan.FromMilliseconds(750));
 }

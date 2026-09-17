@@ -135,7 +135,7 @@ public sealed class UpstreamApiKeyLogRedactionTests : IAsyncLifetime
         }
 
         var store = _factory.Services.GetRequiredService<LogStore>();
-        await FlushLogSinkAsync();
+        await _factory.Services.FlushLogSinkAsync();
 
         var page = await store.ReadAsync(level: null, logger: null, page: 1, pageSize: LogStore.MaxPageSize);
 
@@ -168,12 +168,4 @@ public sealed class UpstreamApiKeyLogRedactionTests : IAsyncLifetime
             Assert.DoesNotContain(UpstreamApiKey, entry.Logger, StringComparison.OrdinalIgnoreCase);
         }
     }
-
-    /// <summary>
-    /// Waits for the sink's background pump to drain; see
-    /// <see cref="LogSecretInjectionTests"/>'s own note on why this is what keeps the assertions
-    /// above meaningful rather than vacuously true of an empty table.
-    /// </summary>
-    private static async Task FlushLogSinkAsync() =>
-        await Task.Delay(SqliteLoggerProvider.FlushInterval + TimeSpan.FromMilliseconds(750));
 }
