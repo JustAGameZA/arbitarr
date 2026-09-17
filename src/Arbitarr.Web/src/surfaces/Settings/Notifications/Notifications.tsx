@@ -69,6 +69,16 @@ const TRIGGER_LABELS: Record<NotificationTrigger, { label: string; description: 
     description:
       'A source that had been refusing downloads served one successfully again. Fires once when the refusal clears, the closing edge of the trigger above.',
   },
+  SourcePermanentlyDisabled: {
+    label: 'Source key rejected',
+    description:
+      'A source rejected Arbitarr’s API key, so searches now skip it. Fires once when it is first disabled, never again per search, and it does not clear on its own.',
+  },
+  SourcePermanentlyDisabledCleared: {
+    label: 'Source key accepted again',
+    description:
+      'A source whose key had been rejected answered successfully again and is back in searches. Fires once, the closing edge of the trigger above.',
+  },
 };
 
 /**

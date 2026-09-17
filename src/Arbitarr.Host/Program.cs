@@ -265,8 +265,22 @@ builder.Services.AddHttpClient(Arbitarr.Host.Sources.SourceRegistry.NewznabHttpC
 // consumer that asks for ISourceRegistry gets the gated set and none of them has to remember to wrap
 // anything. The decorator is the only thing that resolves the concrete type, so no source reaches
 // the search path ungated by taking a different registration.
+//
+// arb-rx1f: the decorator is also handed the SourcePermanentDisableNotifier (registered as a
+// singleton below), which is what gives the permanently-disabled condition the notification edge it
+// otherwise has no place to hang one on — its /api/status health item is projected from the stored
+// row at read time, so nothing polls it and no tracker holds it. Constructed explicitly rather than
+// left to the container's optional-parameter handling: the parameter is optional so the gate's own
+// tests can build it without a notification graph, and an explicit factory is what makes a silently
+// non-notifying composition impossible to reach by accident. SourcePermanentDisableNotificationTests
+// drives a real search through the composed host and fails if this argument is dropped.
 builder.Services.AddScoped<Arbitarr.Host.Sources.SourceRegistry>();
-builder.Services.AddScoped<ISourceRegistry, Arbitarr.Host.Sources.BudgetedSourceRegistry>();
+builder.Services.AddScoped<ISourceRegistry>(sp => new Arbitarr.Host.Sources.BudgetedSourceRegistry(
+    sp.GetRequiredService<Arbitarr.Host.Sources.SourceRegistry>(),
+    sp.GetRequiredService<ArbitarrDbContext>(),
+    sp.GetRequiredService<Arbitarr.Host.Sources.ISourceGateScopeFactory>(),
+    sp.GetRequiredService<Arbitarr.Core.Diagnostics.IEventSink>(),
+    sp.GetRequiredService<Arbitarr.Host.Notifications.SourcePermanentDisableNotifier>()));
 builder.Services.AddScoped<UpstreamMergeStage>();
 builder.Services.AddScoped<IQuerySnapshotStore, QuerySnapshotStore>();
 
@@ -413,6 +427,23 @@ builder.Services.AddSingleton<Arbitarr.Host.Notifications.DownloadRefusalNotifie
         sp.GetRequiredService<IServiceScopeFactory>(),
         sp.GetRequiredService<TimeProvider>(),
         sp.GetRequiredService<ILogger<Arbitarr.Host.Notifications.DownloadRefusalNotifier>>()));
+
+// arb-rx1f: the same delivery shape for the OTHER sticky per-source condition — a source whose API
+// key upstream rejected. It is a SINGLETON and that is load-bearing twice over: the per-source
+// semaphores that keep the notice to one per edge have to outlive the request that observes the
+// edge, and the before-state it compares against is read from the durable backoff row rather than
+// from anything held here, so a restart with the flag already set computes no edge and stays silent
+// without a rehydration service.
+//
+// It holds the scope FACTORY, not a scope: this fires from inside UpstreamMergeStage's concurrent
+// fan-out, whose per-source gate scope is disposed the moment the outcome is recorded. The callback
+// returns immediately and swallows its own failures, because a misconfigured webhook must never
+// stall or fail a search (§3.4/AC6, and #461's per-source isolation).
+builder.Services.AddSingleton<Arbitarr.Host.Notifications.SourcePermanentDisableNotifier>(sp =>
+    new Arbitarr.Host.Notifications.SourcePermanentDisableNotifier(
+        sp.GetRequiredService<IServiceScopeFactory>(),
+        sp.GetRequiredService<TimeProvider>(),
+        sp.GetRequiredService<ILogger<Arbitarr.Host.Notifications.SourcePermanentDisableNotifier>>()));
 
 builder.Services.AddSingleton<Arbitarr.Core.Diagnostics.IDownloadRefusalTracker>(sp =>
     new Arbitarr.Core.Diagnostics.NotifyingDownloadRefusalTracker(

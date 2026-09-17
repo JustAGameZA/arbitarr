@@ -4,6 +4,7 @@ using Arbitarr.Core.Releases;
 using Arbitarr.Core.Sources;
 using Arbitarr.Data.Entities;
 using Arbitarr.Data.Sources;
+using Arbitarr.Host.Notifications;
 
 namespace Arbitarr.Host.Sources;
 
@@ -58,16 +59,27 @@ public sealed class BudgetedUpstreamSource : IUpstreamSource
     private readonly ISourceGateScopeFactory _scopeFactory;
     private readonly IEventSink _eventSink;
 
+    /// <summary>
+    /// arb-rx1f: raises one notification when this source crosses into permanently disabled and one
+    /// when it comes back, and owns the per-source gate that keeps those one apiece under the
+    /// concurrent fan-out. Optional so the many tests that exercise the budget and backoff rules
+    /// alone construct the gate without a notification graph behind it; a null notifier records the
+    /// outcome exactly as before and detects nothing.
+    /// </summary>
+    private readonly SourcePermanentDisableNotifier? _permanentDisableNotifier;
+
     public BudgetedUpstreamSource(
         IUpstreamSource inner,
         Source configuration,
         ISourceGateScopeFactory scopeFactory,
-        IEventSink eventSink)
+        IEventSink eventSink,
+        SourcePermanentDisableNotifier? permanentDisableNotifier = null)
     {
         _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _eventSink = eventSink ?? throw new ArgumentNullException(nameof(eventSink));
+        _permanentDisableNotifier = permanentDisableNotifier;
     }
 
     /// <inheritdoc />
@@ -201,14 +213,54 @@ public sealed class BudgetedUpstreamSource : IUpstreamSource
         _ => SourceCallOutcome.TransientFailure,
     };
 
-    private Task RecordOutcomeAsync(SourceCallOutcome outcome, CancellationToken cancellationToken)
-        => _scopeFactory.UseAsync(
+    /// <summary>
+    /// Applies the outcome to the durable backoff state and, when that crossed the permanent-disable
+    /// edge, raises exactly one notification for it (arb-rx1f).
+    ///
+    /// <para><b>The edge is computed HERE because this is the only place both halves of it exist.</b>
+    /// The permanently-disabled health item on <c>/api/status</c> is projected from the stored row at
+    /// read time, so it has no tracker and no polled edge for a decorator to observe; the transition
+    /// is visible only where the row is written. <c>SourceBackoffStore</c> itself stays a plain state
+    /// applier — it is not given a callback, and its signature does not change — because it is Data
+    /// and the notifier is Host, and because a store that notifies could not be used by the
+    /// maintenance paths that legitimately write state without announcing it.</para>
+    ///
+    /// <para><b>The before-state is read from the ROW, never from memory, which is what makes a
+    /// restart silent.</b> A fresh process that finds the flag already set reads <c>true</c> before
+    /// the next authentication failure and computes no edge, so no rehydration service is needed and
+    /// an operator is not re-told about a source they already disabled.</para>
+    ///
+    /// <para><b>The per-source gate is held across the read-record-read triple and released BEFORE
+    /// the notification is raised</b>, exactly as <c>NotifyingDownloadRefusalTracker</c> does and for
+    /// the same two reasons: two concurrent authentication failures for one source must not both
+    /// observe the pre-record state and both announce it, and the gate must not be held across
+    /// anything the app owns. It is per SOURCE, never global — <c>UpstreamMergeStage</c> runs every
+    /// source's outcome record concurrently under one <c>Task.WhenAll</c>, and #461 exists to keep
+    /// one slow indexer out of the others' way.</para>
+    /// </summary>
+    private async Task RecordOutcomeAsync(SourceCallOutcome outcome, CancellationToken cancellationToken)
+    {
+        // This method stays a THIN DELEGATE on purpose: the read-record-read triple and the gate that
+        // makes it atomic live on the notifier, not here. Inlining them would put the only edge
+        // detector behind a decorator that a test can reach only by standing up the whole budgeted
+        // source, so the seam that proves "exactly one notice per edge" would not exist. Keeping the
+        // triple on SourcePermanentDisableNotifier.RecordAndNotifyAsync lets it be driven directly and
+        // still leaves this the sole production caller.
+        if (_permanentDisableNotifier is { } notifier)
+        {
+            await notifier.RecordAndNotifyAsync(Name, outcome, _scopeFactory, cancellationToken)
+                .ConfigureAwait(false);
+            return;
+        }
+
+        await _scopeFactory.UseAsync(
             async (gate, ct) =>
             {
                 await gate.Backoff.RecordOutcomeAsync(Name, outcome, ct).ConfigureAwait(false);
                 return true;
             },
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
+    }
 
     private ValueTask RecordHitAsync(RecordedEventKind kind, CancellationToken cancellationToken)
         // Summary, Reason and Detail are all per-SOURCE constants, never per-occurrence values. That

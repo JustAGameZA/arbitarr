@@ -60,7 +60,12 @@ public sealed record NotificationSettings(
     /// <summary>Default rate window.</summary>
     public static readonly TimeSpan DefaultSuppressionRateWindow = TimeSpan.FromHours(1);
 
-    /// <summary>Every trigger, which is the default: a configured notifier notifies on all four.</summary>
+    /// <summary>
+    /// Every trigger, which is the default: a configured notifier notifies on all of them, and this
+    /// is derived from the enum rather than listed, so a trigger added later is enabled by default
+    /// here for the same reason <c>NotificationRepository</c> persists the DISABLED set — an upgrade
+    /// must not silently mute a condition the operator never chose to mute.
+    /// </summary>
     public static readonly IReadOnlySet<NotificationTrigger> AllTriggers =
         new HashSet<NotificationTrigger>(Enum.GetValues<NotificationTrigger>());
 
