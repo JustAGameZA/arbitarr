@@ -220,7 +220,7 @@ public sealed class SourcePermanentDisableNotificationTests : IAsyncLifetime
         // It names the CONFIGURED source: an operator with three indexers has to be told which one
         // to go and fix, and told what to fix about it.
         Assert.Contains(SourceName, message!, StringComparison.Ordinal);
-        Assert.Contains("until the key is corrected", message!, StringComparison.Ordinal);
+        Assert.Contains("is disabled. Searches skip it.", message!, StringComparison.Ordinal);
 
         // The state really is durably disabled, so the notice describes something that happened
         // rather than passing for the wrong reason.

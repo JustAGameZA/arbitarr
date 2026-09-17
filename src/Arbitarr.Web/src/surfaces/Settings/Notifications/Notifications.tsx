@@ -77,7 +77,7 @@ const TRIGGER_LABELS: Record<NotificationTrigger, { label: string; description: 
   SourcePermanentlyDisabledCleared: {
     label: 'Source key accepted again',
     description:
-      'A source whose key had been rejected answered successfully again and is back in searches. Fires once, the closing edge of the trigger above.',
+      'A source whose key had been rejected answered successfully again and is back in searches. Currently dormant: nothing yet re-enables a permanently disabled source, so this trigger cannot fire until that path exists.',
   },
 };
 

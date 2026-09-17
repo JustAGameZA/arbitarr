@@ -101,13 +101,13 @@ public sealed class SourcePermanentDisableNotifier
     /// wording that is delivered rather than a re-spelling of it — the same reason
     /// <see cref="DownloadRefusalNotifier.Summarize"/> is public.
     ///
-    /// <para>The appeared text names the remediation ("until the key is corrected") because the
-    /// condition does not clear on its own: an operator told only that a source is disabled has to go
-    /// and find out why, and the why is always the same one thing.</para>
+    /// <para>The appeared text does not promise a path back to enabled: nothing currently re-enables a
+    /// permanently disabled source once its key is corrected (arb-fllv), so the message only states what
+    /// happened and that searches skip the source, rather than implying a remediation that would work.</para>
     /// </summary>
     public static string Summarize(string sourceName, SourcePermanentDisableTransition transition) =>
         transition == SourcePermanentDisableTransition.Appeared
-            ? $"Source '{sourceName}' rejected Arbitarr's API key and is disabled. Searches skip it until the key is corrected."
+            ? $"Source '{sourceName}' rejected Arbitarr's API key and is disabled. Searches skip it."
             : $"Source '{sourceName}' accepted Arbitarr's API key and is active again.";
 
     private static NotificationTrigger TriggerFor(SourcePermanentDisableTransition transition) =>

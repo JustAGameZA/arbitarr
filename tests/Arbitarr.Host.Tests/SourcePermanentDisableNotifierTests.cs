@@ -282,9 +282,9 @@ public sealed class SourcePermanentDisableNotifierTests : IDisposable
             message);
         Assert.Contains(SourceName, message, StringComparison.Ordinal);
 
-        // The remediation is the operator's next action: a notice saying a source is disabled
-        // without saying the key is what to fix sends them hunting through logs.
-        Assert.Contains("until the key is corrected", message, StringComparison.Ordinal);
+        // The notice does not promise a recovery path: nothing currently re-enables a permanently
+        // disabled source once its key is corrected (arb-fllv), so it states only what happened.
+        Assert.Contains("is disabled. Searches skip it.", message, StringComparison.Ordinal);
     }
 
     [Fact]
