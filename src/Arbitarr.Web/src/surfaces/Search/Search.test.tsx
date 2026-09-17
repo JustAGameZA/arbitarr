@@ -223,7 +223,17 @@ describe('Search', () => {
     await runSearch(user);
     await user.click(await screen.findByRole('button', { name: 'Explain' }));
 
-    expect(await screen.findByText(/No stored explanation for this release/)).toBeInTheDocument();
+    // arb-z505 tightened this from /No stored explanation for this release/ to
+    // the full sentence. That prefix is shared verbatim with Suppressions'
+    // DIFFERENT 404 sentence, so the loose form passed no matter which of the
+    // two this surface rendered -- and routing both through QueryState's
+    // `renderError` is exactly the change that could have swapped them.
+    expect(
+      await screen.findByText(
+        'No stored explanation for this release. Ad-hoc results are not recorded in the release lookup, so only releases served through a Torznab search have one.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Ad-hoc results are not recorded');
     expect(api.callsTo('/api/admin/search/upstream-guid-1/explanation')).toHaveLength(1);
     // Also admin-gated, and also a GET.
     expect(api.adminKeyOn('/api/admin/search/upstream-guid-1/explanation')).toBe('operator-key');

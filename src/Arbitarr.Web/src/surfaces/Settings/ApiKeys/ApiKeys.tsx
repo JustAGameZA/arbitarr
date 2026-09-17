@@ -36,6 +36,106 @@ function formatTimestamp(value: string | null): string {
 }
 
 /**
+ * The two routes an *arr client is pointed at, as path literals.
+ *
+ * These are copied from `Program.cs`'s `app.MapGet("/torznab/api", …)` and
+ * `app.MapGet("/newznab/api", …)` and must stay byte-identical to them. They are
+ * hard-coded on purpose rather than derived from anything: a wrong base URL in
+ * Sonarr/Radarr is the 404 this whole block exists to prevent (#337), so a path
+ * that drifted would be worse than showing nothing. ApiKeys.test.tsx asserts the
+ * rendered URLs end in exactly these suffixes, so a rename on the server that is
+ * not mirrored here fails a test rather than shipping a dead link.
+ *
+ * Both families answer; the README (:110) states Torznab is preferred, and the
+ * labels below say the same rather than inventing a second recommendation.
+ */
+const CLIENT_ROUTES = [
+  { path: '/torznab/api', label: 'Torznab', note: 'preferred' },
+  { path: '/newznab/api', label: 'Newznab', note: 'Usenet-oriented' },
+] as const;
+
+/**
+ * The *arr-facing connection URLs (arb-mn12).
+ *
+ * THE KEY IS NEVER IN THESE URLS, and that is not an oversight to be tidied up
+ * later. The key travels as the `apikey` QUERY PARAMETER, which Sonarr and Radarr
+ * append themselves from their own separate "API Key" field — so a URL with the
+ * key baked in would be both wrong for the form the operator is filling in and a
+ * live credential rendered into a string the reveal panel's doc explicitly
+ * forbids ("not a URL"). ApiKeys.test.tsx plants a key and asserts it appears in
+ * the reveal but in none of these URLs, with a positive control so the absence
+ * assertion is not vacuous.
+ *
+ * The origin comes from the browser rather than from the server. There is no
+ * advertised-base-URL setting, and adding one is a backend feature with its own
+ * shape (a catalog entry, validation, precedence against the request origin); the
+ * caveat below is the honest alternative. `window.location.origin` is what the
+ * operator's own browser reached, which is right in the common case and wrong
+ * exactly when Arbitarr sits behind a reverse proxy or the *arr runs in a
+ * container that cannot resolve `localhost` — hence the sentence saying so. A
+ * concrete URL with a stated caveat beats today's state, which shows no URL at
+ * all.
+ *
+ * Rendered ONCE for the section, not per key row: the URL is identical for every
+ * key — it does not vary by key, scope or label — so a per-row copy would repeat
+ * an invariant string on every row of an already six-column table.
+ */
+function ClientUrls({ origin }: { origin: string }) {
+  // Which path's copy button last succeeded, or null. Keyed by path rather than a
+  // bare boolean so two buttons cannot both light up from one click.
+  const [copiedPath, setCopiedPath] = useState<string | null>(null);
+
+  const copy = (path: string) => {
+    // Best-effort, exactly as the reveal panel's copy is: jsdom and any
+    // non-secure context lack the clipboard API, and a failed copy must not take
+    // the block down with it — the URL stays on screen to be selected by hand.
+    void navigator.clipboard
+      ?.writeText(`${origin}${path}`)
+      .then(() => setCopiedPath(path))
+      .catch(() => setCopiedPath(null));
+  };
+
+  return (
+    <div className={local.clientUrls}>
+      <h3 className={local.clientUrlsHeading}>Point Sonarr or Radarr here</h3>
+      <p className={local.clientUrlsHelp}>
+        In the *arr instance, go to Settings &gt; Indexers, add a Torznab or Newznab indexer, and
+        paste one of these as the URL. The API key goes in that form&rsquo;s own separate field —
+        it is not part of the URL. A wrong key is reported there as &ldquo;Incorrect user
+        credentials&rdquo; (error 100).
+      </p>
+
+      <ul className={local.clientUrlList}>
+        {CLIENT_ROUTES.map((route) => (
+          <li key={route.path} className={local.clientUrlRow}>
+            <span className={local.clientUrlLabel}>
+              {route.label} <span className={local.clientUrlNote}>({route.note})</span>
+            </span>
+            <code className={local.clientUrl}>{`${origin}${route.path}`}</code>
+            <button
+              type="button"
+              className={styles.buttonSecondary}
+              onClick={() => copy(route.path)}
+              aria-label={`Copy ${route.label} URL`}
+            >
+              Copy
+            </button>
+            {copiedPath === route.path && <span className={local.copied}>Copied.</span>}
+          </li>
+        ))}
+      </ul>
+
+      <p className={local.clientUrlsCaveat}>
+        This address is the one your browser reached Arbitarr on. The Sonarr or Radarr instance has
+        to reach it too, and behind a reverse proxy — or from another container, where{' '}
+        <code>localhost</code> means that container itself — the externally reachable address may
+        differ. Use whichever address that client can resolve, with the same path.
+      </p>
+    </div>
+  );
+}
+
+/**
  * The one-time reveal (AC2).
  *
  * The plaintext arrives here as a prop from the parent's component state and is
@@ -439,6 +539,15 @@ export function ApiKeysSection() {
           revoked on its own, so a compromised or retired caller does not mean re-keying every
           other.
         </p>
+
+        {/*
+          Above the create form, not below the table: the URL is what a key is
+          FOR, so an operator reads where the key goes before minting one. Read
+          from the live location rather than held in state — there is nothing to
+          subscribe to, the origin cannot change without a navigation, and a
+          module-level constant would freeze the value captured at import.
+        */}
+        <ClientUrls origin={window.location.origin} />
 
         {created !== null && (
           <CreatedKeyReveal created={created} onDismiss={onDismissReveal} />

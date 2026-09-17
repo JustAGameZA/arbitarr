@@ -234,6 +234,26 @@ surfaces) are still both announced: the store keeps a `seq` nonce alongside `mes
 of the same text is guaranteed to force a DOM mutation rather than silently no-op on the second
 one.
 
+**`QueryState` owns the pending/error/loaded triad; a surface owns only what it loads.** Every
+surface that renders one query goes through it rather than hand-rolling the three branches, so the
+503 affordance and the polite pending announcement are proven once instead of once per copy. Two
+consequences worth stating, because both have been got wrong:
+
+- **Error is checked before pending**, not after. A surface that checks pending first — as
+  `isPending || data === undefined` — never reaches its own error branch at all, because `data` is
+  `undefined` on an error too, and every failure renders as a spinner that never resolves. That was
+  a real bug on the Suppressions surface until arb-z505.
+- **An empty result is a *loaded* state**, so its sentence belongs inside `children(data)`, not
+  alongside the pending and error branches.
+
+**Surface-specific error text goes through `renderError`, never through a private error branch.**
+`QueryState` takes an optional `renderError?: (error: unknown) => ReactNode`, defaulted to
+`errorMessage`, so omitting it is the existing behaviour for every call site. Use it where a
+surface can explain a particular status better than the generic message can — Search and
+Suppressions each answer a 404 with a sentence naming their own cause, and those two sentences are
+not interchangeable. The override replaces the error *text* only: the `role="alert"` that makes an
+error interrupt on its own stays `QueryState`'s and is not the caller's to forget.
+
 ---
 
 ## Testing UI appearance

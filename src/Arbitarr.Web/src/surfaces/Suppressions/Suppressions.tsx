@@ -20,31 +20,40 @@ function formatTimestamp(value: string): string {
  * documented on useExplanationQuery. It is written as a sentence that names the
  * cause, because "404" on its own would read as a bug in this page rather than
  * a missing column in the audit log.
+ *
+ * BEHAVIOUR CHANGE, arb-z505: that sentence never reached the screen before.
+ * The hand-rolled branches this replaces tested pending FIRST, as
+ * `isPending || data === undefined` — and `data` is `undefined` on an error, so
+ * the error branch below it was unreachable and every failure, 404 included,
+ * rendered a permanent "Loading…" spinner. QueryState tests error first, which
+ * is the precedence this component's own comment always assumed, so the
+ * sentence now renders for the case it was written for. Pinned by
+ * Suppressions.test.tsx's "renders the 404 sentence rather than a permanent
+ * spinner" test, which fails against the old ordering.
  */
 function Explanation({ releaseIdentifier }: { releaseIdentifier: string }) {
   const explanation = useExplanationQuery(releaseIdentifier);
 
-  if (explanation.isPending || explanation.data === undefined) {
-    return <p className={styles.muted}>Loading…</p>;
-  }
-
-  if (explanation.error !== null) {
-    return (
-      <p className={styles.error} role="alert">
-        {explanation.error instanceof ApiError && explanation.error.status === 404
-          ? 'No stored explanation for this release. The audit log records the upstream guid only, while the explanation lookup is keyed on the proxy guid, so suppressed releases cannot be resolved to their titles yet.'
-          : errorMessage(explanation.error)}
-      </p>
-    );
-  }
-
   return (
-    <dl className={local.titles}>
-      <dt>Title used for matching</dt>
-      <dd>{explanation.data.title}</dd>
-      <dt>Original title</dt>
-      <dd>{explanation.data.originalTitle}</dd>
-    </dl>
+    <QueryState
+      isPending={explanation.isPending}
+      error={explanation.error}
+      data={explanation.data}
+      renderError={(error) =>
+        error instanceof ApiError && error.status === 404
+          ? 'No stored explanation for this release. The audit log records the upstream guid only, while the explanation lookup is keyed on the proxy guid, so suppressed releases cannot be resolved to their titles yet.'
+          : errorMessage(error)
+      }
+    >
+      {(loaded) => (
+        <dl className={local.titles}>
+          <dt>Title used for matching</dt>
+          <dd>{loaded.title}</dd>
+          <dt>Original title</dt>
+          <dd>{loaded.originalTitle}</dd>
+        </dl>
+      )}
+    </QueryState>
   );
 }
 

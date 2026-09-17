@@ -68,6 +68,87 @@
   color: var(--ok);
 }
 
+/*
+ * The *arr-facing connection URLs (arb-mn12). Styled as a quiet informational
+ * block, deliberately NOT as the reveal's warning band: it carries no secret, and
+ * borrowing the one treatment reserved for a live credential would erode what
+ * that band means.
+ */
+.clientUrls {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  background: var(--bg-panel-alt);
+}
+
+.clientUrlsHeading {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg-primary);
+}
+
+.clientUrlsHelp {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--fg-muted);
+  max-width: 70ch;
+}
+
+.clientUrlList {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.clientUrlRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.clientUrlLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-primary);
+  min-width: 14ch;
+}
+
+.clientUrlNote {
+  font-weight: 400;
+  color: var(--fg-muted);
+}
+
+/*
+ * `word-break: break-all` matches .secret: a long origin must wrap inside the
+ * panel rather than widen it, and the value has to stay selectable by hand for
+ * the same reason the reveal's does — the clipboard API is absent in any
+ * non-secure context, so manual selection is the fallback path.
+ */
+.clientUrl {
+  font-family: ui-monospace, 'Cascadia Mono', 'Consolas', monospace;
+  font-size: 12px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg-app);
+  color: var(--fg-primary);
+  word-break: break-all;
+}
+
+.clientUrlsCaveat {
+  margin: 0;
+  font-size: 11px;
+  color: var(--fg-muted);
+  max-width: 70ch;
+  font-style: italic;
+}
+
 /* Scope explanation under the create form's selector. */
 .scopeHelp {
   margin: 8px 0 0;
