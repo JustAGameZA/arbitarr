@@ -74,7 +74,8 @@ public sealed class SourceCredentialProviderTests : IDisposable
         // override this type renders its own ApiKey — and an interpolation like $"probe failed for
         // {credential}" compiles, reads as harmless, and lands verbatim in the persistent log store.
         // Neither mechanism that would normally catch this applies: IHttpClientFactory's URI
-        // redaction and LogMessageCleanser both scrub QUERY STRINGS, and a bare "ApiKey = …" is in
+        // redaction is scoped to query strings, and LogMessageCleanser scrubs credentials in query
+        // strings, covering neither a bare value nor a URL path; a bare "ApiKey = …" is in
         // neither shape (CLAUDE.md §1).
         const string PlantedKey = "planted-tostring-key-3e7c05af";
 
