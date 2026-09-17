@@ -201,7 +201,7 @@ public sealed class SourceRegistry : ISourceRegistry
     /// warnings and <c>ResolvedSourceSetFingerprintSource</c> already use; the display name is
     /// operator-editable, so a name match would turn a rename into an ungated source. It is not on
     /// <see cref="ISourceRegistry"/> because no CONSUMER of the search path wants it — only a
-    /// decorator composed over this concrete type does, and that interface is kept at one method for
+    /// decorator composed over this concrete type does, and that interface is kept narrow for
     /// exactly the decoration its own doc describes.
     /// </remarks>
     public async Task<IReadOnlyList<ResolvedSource>> ResolveWithRowIdsAsync(CancellationToken cancellationToken)

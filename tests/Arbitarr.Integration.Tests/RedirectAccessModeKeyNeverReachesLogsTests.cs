@@ -33,8 +33,11 @@ namespace Arbitarr.Integration.Tests;
 /// risk this defends against is FUTURE: someone adds <c>app.UseHttpLogging()</c> with
 /// <c>HttpLoggingFields.ResponseHeaders</c>, or writes an <c>ILogger</c> line on the redirect arm
 /// the way NZBHydra2's <c>FileHandler</c> does ("Redirecting to {}", i.e. it logs the key). THIS
-/// TEST is the ratchet that turns either into a red build. Do not delete it on the grounds that
-/// today's pipeline is clean; that is the state it exists to preserve.</para>
+/// TEST is the ratchet that turns either into a red build — qualified to a line AT <c>Information</c>
+/// OR ABOVE: <c>SqliteLoggerProvider</c> is registered at <c>LogLevel.Information</c>, so a
+/// <c>Debug</c> or <c>Trace</c> line on this arm sits below the SQLite sink's floor and would not
+/// reach the store this test reads at all (tracked as arb-j4hq). Do not delete it on the grounds
+/// that today's pipeline is clean; that is the state it exists to preserve.</para>
 ///
 /// <para><b>NO EXISTING LAYER MAKES THIS SAFE, and the reasons differ per layer.</b>
 /// <c>DisableUriRedaction</c> governs <c>IHttpClientFactory</c>'s collapse of an OUTBOUND request
@@ -116,6 +119,12 @@ public sealed class RedirectAccessModeKeyNeverReachesLogsTests : IAsyncLifetime
     /// requires: that the redirect arm writes NO LOG LINE AT ALL. The cleanser is defence in depth
     /// underneath it, not the control — and a Location in some other shape (a path-borne token, a
     /// differently-named parameter) would not be scrubbed at all.</para>
+    ///
+    /// <para>This assertion's bite depends on this marker matching no <c>CredentialPatterns</c> arm.
+    /// If a path-shaped arm is ever added to that denylist, the positive control above — the one
+    /// asserting the marker IS present after a deliberate log write — goes red, which is the intended
+    /// signal that this test would need a new, still-unscrubbed marker shape to keep testing what it
+    /// claims to.</para>
     /// </summary>
     private const string LinkPathMarker = "redirect-probe-location-marker-1";
 
@@ -397,6 +406,11 @@ public sealed class RedirectAccessModeKeyNeverReachesLogsTests : IAsyncLifetime
         var status = await client.GetStringAsync("/api/status");
         Assert.Contains(IndexerKey, status, StringComparison.Ordinal);
         Assert.Contains(LinkPathMarker, status, StringComparison.Ordinal);
+
+        // This planted refusal is invisible to the other tests in this file only because the Sources
+        // table is empty here, so rehydration on their own hosts prunes it rather than re-surfacing
+        // it against a real row. Seeding an actual Sources row in this method would make that
+        // assertion order-dependent on whichever host runs next.
     }
 
     /// <summary>

@@ -92,7 +92,7 @@ configured; the admin UI is served at `http://arbitarr.example.invalid:8080/admi
 
 ### NZBHydra2 required setting: Proxy mode
 
-**This section is about NZBHydra2's own setting -- the upstream's -- not Arbitarr's.** Arbitarr has a per-source setting of its own with the same name and the same two values (see [NZB access mode](#nzb-access-mode-per-indexer) below). They are unrelated and point in opposite directions: this one controls what NZBHydra2 sends *to Arbitarr*, and Arbitarr's controls what Arbitarr sends *to Sonarr/Radarr*. Setting one does not affect the other.
+**This section is about NZBHydra2's own setting — the upstream's — not Arbitarr's.** Arbitarr has a per-source setting of its own with the same name and the same two values (see [NZB access mode](#nzb-access-mode-per-indexer) below). They are unrelated and point in opposite directions: this one controls what NZBHydra2 sends *to Arbitarr*, and Arbitarr's controls what Arbitarr sends *to Sonarr/Radarr*. Setting one does not affect the other.
 
 Arbitarr refuses upstream redirect responses and will not follow them (SEC-M1).
 
@@ -107,7 +107,7 @@ If this setting is left at "Redirect to indexer", every download will fail with 
 Arbitarr's own per-source setting, configured in **Settings > Sources** on each indexer. It decides how Arbitarr answers a download request from Sonarr/Radarr:
 
 - **Proxy** (the default): Arbitarr fetches the file from the indexer and serves the bytes. The indexer's API key never leaves the server.
-- **Redirect**: Arbitarr answers with a redirect to the indexer's own download URL. This saves Arbitarr the download bandwidth, and **that URL contains the indexer's API key** -- the indexer put it there when it generated the search result -- so the key becomes visible to Sonarr, Radarr and anything else that can read the response.
+- **Redirect**: Arbitarr answers with a redirect to the indexer's own download URL. This saves Arbitarr the download bandwidth, and **that URL contains the indexer's API key** — the indexer put it there when it generated the search result — so the key becomes visible to Sonarr, Radarr and anything else that can read the response.
 
 Redirect is off by default and is opted into one indexer at a time; the Settings form states the exposure when you select it. See [ADR 0023](docs/adr/0023-nzb-access-mode-redirect.md) for the security trade-off in full.
 

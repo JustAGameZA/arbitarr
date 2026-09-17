@@ -171,8 +171,12 @@ public static class DownloadProxyEndpoint
         // shape. Relying on them here would be relying on the leak happening to wear a shape the
         // denylist already knows. RedirectAccessModeKeyNeverReachesLogsTests is the ratchet, and it
         // asserts on the link's PATH for exactly that reason (mutation proved the key-only form of
-        // the assertion passed while the Location was being logged). It fails if anyone adds
-        // app.UseHttpLogging() with ResponseHeaders, or writes an ILogger line on this arm.
+        // the assertion passed while the Location was being logged). It fails if anyone writes an
+        // ILogger line on this arm. (app.UseHttpLogging() with ResponseHeaders would log under
+        // Microsoft.AspNetCore.HttpLogging.HttpLoggingMiddleware, which LoggingSetup.cs's
+        // NoisyFrameworkCategories "Microsoft" prefix demotes to Warning for SqliteLoggerProvider —
+        // so at the registered Information level that line would never reach the store this test
+        // reads, and could not trip this ratchet.)
         //
         // NO SUCCESSFUL-GRAB CLEAR AND NO HEALTH ITEM, for the reason the success path's own comment
         // below gives: the sticky refusal clears only when a payload actually came back from this

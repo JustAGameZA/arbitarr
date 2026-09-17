@@ -19,7 +19,7 @@ namespace Arbitarr.Host.Sources;
 /// this stayed where it was, the factory would still have been registered and simply never called —
 /// every test would have passed and budgets would have stopped being enforced with nothing to see.
 /// <see cref="ISourceRegistry"/>'s own type doc names this as the decoration boundary and keeps the
-/// interface at one method for it; decorating the interface every consumer already takes is what
+/// interface narrow for it; decorating the interface every consumer already takes is what
 /// makes the gate unavoidable rather than attached to one particular registration's shape.</para>
 ///
 /// <para><b>THE ROW READ IS ASYNC, because <see cref="ResolveAsync"/> is.</b> The previous factory
