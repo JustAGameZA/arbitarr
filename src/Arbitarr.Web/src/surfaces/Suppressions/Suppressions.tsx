@@ -2,6 +2,12 @@ import { Fragment, useState } from 'react';
 
 import { ApiError } from '../../api/client';
 import { PageHeader } from '../../components/shell/PageHeader';
+import {
+  PageToolbar,
+  PageToolbarButton,
+  PageToolbarInput,
+  PageToolbarSection,
+} from '../../components/shell/toolbar';
 import { QueryState, errorMessage } from '../QueryState';
 import type { SuppressionViewEntry } from '../../api/types';
 import styles from '../surface.module.css';
@@ -173,31 +179,34 @@ export default function SuppressionsPage() {
         description="Every suppressed or de-ranked result, attributed to the layer that acted."
       />
 
-      <section className={styles.panel}>
-        <h2 className={styles.panelHeading}>Filter</h2>
-        <div className={styles.panelBody}>
-          <form
-            className={styles.form}
-            onSubmit={(event) => {
-              event.preventDefault();
-              setFilter(draft);
-            }}
-          >
-            <label className={styles.field}>
-              Query key
-              <input
-                className={styles.input}
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                placeholder="All queries"
-              />
-            </label>
-            <button type="submit" className={styles.button}>
-              Apply
-            </button>
-          </form>
-        </div>
-      </section>
+      {/* The toolbar is a sibling of PageHeader, not its `actions` slot: the
+          filter belongs on its own row under the title, the way the *arr shell
+          arranges them (arb-ajrv; this was a `.panel` headed "Filter" until
+          then).
+
+          EXPLICIT SUBMIT IS KEPT. The query key is a server-side WHERE, so the
+          alternative -- debounced live filtering like the Logs tab -- would
+          issue a request per pause on a free-text field whose values are long
+          machine-shaped strings a user pastes rather than types. Migrating the
+          panel was never meant to change when the request fires, and the
+          difference is visible to the operator, so Apply stays and
+          PageToolbarButton finally has a caller. */}
+      <PageToolbar label="Suppression filters">
+        <PageToolbarSection align="end">
+          {/* Enter still applies the filter. The <form> this replaced gave that
+              for free via its submit button; PageToolbarButton is a
+              type="button" by design, so the keyboard path is wired here
+              explicitly rather than being silently dropped. */}
+          <PageToolbarInput
+            label="Query key"
+            value={draft}
+            placeholder="All queries"
+            onChange={setDraft}
+            onSubmit={() => setFilter(draft)}
+          />
+          <PageToolbarButton label="Apply" onClick={() => setFilter(draft)} />
+        </PageToolbarSection>
+      </PageToolbar>
 
       <section className={styles.panel}>
         {/* "Suppression audit log", not the bare "Decisions" it was called when
