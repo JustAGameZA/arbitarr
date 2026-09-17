@@ -28,15 +28,38 @@ function formatTimestamp(value: string): string {
   return new Date(value).toLocaleString();
 }
 
-function stateBadgeClass(state: string): string {
-  const normalized = state.toLowerCase();
-  if (normalized === 'healthy') {
-    return `${styles.badge} ${styles.badgeOk}`;
+/**
+ * The source circuit-breaker state, in operator language (UX candidates 8+9).
+ *
+ * Keyed against `StatusEndpoint.cs`'s `ToStateLabel`, which emits exactly one of
+ * `closed` | `open` | `half-open` -- the .NET enum's own names, not a vocabulary an
+ * operator was ever meant to read. This table is the one and only place those three
+ * wire values are given a label and a colour; there used to be a `stateBadgeClass`
+ * here that matched `healthy`/`failed`/`unhealthy` instead, which `ToStateLabel`
+ * never emits, so every source rendered the warn treatment regardless of its real
+ * state. That defect is why this is a name-matched table rather than a range check
+ * or a heuristic: each of the three real values is listed once, explicitly, against
+ * the endpoint that produces it.
+ */
+const SOURCE_STATE_BADGES: Record<string, { label: string; className: string }> = {
+  closed: { label: 'Healthy', className: styles.badgeOk },
+  open: { label: 'Paused after failures', className: styles.badgeDanger },
+  'half-open': { label: 'Retrying', className: styles.badgeWarn },
+};
+
+/**
+ * An unknown state (a future `CircuitState` member `ToStateLabel` learns to emit
+ * before this table does) renders the server's string VERBATIM with a neutral
+ * treatment -- no ok/warn/danger colour, because none of those three claims is
+ * substantiated for a value this table does not recognise, and no switch default
+ * that invents new operator wording for a state nobody has named yet.
+ */
+function SourceStateBadge({ state }: { state: string }) {
+  const known = SOURCE_STATE_BADGES[state];
+  if (known === undefined) {
+    return <span className={styles.badge}>{state}</span>;
   }
-  if (normalized === 'failed' || normalized === 'unhealthy') {
-    return `${styles.badge} ${styles.badgeDanger}`;
-  }
-  return `${styles.badge} ${styles.badgeWarn}`;
+  return <span className={`${styles.badge} ${known.className}`}>{known.label}</span>;
 }
 
 /**
@@ -229,10 +252,10 @@ function SourcesTable({
             <tr key={source.sourceName}>
               <td>{source.sourceName}</td>
               <td>
-                <span className={stateBadgeClass(source.state)}>{source.state}</span>
+                <SourceStateBadge state={source.state} />
               </td>
               <td>{source.consecutiveFailures}</td>
-              <td>{source.lastError ?? ''}</td>
+              <td>{source.lastError ?? '—'}</td>
             </tr>
           ))}
         </tbody>
@@ -416,10 +439,10 @@ export default function DashboardPage() {
                         <tr key={`${entry.receivedAt}-${index}`}>
                           <td>{formatTimestamp(entry.receivedAt)}</td>
                           <td>{entry.query}</td>
-                          <td>{entry.resolvedIdentity ?? ''}</td>
+                          <td>{entry.resolvedIdentity ?? '—'}</td>
                           <td>{entry.resultCount}</td>
                           <td>{entry.elapsedMilliseconds}ms</td>
-                          <td>{entry.band ?? ''}</td>
+                          <td>{entry.band ?? '—'}</td>
                         </tr>
                       ))}
                     </tbody>

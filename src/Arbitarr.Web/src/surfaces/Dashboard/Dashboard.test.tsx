@@ -11,11 +11,16 @@ import surfaceStyles from '../surface.module.css';
 
 const status = {
   status: 'ok',
+  // `state` values match `StatusEndpoint.cs`'s `ToStateLabel` exactly: `closed` |
+  // `open` | `half-open`, lower-case with a hyphen. The fixture previously used
+  // `Healthy`/`Failed`, which that endpoint never emits -- so every source badge
+  // rendered the warn treatment regardless of its real state, and no test caught
+  // it because nothing here matched the real wire shape.
   sources: [
-    { sourceName: 'nzbhydra', state: 'Healthy', consecutiveFailures: 0, lastError: null },
+    { sourceName: 'nzbhydra', state: 'closed', consecutiveFailures: 0, lastError: null },
     {
       sourceName: 'flaky-indexer',
-      state: 'Failed',
+      state: 'open',
       consecutiveFailures: 3,
       lastError: 'upstream timed out',
     },
@@ -449,6 +454,125 @@ describe('Dashboard', () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/No sources configured/)).not.toBeInTheDocument();
+  });
+
+  /**
+   * UX candidates 8+9. `stateBadgeClass` used to match `healthy`/`failed`/`unhealthy`,
+   * which `StatusEndpoint.cs`'s `ToStateLabel` never emits -- it emits exactly
+   * `closed` | `open` | `half-open` -- so every source rendered the warn badge
+   * regardless of its real state. Asserted PER ROW, with three rows in different
+   * states in the same render, because a table-wide assertion ("some row says
+   * Healthy") would still pass an implementation that wrote one label to every row.
+   */
+  describe('source state badge (UX candidates 8+9)', () => {
+    const threeStates = {
+      ...status,
+      sources: [
+        { sourceName: 'closed-source', state: 'closed', consecutiveFailures: 0, lastError: null },
+        { sourceName: 'open-source', state: 'open', consecutiveFailures: 5, lastError: 'boom' },
+        {
+          sourceName: 'half-open-source',
+          state: 'half-open',
+          consecutiveFailures: 1,
+          lastError: null,
+        },
+      ],
+    };
+
+    it('maps each of the endpoint three states to its own operator label and badge class, per row', async () => {
+      mockApi({ ...allOk, '/api/status': { body: threeStates } });
+      renderSurface(<DashboardPage />);
+
+      const closedRow = (await screen.findByText('closed-source')).closest('tr');
+      const openRow = screen.getByText('open-source').closest('tr');
+      const halfOpenRow = screen.getByText('half-open-source').closest('tr');
+      expect(closedRow).not.toBeNull();
+      expect(openRow).not.toBeNull();
+      expect(halfOpenRow).not.toBeNull();
+
+      const closedBadge = within(closedRow as HTMLElement).getByText('Healthy');
+      expect(closedBadge.classList).toContain(surfaceStyles.badge);
+      expect(closedBadge.classList).toContain(surfaceStyles.badgeOk);
+      expect(closedBadge.classList).not.toContain(surfaceStyles.badgeWarn);
+      expect(closedBadge.classList).not.toContain(surfaceStyles.badgeDanger);
+
+      const openBadge = within(openRow as HTMLElement).getByText('Paused after failures');
+      expect(openBadge.classList).toContain(surfaceStyles.badge);
+      expect(openBadge.classList).toContain(surfaceStyles.badgeDanger);
+      expect(openBadge.classList).not.toContain(surfaceStyles.badgeOk);
+      expect(openBadge.classList).not.toContain(surfaceStyles.badgeWarn);
+
+      const halfOpenBadge = within(halfOpenRow as HTMLElement).getByText('Retrying');
+      expect(halfOpenBadge.classList).toContain(surfaceStyles.badge);
+      expect(halfOpenBadge.classList).toContain(surfaceStyles.badgeWarn);
+      expect(halfOpenBadge.classList).not.toContain(surfaceStyles.badgeOk);
+      expect(halfOpenBadge.classList).not.toContain(surfaceStyles.badgeDanger);
+    });
+
+    it('renders an unrecognised state verbatim with no ok/warn/danger badge class', async () => {
+      // A distinctive marker string rather than a plausible-looking state name, so
+      // this cannot pass by accident if some future rename of a KNOWN state happens
+      // to collide with the fixture.
+      const marker = 'quarantined-zzq47';
+      mockApi({
+        ...allOk,
+        '/api/status': {
+          body: {
+            ...status,
+            sources: [
+              { sourceName: 'mystery-source', state: marker, consecutiveFailures: 0, lastError: null },
+            ],
+          },
+        },
+      });
+      renderSurface(<DashboardPage />);
+
+      const badge = await screen.findByText(marker);
+      expect(badge.classList).toContain(surfaceStyles.badge);
+      expect(badge.classList).not.toContain(surfaceStyles.badgeOk);
+      expect(badge.classList).not.toContain(surfaceStyles.badgeWarn);
+      expect(badge.classList).not.toContain(surfaceStyles.badgeDanger);
+    });
+  });
+
+  /**
+   * The blank-cell convention (`format.ts`'s U+2014) applies to all three `?? ''`
+   * cells this surface used to render, or none -- Last error, Resolved identity and
+   * Band. Asserted together so a fix that only reaches one of the three cannot pass.
+   */
+  it('renders the em-dash, not a blank cell, for a missing last error, identity and band', async () => {
+    mockApi({
+      ...allOk,
+      '/api/status': {
+        body: {
+          ...status,
+          sources: [
+            { sourceName: 'quiet-source', state: 'closed', consecutiveFailures: 0, lastError: null },
+          ],
+        },
+      },
+      '/api/searches/recent': {
+        body: [
+          {
+            receivedAt: '2026-09-06T09:59:00+00:00',
+            query: 'no identity or band',
+            resolvedIdentity: null,
+            resultCount: 0,
+            elapsedMilliseconds: 5,
+            band: null,
+          },
+        ],
+      },
+    });
+    renderSurface(<DashboardPage />);
+
+    await screen.findByText('quiet-source');
+    const dashes = await screen.findAllByText('—');
+    // Exactly the three blank cells this bead touches: Last error, Resolved
+    // identity and Band. A fourth or fifth em-dash sneaking in elsewhere (a
+    // duration formatter, an unrelated empty state) would change this count and
+    // is deliberately not swallowed by a looser `toBeGreaterThan`.
+    expect(dashes).toHaveLength(3);
   });
 
   it('renders the sources table, not an empty message, when sources are present', async () => {
