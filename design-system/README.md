@@ -117,6 +117,17 @@ The control strip for a surface: filters, view options, page-level actions.
 `actions` slot — that slot renders inline with the `<h1>`, and these controls belong on their own
 row beneath the title, the way the *arr shell arranges them.
 
+**A tab panel may carry its own toolbar, as the panel's first child.** `Tabs` partitions one surface
+into sub-surfaces, each governing its own data set, and a tab panel has no `PageHeader` of its own —
+the route's single `<h1>` belongs to the page around the tablist — so "directly under `PageHeader`,
+as its sibling" is unsatisfiable inside one. The rule above is not relaxed by this: the `<h1>` per
+route, the no-heading rule below, and at-most-one-toolbar-per-panel all still hold, and each toolbar
+on such a route needs an `aria-label` naming its own data set (`Log filters`, not `System`) so a
+screen-reader user is not given two indistinguishable toolbars. System's Logs tab is the first
+caller. The alternative — leaving the Logs filter as a bordered `.panel` while every other filter
+surface moved to a toolbar — was rejected because it makes the same control look like two different
+kinds of thing depending on which tab it is on.
+
 **A toolbar never contains a heading**, at any level. `PageHeader` owns the single `<h1>` per route
 (AC2b); a caption here is the most convenient way to break that rule, so `PageToolbar.test.tsx`
 asserts the component contributes none.
@@ -126,6 +137,19 @@ asserts the component contributes none.
 **Menus are disclosure buttons, not native `<select>`s.** `PageToolbarMenu` opens a `role="menu"`
 panel; items are `PageToolbarMenuItem` with `role="menuitemradio"` for a single-select group and
 `role="menuitemcheckbox"` for an independent toggle, `aria-checked` tracking the active one.
+
+**A free-text filter is `PageToolbarInput`, not a menu.** A menu enumerates known options; a search
+box does not have any — Logs' message search and Suppressions' query key are open-ended strings. It
+renders a real `<label>` beside the field rather than relying on a placeholder, because a placeholder
+disappears exactly when the operator starts typing, leaving the only description of what the box
+filters on gone while it is filtering. That label is also its accessible name, so surfaces query it
+by `getByRole('textbox', { name })`.
+
+**The input owns no behaviour.** It holds no timer and no submit semantics: the caller decides what a
+keystroke costs. Logs debounces its value and resets to page 1; Suppressions applies on an explicit
+`PageToolbarButton`, and passes `onSubmit` so Enter still applies the filter the way the `<form>` it
+replaced did for free. Folding either choice into the component would impose one surface's
+interaction model on the other, and the difference is visible to the operator.
 
 **A radio menu's trigger label states the active selection** — `Kind: Decisions`, not `Kind`. A
 `<select>` shows its current value without being opened; a button that reads only `Kind` loses that,
