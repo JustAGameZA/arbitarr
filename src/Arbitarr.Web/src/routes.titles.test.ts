@@ -93,8 +93,20 @@ describe('the shell route table and ROUTES cover the same paths (arb-2bms)', () 
   // the shell route, not children (see routes.tsx on why that placement is
   // load-bearing), so they fall outside this pin by structure rather than by
   // being listed as exceptions.
+  //
+  // arb-i57b nests one more layer here: the AppShell route's only child is now
+  // RouteErrorOutlet, a pathless layout route (no `path` of its own) whose own
+  // children are the eight pages. It contributes no path segment, so it must be
+  // unwrapped rather than treated as a page itself -- the first pass finds the
+  // AppShell route, the second drills past the pathless wrapper to the actual
+  // page routes this pin is checking.
+  const shellRouteChildren = createRoutesFromElements(APP_ROUTE_ELEMENTS).find(
+    (route) => route.children,
+  )?.children;
   const shellChildren =
-    createRoutesFromElements(APP_ROUTE_ELEMENTS).find((route) => route.children)?.children ?? [];
+    (shellRouteChildren?.length === 1 && shellRouteChildren[0].path === undefined
+      ? shellRouteChildren[0].children
+      : shellRouteChildren) ?? [];
 
   // `path` is undefined for the index route, which is how React Router represents
   // it; it is carried here as the sentinel 'index' so the exception list below can

@@ -1,4 +1,5 @@
 using Arbitarr.Core.Releases;
+using Arbitarr.Data.Entities;
 using Arbitarr.Data.Search;
 using Arbitarr.TestSupport;
 using Microsoft.EntityFrameworkCore;
@@ -153,6 +154,124 @@ public sealed class ReleaseLookupStoreTests : IDisposable
             var row = await context.ReleaseLookupEntries.SingleAsync(e => e.ProxyGuid == "proxy-dup");
             Assert.Equal(Now + TimeSpan.FromHours(2), row.RecordedAt);
             Assert.Equal(Now + TimeSpan.FromHours(2) + Ttl, row.ExpiresAt);
+        }
+    }
+
+    /// <summary>
+    /// arb-c4wh POSITIVE CONTROL: proves the unique index on ProxyGuid actually bites in THIS
+    /// harness before any test below relies on "did not throw" meaning something. Without this, a
+    /// harness that silently failed to enforce the index (e.g. a stale migration) would make every
+    /// no-throw assertion below vacuous.
+    /// </summary>
+    [Fact]
+    public async Task The_unique_index_on_proxy_guid_rejects_a_direct_duplicate_insert()
+    {
+        using var context = CreateContext();
+        await context.Database.MigrateAsync();
+
+        context.ReleaseLookupEntries.Add(new ReleaseLookupEntry
+        {
+            ProxyGuid = "proxy-index-control",
+            SourceName = "hydra",
+            PayloadJson = "{}",
+            RecordedAt = Now,
+            ExpiresAt = Now + Ttl,
+        });
+        await context.SaveChangesAsync();
+
+        context.ReleaseLookupEntries.Add(new ReleaseLookupEntry
+        {
+            ProxyGuid = "proxy-index-control",
+            SourceName = "hydra",
+            PayloadJson = "{}",
+            RecordedAt = Now,
+            ExpiresAt = Now + Ttl,
+        });
+
+        await Assert.ThrowsAnyAsync<DbUpdateException>(() => context.SaveChangesAsync());
+    }
+
+    /// <summary>
+    /// arb-c4wh: a batch that repeats the same ProxyGuid twice, where neither occurrence exists in
+    /// the DB yet, must persist exactly one row for it — carrying the LATER occurrence's fields,
+    /// which matches the update branch's behaviour if the two occurrences arrived in separate
+    /// batches. The other guids in the batch each still persist their own single row.
+    /// </summary>
+    [Fact]
+    public async Task A_batch_with_an_in_batch_duplicate_guid_persists_one_row_with_the_later_fields()
+    {
+        var batch = new[]
+        {
+            new StoredRelease("proxy-other-1", "hydra", Candidate("upstream-other-1")),
+            new StoredRelease("proxy-inbatch-dup", "hydra", Candidate("upstream-first", "https://indexer.example.invalid/get/first")),
+            new StoredRelease("proxy-other-2", "hydra", Candidate("upstream-other-2")),
+            new StoredRelease("proxy-inbatch-dup", "nzbhydra", Candidate("upstream-second", "https://indexer.example.invalid/get/second")),
+        };
+
+        using (var context = CreateContext())
+        {
+            await context.Database.MigrateAsync();
+            await CreateStore(context).UpsertRangeAsync(batch);
+        }
+
+        using (var context = CreateContext())
+        {
+            Assert.Equal(1, await context.ReleaseLookupEntries.CountAsync(e => e.ProxyGuid == "proxy-inbatch-dup"));
+            Assert.Equal(1, await context.ReleaseLookupEntries.CountAsync(e => e.ProxyGuid == "proxy-other-1"));
+            Assert.Equal(1, await context.ReleaseLookupEntries.CountAsync(e => e.ProxyGuid == "proxy-other-2"));
+
+            var row = await context.ReleaseLookupEntries.SingleAsync(e => e.ProxyGuid == "proxy-inbatch-dup");
+            Assert.Equal("nzbhydra", row.SourceName);
+
+            var store = CreateStore(context);
+            var found = await store.FindAsync("proxy-inbatch-dup");
+            Assert.NotNull(found);
+            Assert.Equal(new Uri("https://indexer.example.invalid/get/second"), found.Candidate.Link);
+
+            Assert.NotNull(await store.FindAsync("proxy-other-1"));
+            Assert.NotNull(await store.FindAsync("proxy-other-2"));
+        }
+    }
+
+    /// <summary>
+    /// arb-c4wh: the same in-batch-duplicate scenario, but the guid ALSO already has a row in the
+    /// DB from a previous batch. The existing-row lookup already handles the first occurrence via
+    /// the update branch; this proves the second in-batch occurrence still lands on the update
+    /// branch too, rather than trying to Add a second entity for a guid that is now tracked.
+    /// </summary>
+    [Fact]
+    public async Task A_batch_duplicate_that_also_already_exists_in_the_db_still_persists_one_row()
+    {
+        using (var context = CreateContext())
+        {
+            await context.Database.MigrateAsync();
+            await CreateStore(context).UpsertRangeAsync(
+                new[] { new StoredRelease("proxy-existing-dup", "hydra", Candidate("upstream-existing", "https://indexer.example.invalid/get/original")) });
+        }
+
+        _timeProvider.Advance(TimeSpan.FromHours(1));
+
+        var batch = new[]
+        {
+            new StoredRelease("proxy-existing-dup", "hydra", Candidate("upstream-existing", "https://indexer.example.invalid/get/first")),
+            new StoredRelease("proxy-existing-dup", "nzbhydra", Candidate("upstream-existing", "https://indexer.example.invalid/get/second")),
+        };
+
+        using (var context = CreateContext())
+        {
+            await CreateStore(context).UpsertRangeAsync(batch);
+        }
+
+        using (var context = CreateContext())
+        {
+            Assert.Equal(1, await context.ReleaseLookupEntries.CountAsync(e => e.ProxyGuid == "proxy-existing-dup"));
+
+            var row = await context.ReleaseLookupEntries.SingleAsync(e => e.ProxyGuid == "proxy-existing-dup");
+            Assert.Equal("nzbhydra", row.SourceName);
+
+            var found = await CreateStore(context).FindAsync("proxy-existing-dup");
+            Assert.NotNull(found);
+            Assert.Equal(new Uri("https://indexer.example.invalid/get/second"), found.Candidate.Link);
         }
     }
 

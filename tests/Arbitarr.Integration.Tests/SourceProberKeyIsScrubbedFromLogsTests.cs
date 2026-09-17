@@ -6,6 +6,7 @@ using Arbitarr.Core.Sources;
 using Arbitarr.Data.Entities;
 using Arbitarr.Data.Logging;
 using Arbitarr.Data.Sources;
+using Arbitarr.Integration.Tests.TestSupport;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -105,7 +106,7 @@ public sealed class SourceProberKeyIsScrubbedFromLogsTests : IClassFixture<Arbit
         using var probeResponse = await client.SendAsync(probe);
         Assert.Equal(HttpStatusCode.OK, probeResponse.StatusCode);
 
-        await FlushLogSinkAsync();
+        await _factory.Services.FlushLogSinkAsync();
 
         var store = _factory.Services.GetRequiredService<LogStore>();
         var page = await store.ReadAsync(level: null, logger: null, page: 1, pageSize: LogStore.MaxPageSize);
@@ -168,16 +169,6 @@ public sealed class SourceProberKeyIsScrubbedFromLogsTests : IClassFixture<Arbit
                 existing.UpdatedAt = DateTimeOffset.UtcNow;
             }
         });
-
-    /// <summary>
-    /// Waits for the sink's background pump to drain. The provider batches on a 500 ms interval by
-    /// design (it must never write on the caller's thread), so a read taken immediately after a log
-    /// call can legitimately see nothing yet. Waiting slightly longer than the interval is what makes
-    /// the assertions above meaningful rather than vacuously passing on an empty table — which is also
-    /// why they assert non-emptiness explicitly.
-    /// </summary>
-    private static async Task FlushLogSinkAsync() =>
-        await Task.Delay(SqliteLoggerProvider.FlushInterval + TimeSpan.FromMilliseconds(750));
 
     /// <summary>Only the id is needed from the create response to drive the follow-up test route.</summary>
     private sealed record CreatedSourceResponse(long Id);
