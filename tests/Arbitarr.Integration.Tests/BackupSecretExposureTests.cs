@@ -6,6 +6,7 @@ using Arbitarr.Core.Settings;
 using Arbitarr.Data.Backup;
 using Arbitarr.Data.Entities;
 using Arbitarr.Data.Logging;
+using Arbitarr.Integration.Tests.TestSupport;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -138,7 +139,7 @@ public sealed class BackupSecretExposureTests : IClassFixture<ArbitarrWebApplica
         // is what LogSecretInjectionTests does for the same reason; without it the positive control
         // below fails intermittently on an empty table, which reads as "no leak" from a test that
         // in fact searched nothing.
-        await FlushLogSinkAsync();
+        await _factory.Services.FlushLogSinkAsync();
 
         var store = _factory.Services.GetRequiredService<LogStore>();
         var page = await store.ReadAsync(null, null, 1, LogStore.MaxPageSize, cancellationToken: CancellationToken.None);
@@ -201,14 +202,6 @@ public sealed class BackupSecretExposureTests : IClassFixture<ArbitarrWebApplica
         await entry.CopyToAsync(buffer);
         return buffer.ToArray();
     }
-
-    /// <summary>
-    /// Waits out <see cref="SqliteLoggerProvider.FlushInterval"/> so queued log entries have been
-    /// written before the store is read. Same approach, and the same margin, as
-    /// <c>LogSecretInjectionTests</c>.
-    /// </summary>
-    private static async Task FlushLogSinkAsync() =>
-        await Task.Delay(SqliteLoggerProvider.FlushInterval + TimeSpan.FromMilliseconds(750));
 
     private static async Task<byte[]> DownloadArchiveAsync(HttpClient client)
     {

@@ -5,6 +5,7 @@ using Arbitarr.Core.Notifications;
 using Arbitarr.Core.Settings;
 using Arbitarr.Data.Entities;
 using Arbitarr.Data.Notifications;
+using Arbitarr.Integration.Tests.TestSupport;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -372,7 +373,7 @@ public sealed class AdminNotificationEndpointsTests : IClassFixture<ArbitarrWebA
         // away — which is why the dispatcher logs the trigger and the outcome, both closed enums,
         // and never the target. Asserted over every field, not just Message: the exception text is
         // the field most likely to carry a URI.
-        await FlushLogSinkAsync();
+        await _factory.Services.FlushLogSinkAsync();
 
         var logStore = _factory.Services.GetRequiredService<Arbitarr.Data.Logging.LogStore>();
         var logPage = await logStore.ReadAsync(
@@ -393,14 +394,6 @@ public sealed class AdminNotificationEndpointsTests : IClassFixture<ArbitarrWebA
             Assert.DoesNotContain(WebhookTokenFragment, entry.Exception ?? string.Empty, StringComparison.OrdinalIgnoreCase);
         }
     }
-
-    /// <summary>
-    /// Waits for #65's log sink to drain. The provider batches on an interval by design (it must
-    /// never write on the caller's thread), so a read taken immediately after a request can
-    /// legitimately see nothing yet — which would make the assertion above vacuous.
-    /// </summary>
-    private static async Task FlushLogSinkAsync() =>
-        await Task.Delay(Arbitarr.Data.Logging.SqliteLoggerProvider.FlushInterval + TimeSpan.FromMilliseconds(750));
 
     [Fact]
     public async Task The_test_button_reports_a_distinct_outcome_without_naming_the_target()

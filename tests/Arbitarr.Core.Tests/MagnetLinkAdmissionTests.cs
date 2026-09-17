@@ -344,7 +344,10 @@ public sealed class MagnetLinkAdmissionTests
     /// <summary>
     /// A blank <c>infohash</c> attr does not beat a real btih. An indexer that emits the attribute
     /// unconditionally and leaves it empty would otherwise blank out a hash the magnet did supply —
-    /// "the attr wins" is about what the indexer SAID, and an empty attr said nothing.
+    /// "the attr wins" is about what the indexer SAID, and an empty attr said nothing. Refused by
+    /// <c>TorznabFeedParser</c>'s shape gate (<c>IsAdmissibleDeclaredInfoHash</c>, arb-xgv3): neither
+    /// an empty string nor a whitespace run fits any of the three admitted shapes (40 hex, 32 base32,
+    /// 64 hex).
     /// </summary>
     [Theory]
     [InlineData("")]
