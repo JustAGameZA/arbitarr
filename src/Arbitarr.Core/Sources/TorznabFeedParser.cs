@@ -71,8 +71,77 @@ public static class TorznabFeedParser
     }
 
     /// <summary>
+    /// The exact-topic parameter a magnet URI carries its BitTorrent info hash in. Required for
+    /// admission below: it is what distinguishes a magnet link naming a torrent from an arbitrary
+    /// string that merely begins <c>magnet:</c>.
+    /// </summary>
+    private const string BitTorrentExactTopicPrefix = "urn:btih:";
+
+    /// <summary>
+    /// arb-x7w8.15: admits a <c>magnet:</c> link as an explicitly recognised, NON-FETCHABLE download
+    /// target. This is a separate method from <see cref="TryValidateOriginPinnedLink"/> on purpose,
+    /// and the separation IS the security property rather than a stylistic choice.
+    ///
+    /// <para><b>Why the origin pin is not loosened instead.</b> A magnet has no host, so
+    /// <see cref="UpstreamOrigin.IsAtOrigin"/> refuses it and <see cref="ParseFeedResponse"/> dropped
+    /// the whole item — a magnet-only tracker returned nothing, with no error and no log line. The
+    /// fix is NOT to teach the pin about hostless schemes.
+    /// <see cref="UpstreamOrigin.IsAtOrigin"/> is shared with the write boundary
+    /// (<c>SourceRepository.ValidateBaseUrl</c>) AND is called at FETCH time by every adapter's
+    /// <c>FetchDownloadAsync</c> immediately before it issues an HTTP request (SEC-M1). Relaxing it
+    /// would therefore both change which base URLs an operator may store and let a hostless link
+    /// through the gate standing in front of an outbound fetch. This method is consulted ONLY on the
+    /// parse path, so the fetch-time pin still refuses a magnet: a code path that somehow reached an
+    /// adapter carrying one cannot turn it into a request.</para>
+    ///
+    /// <para><b>Admission is narrow and closed by construction.</b> The scheme must be exactly
+    /// <c>magnet</c> and the query must carry an <c>xt=urn:btih:</c> exact topic. Every other
+    /// non-http(s) scheme — <c>javascript:</c>, <c>file:</c>, <c>ftp:</c>, <c>data:</c> — stays
+    /// refused exactly as before, as does a <c>magnet:</c> carrying no info hash. Matching the parsed
+    /// SCHEME rather than prefix-testing the raw string is what keeps a value such as
+    /// <c>https://evil.example/#magnet:?xt=urn:btih:…</c> out: that is an http(s) URL, so it goes to
+    /// the origin pin, which refuses it.</para>
+    /// </summary>
+    public static bool TryValidateMagnetLink(string? link, out Uri validated)
+    {
+        validated = null!;
+
+        if (!Uri.TryCreate(link, UriKind.Absolute, out var parsedLink))
+        {
+            return false;
+        }
+
+        // OrdinalIgnoreCase, never culture-sensitive: schemes are ASCII and case-insensitive
+        // (RFC 3986), and a culture-sensitive comparison on a security decision is the classic
+        // Turkish-I hazard. Uri lower-cases a well-formed scheme; this deliberately does not rely
+        // on that.
+        if (!string.Equals(parsedLink.Scheme, "magnet", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        // A magnet is hostless, so Uri exposes the whole "?xt=…&dn=…" as Query. Requiring the
+        // BitTorrent exact topic is what makes this an info-hash link rather than any string that
+        // happens to carry the magnet scheme.
+        var carriesInfoHash = parsedLink.Query.TrimStart('?')
+            .Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Any(parameter =>
+                parameter.StartsWith("xt=", StringComparison.OrdinalIgnoreCase)
+                && parameter.AsSpan("xt=".Length).StartsWith(BitTorrentExactTopicPrefix, StringComparison.OrdinalIgnoreCase));
+
+        if (!carriesInfoHash)
+        {
+            return false;
+        }
+
+        validated = parsedLink;
+        return true;
+    }
+
+    /// <summary>
     /// Parses a Torznab/Newznab search response into release candidates, dropping every item whose
-    /// <c>&lt;link&gt;</c> is not origin-pinned to <paramref name="allowedOrigin"/>.
+    /// <c>&lt;link&gt;</c> is neither origin-pinned to <paramref name="allowedOrigin"/> nor an
+    /// admissible magnet URI (see <see cref="TryValidateMagnetLink"/>).
     /// </summary>
     public static List<ReleaseCandidate> ParseFeedResponse(string xml, Uri allowedOrigin)
     {
@@ -87,7 +156,16 @@ public static class TorznabFeedParser
             var link = item.Element("link")?.Value;
             var pubDateRaw = item.Element("pubDate")?.Value;
 
-            if (!TryValidateOriginPinnedLink(link, allowedOrigin, out var linkUri))
+            // arb-x7w8.15: a magnet is admitted by its own branch, which never consults the origin
+            // pin. It cannot: a magnet is hostless, so the pin refuses it and the item was dropped —
+            // a magnet-only tracker returned nothing and said nothing about why. The pin itself is
+            // deliberately untouched (see TryValidateMagnetLink's doc for why loosening it would
+            // weaken the fetch-time SSRF gate as well as the write boundary). Ordering is
+            // load-bearing only in that an http(s) link never reaches this branch: the magnet check
+            // matches on the parsed scheme, so every http(s) value still goes to the pin below and
+            // is refused or admitted exactly as before.
+            if (!TryValidateMagnetLink(link, out var linkUri)
+                && !TryValidateOriginPinnedLink(link, allowedOrigin, out linkUri))
             {
                 // Drop the item rather than defaulting to a placeholder URI: a placeholder would
                 // still be a well-formed, fetchable target, defeating the point of the check.
@@ -129,10 +207,18 @@ public static class TorznabFeedParser
 
             var protocolAttr = ReadAttr(item, "protocol");
 
+            // arb-x7w8.15: the magnet arm sits in the FALLBACK, beside the enclosure sniff, not ahead
+            // of the declared attribute. A magnet link is definitionally a torrent, and this arm's
+            // pre-existing default is Usenet — so without it a magnet-bearing item from a feed that
+            // omits the attribute (the common case for a magnet-only tracker) would be labelled
+            // Usenet. That mislabelling is not a download hazard, because the download route detects
+            // a magnet on the LINK and never on this value, but it would misreport the release to
+            // every ranking and rendering surface that reads Protocol.
             var protocol = protocolAttr?.ToLowerInvariant() switch
             {
                 "torrent" => ProtocolKind.Torrent,
                 "usenet" => ProtocolKind.Usenet,
+                _ when linkUri.Scheme.Equals("magnet", StringComparison.OrdinalIgnoreCase) => ProtocolKind.Torrent,
                 _ => item.Element("enclosure")?.Attribute("type")?.Value?.Contains("torrent", StringComparison.OrdinalIgnoreCase) == true
                     ? ProtocolKind.Torrent
                     : ProtocolKind.Usenet,
