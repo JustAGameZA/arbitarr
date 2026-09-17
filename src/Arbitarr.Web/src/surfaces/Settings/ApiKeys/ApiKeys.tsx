@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { QueryState, errorMessage } from '../../QueryState';
 import type { ApiKeyEntry, ApiKeyScope, CreatedApiKeyResponse } from '../../../api/types';
+import { useLiveStatusStore } from '../../../state/liveStatusStore';
 import styles from '../../surface.module.css';
 import { useSecretEvictingMutation } from '../useSecretEvictingMutation';
 import local from './ApiKeys.module.css';
@@ -54,6 +55,83 @@ const CLIENT_ROUTES = [
   { path: '/newznab/api', label: 'Newznab', note: 'Usenet-oriented' },
 ] as const;
 
+/** How long the visible "Copied." stays up before clearing itself (arb-zxwo). */
+const COPIED_FEEDBACK_MS = 2000;
+
+/**
+ * The message a successful copy announces (arb-zxwo).
+ *
+ * IT NAMES WHAT WAS COPIED AND NEVER THE VALUE. Both call sites below copy
+ * something the announcement must not carry: the reveal panel's is the
+ * plaintext key itself, and the live region is rendered into the DOM by
+ * `AppShell` — a message interpolating the value would put a live credential in
+ * the shell's markup, outliving the reveal panel that is supposed to be its only
+ * home (see `ApiKeysSection`'s property 1). The client URLs carry no secret, but
+ * they take the same shape so the two affordances cannot drift into disagreeing
+ * about it.
+ */
+const COPIED_MESSAGE = 'Copied.';
+
+/**
+ * Copy feedback for one button: the visible "Copied." plus the announcement
+ * that makes it reach a screen reader (arb-zxwo).
+ *
+ * review-488's finding was that the span is visual only, so an operator who
+ * cannot see it has no way to tell a successful copy from a click that did
+ * nothing — and the same gap was already in the reveal panel, where a silent
+ * failure costs the only copy of a credential. Both are fixed through the
+ * shared region (`state/liveStatusStore.ts`) rather than by either site growing
+ * an `aria-live` of its own, which is the rule the shared region exists for.
+ *
+ * Shared by the two call sites rather than written twice on purpose: they must
+ * agree about the message, the timeout and — most of all — about announcing
+ * ONLY on success. The announcement is unscoped, so two copies in a row are two
+ * events and both are heard; that is the `seq` nonce's case, not arb-xzvk's.
+ *
+ * `token` identifies which button succeeded (a path, or `true` for a lone
+ * button), so two buttons cannot both light up from one click. `null` is "no
+ * copy is currently acknowledged", which is also where a FAILED copy lands — a
+ * context with no clipboard API announces nothing and shows nothing.
+ */
+function useCopyFeedback<T>(): [T | null, (token: T) => void, () => void] {
+  const [copied, setCopied] = useState<T | null>(null);
+  const announce = useLiveStatusStore((state) => state.announce);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cleared on unmount so a timeout cannot fire setState into a component that
+  // is gone — the reveal panel in particular unmounts on dismissal, which is
+  // well inside the window.
+  useEffect(
+    () => () => {
+      if (timer.current !== null) {
+        clearTimeout(timer.current);
+      }
+    },
+    [],
+  );
+
+  const succeeded = useCallback(
+    (token: T) => {
+      setCopied(token);
+      announce(COPIED_MESSAGE);
+      if (timer.current !== null) {
+        // A second copy restarts the window rather than inheriting the first
+        // one's remaining time, which would clear the new acknowledgement early.
+        clearTimeout(timer.current);
+      }
+      timer.current = setTimeout(() => {
+        timer.current = null;
+        setCopied(null);
+      }, COPIED_FEEDBACK_MS);
+    },
+    [announce],
+  );
+
+  const failed = useCallback(() => setCopied(null), []);
+
+  return [copied, succeeded, failed];
+}
+
 /**
  * The *arr-facing connection URLs (arb-mn12).
  *
@@ -83,16 +161,20 @@ const CLIENT_ROUTES = [
 function ClientUrls({ origin }: { origin: string }) {
   // Which path's copy button last succeeded, or null. Keyed by path rather than a
   // bare boolean so two buttons cannot both light up from one click.
-  const [copiedPath, setCopiedPath] = useState<string | null>(null);
+  const [copiedPath, copySucceeded, copyFailed] = useCopyFeedback<string>();
 
   const copy = (path: string) => {
     // Best-effort, exactly as the reveal panel's copy is: jsdom and any
     // non-secure context lack the clipboard API, and a failed copy must not take
     // the block down with it — the URL stays on screen to be selected by hand.
+    //
+    // The announcement rides on the SAME success branch as the visible span
+    // (arb-zxwo), never on the click: a failed or unavailable clipboard must not
+    // tell a screen-reader operator the value was copied when it was not.
     void navigator.clipboard
       ?.writeText(`${origin}${path}`)
-      .then(() => setCopiedPath(path))
-      .catch(() => setCopiedPath(null));
+      .then(() => copySucceeded(path))
+      .catch(copyFailed);
   };
 
   return (
@@ -157,16 +239,22 @@ function CreatedKeyReveal({
   onDismiss: () => void;
 }) {
   const [acknowledged, setAcknowledged] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copied, copySucceeded, copyFailed] = useCopyFeedback<true>();
 
   const copy = () => {
     // Best-effort: jsdom and any non-secure context lack the clipboard API, and a
     // failed copy must not take the panel down with it — the value stays on
     // screen to be selected by hand.
+    //
+    // arb-zxwo routes the success through the shared live region. The
+    // announcement is the fixed `COPIED_MESSAGE` and carries no part of
+    // `created.plaintextKey`: the region is rendered into AppShell's markup,
+    // which is outside this panel and outlives it, and this panel is the
+    // plaintext's only home.
     void navigator.clipboard
       ?.writeText(created.plaintextKey)
-      .then(() => setCopied(true))
-      .catch(() => setCopied(false));
+      .then(() => copySucceeded(true))
+      .catch(copyFailed);
   };
 
   return (

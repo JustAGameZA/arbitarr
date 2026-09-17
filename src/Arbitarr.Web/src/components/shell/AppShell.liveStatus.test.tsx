@@ -26,7 +26,11 @@ describe('AppShell live status region (arb-tku8)', () => {
     // singleton for the whole test file, so a test left announcing "Loading…"
     // would otherwise decide the outcome of the next one by ordering alone --
     // the same reason tableDensityStore.test.ts resets `density`.
-    useLiveStatusStore.setState({ message: '' });
+    // `scopeMessages` is reset alongside `message` for the same reason (arb-xzvk):
+    // a scope left holding "Loading…" would coalesce away the next test's first
+    // announcement, so the suppression assertions below would pass by ordering
+    // rather than by the mechanism they mean to pin.
+    useLiveStatusStore.setState({ message: '', scopeMessages: {} });
   });
 
   function renderShell(children: React.ReactNode) {
@@ -139,5 +143,132 @@ describe('AppShell live status region (arb-tku8)', () => {
     // or nonce alongside it. Re-queried rather than reusing `region`, which
     // may now be a stale reference to a remounted node.
     expect(screen.getByRole('status')).toHaveTextContent(/^Saved\.$/);
+  });
+
+  describe('announcement scoping (arb-xzvk)', () => {
+    /**
+     * Counts the announcements the live region actually delivered, by `seq`.
+     *
+     * `seq` is the right unit and a raw MutationRecord count is not, which was
+     * MEASURED rather than assumed: counting records scored the three-scoped
+     * case at 2 and the three-unscoped control at 2 as well, because AppShell
+     * keys the region on `seq` (AppShell.tsx:110), so ONE announcement is a
+     * removal plus an insertion, and React batches several into one commit. The
+     * records therefore count neither calls nor announcements.
+     *
+     * `seq` is what a screen reader's experience is downstream of: it advances
+     * once per DELIVERED announcement and not at all for one the store
+     * coalesced away, and every advance forces the region to remount. Counting
+     * it is counting the remounts, without the batching noise.
+     *
+     * Deliberately NOT a spy on `announce`: the suppressed sibling calls
+     * `announce` too, so a call count reports three in both cases and could
+     * never tell the bead's fix from its absence.
+     */
+    function announcementCount(): number {
+      return useLiveStatusStore.getState().seq;
+    }
+
+    function ThreeQueries({ scope }: { scope?: string }) {
+      return (
+        <>
+          <QueryState isPending error={undefined} data={undefined} announceScope={scope}>
+            {() => <p>never rendered while pending</p>}
+          </QueryState>
+          <QueryState isPending error={undefined} data={undefined} announceScope={scope}>
+            {() => <p>never rendered while pending</p>}
+          </QueryState>
+          <QueryState isPending error={undefined} data={undefined} announceScope={scope}>
+            {() => <p>never rendered while pending</p>}
+          </QueryState>
+        </>
+      );
+    }
+
+    it('announces once for three QueryStates sharing one scope', () => {
+      // Dashboard's shape: three queries, one navigation. Before arb-xzvk a
+      // screen-reader operator heard "Loading…" three times for it.
+      //
+      // The observer is attached BEFORE the mount that announces, so the
+      // announcement is counted rather than assumed from the end state -- the
+      // final text is "Loading…" whether it was announced once or three times,
+      // which is precisely why this asserts the count and not the text.
+      renderShell(<p>content</p>);
+      const before = announcementCount();
+
+      act(() => {
+        render(<ThreeQueries scope="dashboard" />);
+      });
+
+      expect(screen.getByRole('status')).toHaveTextContent('Loading…');
+      expect(announcementCount() - before).toBe(1);
+    });
+
+    it('announces three times for three unscoped QueryStates (positive control)', () => {
+      // THE POSITIVE CONTROL for the assertion above. Without it, `toHaveLength(1)`
+      // would pass just as happily against an implementation that lost two of the
+      // three announcements for some unrelated reason -- a coalescing bug, a
+      // batched render, an observer watching the wrong node. This proves the same
+      // observer, on the same region, DOES record three separate mutations when
+      // nothing is scoped, so the single mutation above is the scope doing its
+      // job rather than the measurement failing to see anything.
+      renderShell(<p>content</p>);
+      const before = announcementCount();
+
+      act(() => {
+        render(<ThreeQueries />);
+      });
+
+      expect(screen.getByRole('status')).toHaveTextContent('Loading…');
+      expect(announcementCount() - before).toBe(3);
+    });
+
+    it('announces again when a scope re-enters the same message later', () => {
+      // A scope is not a one-shot mute. A group that resolves and then goes
+      // pending again (a refetch, a navigation back) has had a SECOND event, and
+      // an operator must hear it -- otherwise the first navigation of a session
+      // would be the only one that ever spoke. This is what distinguishes
+      // coalescing simultaneous siblings from suppressing repeats, and an
+      // implementation that simply remembered "this scope already said Loading…"
+      // forever would pass the first test and fail this one.
+      renderShell(<p>content</p>);
+
+      act(() => {
+        useLiveStatusStore.getState().announce('Loading…', 'dashboard');
+      });
+      expect(screen.getByRole('status')).toHaveTextContent('Loading…');
+
+      // The group resolves: the scope announces something else, which is what
+      // supersedes the remembered message.
+      act(() => {
+        useLiveStatusStore.getState().announce('Saved.', 'dashboard');
+      });
+      expect(screen.getByRole('status')).toHaveTextContent('Saved.');
+
+      const before = announcementCount();
+      act(() => {
+        useLiveStatusStore.getState().announce('Loading…', 'dashboard');
+      });
+
+      expect(screen.getByRole('status')).toHaveTextContent('Loading…');
+      expect(announcementCount() - before).toBe(1);
+    });
+
+    it('does not let one scope silence another announcing the same message', () => {
+      // Two scopes are two groups and therefore two events, even word for word.
+      // A single last-message field instead of the per-scope map would fail this.
+      renderShell(<p>content</p>);
+
+      act(() => {
+        useLiveStatusStore.getState().announce('Loading…', 'dashboard');
+      });
+
+      const before = announcementCount();
+      act(() => {
+        useLiveStatusStore.getState().announce('Loading…', 'system');
+      });
+
+      expect(announcementCount() - before).toBe(1);
+    });
   });
 });

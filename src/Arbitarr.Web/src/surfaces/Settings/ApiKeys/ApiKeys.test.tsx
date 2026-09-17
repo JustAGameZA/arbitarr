@@ -1,12 +1,15 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider, useMutation } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
+import type { ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ApiKeysSection } from './ApiKeys';
 import { apiFetch } from '../../../api/client';
+import { AppShell } from '../../../components/shell/AppShell';
 import { useAdminKeyStore } from '../../../state/adminKeyStore';
+import { useLiveStatusStore } from '../../../state/liveStatusStore';
 import { renderSurface } from '../../../test/renderSurface';
 
 const KEYS = '/api/admin/keys';
@@ -257,9 +260,37 @@ function rowFor(label: string): HTMLElement {
   return screen.getByRole('cell', { name: label }).closest('tr') as HTMLElement;
 }
 
+/**
+ * Mounts the section inside the real `AppShell` (arb-zxwo).
+ *
+ * `renderSurface` deliberately omits the shell, and the shell is where the one
+ * shared `role="status"` region lives — so a copy-announcement assertion made
+ * under `renderSurface` would have no region to find and could only be written
+ * against a stand-in. Used ONLY by the copy tests below, whose subject is the
+ * announcement itself; every other test in this file keeps `renderSurface` and
+ * stays independent of the shell's markup, which is why that helper exists.
+ */
+function renderInShell(element: ReactElement) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+
+  return render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <AppShell>{element}</AppShell>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
 describe('ApiKeys', () => {
   beforeEach(() => {
     useAdminKeyStore.setState({ key: 'test-admin-key', serverKeyUnset: false });
+    // The live-status store is a singleton across this file, so a test that left
+    // "Copied." announced would decide the next one's "was it empty before?"
+    // control by ordering alone (arb-zxwo).
+    useLiveStatusStore.setState({ message: '', seq: 0, scopeMessages: {} });
     localStorage.clear();
     sessionStorage.clear();
   });
@@ -399,6 +430,186 @@ describe('ApiKeys', () => {
     vi.stubGlobal('navigator', { ...navigator, clipboard: undefined });
     await user.click(screen.getByRole('button', { name: 'Copy Newznab URL' }));
     expect(screen.getByText(`${window.location.origin}/newznab/api`)).toBeInTheDocument();
+  });
+
+  /**
+   * arb-zxwo: both copy affordances announce through the shared live region.
+   *
+   * review-488's finding on the client-URL buttons, and the identical
+   * pre-existing gap on the reveal panel: the "Copied." span is visual only, so
+   * an operator who cannot see it cannot tell a successful copy from a click
+   * that did nothing. On the reveal panel that is the difference between having
+   * the only copy of a credential and having lost it.
+   *
+   * Every assertion is written as "did not say Copied. before, does after",
+   * never as a bare `toHaveTextContent`: without the before-check, an
+   * end-state assertion would pass against an implementation that announced at
+   * the wrong moment or for the wrong reason.
+   *
+   * The control is "not Copied." rather than "empty", and that was MEASURED,
+   * not assumed: the first draft asserted `toBeEmptyDOMElement()` and all three
+   * tests failed with the region holding "Loading…". The section mounts its own
+   * `QueryState` for the key list, which legitimately announces while that query
+   * is in flight, and an announcement is never retracted (`liveStatusStore`'s
+   * `seq` doc). So the region is genuinely non-empty before any copy, and the
+   * honest control is that it does not yet carry THIS message.
+   *
+   * For the same reason the VISIBLE span is always queried with the live region
+   * excluded: the region legitimately holds "Copied." after a successful copy,
+   * so a bare `queryByText('Copied.')` matches two nodes and asserts the
+   * opposite of what these tests mean.
+   */
+  describe('copy success announcement (arb-zxwo)', () => {
+    /** The visible "Copied." spans only, never the shared live region. */
+    function visibleCopiedFeedback(): HTMLElement[] {
+      return screen
+        .queryAllByText('Copied.')
+        .filter((node) => node.getAttribute('role') !== 'status');
+    }
+
+    it('announces a copied client URL through the shared live region', async () => {
+      const user = userEvent.setup();
+      mockKeysApi({ [`GET ${KEYS}`]: { body: keys } });
+      renderInShell(<ApiKeysSection />);
+
+      await screen.findByRole('cell', { name: 'Sonarr' });
+
+      // CONTROL: the region does NOT carry this message before the copy, so the
+      // assertion after it detects this click rather than reporting something
+      // already there. (It is not empty — the list query announced "Loading…".)
+      expect(screen.getByRole('status')).not.toHaveTextContent('Copied.');
+
+      const writeText = vi.fn(() => Promise.resolve());
+      vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
+
+      await user.click(screen.getByRole('button', { name: 'Copy Torznab URL' }));
+
+      await waitFor(() => {
+        expect(visibleCopiedFeedback()).toHaveLength(1);
+      });
+      // The visible span and the live region are SEPARATE elements; this asserts
+      // the shared region specifically received it, not merely that the word
+      // appears somewhere on the page.
+      await waitFor(() => {
+        expect(screen.getByRole('status')).toHaveTextContent('Copied.');
+      });
+    });
+
+    it('announces a copied revealed key without putting the key in the announcement', async () => {
+      const user = userEvent.setup();
+      const api = mockKeysApi({ [`GET ${KEYS}`]: { body: keys } });
+      renderInShell(<ApiKeysSection />);
+
+      await screen.findByRole('cell', { name: 'Sonarr' });
+      api.set(`POST ${KEYS}`, { status: 201, body: created });
+
+      await user.type(screen.getByLabelText('New key label'), 'Radarr');
+      await user.click(screen.getByRole('button', { name: 'Create key' }));
+
+      // The reveal panel is open and really holds the plaintext.
+      expect(await screen.findByText(PLAINTEXT)).toBeInTheDocument();
+      // CONTROL: nothing has announced "Copied." yet.
+      expect(screen.getByRole('status')).not.toHaveTextContent('Copied.');
+
+      const writeText = vi.fn(() => Promise.resolve());
+      vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
+
+      const reveal = screen.getByRole('alert');
+      await user.click(within(reveal).getByRole('button', { name: 'Copy' }));
+
+      expect(writeText).toHaveBeenCalledWith(PLAINTEXT);
+      await waitFor(() => {
+        expect(screen.getByRole('status')).toHaveTextContent('Copied.');
+      });
+
+      // The key was copied to the CLIPBOARD, never into the announcement. The
+      // region is rendered into AppShell's markup, which outlives this panel,
+      // and the panel is the plaintext's only home.
+      //
+      // POSITIVE CONTROL for that absence: prove this search WOULD catch the
+      // key if the announcement carried it, so the assertion below detects
+      // absence rather than reporting a search that could never have matched.
+      const announced = screen.getByRole('status').textContent ?? '';
+      expect(`${announced} ${PLAINTEXT}`).toContain(PLAINTEXT);
+      expect(announced).not.toContain(PLAINTEXT);
+    });
+
+    it('announces nothing when there is no clipboard API to copy with', async () => {
+      const user = userEvent.setup();
+      mockKeysApi({ [`GET ${KEYS}`]: { body: keys } });
+      renderInShell(<ApiKeysSection />);
+
+      await screen.findByRole('cell', { name: 'Sonarr' });
+
+      // The no-clipboard branch the copy closures' optional chaining exists for
+      // (jsdom, and any non-secure context). Announcing here would tell a
+      // screen-reader operator the value was copied when nothing was — strictly
+      // worse than the silence this replaces, because it is wrong rather than
+      // merely absent.
+      vi.stubGlobal('navigator', { ...navigator, clipboard: undefined });
+
+      await user.click(screen.getByRole('button', { name: 'Copy Torznab URL' }));
+
+      expect(visibleCopiedFeedback()).toHaveLength(0);
+      expect(screen.getByRole('status')).not.toHaveTextContent('Copied.');
+
+      // CONTROL: the very same region DOES pick up an announcement, so the
+      // silence above is the success branch correctly not firing rather than
+      // this test watching an element that never receives anything.
+      const writeText = vi.fn(() => Promise.resolve());
+      vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
+      await user.click(screen.getByRole('button', { name: 'Copy Torznab URL' }));
+      await waitFor(() => {
+        expect(screen.getByRole('status')).toHaveTextContent('Copied.');
+      });
+    });
+
+    it(
+      'clears the visible Copied. after its timeout, leaving the URL as it was',
+      async () => {
+        // REAL timers, deliberately. `vi.useFakeTimers()` here deadlocked the
+        // whole file -- not this test alone: the run produced no test output at
+        // all and had to be killed. userEvent's own timer scheduling and React
+        // Query's do not both survive being faked under this setup, and the
+        // failure mode is a hang rather than a failed assertion, which is worse
+        // than the couple of seconds waiting the real clock costs.
+        const user = userEvent.setup();
+        mockKeysApi({ [`GET ${KEYS}`]: { body: keys } });
+        renderInShell(<ApiKeysSection />);
+
+        await screen.findByRole('cell', { name: 'Sonarr' });
+
+        const writeText = vi.fn(() => Promise.resolve());
+        vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
+
+        await user.click(screen.getByRole('button', { name: 'Copy Torznab URL' }));
+        // CONTROL: it really appeared, so its absence below is it clearing
+        // rather than it never having rendered.
+        await waitFor(() => {
+          expect(visibleCopiedFeedback()).toHaveLength(1);
+        });
+
+        // The acknowledgement is transient: it clears itself rather than
+        // persisting until unmount, which on a section that stays mounted for a
+        // whole session means indefinitely. Waited for rather than asserted
+        // immediately, so this pins "it goes away on its own" without the test
+        // having to know the exact interval.
+        await waitFor(
+          () => {
+            expect(visibleCopiedFeedback()).toHaveLength(0);
+          },
+          { timeout: 6000 },
+        );
+
+        // The ANNOUNCEMENT is not retracted with it: an announcement records an
+        // event that happened, and the live region has no clear by design.
+        expect(screen.getByRole('status')).toHaveTextContent('Copied.');
+
+        // The URL it acknowledged is untouched — only the feedback cleared.
+        expect(screen.getByText(`${window.location.origin}/torznab/api`)).toBeInTheDocument();
+      },
+      TEST_TIMEOUT_MS,
+    );
   });
 
   it('explains what each scope reaches, and changes the explanation with the choice', async () => {
