@@ -484,4 +484,65 @@ public sealed class LogStoreTests : IDisposable
         Assert.Equal("third", thirdRow.Message);
         Assert.Equal(LogMessageCleanser.TimeoutPlaceholder, thirdRow.Exception);
     }
+
+    /// <summary>
+    /// arb-j6vk — THE EVIDENCE FOR WHY the integration tests' shared <c>LogStorePaging</c> helper
+    /// pages rather than reading page 1 at <see cref="LogStore.MaxPageSize"/>.
+    ///
+    /// <para>Seeds one row past the first 200-row page, carrying a marker distinctive enough that a
+    /// substring search cannot match it by accident, then shows the two reads DISAGREE about whether
+    /// it exists: the single-page read a naive absence sweep would use does not see it, while paging
+    /// to <see cref="LogPage.Total"/> does. Proving the disagreement — not just that the paged read
+    /// finds the marker — is what demonstrates the single-page read is the unsafe one, rather than
+    /// merely a slower way to reach the same answer.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_row_past_the_first_page_is_invisible_to_a_single_page_read_but_found_by_paging()
+    {
+        const string MarkerBeyondFirstPage = "placeholder-marker-past-page-one-f37ad921";
+
+        var start = DateTimeOffset.UtcNow.AddHours(-1);
+        var entries = new List<PendingLogEntry>
+        {
+            // Written FIRST, so it gets the SMALLEST Id. LogStore.ReadAsync orders by Id DESC, so
+            // every filler row added below gets a larger Id and therefore sorts ahead of it,
+            // pushing the marker down to exactly the (MaxPageSize + 1)th position -- one past a
+            // single MaxPageSize-sized page.
+            Entry(MarkerBeyondFirstPage, time: start),
+        };
+        for (var i = 1; i <= LogStore.MaxPageSize; i++)
+        {
+            entries.Add(Entry($"filler {i}", time: start.AddSeconds(i)));
+        }
+
+        await _store.WriteAsync(entries);
+
+        var firstPageOnly = await _store.ReadAsync(
+            level: null, logger: null, page: 1, pageSize: LogStore.MaxPageSize);
+
+        // POSITIVE CONTROL: the marker really was written -- Total counts it, proving the negative
+        // result below is a paging blind spot and not a fixture mistake that never wrote the row.
+        Assert.Equal(LogStore.MaxPageSize + 1, firstPageOnly.Total);
+
+        // THE BLIND SPOT ITSELF: Id DESC ordering puts every filler row (written after the marker,
+        // so with a larger Id) ahead of it, and the marker is exactly the (MaxPageSize + 1)th row --
+        // one past a single page -- so a page-1-only absence sweep never sees it.
+        Assert.DoesNotContain(firstPageOnly.Entries, e => e.Message == MarkerBeyondFirstPage);
+
+        var allEntries = new List<LogEntry>();
+        for (var page = 1; ; page++)
+        {
+            var read = await _store.ReadAsync(
+                level: null, logger: null, page: page, pageSize: LogStore.MaxPageSize);
+            allEntries.AddRange(read.Entries);
+
+            if (read.Entries.Count == 0 || allEntries.Count >= read.Total)
+            {
+                break;
+            }
+        }
+
+        // THE FIX: paging to Total finds the very row the single page missed.
+        Assert.Contains(allEntries, e => e.Message == MarkerBeyondFirstPage);
+    }
 }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { QueryState, errorMessage } from '../../QueryState';
+import { QueryState, errorMessage, pruneToLiveIds } from '../../QueryState';
 import type { ApiKeyEntry, ApiKeyScope, CreatedApiKeyResponse } from '../../../api/types';
 import { useLiveStatusStore } from '../../../state/liveStatusStore';
 import styles from '../../surface.module.css';
@@ -553,6 +553,28 @@ export function ApiKeysSection() {
   // the key nor the server's refusal.
   const [createFailure, setCreateFailure] = useState<unknown>(null);
 
+  // Prune `revokeFailures`/`removeFailures` entries whose row has left the
+  // list -- converged with Rules's identical fix (arb-gn4z). A refusal for an
+  // id no longer present renders nowhere, but stays keyed to that id forever
+  // otherwise; if the SAME id is later reused (a legacy row aside, ids come
+  // from the server) a stale refusal would surface again under a fetch the
+  // operator has nothing to do with. Runs off `keys.data` rather than the
+  // per-call callbacks, since a row can also vanish through another admin
+  // session's action with no local callback of this component's own to hook.
+  //
+  // Same-reference no-op guarantee lives on `pruneToLiveIds` itself
+  // (QueryState.tsx) -- it is what stops this effect re-triggering its own
+  // setState on a refetch that does not change row membership.
+  useEffect(() => {
+    const data = keys.data;
+    if (data === undefined) {
+      return;
+    }
+    const liveIds = new Set(data.map((entry) => entry.id).filter((id): id is number => id !== null));
+    setRevokeFailures((failures) => pruneToLiveIds(failures, liveIds));
+    setRemoveFailures((failures) => pruneToLiveIds(failures, liveIds));
+  }, [keys.data]);
+
   const { settle } = useSecretEvictingMutation();
 
   /**
@@ -789,7 +811,11 @@ export function ApiKeysSection() {
                           failure={
                             entry.id === null
                               ? null
-                              : (removeFailures.get(entry.id) ?? revokeFailures.get(entry.id) ?? null)
+                              : removeFailures.has(entry.id)
+                                ? removeFailures.get(entry.id)
+                                : revokeFailures.has(entry.id)
+                                  ? revokeFailures.get(entry.id)
+                                  : null
                           }
                         />
                       ))}

@@ -112,6 +112,18 @@ upstream key into a second, off-origin request. See
 A second, per-source mechanism beside it: **origin pin** rejects a shared allow-list of every
 configured origin. See CONTEXT.md, "Origin pin", for why.
 
+A third, distinct mechanism: **the ban on framework redirect results** governs a redirect
+Arbitarr *emits*, not one it refuses from upstream. Production code may not construct a
+framework redirect result (`Results`/`TypedResults` redirect factories, `HttpResponse.Redirect`,
+the `ResponseExtensions.Redirect` overload, or any of the five MVC redirect result types),
+because the framework logs the redirect destination at Information, and in ADR 0023's
+Redirect NZB access mode, that destination is the indexer's own link with its API key attached.
+The download route answers with a private `IResult` instead, which sets the same response and
+logs nothing. `FrameworkRedirectResultBanTests` enforces this by scanning the IL of every
+production assembly for a call to a banned redirect API. This is the opposite direction from the
+upstream redirect refusal above: that one refuses a 3xx Arbitarr *receives*, this one bans a
+mechanism for a redirect Arbitarr *sends*.
+
 **Every secret-bearing record renders safely, or is documented as never rendering.** A positional
 record's compiler-synthesised `ToString` prints every member by name and value, so a raw API key
 or webhook URL reaches any `$"…{credential}…"` or `logger.LogWarning("… {Credential}", credential)`

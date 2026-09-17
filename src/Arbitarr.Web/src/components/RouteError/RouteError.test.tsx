@@ -83,4 +83,12 @@ describe('RouteError', () => {
       '/',
     );
   });
+
+  // Document-title behavior is no longer this component's to test in
+  // isolation: RouteError only signals RouteErrorContext now (see
+  // RouteError.tsx and RouteErrorContext.tsx), and AppShell is the sole
+  // writer of `document.title`. Those tests live in AppShell.test.tsx, mounted
+  // through the real route tree so AppShell's own effect is actually in play
+  // -- an isolated render here has no AppShell competing for the title and
+  // would prove nothing about the shipped configuration.
 });

@@ -195,6 +195,159 @@ public class CredentialPatternsTests
     }
 
     /// <summary>
+    /// arb-ofz6: the <c>NamedCredential</c> arm must run on the non-backtracking engine, which is
+    /// what closes its quadratic scan against a long separator-less run with enough character
+    /// variety (near-keyword text is one instance of that shape). Structural, not timing-based:
+    /// asserts the flag on the compiled arm's <see cref="Regex.Options"/> rather than measuring how
+    /// long anything takes.
+    /// </summary>
+    [Fact]
+    public void NamedCredential_arm_runs_on_the_nonbacktracking_engine()
+    {
+        var method = typeof(CredentialPatterns).GetMethod(
+            "NamedCredential",
+            BindingFlags.NonPublic | BindingFlags.Static,
+            binder: null,
+            types: Type.EmptyTypes,
+            modifiers: null);
+
+        Assert.NotNull(method);
+        var regex = (Regex)method!.Invoke(null, null)!;
+
+        Assert.True(
+            regex.Options.HasFlag(RegexOptions.NonBacktracking),
+            "NamedCredential must run on RegexOptions.NonBacktracking so a long separator-less run " +
+            "seeded with near-keyword text cannot make its prefix scan quadratic.");
+    }
+
+    /// <summary>
+    /// arb-ofz6: adversarial inputs that reach <c>NamedCredential</c>'s match timeout on the
+    /// backtracking engine — a long separator-less <c>[\w-]</c> run with enough character variety.
+    /// The corpus below covers both a near-keyword instance of that shape (<c>apikey</c> repeated)
+    /// and a keyword-free instance (a cycled run of <c>a-z0-9_-</c>), per the review fixup on this
+    /// bead: the trigger is the run's variety, not specifically that it looks like a keyword. A
+    /// plain separator-less run of ONE repeated non-keyword character (e.g. <c>aaaa…</c>) does NOT
+    /// trigger the blowup — measured outside this repo, it returns in ~1 ms on the unmodified
+    /// backtracking engine. Measured in a throwaway project outside this repo (deleted after, never
+    /// committed): run through a copy of the unmodified (backtracking) NamedCredential pattern, both
+    /// rows below throw <see cref="RegexMatchTimeoutException"/> within the arm's match timeout (the
+    /// keyword-free cycled row was reproduced there before being written down here). Through the
+    /// real, non-backtracking arm exercised here, both must return unchanged without throwing.
+    ///
+    /// <para><b>What the positive control actually proves.</b> Appending a real credential
+    /// assignment (<c>=PLACEHOLDERVALUE1234</c>) to the adversarial run and asserting it IS redacted
+    /// does NOT prove the pathological shape itself was exercised: measured outside this repo, that
+    /// combined input returns in 0 ms even on the unmodified backtracking engine, because the
+    /// <c>=</c> separator gives the prefix scan an anchor and collapses what would otherwise be a
+    /// quadratic search. What the combined-input assertion proves is only that the arm is reachable
+    /// and still finds a credential appended after a long run of this shape — it is the FIRST
+    /// assertion in each fact below (the adversarial run alone, unchanged, without throwing) that
+    /// exercises and closes the pathological case; the combined-input row is not, and is not claimed
+    /// to be, a timing-relevant control.</para>
+    /// </summary>
+    [Fact]
+    public void A_long_separator_less_keyword_seeded_run_is_left_intact_without_timing_out()
+    {
+        var adversarialRun = string.Concat(Enumerable.Repeat("apikey", 16000 / "apikey".Length));
+
+        var redacted = CredentialPatterns.RedactCredentials(adversarialRun);
+
+        Assert.Equal(adversarialRun, redacted);
+
+        // The same run, now followed by a real assignment, IS redacted — proving the arm is
+        // reachable and still finds a credential following input of this shape. This does NOT
+        // exercise the pathological case itself: measured outside this repo, appending "=<value>"
+        // makes even the unmodified backtracking engine return in 0 ms, because the separator gives
+        // the prefix scan an anchor. The assertion above (unchanged, no throw) is what proves the
+        // pathological shape was exercised and closed.
+        const string plantedSecret = "PLACEHOLDERVALUE1234";
+        var withCredential = adversarialRun + "=" + plantedSecret;
+
+        var redactedWithCredential = CredentialPatterns.RedactCredentials(withCredential);
+
+        Assert.Contains(CredentialPatterns.Replacement, redactedWithCredential, StringComparison.Ordinal);
+        Assert.DoesNotContain(plantedSecret, redactedWithCredential, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// arb-ofz6: a second adversarial shape with NO keyword in it at all — cycling through
+    /// <c>a-z0-9_-</c> reaches the same match timeout on the backtracking engine as the
+    /// keyword-seeded run above, because the quadratic prefix scan is driven by the run's character
+    /// variety, not by it resembling a credential name. Measured outside this repo before being
+    /// written down here: a copy of the unmodified (backtracking) NamedCredential pattern throws
+    /// <see cref="RegexMatchTimeoutException"/> on this exact input within the arm's match timeout.
+    /// See the class-level remarks on <see cref="A_long_separator_less_keyword_seeded_run_is_left_intact_without_timing_out"/>
+    /// for why the positive control below is reachability evidence, not a claim that it exercises
+    /// this pathological shape.
+    /// </summary>
+    [Fact]
+    public void A_long_separator_less_keyword_free_run_is_left_intact_without_timing_out()
+    {
+        const string alphabet = "abcdefghijklmnopqrstuvwxyz0123456789_-";
+        var builder = new System.Text.StringBuilder();
+        while (builder.Length < 16000)
+        {
+            builder.Append(alphabet);
+        }
+
+        var adversarialRun = builder.ToString(0, 16000);
+
+        var redacted = CredentialPatterns.RedactCredentials(adversarialRun);
+
+        Assert.Equal(adversarialRun, redacted);
+
+        // Reachability control only — see the remarks above for why this does not itself exercise
+        // the pathological case. This run has no keyword in it at all, so the credential-shaped
+        // name has to be appended, not just a bare separator: "apikey=<value>" after the run.
+        const string plantedSecret = "PLACEHOLDERVALUE5678";
+        var withCredential = adversarialRun + "apikey=" + plantedSecret;
+
+        var redactedWithCredential = CredentialPatterns.RedactCredentials(withCredential);
+
+        Assert.Contains(CredentialPatterns.Replacement, redactedWithCredential, StringComparison.Ordinal);
+        Assert.DoesNotContain(plantedSecret, redactedWithCredential, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// arb-ofz6: prefix-semantics rows an atomic-group or bounded-prefix "optimisation" would break,
+    /// per the rejected-alternatives note on the <c>NamedCredential</c> arm.
+    ///
+    /// <para>The first three rows plant a credential-shaped name that has MORE name characters after
+    /// the keyword before the separator: an atomic group commits to the greedy match of
+    /// <c>[\w-]*</c> as soon as it finds one and cannot backtrack to let the keyword alternation
+    /// match later in the run, so it fails all three (measured outside this repo). A bounded prefix
+    /// (e.g. <c>[\w-]{0,8}</c>) does NOT fail these three, though, because <c>\b</c> lets the engine
+    /// restart the match at the hyphen closer to the keyword — measured outside this repo, all three
+    /// still redact under an <c>{0,8}</c> bound. They still belong here as atomic-group regressions,
+    /// but they do not by themselves prove a bounded prefix is safe.</para>
+    ///
+    /// <para>The fourth row, <c>vendorlongprefixapikey:</c>, has no hyphen or underscore between the
+    /// excess prefix and the keyword for <c>\b</c> to restart from, so it discriminates a bounded
+    /// prefix: measured outside this repo, an <c>[\w-]{0,8}</c> bound fails to match it at all
+    /// (leaving the credential in the clear) while the shipped, non-backtracking pattern matches it
+    /// correctly, identically to the unmodified backtracking pattern.</para>
+    ///
+    /// <para>The non-backtracking engine explores the same set of prefixes as the original
+    /// backtracking pattern (it has no lookaround/backreference/atomic construct to diverge on), so
+    /// it still finds all four.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("apikey_v2: PLACEHOLDERV2VALUE1", "PLACEHOLDERV2VALUE1")]
+    [InlineData("x-secret-header-name: PLACEHOLDERHEADERVAL2", "PLACEHOLDERHEADERVAL2")]
+    [InlineData("a-token-b-apikey-c: PLACEHOLDERCHAINVAL3", "PLACEHOLDERCHAINVAL3")]
+    [InlineData("vendorlongprefixapikey: PLACEHOLDERLONGVENDOR9", "PLACEHOLDERLONGVENDOR9")]
+    public void Prefix_semantics_survive_for_names_with_trailing_characters(string input, string secret)
+    {
+        // POSITIVE CONTROL: the planted value really is present before redaction.
+        Assert.Contains(secret, input, StringComparison.Ordinal);
+
+        var redacted = CredentialPatterns.RedactCredentials(input);
+
+        Assert.Contains(CredentialPatterns.Replacement, redacted, StringComparison.Ordinal);
+        Assert.DoesNotContain(secret, redacted, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// arb-01z (part 1 of arb-01z; parts 2 and 3 — moving the corpus to Arbitarr.TestSupport, and
     /// the ordered-list redesign for arb-qj9's ~7 new arms — are explicitly out of scope here; see
     /// the bd comment on arb-01z).
@@ -256,5 +409,133 @@ public class CredentialPatternsTests
                 $"Arm \"{method.Name}\" is matched by no row in {nameof(CredentialCorpus)} — " +
                 "add a corpus row whose planted value has this arm's shape.");
         });
+    }
+
+    /// <summary>
+    /// arb-0na2: the three shared arms that arb-ofz6 left out of scope, each pinned against an
+    /// adversarial input derived from ITS OWN prefix shape rather than from
+    /// <c>NamedCredential</c>'s.
+    ///
+    /// <para><b>These arms were MEASURED and do not blow up.</b> Outside this repo (a throwaway
+    /// console project, deleted after, no code from it in this repository), each arm's pattern text
+    /// was run against the adversarial shape for its own prefix from 2k to 32k characters. Every one
+    /// stayed linear across that range, with times that merely DOUBLE as the input doubles, not
+    /// quadratic. The same harness, in the same run, drove the pre-#546 backtracking
+    /// <c>NamedCredential</c> pattern as a positive control and saw it grow roughly fivefold per
+    /// doubling and then reach the match timeout, so the harness demonstrably CAN observe a blowup
+    /// and the "completed" rows are not vacuous. No engine switch was therefore applied to these
+    /// arms; they stay on the backtracking engine and these facts are regression pins, not fixes.</para>
+    ///
+    /// <para><b>Why each shape is the adversarial one for its arm.</b>
+    /// <see cref="CredentialPatterns.RedactCredentials"/>'s remaining arms do NOT carry
+    /// <c>NamedCredential</c>'s <c>\b[\w-]*</c> variable-length prefix beside the keyword — the shape
+    /// that made that one quadratic. Each instead anchors its prefix on something fixed, so the way
+    /// to stress it is to make that anchor fire as often as possible and fail as late as possible:
+    /// a dense field of <c>?</c>/<c>&amp;</c> starts each followed by near-keyword text for the
+    /// query-string arm; a dense field of <c>bearer</c>/<c>basic</c> near-misses at word boundaries
+    /// for the scheme arm; and a dense field of bare credential nouns at word boundaries, each
+    /// failing on the value floor, for the space-separated arm. Each arm is additionally driven with
+    /// one keyword followed by an unterminated run of its own value class, the shape that would make
+    /// a variable-length value adjacent to a variable-length prefix backtrack.</para>
+    ///
+    /// <para><b>What the assertions are.</b> Per CLAUDE.md §5 there is no wall-clock ceiling here:
+    /// the pass condition is the arm's OWN <c>matchTimeoutMilliseconds</c>, which throws
+    /// <see cref="RegexMatchTimeoutException"/> and fails the test if an arm ever regresses to
+    /// quadratic on one of these shapes. Each fact then plants a real credential after the
+    /// adversarial run and asserts <see cref="CredentialPatterns.Replacement"/> IS present and the
+    /// planted value is gone — the positive control that proves the arm was reachable through input
+    /// of this shape, rather than the absence assertion passing over a secret that never arrived.
+    /// As on the arb-ofz6 facts above, that combined row is reachability evidence; it is the
+    /// completion of the adversarial run itself, without throwing, that pins the scan.</para>
+    ///
+    /// <para>The fourth shared arm, <c>NamedCredential</c>, is pinned by the two arb-ofz6 facts
+    /// above. The cleanser's own fifth arm, <c>WebhookUrl</c>, lives in <c>Arbitarr.Data</c> and is
+    /// not reachable from this project; its redaction is pinned instead in
+    /// <c>LogMessageCleanserTests.Redacts_a_webhook_url_whose_secret_is_in_the_path</c>. It was
+    /// measured in the same out-of-repo harness (four shapes, including many <c>https://</c> starts
+    /// each opening a fresh <c>[\w.-]*</c> scan, and an unterminated discord-like run) and is
+    /// likewise linear from 2k to 32k characters; the adversarial long-input theory for this arm
+    /// specifically was scoped out of arb-0na2 and is tracked as a follow-up.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("?api_ke&passwor?toke&passke", "?apikey=", "PLACEHOLDERVALUE2001")]
+    [InlineData("bearer basi bearerbasi ", " bearer ", "PLACEHOLDERVALUE2002")]
+    [InlineData("key token secret apikey passkey password ", " apikey ", "PLACEHOLDERVALUE2003")]
+    public void An_adversarial_run_for_each_shared_arms_own_prefix_shape_completes_and_still_redacts(
+        string adversarialUnit,
+        string plantedPrefix,
+        string plantedSecret)
+    {
+        const int adversarialLength = 16000;
+
+        var builder = new System.Text.StringBuilder(adversarialLength + adversarialUnit.Length);
+        while (builder.Length < adversarialLength)
+        {
+            builder.Append(adversarialUnit);
+        }
+
+        var adversarialRun = builder.ToString(0, adversarialLength);
+
+        // The pass condition is the arm's own match timeout: if this arm ever regresses to a
+        // quadratic scan on its own adversarial shape, RedactCredentials throws
+        // RegexMatchTimeoutException here and the test fails. No wall-clock assertion.
+        var redacted = CredentialPatterns.RedactCredentials(adversarialRun);
+
+        Assert.NotNull(redacted);
+
+        // Positive control: the same run followed by a real credential of this arm's shape. Proves
+        // the arm is reachable through input of this shape, so the absence assertion below is not
+        // passing over a secret that was never in play.
+        var withCredential = adversarialRun + plantedPrefix + plantedSecret;
+        Assert.Contains(plantedSecret, withCredential, StringComparison.Ordinal);
+
+        var redactedWithCredential = CredentialPatterns.RedactCredentials(withCredential);
+
+        Assert.Contains(CredentialPatterns.Replacement, redactedWithCredential, StringComparison.Ordinal);
+        Assert.DoesNotContain(plantedSecret, redactedWithCredential, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// arb-0na2: the second adversarial shape for each of the three arms — one keyword followed by
+    /// an UNTERMINATED run of that arm's own value class. This is the shape that stresses a
+    /// variable-length value sitting next to a variable-length prefix, which is the other half of
+    /// the structure that made <c>NamedCredential</c> quadratic. Measured out of repo alongside the
+    /// facts above: all three stay linear from 2k to 32k characters. Pass condition is again the
+    /// arm's own match timeout, with the planted-credential positive control proving reachability.
+    /// </summary>
+    [Theory]
+    [InlineData("?apikey=", "abcdefghijklmnopqrstuvwxyz0123456789._~-", "PLACEHOLDERVALUE3001")]
+    [InlineData("bearer ", "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=._~-", "PLACEHOLDERVALUE3002")]
+    [InlineData("apikey ", "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.+-", "PLACEHOLDERVALUE3003")]
+    public void An_unterminated_value_class_run_after_each_arms_keyword_completes_and_still_redacts(
+        string keyword,
+        string valueAlphabet,
+        string plantedSecret)
+    {
+        const int adversarialLength = 16000;
+
+        var builder = new System.Text.StringBuilder(adversarialLength + valueAlphabet.Length);
+        builder.Append(keyword);
+        while (builder.Length < adversarialLength)
+        {
+            builder.Append(valueAlphabet);
+        }
+
+        var adversarialRun = builder.ToString(0, adversarialLength);
+
+        // Pass condition: the arm's own match timeout. A regression to a quadratic scan throws here.
+        var redacted = CredentialPatterns.RedactCredentials(adversarialRun);
+
+        Assert.NotNull(redacted);
+
+        // Positive control on a separate line of text, so the adversarial run's own unterminated
+        // value cannot be what satisfies the assertion.
+        var withCredential = adversarialRun + " " + keyword + plantedSecret;
+        Assert.Contains(plantedSecret, withCredential, StringComparison.Ordinal);
+
+        var redactedWithCredential = CredentialPatterns.RedactCredentials(withCredential);
+
+        Assert.Contains(CredentialPatterns.Replacement, redactedWithCredential, StringComparison.Ordinal);
+        Assert.DoesNotContain(plantedSecret, redactedWithCredential, StringComparison.Ordinal);
     }
 }

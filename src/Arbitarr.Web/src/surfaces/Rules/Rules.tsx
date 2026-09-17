@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { PageHeader } from '../../components/shell/PageHeader';
-import { QueryState, errorMessage } from '../QueryState';
+import { QueryState, errorMessage, pruneToLiveIds } from '../QueryState';
 import type { FilterRule, UpsertFilterRuleRequest } from '../../api/types';
 import styles from '../surface.module.css';
 import local from './Rules.module.css';
@@ -186,6 +186,27 @@ export default function RulesPage() {
   // in this Set stays fully operable no matter how many other deletes are
   // running.
   const [pendingDeleteIds, setPendingDeleteIds] = useState<ReadonlySet<number>>(new Set());
+
+  // Prune `deleteFailures` entries whose row has left the list -- a refusal for
+  // an id no longer present renders nowhere, but stays keyed to that id
+  // forever otherwise, and if the SAME id is later reused (a new rule created
+  // after the server recycles ids) it would surface with the earlier row's
+  // stale refusal. Runs off `rules.data` rather than the delete callbacks
+  // themselves, since a row can also vanish through another operator's
+  // action -- a concurrent delete from a second admin session -- with no
+  // local callback of this component's own to hook.
+  //
+  // Same-reference no-op guarantee lives on `pruneToLiveIds` itself
+  // (QueryState.tsx) -- it is what stops this effect re-triggering its own
+  // setState on a refetch that does not change row membership.
+  useEffect(() => {
+    const data = rules.data;
+    if (data === undefined) {
+      return;
+    }
+    const liveIds = new Set(data.map((rule) => rule.id));
+    setDeleteFailures((failures) => pruneToLiveIds(failures, liveIds));
+  }, [rules.data]);
 
   const startEditing = (rule: FilterRule) => {
     // A rejected save from a PREVIOUS edit target must not outlive it: without

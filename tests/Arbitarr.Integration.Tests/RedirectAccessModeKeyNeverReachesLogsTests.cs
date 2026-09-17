@@ -40,7 +40,7 @@ namespace Arbitarr.Integration.Tests;
 /// KNOWN LIMIT OF THAT ONE SURFACE RATHER THAN A PROPERTY OF THE ARM.</b>
 /// <c>SqliteLoggerProvider</c> is constructed at <c>LogLevel.Information</c> in
 /// <c>LoggingSetup.cs</c>, so its logger returns early below that: a <c>Debug</c> or <c>Trace</c>
-/// line on the redirect arm never reaches the store, and the <see cref="ReadLogEntriesAsync"/>
+/// line on the redirect arm never reaches the store, and the <see cref="LogStorePaging.ReadAllAsync"/>
 /// assertions would pass against such a mutation VACUOUSLY. The consequence is not confined to this
 /// test, which is why it is worth stating: the console provider is registered unfiltered by design,
 /// so an operator who sets <c>Logging__LogLevel__Default=Debug</c> would get that line on stdout on
@@ -416,7 +416,7 @@ public sealed class RedirectAccessModeKeyNeverReachesLogsTests : IAsyncLifetime
             .LogWarning("Redirecting to {Location}", DownloadLink);
 
         await host.Services.FlushLogSinkAsync();
-        var probed = (await ReadLogEntriesAsync(host))
+        var probed = (await LogStorePaging.ReadAllAsync(host))
             .Where(entry => entry.Logger.Contains("RedirectLocationLeakProbe", StringComparison.Ordinal))
             .ToList();
 
@@ -554,7 +554,7 @@ public sealed class RedirectAccessModeKeyNeverReachesLogsTests : IAsyncLifetime
         // the capture just proved exists and carries both values, reaches NO log row. This is why
         // this test had to be added alongside the store scans instead of trusting them.
         await host.Services.FlushLogSinkAsync();
-        var rows = await ReadLogEntriesAsync(host);
+        var rows = await LogStorePaging.ReadAllAsync(host);
         Assert.DoesNotContain(rows, entry => entry.Logger.Contains("RedirectTraceLevelLeakProbe", StringComparison.Ordinal));
     }
 
@@ -706,7 +706,7 @@ public sealed class RedirectAccessModeKeyNeverReachesLogsTests : IAsyncLifetime
         // carry a URI, and checking only Message would look thorough while leaving the likeliest leak
         // unexamined.
         await host.Services.FlushLogSinkAsync();
-        var entries = await ReadLogEntriesAsync(host);
+        var entries = await LogStorePaging.ReadAllAsync(host);
 
         // The table is non-empty, so the per-row loop below is not iterating over nothing. This is
         // what stops the whole assertion becoming a no-op the day the sink stops recording.
@@ -765,58 +765,24 @@ public sealed class RedirectAccessModeKeyNeverReachesLogsTests : IAsyncLifetime
             .ToList();
     }
 
-    /// <summary>
-    /// EVERY row, not the first page of them (arb-j4hq).
-    ///
-    /// <para>This read used to take page 1 at <see cref="LogStore.MaxPageSize"/> and return it. That
-    /// silently bounded every absence assertion in this file at 200 rows: a host here starts roughly
-    /// eight hosted services, so the table passing 200 is a matter of how much startup chatter the
-    /// run happens to produce, and a leaked row landing past that boundary would be invisible to a
-    /// scan that never asked for it. The failure mode is the worst kind — the test stays green and
-    /// stops covering the thing it is named for, with nothing to notice.</para>
-    ///
-    /// <para>Paging to <see cref="LogPage.Total"/> rather than asserting the total is under the page
-    /// size: an assertion would convert the same condition into a failure that reads as a leak when
-    /// it is only a chatty startup, and it would have to be re-tuned every time a hosted service
-    /// gains a line. The loop is bounded by <c>Total</c>, which the store computes in the same
-    /// transaction as the page, so it terminates even while the sink is still appending.</para>
-    /// </summary>
-    private static async Task<IReadOnlyList<LogEntry>> ReadLogEntriesAsync(WebApplicationFactory<Program> host)
-    {
-        var store = host.Services.GetRequiredService<LogStore>();
-        var entries = new List<LogEntry>();
-
-        for (var page = 1; ; page++)
-        {
-            var read = await store.ReadAsync(level: null, logger: null, page: page, pageSize: LogStore.MaxPageSize);
-            entries.AddRange(read.Entries);
-
-            if (read.Entries.Count == 0 || entries.Count >= read.Total)
-            {
-                return entries;
-            }
-        }
-    }
-
     private static async Task<string> SearchAndExtractProxyGuidAsync(HttpClient client)
     {
         using var response = await client.GetAsync(
             $"/newznab/api?t=search&q=redirect+probe&apikey={Uri.EscapeDataString(ClientKey)}");
 
-        // arb-krtr: on a non-OK status, name the status and the server's body rather than just
-        // "Expected OK, Actual X" — that is all CI's failure gave the last time this flaked
-        // (InternalServerError under full-shard load; see arb-krtr's diagnosis). Printing the body
-        // here is safe: SearchEndpoint.InfrastructureErrorResult and NoSourceAnsweredResult are the
-        // ONLY ways this route answers non-OK, and both render the FIXED string
+        // arb-krtr / arb-wmbp: on a non-OK status, name the status and the server's body rather
+        // than just "Expected OK, Actual X" — that is all CI's failure gave the last time this
+        // flaked (InternalServerError under full-shard load; see arb-krtr's diagnosis). Printing
+        // the body here is safe: SearchEndpoint.InfrastructureErrorResult and NoSourceAnsweredResult
+        // are the ONLY ways this route answers non-OK, and both render the FIXED string
         // SearchEndpoint.InfrastructureErrorDescription ("The indexer encountered an internal
         // error") — the endpoint's own doc guarantees the underlying exception's message never
         // reaches this body (CLAUDE.md §1). So there is no server-side detail, upstream URL or the
         // planted IndexerKey to leak here; a cleanser pass or length cap would just be theatre. No
-        // truncation is applied for the same reason.
+        // truncation is applied for the same reason. See SearchResponseAssertion for why this is
+        // now shared rather than copied.
         var body = await response.Content.ReadAsStringAsync();
-        Assert.True(
-            response.StatusCode == HttpStatusCode.OK,
-            $"Search returned {(int)response.StatusCode} {response.StatusCode}, body: {body}");
+        SearchResponseAssertion.AssertOk(response, body);
         var item = Assert.Single(XDocument.Parse(body).Descendants("item"));
         var enclosureUrl = item.Elements("enclosure").Single().Attribute("url")!.Value;
 
