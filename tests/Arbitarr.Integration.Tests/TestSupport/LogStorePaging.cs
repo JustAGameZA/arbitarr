@@ -32,6 +32,13 @@ internal static class LogStorePaging
     /// <summary>
     /// Reads EVERY row in the store, not the first page of them. See the type doc for why a single
     /// page-1 read at <see cref="LogStore.MaxPageSize"/> is not sufficient for an absence sweep.
+    ///
+    /// <para><b>The caller must flush the sink first.</b> This walks pages in <c>Id DESC</c> order
+    /// (see <c>LogStoreTests</c>' paging fact), and a row appended mid-walk shifts that window: a
+    /// row that lands ahead of the page already read moves every later row down by one, which can
+    /// skip a row entirely rather than merely re-order it. Calling
+    /// <c>IServiceCollection.FlushLogSinkAsync</c> (or the equivalent on the host's services) before
+    /// this method is what keeps the window stationary for the whole walk.</para>
     /// </summary>
     public static async Task<IReadOnlyList<LogEntry>> ReadAllAsync(WebApplicationFactory<Program> host)
     {
