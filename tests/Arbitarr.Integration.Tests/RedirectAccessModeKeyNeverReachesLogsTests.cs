@@ -33,11 +33,41 @@ namespace Arbitarr.Integration.Tests;
 /// risk this defends against is FUTURE: someone adds <c>app.UseHttpLogging()</c> with
 /// <c>HttpLoggingFields.ResponseHeaders</c>, or writes an <c>ILogger</c> line on the redirect arm
 /// the way NZBHydra2's <c>FileHandler</c> does ("Redirecting to {}", i.e. it logs the key). THIS
-/// TEST is the ratchet that turns either into a red build — qualified to a line AT <c>Information</c>
-/// OR ABOVE: <c>SqliteLoggerProvider</c> is registered at <c>LogLevel.Information</c>, so a
-/// <c>Debug</c> or <c>Trace</c> line on this arm sits below the SQLite sink's floor and would not
-/// reach the store this test reads at all (tracked as arb-j4hq). Do not delete it on the grounds
-/// that today's pipeline is clean; that is the state it exists to preserve.</para>
+/// TEST is the ratchet that turns either into a red build. Do not delete it on the grounds that
+/// today's pipeline is clean; that is the state it exists to preserve.</para>
+///
+/// <para><b>arb-j4hq: THE LOG-STORE SCANS ARE LEVEL-BOUNDED AT <c>Information</c>, AND THAT IS A
+/// KNOWN LIMIT OF THAT ONE SURFACE RATHER THAN A PROPERTY OF THE ARM.</b>
+/// <c>SqliteLoggerProvider</c> is constructed at <c>LogLevel.Information</c> in
+/// <c>LoggingSetup.cs</c>, so its logger returns early below that: a <c>Debug</c> or <c>Trace</c>
+/// line on the redirect arm never reaches the store, and the <see cref="ReadLogEntriesAsync"/>
+/// assertions would pass against such a mutation VACUOUSLY. The consequence is not confined to this
+/// test, which is why it is worth stating: the console provider is registered unfiltered by design,
+/// so an operator who sets <c>Logging__LogLevel__Default=Debug</c> would get that line on stdout on
+/// every download. Nothing today writes one.
+///
+/// <para>The gap is closed rather than merely disclosed:
+/// <see cref="Every_captured_line_at_any_level_carries_neither_the_key_nor_the_link_path"/>
+/// registers a provider that accepts EVERY level, down to <c>Trace</c>, and scans every line it
+/// captures. A mutation logging the <c>Location</c> at <c>Trace</c> goes red there even though the
+/// store-reading scans cannot see it. Read the two together: the store scans are the
+/// <c>Information</c>-and-above ratchet over the persisted surface, that test is the
+/// level-independent one over the logging pipeline itself.</para>
+///
+/// <para><b>THAT LEVEL-INDEPENDENT SCAN IMMEDIATELY FOUND A REAL LEAK, which is the best argument
+/// for why it had to exist.</b> The arm returned <c>Results.Redirect</c>, and the framework's
+/// <c>RedirectResult</c> logs its whole destination — the indexer's URL, key included — at
+/// <c>Information</c> under its own category, before writing the header. Every store-reading
+/// assertion in this file passed throughout, because <c>LoggingSetup</c>'s <c>Microsoft</c> prefix
+/// filter demotes that category to <c>Warning</c> for <c>SqliteLoggerProvider</c>, so the row never
+/// reached the table they read. The route now writes the 302 itself and produces no such line; see
+/// <c>DownloadProxyEndpoint.RedirectWithoutLogging</c>, and
+/// <see cref="No_log_line_at_any_level_or_category_reproduces_the_redirect_destination"/> for the
+/// test that pins it with no category exempted.</para>
+///
+/// <para>The general lesson, worth more than the specific fix: "this arm writes no log line" is a
+/// statement about a SOURCE FILE, and what matters is what the RESPONSE PIPELINE emits. A helper
+/// the route returns can log on its behalf.</para></para>
 ///
 /// <para><b>NO EXISTING LAYER MAKES THIS SAFE, and the reasons differ per layer.</b>
 /// <c>DisableUriRedaction</c> governs <c>IHttpClientFactory</c>'s collapse of an OUTBOUND request
@@ -130,10 +160,21 @@ public sealed class RedirectAccessModeKeyNeverReachesLogsTests : IAsyncLifetime
 
     private const string PayloadText = "<nzb>redirect-probe-bytes</nzb>";
 
+    /// <summary>
+    /// The per-CLASS root. Every host gets its OWN subdirectory under it (see
+    /// <see cref="PerHostConfigDirectory"/>); this level exists so teardown has a single path to
+    /// delete.
+    /// </summary>
     private readonly string _configDirectory = Path.Combine(
         Path.GetTempPath(), "arbitarr-redirect-access-mode-tests", Guid.NewGuid().ToString("N"));
 
     private readonly List<WebApplicationFactory<Program>> _factories = new();
+
+    /// <summary>
+    /// Every line the logging pipeline emitted on the CURRENT host, at every level. Replaced per
+    /// host in <see cref="CreateHost"/> so one test's capture cannot be read as another's.
+    /// </summary>
+    private List<CapturedLine> _capturedLines = new();
 
     public RedirectAccessModeKeyNeverReachesLogsTests() => Directory.CreateDirectory(_configDirectory);
 
@@ -193,11 +234,28 @@ public sealed class RedirectAccessModeKeyNeverReachesLogsTests : IAsyncLifetime
     private WebApplicationFactory<Program> CreateHost(string accessMode)
     {
         _handler = new RecordingIndexerHandler();
+        _capturedLines = new List<CapturedLine>();
 
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
-            builder.UseSetting("Arbitarr:ConfigDir", _configDirectory);
+            // arb-j4hq: this host's OWN database, not one shared with the other hosts this class
+            // builds. See PerHostConfigDirectory for why separate directories rather than disposing
+            // the previous factory here.
+            builder.UseSetting("Arbitarr:ConfigDir", PerHostConfigDirectory.Create(_configDirectory));
             builder.UseSetting("Arbitarr:ApiKey", ClientKey);
+
+            // arb-j4hq(b): capture at EVERY level, including below the SQLite sink's Information
+            // floor. SetMinimumLevel lifts the framework's own default filter (Information with no
+            // appsettings present); without it the pipeline would drop a Trace line before any
+            // provider saw it, and this capture would be level-bounded in exactly the way it exists
+            // to escape. It does not touch SqliteLoggerProvider, whose floor is a constructor
+            // argument in LoggingSetup.cs rather than a filter.
+            builder.ConfigureLogging(logging =>
+            {
+                logging.SetMinimumLevel(LogLevel.Trace);
+                logging.AddProvider(new TraceCapturingLoggerProvider(_capturedLines));
+            });
+
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IUpstreamSource>();
@@ -357,7 +415,7 @@ public sealed class RedirectAccessModeKeyNeverReachesLogsTests : IAsyncLifetime
             .CreateLogger("Arbitarr.Test.RedirectLocationLeakProbe")
             .LogWarning("Redirecting to {Location}", DownloadLink);
 
-        await FlushLogSinkAsync();
+        await host.Services.FlushLogSinkAsync();
         var probed = (await ReadLogEntriesAsync(host))
             .Where(entry => entry.Logger.Contains("RedirectLocationLeakProbe", StringComparison.Ordinal))
             .ToList();
@@ -414,6 +472,226 @@ public sealed class RedirectAccessModeKeyNeverReachesLogsTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// arb-j4hq(b) — THE LEVEL-INDEPENDENT RATCHET. Every other scan in this file reads the LogStore,
+    /// whose provider is constructed at <c>LogLevel.Information</c>, so a mutation writing the
+    /// <c>Location</c> at <c>Debug</c> or <c>Trace</c> would satisfy all of them VACUOUSLY: the row
+    /// never reaches the table those assertions read. This test reads the logging pipeline itself,
+    /// through a provider that accepts every level down to <c>Trace</c>, so the level a leak is
+    /// written at cannot be what saves it.
+    ///
+    /// <para><b>Asserted over the FORMATTED message, the category, the scope-free state and the
+    /// exception text</b>, for the same reason the store scan checks more than <c>Message</c>: a URI
+    /// is at least as likely to arrive as an exception's text or as a structured value as it is in
+    /// the format string, and checking only the rendered message would look thorough while leaving
+    /// the likeliest shapes unexamined.</para>
+    ///
+    /// <para><b>The scan looks for the key AND the path marker</b>, and the marker is the one that
+    /// bites, exactly as <see cref="LinkPathMarker"/> explains for the store scans. One difference
+    /// matters here and makes this surface STRICTER: <c>LogMessageCleanser</c> runs inside the SQLite
+    /// sink, not in the pipeline, so a line captured here has NOT been scrubbed. The key assertion is
+    /// therefore not satisfiable by the cleanser on this surface the way it was on the store, which
+    /// is why a mutation that logs the whole Location goes red here on both values rather than only
+    /// on the marker.</para>
+    ///
+    /// <para><b>Positive control first, through the real <c>ILogger</c>.</b> A <c>Trace</c> line
+    /// carrying both values is written through the host's own <see cref="ILoggerFactory"/> and
+    /// asserted to be VISIBLE in the capture. That proves three things the absence assertion needs
+    /// and cannot state for itself: the provider is actually registered on this host, the minimum
+    /// level really does admit <c>Trace</c> (without <c>SetMinimumLevel</c> the pipeline drops it
+    /// before any provider is consulted, and this test would silently become the level-bounded thing
+    /// it exists to escape), and the comparison used below can find these values in this shape. It
+    /// also independently confirms the store scans' blind spot is real: this same <c>Trace</c> line
+    /// is asserted to reach NO log row.</para>
+    /// </summary>
+    [Fact]
+    public async Task Every_captured_line_at_any_level_carries_neither_the_key_nor_the_link_path()
+    {
+        var host = CreateHost("Redirect");
+        using var client = host.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+        var proxyGuid = await SearchAndExtractProxyGuidAsync(client);
+
+        using var response = await client.GetAsync(
+            $"/download/{Uri.EscapeDataString(proxyGuid)}?apikey={Uri.EscapeDataString(ClientKey)}");
+
+        // The arm under test really ran. Without this the capture could be clean because no redirect
+        // was ever produced, which would make every absence below an assertion about nothing.
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+
+        // THE ASSERTION. Snapshotted before the control writes anything, so the control's own
+        // deliberate leak cannot be what this scan iterates over.
+        var producedByTheRequest = _capturedLines.ToList();
+
+        // Non-empty, so the per-line loop is not iterating over nothing: a provider that was never
+        // registered captures zero lines and passes any absence assertion trivially.
+        Assert.NotEmpty(producedByTheRequest);
+
+        foreach (var line in producedByTheRequest)
+        {
+            AssertCarriesNeitherValue(line);
+        }
+
+        // POSITIVE CONTROL. A Trace line, below the SQLite sink's floor, carrying both values.
+        const string probeCategory = "Arbitarr.Test.RedirectTraceLevelLeakProbe";
+        host.Services.GetRequiredService<ILoggerFactory>()
+            .CreateLogger(probeCategory)
+            .LogTrace("Redirecting to {Location}", DownloadLink);
+
+        var probed = _capturedLines
+            .Where(line => line.Category.Contains("RedirectTraceLevelLeakProbe", StringComparison.Ordinal))
+            .ToList();
+
+        // The capture SEES a Trace line, so the loop above ran against a surface that admits them.
+        Assert.NotEmpty(probed);
+        Assert.All(probed, line => Assert.Equal(LogLevel.Trace, line.Level));
+
+        // And it sees BOTH values in it unscrubbed, so the comparison the loop above used is a
+        // comparison that finds them. This is the assertion that makes the absence meaningful.
+        Assert.Contains(probed, line => line.Message.Contains(IndexerKey, StringComparison.Ordinal));
+        Assert.Contains(probed, line => line.Message.Contains(LinkPathMarker, StringComparison.Ordinal));
+
+        // AND THE BLIND SPOT, DEMONSTRATED RATHER THAN ASSERTED IN PROSE: that same Trace line, which
+        // the capture just proved exists and carries both values, reaches NO log row. This is why
+        // this test had to be added alongside the store scans instead of trusting them.
+        await host.Services.FlushLogSinkAsync();
+        var rows = await ReadLogEntriesAsync(host);
+        Assert.DoesNotContain(rows, entry => entry.Logger.Contains("RedirectTraceLevelLeakProbe", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// arb-j4hq — THE LOCATION URL ITSELF REACHES NO LOG LINE, AT ANY LEVEL, FROM ANY CATEGORY.
+    ///
+    /// <para><b>This test exists because the scan above found a real leak, and it pins the fix.</b>
+    /// The redirect arm used <c>Results.Redirect</c>, whose <c>RedirectResult</c> logs its whole
+    /// destination at <c>Information</c> under a framework category. The arm writes no line of its
+    /// own, so every store-reading assertion in this file passed: that category is demoted to
+    /// <c>Warning</c> for <c>SqliteLoggerProvider</c> by <c>LoggingSetup</c>'s <c>Microsoft</c>
+    /// prefix filter, and the row never reached the table they read. The route now writes the 302
+    /// itself (<c>DownloadProxyEndpoint.RedirectWithoutLogging</c>) and no such line is produced.</para>
+    ///
+    /// <para><b>Asserted on the WHOLE Location value, not only on the key and the path marker.</b>
+    /// The scan above already covers those two, and this one is deliberately stricter and blunter:
+    /// any log line anywhere reproducing the destination URL is the defect, whatever part of it the
+    /// assertion happens to recognise. A future leak might carry a host, a port or a differently
+    /// named parameter rather than this fixture's marker.</para>
+    ///
+    /// <para><b>NO CATEGORY IS EXEMPT, deliberately.</b> The obvious way to make this green while the
+    /// framework still logged was to exclude that one category, which would have converted a real
+    /// finding into a permanently blind spot — the exact shape CLAUDE.md §4 calls out. If this test
+    /// goes red, something is logging the destination again; the answer is to stop producing the
+    /// line, not to widen an exclusion list, because there is none to widen.</para>
+    ///
+    /// <para><b>The positive control is the response header</b>, asserted BEFORE the absence: the
+    /// key demonstrably reached the caller in the <c>Location</c> of a real 302, so the value this
+    /// test then looks for in the logs is one that genuinely existed in this request and was
+    /// genuinely handled by the redirect path. Without it, every absence below would also hold for a
+    /// request that 404'd and produced no redirect at all.</para>
+    /// </summary>
+    [Fact]
+    public async Task No_log_line_at_any_level_or_category_reproduces_the_redirect_destination()
+    {
+        var host = CreateHost("Redirect");
+        using var client = host.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+        var proxyGuid = await SearchAndExtractProxyGuidAsync(client);
+
+        using var response = await client.GetAsync(
+            $"/download/{Uri.EscapeDataString(proxyGuid)}?apikey={Uri.EscapeDataString(ClientKey)}");
+
+        // POSITIVE CONTROL. The redirect really happened, at the indexer's link, with the key in it.
+        // This is the value the scan below searches for, proven to have been in play in this request.
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        var location = Assert.IsType<Uri>(response.Headers.Location);
+        Assert.Equal(DownloadLink, location.OriginalString);
+        Assert.Contains(IndexerKey, location.OriginalString, StringComparison.Ordinal);
+
+        // THE ASSERTION, over every line the pipeline emitted at every level from every category.
+        var captured = _capturedLines.ToList();
+        Assert.NotEmpty(captured);
+
+        foreach (var line in captured)
+        {
+            foreach (var field in new[] { line.Message, line.Category, line.State, line.Exception })
+            {
+                Assert.DoesNotContain(DownloadLink, field, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain(IndexerKey, field, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain(LinkPathMarker, field, StringComparison.OrdinalIgnoreCase);
+            }
+        }
+    }
+
+    /// <summary>
+    /// One captured line against both values, over every field of it that can carry text. Shared by
+    /// the loop above so the four fields cannot drift apart between them.
+    /// </summary>
+    private static void AssertCarriesNeitherValue(CapturedLine line)
+    {
+        foreach (var field in new[] { line.Message, line.Category, line.State, line.Exception })
+        {
+            Assert.DoesNotContain(IndexerKey, field, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(LinkPathMarker, field, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    /// <summary>
+    /// One line as the logging pipeline handed it over, BEFORE any sink. <see cref="State"/> is the
+    /// state object's own rendering rather than the formatted message: a structured value logged
+    /// under a name that the format string never interpolates appears there and nowhere else.
+    /// </summary>
+    private sealed record CapturedLine(LogLevel Level, string Category, string Message, string State, string Exception);
+
+    /// <summary>
+    /// Captures every line at every level. <see cref="CapturingLogger.IsEnabled"/> returns
+    /// <see langword="true"/> unconditionally, which is the point: a provider that honoured a
+    /// configured floor would reintroduce the level bound this whole test exists to escape.
+    ///
+    /// <para>The sink is a plain <see cref="List{T}"/> guarded by a lock rather than a concurrent
+    /// collection, because the assertions enumerate it: enumerating a
+    /// <c>ConcurrentQueue</c> while a background hosted service is still logging yields a moving
+    /// snapshot, and a copy taken under the same lock the writer takes does not.</para>
+    /// </summary>
+    private sealed class TraceCapturingLoggerProvider(List<CapturedLine> sink) : ILoggerProvider
+    {
+        private readonly object _gate = new();
+
+        public ILogger CreateLogger(string categoryName) => new CapturingLogger(categoryName, Add);
+
+        private void Add(CapturedLine line)
+        {
+            lock (_gate)
+            {
+                sink.Add(line);
+            }
+        }
+
+        public void Dispose()
+        {
+        }
+
+        private sealed class CapturingLogger(string category, Action<CapturedLine> add) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter)
+            {
+                add(new CapturedLine(
+                    logLevel,
+                    category,
+                    formatter(state, exception),
+                    state?.ToString() ?? string.Empty,
+                    exception?.ToString() ?? string.Empty));
+            }
+        }
+    }
+
+    /// <summary>
     /// The three surfaces both modes must keep clean, asserted the same way for each so neither mode's
     /// coverage can drift from the other's — and so the positive control above is provably the control
     /// for both.
@@ -427,7 +705,7 @@ public sealed class RedirectAccessModeKeyNeverReachesLogsTests : IAsyncLifetime
         // other one (CLAUDE.md §4). Per field because the exception text is the field most likely to
         // carry a URI, and checking only Message would look thorough while leaving the likeliest leak
         // unexamined.
-        await FlushLogSinkAsync();
+        await host.Services.FlushLogSinkAsync();
         var entries = await ReadLogEntriesAsync(host);
 
         // The table is non-empty, so the per-row loop below is not iterating over nothing. This is
@@ -487,11 +765,37 @@ public sealed class RedirectAccessModeKeyNeverReachesLogsTests : IAsyncLifetime
             .ToList();
     }
 
+    /// <summary>
+    /// EVERY row, not the first page of them (arb-j4hq).
+    ///
+    /// <para>This read used to take page 1 at <see cref="LogStore.MaxPageSize"/> and return it. That
+    /// silently bounded every absence assertion in this file at 200 rows: a host here starts roughly
+    /// eight hosted services, so the table passing 200 is a matter of how much startup chatter the
+    /// run happens to produce, and a leaked row landing past that boundary would be invisible to a
+    /// scan that never asked for it. The failure mode is the worst kind — the test stays green and
+    /// stops covering the thing it is named for, with nothing to notice.</para>
+    ///
+    /// <para>Paging to <see cref="LogPage.Total"/> rather than asserting the total is under the page
+    /// size: an assertion would convert the same condition into a failure that reads as a leak when
+    /// it is only a chatty startup, and it would have to be re-tuned every time a hosted service
+    /// gains a line. The loop is bounded by <c>Total</c>, which the store computes in the same
+    /// transaction as the page, so it terminates even while the sink is still appending.</para>
+    /// </summary>
     private static async Task<IReadOnlyList<LogEntry>> ReadLogEntriesAsync(WebApplicationFactory<Program> host)
     {
-        var page = await host.Services.GetRequiredService<LogStore>()
-            .ReadAsync(level: null, logger: null, page: 1, pageSize: LogStore.MaxPageSize);
-        return page.Entries;
+        var store = host.Services.GetRequiredService<LogStore>();
+        var entries = new List<LogEntry>();
+
+        for (var page = 1; ; page++)
+        {
+            var read = await store.ReadAsync(level: null, logger: null, page: page, pageSize: LogStore.MaxPageSize);
+            entries.AddRange(read.Entries);
+
+            if (read.Entries.Count == 0 || entries.Count >= read.Total)
+            {
+                return entries;
+            }
+        }
     }
 
     private static async Task<string> SearchAndExtractProxyGuidAsync(HttpClient client)
@@ -507,13 +811,6 @@ public sealed class RedirectAccessModeKeyNeverReachesLogsTests : IAsyncLifetime
         var path = new Uri(enclosureUrl).AbsolutePath;
         return Uri.UnescapeDataString(path["/download/".Length..]);
     }
-
-    /// <summary>
-    /// The sink batches on a fixed interval by design (it must never write on the caller's thread), so
-    /// a read taken immediately after a request can legitimately see nothing yet.
-    /// </summary>
-    private static async Task FlushLogSinkAsync() =>
-        await Task.Delay(SqliteLoggerProvider.FlushInterval + TimeSpan.FromMilliseconds(750));
 
     public Task InitializeAsync() => Task.CompletedTask;
 

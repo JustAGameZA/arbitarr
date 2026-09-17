@@ -1070,6 +1070,67 @@ describe('ApiKeys', () => {
     });
   });
 
+  it('keeps two concurrent refusals on their own rows, and clears only the row that retries (arb-39g3)', async () => {
+    // arb-39g3: revokeFailedId/revoke.error and removeFailedId/removeFailure
+    // used to be single shared scalars, so a second refusal in flight
+    // overwrote the first row's text -- row A's message vanished or appeared
+    // under row B. This drives two DIFFERENT rows' refusals unresolved AT THE
+    // SAME TIME (one revoke, one remove, since that is what the three-row
+    // brief calls for and it exercises both Maps at once), with a third row
+    // untouched throughout.
+    const user = userEvent.setup();
+    const refusalA =
+      "'Sonarr' cannot be revoked right now: a positive control refusal for row A.";
+    const refusalB =
+      "'Retired laptop' cannot be removed right now: a positive control refusal for row B.";
+    const api = mockKeysApi({ [`GET ${KEYS}`]: { body: keys } });
+    renderSurface(<ApiKeysSection />);
+
+    await screen.findByRole('cell', { name: 'Sonarr' });
+    await screen.findByRole('cell', { name: 'Retired laptop' });
+    await screen.findByRole('cell', { name: 'Old script' });
+
+    // Refuse A ("Sonarr", revoke) and B ("Retired laptop", remove), both left
+    // unresolved.
+    api.set(`DELETE ${KEYS}/1`, { status: 400, body: { error: refusalA } });
+    await user.click(screen.getByRole('button', { name: 'Revoke Sonarr' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm revoke Sonarr' }));
+    await waitFor(() => {
+      expect(within(rowFor('Sonarr')).getByText(refusalA)).toBeInTheDocument();
+    });
+
+    api.set(`DELETE ${KEYS}/3/tombstone`, { status: 400, body: { error: refusalB } });
+    await user.click(screen.getByRole('button', { name: 'Remove Retired laptop' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm remove Retired laptop' }));
+
+    // POSITIVE CONTROLS first: each row's own message really is there, and A's
+    // survived B's refusal landing afterward.
+    await waitFor(() => {
+      expect(within(rowFor('Retired laptop')).getByText(refusalB)).toBeInTheDocument();
+    });
+    expect(within(rowFor('Sonarr')).getByText(refusalA)).toBeInTheDocument();
+
+    // THEN neither message leaks into the other rows or above the table.
+    expect(within(rowFor('Retired laptop')).queryByText(refusalA)).not.toBeInTheDocument();
+    expect(within(rowFor('Old script')).queryByText(refusalA)).not.toBeInTheDocument();
+    expect(within(rowFor('Sonarr')).queryByText(refusalB)).not.toBeInTheDocument();
+    expect(within(rowFor('Old script')).queryByText(refusalB)).not.toBeInTheDocument();
+    expect(screen.getAllByText(refusalA)).toHaveLength(1);
+    expect(screen.getAllByText(refusalB)).toHaveLength(1);
+
+    // Retry A successfully: its own refusal clears, B's stays exactly as it was.
+    api.set(`DELETE ${KEYS}/1`, { status: 204 });
+    await user.click(screen.getByRole('button', { name: 'Revoke Sonarr' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm revoke Sonarr' }));
+
+    await waitFor(() => {
+      expect(screen.queryByText(refusalA)).not.toBeInTheDocument();
+    });
+    // B's refusal is untouched by A's retry -- another row's success must not
+    // clear a refusal it did not own.
+    expect(within(rowFor('Retired laptop')).getByText(refusalB)).toBeInTheDocument();
+  });
+
   it('does not carry a failed remove message into the next attempt', async () => {
     // The capture-then-reset shape has to clear as well as capture. Without the
     // reset of the previous refusal, the operator reads a rejection the server has

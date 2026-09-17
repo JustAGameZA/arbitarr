@@ -29,6 +29,21 @@ public sealed class ConfigDirectoryTeardownTests
             Path.GetTempPath(), "arbitarr-gphi-teardown-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
 
+        _ = SeedPooledDatabase(directory);
+
+        return directory;
+    }
+
+    /// <summary>
+    /// Creates a real database in <paramref name="directory"/> through the production connection
+    /// factory and CLOSES it, leaving the handle in the pool, and returns its path.
+    ///
+    /// <para>Shared by the top-level and nested cases so the two cannot differ in HOW the database
+    /// came to be pooled — the nested test's whole claim is that only the LOCATION differs, and a
+    /// second copy of this setup would quietly undermine that.</para>
+    /// </summary>
+    private static string SeedPooledDatabase(string directory)
+    {
         var databasePath = new BackupPaths(directory).DatabasePath;
 
         var connectionFactory = new SqliteConnectionFactory(
@@ -51,7 +66,7 @@ public sealed class ConfigDirectoryTeardownTests
         // succeed for reasons that have nothing to do with the helper's clear.
         Assert.True(File.Exists(databasePath), "The probe database was never created.");
 
-        return directory;
+        return databasePath;
     }
 
     /// <summary>
@@ -67,6 +82,89 @@ public sealed class ConfigDirectoryTeardownTests
         ConfigDirectoryTeardown.Delete(directory);
 
         Assert.False(Directory.Exists(directory), $"The helper left the directory behind: {directory}");
+    }
+
+    /// <summary>
+    /// arb-j4hq, THE PROPERTY: the helper removes a directory whose database sits in a SUBDIRECTORY,
+    /// not directly under the path it is handed.
+    ///
+    /// <para><b>Why this needed its own test rather than being covered by the one above.</b> The
+    /// helper runs two clears that look redundant and are not.
+    /// <c>SqlitePoolCleaner.ClearPoolsFor</c> walks the exact connection strings the application
+    /// opens <c>arbitarr.db</c> with — the only set naming the pools that actually hold its handles —
+    /// and used to be applied to the handed-in path ALONE.
+    /// <c>SqlitePools.ClearPoolsForDirectory</c> recurses, but clears only the bare
+    /// <c>Data Source=</c> pool per file, which is a different pool key and is EMPTY for a connection
+    /// the application opened. So a nested database had its real pools cleared by neither: the
+    /// recursive call found the file and cleared a pool nobody had filled.</para>
+    ///
+    /// <para><b>Measured, and it is why per-host config subdirectories were possible at all.</b>
+    /// Giving each host in four test classes its own subdirectory turned eleven passing tests into
+    /// "The process cannot access the file 'arbitarr.db' because it is being used by another
+    /// process" — every one naming the MAIN database and never the log one, exactly the asymmetry
+    /// the two helpers predict. The test above cannot catch that: its database is at the top level,
+    /// where the full-string clear always reached.</para>
+    /// </summary>
+    [Fact]
+    public void Delete_removes_a_directory_whose_pooled_database_is_in_a_subdirectory()
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(), "arbitarr-j4hq-teardown-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+
+        try
+        {
+            var nested = PerHostConfigDirectory.Create(root);
+            var databasePath = SeedPooledDatabase(nested);
+
+            // NON-VACUITY: the database really is nested, so this test cannot pass by accidentally
+            // exercising the top-level case the test above already covers.
+            Assert.Equal(nested, Path.GetDirectoryName(databasePath));
+            Assert.NotEqual(root, nested);
+
+            ConfigDirectoryTeardown.Delete(root);
+
+            Assert.False(Directory.Exists(root), $"The helper left the directory behind: {root}");
+        }
+        finally
+        {
+            ConfigDirectoryTeardown.TryDelete(root);
+        }
+    }
+
+    /// <summary>
+    /// THE NEGATIVE CONTROL for the test above (CLAUDE.md §4). "The directory is gone" passes just as
+    /// happily if nothing was ever holding it, so this demonstrates that a nested pooled database
+    /// DOES block a bare delete — the state the helper has to win against.
+    ///
+    /// <para>Windows-only for the same platform reason as the control below, and asserting the POSIX
+    /// behaviour rather than skipping there.</para>
+    /// </summary>
+    [Fact]
+    public void Without_the_pool_clear_a_bare_delete_of_a_nested_pooled_database_fails_on_windows()
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(), "arbitarr-j4hq-teardown-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+
+        try
+        {
+            _ = SeedPooledDatabase(PerHostConfigDirectory.Create(root));
+
+            if (OperatingSystem.IsWindows())
+            {
+                Assert.ThrowsAny<IOException>(() => Directory.Delete(root, recursive: true));
+            }
+            else
+            {
+                Directory.Delete(root, recursive: true);
+                Assert.False(Directory.Exists(root));
+            }
+        }
+        finally
+        {
+            ConfigDirectoryTeardown.TryDelete(root);
+        }
     }
 
     /// <summary>

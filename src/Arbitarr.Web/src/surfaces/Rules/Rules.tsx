@@ -166,12 +166,13 @@ export default function RulesPage() {
   const [editDraft, setEditDraft] = useState<RuleDraft>(BLANK_DRAFT);
   const [testTitle, setTestTitle] = useState('');
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
-  // #98/ApiKeys's shape (A1): the id a refused DELETE belongs to, plus a
-  // CAPTURED copy of the error, since `remove.error` is shared across rows
-  // and would be read by whichever row renders after the mutation's own
-  // state has moved on to the next call.
-  const [deleteFailedId, setDeleteFailedId] = useState<number | null>(null);
-  const [deleteFailure, setDeleteFailure] = useState<unknown>(null);
+  // #98/ApiKeys's shape (A1), then arb-39g3: the CAPTURED copy of the error is
+  // held per id in a Map rather than in one shared scalar, since `remove.error`
+  // is shared across rows and a second refusal in flight would otherwise
+  // overwrite the first -- row A's text vanishing or appearing under row B. A
+  // row's own entry is cleared when THAT row starts a new attempt (onDelete)
+  // and when THAT row's delete succeeds; another row's activity never touches it.
+  const [deleteFailures, setDeleteFailures] = useState<ReadonlyMap<number, unknown>>(new Map());
   // The real invariant this rests on: `confirmingId` being section-wide means
   // only one row's Confirm is ever RENDERED at a time, but nothing stops the
   // operator moving `confirmingId` to a different row while an earlier
@@ -197,20 +198,29 @@ export default function RulesPage() {
   };
 
   const onDelete = (id: number) => {
-    // The previous refusal must not outlive its attempt, or the operator reads
-    // a rejection the server has not issued for the row now under the cursor.
-    setDeleteFailedId(null);
-    setDeleteFailure(null);
+    // The previous refusal for THIS row must not outlive its attempt, or the
+    // operator reads a rejection the server has not issued for the row now
+    // under the cursor. Only this row's entry is cleared -- another row's
+    // refusal, still unresolved, must survive this call untouched.
+    setDeleteFailures((failures) => {
+      const next = new Map(failures);
+      next.delete(id);
+      return next;
+    });
     setPendingDeleteIds((ids) => new Set(ids).add(id));
     remove.mutate(id, {
       onSuccess: () => {
         // The row is gone from the refetched list, so the confirm it was
         // showing has nothing left to confirm.
         setConfirmingId(null);
+        setDeleteFailures((failures) => {
+          const next = new Map(failures);
+          next.delete(id);
+          return next;
+        });
       },
       onError: (error) => {
-        setDeleteFailedId(id);
-        setDeleteFailure(error);
+        setDeleteFailures((failures) => new Map(failures).set(id, error));
       },
       onSettled: () => {
         setPendingDeleteIds((ids) => {
@@ -327,9 +337,9 @@ export default function RulesPage() {
                                 </button>
                               )}
                             </div>
-                            {deleteFailedId === rule.id && (
+                            {deleteFailures.has(rule.id) && (
                               <p className={`${styles.error} ${local.rowError}`} role="alert">
-                                {errorMessage(deleteFailure)}
+                                {errorMessage(deleteFailures.get(rule.id))}
                               </p>
                             )}
                           </td>
