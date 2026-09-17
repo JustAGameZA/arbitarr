@@ -110,6 +110,16 @@ any 3xx on the download path rather than following it, because following it woul
 upstream key into a second, off-origin request. See
 [ADR 0014](../adr/0014-refuse-upstream-download-redirects.md).
 
+**Every secret-bearing record renders safely, or is documented as never rendering.** A positional
+record's compiler-synthesised `ToString` prints every member by name and value, so a raw API key
+or webhook URL reaches any `$"…{credential}…"` or `logger.LogWarning("… {Credential}", credential)`
+verbatim — a hazard neither the query-string URI redaction nor `LogMessageCleanser` fully closes
+(see Logging, below). Every such record either declares its own `ToString` that redacts or omits
+the secret, or is named with the reason it deliberately does not. Enforced by
+`CredentialRecordToStringTests` (`tests/Arbitarr.Architecture.Tests`), which scans every production
+assembly for a fixed list of secret-bearing property names and asserts the type overrides
+`ToString`.
+
 ---
 
 ## Parsing user-supplied enums
