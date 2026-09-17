@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Arbitarr.Api.Admin;
 using Arbitarr.Api.Routing;
 using Arbitarr.Api.Search;
@@ -367,6 +368,80 @@ public sealed class AdHocSearchEndpointTests : IAsyncLifetime
         Assert.NotNull(body);
         var release = Assert.Single(body!.Releases);
         Assert.Equal(nameof(Verdict.Unknown), release.AiVerdict);
+    }
+
+    /// <summary>
+    /// arb-cy1y: the ad-hoc provenance strip must name the sources that did not answer, not only
+    /// the rate-limited ones. The two fakes below model the two distinct legs the merge stage
+    /// classifies: one whose OWN budget elapses (a foreign cancellation token, as
+    /// <see cref="SecondFakeUpstreamSource"/>'s remarks explain, so it lands in TimedOut and not in
+    /// Failed) and one that throws a transport-shaped exception.
+    ///
+    /// <para>Asserted on the RAW JSON rather than the deserialized record, because the wire names
+    /// are the contract the dashboard's <c>api/types.ts</c> binds to. Deserializing into
+    /// <see cref="AdHocSearchResponse"/> would pass just as happily had the endpoint emitted
+    /// PascalCase, which the browser reads as undefined.</para>
+    /// </summary>
+    [Fact]
+    public async Task GET_search_names_the_timed_out_and_failed_sources_in_the_provenance()
+    {
+        await SeedAdminKeyAsync();
+
+        using var factory = _factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<IUpstreamSource>();
+            services.RemoveAll<ISourceRegistry>();
+            services.AddSingleton<IUpstreamSource>(new SecondFakeUpstreamSource(
+                "adhoc-slow-source",
+                searchBudget: TimeSpan.FromMilliseconds(50),
+                searchDelay: TimeSpan.FromMinutes(5)));
+            services.AddSingleton<IUpstreamSource>(new SecondFakeUpstreamSource(
+                "adhoc-broken-source",
+                searchException: new HttpRequestException("connection refused")));
+            services.AddSingleton<ISourceRegistry>(sp => new StaticSourceRegistry(sp.GetServices<IUpstreamSource>().ToArray()));
+        }));
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(AdminApiKeyFilter.HeaderName, AdminKey);
+
+        var response = await client.GetAsync($"{Route}?q=probe");
+        response.EnsureSuccessStatusCode();
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var provenance = document.RootElement.GetProperty("provenance");
+
+        Assert.Equal(
+            new[] { "adhoc-slow-source" },
+            provenance.GetProperty("timedOutSources").EnumerateArray().Select(e => e.GetString()).ToArray());
+        Assert.Equal(
+            new[] { "adhoc-broken-source" },
+            provenance.GetProperty("failedSources").EnumerateArray().Select(e => e.GetString()).ToArray());
+    }
+
+    /// <summary>
+    /// The positive control for the assertion above: the SAME two property reads, against a merge
+    /// where every source answered, must find both lists EMPTY. Without it a pair of
+    /// always-populated lists, or a pair the endpoint filled from the wrong merge, would satisfy
+    /// the test above unchanged.
+    /// </summary>
+    [Fact]
+    public async Task GET_search_over_a_clean_merge_reports_no_timed_out_or_failed_sources()
+    {
+        await SeedAdminKeyAsync();
+
+        using var client = AuthorizedClient();
+        var response = await client.GetAsync($"{Route}?q=probe");
+        response.EnsureSuccessStatusCode();
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var provenance = document.RootElement.GetProperty("provenance");
+
+        Assert.Empty(provenance.GetProperty("timedOutSources").EnumerateArray());
+        Assert.Empty(provenance.GetProperty("failedSources").EnumerateArray());
+        Assert.Empty(provenance.GetProperty("rateLimitedSources").EnumerateArray());
+        // Proof the clean merge is why those are empty, rather than the request having failed
+        // before any source ran at all.
+        Assert.Single(document.RootElement.GetProperty("releases").EnumerateArray());
     }
 
     [Fact]

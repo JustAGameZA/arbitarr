@@ -25,6 +25,8 @@ const response = {
     cacheAge: '00:01:30.5000000',
     cacheBand: 0,
     rateLimitedSources: [],
+    timedOutSources: [],
+    failedSources: [],
   },
 };
 
@@ -154,6 +156,132 @@ describe('Search', () => {
     expect(
       await screen.findByText('No releases matched. Try a broader query or different search terms.'),
     ).toBeInTheDocument();
+  });
+
+  describe('the no-source-answered empty state (arb-cy1y)', () => {
+    // The control for the whole group is the test directly above: the SAME zero
+    // releases with both failure lists empty must keep the broaden-the-query
+    // copy, so an empty state that always claimed an outage would fail it.
+
+    it('names every timed-out source and does not tell the operator to broaden the query', async () => {
+      const user = userEvent.setup();
+      mockApi({
+        '/api/admin/search': {
+          body: {
+            releases: [],
+            provenance: {
+              ...response.provenance,
+              // Two sources, asserted one by one: a join that rendered only the
+              // first (or only the last) still satisfies "some source is named".
+              timedOutSources: ['nzbhydra-a', 'nzbhydra-b'],
+            },
+          },
+        },
+      });
+      renderSurface(<SearchPage />);
+
+      await runSearch(user);
+
+      expect(
+        await screen.findByText(/No source answered this search/),
+      ).toBeInTheDocument();
+      const named = screen.getByText(/Did not answer in time:/);
+      expect(named).toHaveTextContent('nzbhydra-a');
+      expect(named).toHaveTextContent('nzbhydra-b');
+      // The copy must never assert the source is down: a whole-fan-out ceiling
+      // hit names a healthy-but-slow source here too, so "down" is a claim this
+      // list cannot support. Asserted by reading the phrasing the names actually
+      // carry rather than by querying for the forbidden word: nothing renders
+      // "is down" today, so queryByText(/is down/) would pass against an empty
+      // document and keep passing after the copy was reworded to use it.
+      expect(named.textContent).toMatch(/did not answer in time/i);
+      expect(named.textContent).not.toMatch(/down|offline|unavailable/i);
+      expect(
+        screen.queryByText('No releases matched. Try a broader query or different search terms.'),
+      ).toBeNull();
+    });
+
+    it('names every failed source and does not tell the operator to broaden the query', async () => {
+      const user = userEvent.setup();
+      mockApi({
+        '/api/admin/search': {
+          body: {
+            releases: [],
+            provenance: {
+              ...response.provenance,
+              failedSources: ['nzbhydra-c', 'nzbhydra-d'],
+            },
+          },
+        },
+      });
+      renderSurface(<SearchPage />);
+
+      await runSearch(user);
+
+      expect(
+        await screen.findByText(/No source answered this search/),
+      ).toBeInTheDocument();
+      const named = screen.getByText(/^Failed:/);
+      expect(named).toHaveTextContent('nzbhydra-c');
+      expect(named).toHaveTextContent('nzbhydra-d');
+      expect(
+        screen.queryByText('No releases matched. Try a broader query or different search terms.'),
+      ).toBeNull();
+    });
+
+    // Both lists at once, which is the shape that catches a component merging
+    // them into one sentence: a timeout and a failure mean different things to
+    // an operator, so each source must appear under its OWN heading and never
+    // under the other's.
+    it('reports a timed-out source and a failed source under their own headings', async () => {
+      const user = userEvent.setup();
+      mockApi({
+        '/api/admin/search': {
+          body: {
+            releases: [],
+            provenance: {
+              ...response.provenance,
+              timedOutSources: ['nzbhydra-slow'],
+              failedSources: ['nzbhydra-broken'],
+            },
+          },
+        },
+      });
+      renderSurface(<SearchPage />);
+
+      await runSearch(user);
+
+      const timedOut = await screen.findByText(/Did not answer in time:/);
+      expect(timedOut).toHaveTextContent('nzbhydra-slow');
+      expect(timedOut).not.toHaveTextContent('nzbhydra-broken');
+
+      const failed = screen.getByText(/^Failed:/);
+      expect(failed).toHaveTextContent('nzbhydra-broken');
+      expect(failed).not.toHaveTextContent('nzbhydra-slow');
+    });
+
+    // Positive control for the branch itself: a PARTIAL degradation is not an
+    // outage. The releases that did arrive must still render, with the timed-out
+    // source reported on the provenance strip rather than replacing them.
+    it('keeps rendering releases when some sources timed out but others answered', async () => {
+      const user = userEvent.setup();
+      mockApi({
+        '/api/admin/search': {
+          body: {
+            ...response,
+            provenance: { ...response.provenance, timedOutSources: ['nzbhydra-slow'] },
+          },
+        },
+      });
+      renderSurface(<SearchPage />);
+
+      await runSearch(user);
+
+      expect(await screen.findByText('Some.Series.S01E02.1080p')).toBeInTheDocument();
+      // The provenance strip carries the chip; the empty state does not appear.
+      expect(screen.getByText(/Did not answer in time:/)).toHaveTextContent('nzbhydra-slow');
+      expect(screen.queryByText(/No source answered this search/)).toBeNull();
+    });
   });
 
   it('toggling the AI opt-in changes the outgoing request', async () => {
