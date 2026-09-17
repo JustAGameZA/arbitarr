@@ -160,3 +160,49 @@
     align-items: center;
   }
 }
+
+/*
+ * The text-filter field (PageToolbarInput).
+ *
+ * A row, not a column: `surface.module.css`'s `.field` stacks its label above
+ * the control, which is right inside a `.panel` form but would make this one
+ * control twice the height of every button beside it on a row whose items are
+ * `align-items: center`. The label sits inline and the whole field stays the
+ * height of a toolbar button.
+ */
+.field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.fieldLabel {
+  font-size: 12px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+/*
+ * `min-width: 0` alongside a `max-width` for the same reason the menu panel has
+ * one: 180px is a preference, and without the shrink the field re-introduces the
+ * page-level horizontal scroll at 390px that .section's note describes.
+ */
+.input {
+  min-width: 0;
+  width: 180px;
+  max-width: calc(100vw - 48px);
+  padding: 5px 9px;
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--fg-primary);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+@media (max-width: 768px) {
+  .input {
+    min-height: 32px;
+  }
+}

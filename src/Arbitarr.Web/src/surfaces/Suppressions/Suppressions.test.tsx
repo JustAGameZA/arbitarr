@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -197,5 +197,89 @@ describe('Suppressions', () => {
     expect(useAdminKeyStore.getState().key).toBe('operator-key');
     expect(useAdminKeyStore.getState().serverKeyUnset).toBe(true);
     expect(screen.queryByLabelText(/admin api key/i)).toBeNull();
+  });
+});
+
+/**
+ * arb-ajrv: the filter moved out of a bordered `.panel` headed "Filter" and onto
+ * the shared PageToolbar row.
+ *
+ * Every assertion here fails against the pre-migration markup, which is what
+ * makes them evidence rather than decoration: there was no `role="toolbar"` on
+ * this surface at all, and the "Filter" heading it asserts the absence of was
+ * present.
+ */
+describe('Suppressions filter toolbar', () => {
+  beforeEach(() => {
+    useAdminKeyStore.setState({ key: 'test-key', serverKeyUnset: false });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('puts the query key field and Apply inside the toolbar, not beside it', async () => {
+    mockApi({ ...EMPTY_DECISIONS, '/api/admin/suppressions': { body: entries } });
+    renderSurface(<SuppressionsPage />);
+    await screen.findByText('upstream-guid-1');
+
+    // CONTAINMENT, not co-presence: `within(toolbar)` is the whole point. A
+    // toolbar rendered empty next to an untouched `.panel` would satisfy a bare
+    // getByRole('toolbar') and leave the migration undone.
+    const toolbar = screen.getByRole('toolbar', { name: 'Suppression filters' });
+    expect(within(toolbar).getByRole('textbox', { name: 'Query key' })).toBeInTheDocument();
+    expect(within(toolbar).getByRole('button', { name: 'Apply' })).toBeInTheDocument();
+  });
+
+  it('no longer renders the bordered Filter panel the toolbar replaced', async () => {
+    mockApi({ ...EMPTY_DECISIONS, '/api/admin/suppressions': { body: entries } });
+    renderSurface(<SuppressionsPage />);
+    await screen.findByText('upstream-guid-1');
+
+    // Without this a migration that ADDED a toolbar and left the panel in place
+    // would pass the containment test above while shipping the control twice.
+    expect(screen.queryByRole('heading', { name: 'Filter' })).not.toBeInTheDocument();
+
+    // The panel it replaced is gone, but the surface's other panels are not --
+    // asserted so the check above cannot pass by the page failing to render.
+    expect(
+      screen.getByRole('heading', { name: 'Suppression audit log' }),
+    ).toBeInTheDocument();
+  });
+
+  it('contributes no heading from the toolbar row', async () => {
+    mockApi({ ...EMPTY_DECISIONS, '/api/admin/suppressions': { body: entries } });
+    renderSurface(<SuppressionsPage />);
+    await screen.findByText('upstream-guid-1');
+
+    // design-system/README.md makes this a per-surface rule, not only a
+    // component one: a migration is exactly when someone re-adds a caption to
+    // replace the panel heading they just removed.
+    const toolbar = screen.getByRole('toolbar', { name: 'Suppression filters' });
+    expect(within(toolbar).queryAllByRole('heading')).toHaveLength(0);
+  });
+
+  it('still applies on Apply rather than on each keystroke', async () => {
+    const user = userEvent.setup();
+    const api = mockApi({
+      ...EMPTY_DECISIONS,
+      '/api/admin/suppressions': { body: entries },
+    });
+    renderSurface(<SuppressionsPage />);
+    await screen.findByText('upstream-guid-1');
+
+    const before = api.callsTo('/api/admin/suppressions').length;
+    await user.type(screen.getByRole('textbox', { name: 'Query key' }), 'tvdbid=1234');
+
+    // The interaction model is unchanged by the migration: typing alone issues
+    // nothing, because the query key is a server-side WHERE. A toolbar that had
+    // quietly switched to debounced live filtering would fail here.
+    expect(api.callsTo('/api/admin/suppressions')).toHaveLength(before);
+
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
+
+    const after = api.callsTo('/api/admin/suppressions');
+    expect(after).toHaveLength(before + 1);
+    expect(after.at(-1)?.url.searchParams.get('queryKey')).toBe('tvdbid=1234');
   });
 });

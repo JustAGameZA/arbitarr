@@ -113,6 +113,30 @@ async function openLogsTab(user: ReturnType<typeof userEvent.setup>) {
   return screen.findByRole('table');
 }
 
+/**
+ * Picks an option from one of the toolbar's filter menus (arb-ajrv).
+ *
+ * The two level/logger filters were native <select>s driven by
+ * `user.selectOptions` until the toolbar migration; they are now disclosure
+ * buttons over a role="menu" panel, so choosing an option is open-then-click.
+ * The trigger is matched by its `Level:`/`Logger:` PREFIX because its label also
+ * carries the active selection, which is the thing several of these cases are
+ * about to change.
+ */
+async function chooseFilter(
+  user: ReturnType<typeof userEvent.setup>,
+  filter: 'Level' | 'Logger',
+  option: string,
+) {
+  await user.click(screen.getByRole('button', { name: new RegExp(`^${filter}:`) }));
+  await user.click(
+    within(screen.getByRole('menu', { name: new RegExp(`^${filter}:`) })).getByRole(
+      'menuitemradio',
+      { name: option },
+    ),
+  );
+}
+
 describe('System tabs', () => {
   beforeEach(() => {
     useAdminKeyStore.setState({ key: 'test-key', serverKeyUnset: false });
@@ -328,7 +352,12 @@ describe('System logs filtering', () => {
 
     const request = api.callsTo('/api/admin/logs').at(0);
     expect(request?.url.searchParams.get('level')).toBe('Warning');
-    expect(screen.getByLabelText('Level')).toHaveValue('Warning');
+    // The trigger states the active selection, which is where the default is
+    // now visible without opening the menu -- the readability the <select> this
+    // replaced gave for free.
+    expect(
+      screen.getByRole('button', { name: 'Level: Warning and above' }),
+    ).toBeInTheDocument();
   });
 
   it('labels each level as "and above", except Critical which has nothing above it', async () => {
@@ -340,9 +369,9 @@ describe('System logs filtering', () => {
     renderSurface(<SystemPage />);
     await openLogsTab(user);
 
-    const select = screen.getByLabelText('Level');
-    const labels = within(select)
-      .getAllByRole('option')
+    await user.click(screen.getByRole('button', { name: /^Level:/ }));
+    const labels = within(screen.getByRole('menu', { name: /^Level:/ }))
+      .getAllByRole('menuitemradio')
       .map((option) => option.textContent);
 
     expect(labels).toEqual([
@@ -360,7 +389,7 @@ describe('System logs filtering', () => {
     renderSurface(<SystemPage />);
     await openLogsTab(user);
 
-    await user.selectOptions(screen.getByLabelText('Level'), 'all');
+    await chooseFilter(user, 'Level', 'All levels');
 
     const request = api.callsTo('/api/admin/logs').at(-1);
     expect(request?.url.searchParams.has('level')).toBe(false);
@@ -372,7 +401,7 @@ describe('System logs filtering', () => {
     renderSurface(<SystemPage />);
     await openLogsTab(user);
 
-    await user.selectOptions(screen.getByLabelText('Level'), 'Error');
+    await chooseFilter(user, 'Level', 'Error and above');
 
     // Filtering is the SERVER's job -- the store matches Level exactly and
     // case-insensitively -- so the assertion is on the request, not on which rows
@@ -389,7 +418,7 @@ describe('System logs filtering', () => {
 
     // The options come back with the rows rather than from a second request, so the
     // filter can never render empty beside a table already showing those loggers.
-    await user.selectOptions(screen.getByLabelText('Logger'), 'Search.SearchService');
+    await chooseFilter(user, 'Logger', 'Search.SearchService');
 
     const request = api.callsTo('/api/admin/logs').at(-1);
     expect(request?.url.searchParams.get('logger')).toBe('Search.SearchService');
@@ -401,8 +430,8 @@ describe('System logs filtering', () => {
     renderSurface(<SystemPage />);
     await openLogsTab(user);
 
-    await user.selectOptions(screen.getByLabelText('Level'), 'Warning');
-    await user.selectOptions(screen.getByLabelText('Level'), 'all');
+    await chooseFilter(user, 'Level', 'Warning and above');
+    await chooseFilter(user, 'Level', 'All levels');
 
     // An omitted parameter, not `level=all` -- the store would match no row spelled
     // "all" and would silently return an empty table.
@@ -652,7 +681,7 @@ describe('System logs paging', () => {
     api.set('/api/admin/logs', {
       body: { entries: fullPage, total: 60, page: 1, pageSize: LOG_PAGE_SIZE, loggers },
     });
-    await user.selectOptions(screen.getByLabelText('Level'), 'Warning');
+    await chooseFilter(user, 'Level', 'Warning and above');
 
     // Page 3 of an unfiltered store is a different set of rows from page 3 of a
     // filtered one, and may be past the new end entirely.
@@ -712,5 +741,238 @@ describe('buildLogsQuery', () => {
         'http://localhost',
       ).searchParams.get('page'),
     ).toBe('3');
+  });
+});
+
+/**
+ * arb-ajrv: the Logs filter moved out of a bordered `.panel` headed "Filter" and
+ * onto a PageToolbar row that is the tab panel's first child.
+ *
+ * This is the surface the toolbar contract had to be amended for (owner ruling):
+ * LogsTab is a TAB PANEL, so "directly under PageHeader as its sibling" is
+ * unsatisfiable here -- System owns the route's single <h1>. The amendment in
+ * design-system/README.md permits a panel to carry its own toolbar because Tabs
+ * partition a surface into sub-surfaces, each governing its own data set.
+ *
+ * Every assertion fails against the pre-migration markup: there was no
+ * role="toolbar" in this tab, the controls were native <select>s, and the
+ * "Filter" heading was present.
+ */
+describe('System logs filter toolbar', () => {
+  beforeEach(() => {
+    useAdminKeyStore.setState({ key: 'test-key', serverKeyUnset: false });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('puts all three filter controls inside the toolbar, not beside it', async () => {
+    mockApi(allRoutes);
+    const user = userEvent.setup();
+    renderSurface(<SystemPage />);
+    await openLogsTab(user);
+
+    // CONTAINMENT: an empty toolbar rendered next to an untouched `.panel`
+    // satisfies a bare getByRole('toolbar'), so each control is looked up
+    // `within` the row.
+    const toolbar = screen.getByRole('toolbar', { name: 'Log filters' });
+    expect(within(toolbar).getByRole('button', { name: /^Level:/ })).toBeInTheDocument();
+    expect(within(toolbar).getByRole('button', { name: /^Logger:/ })).toBeInTheDocument();
+    expect(within(toolbar).getByRole('textbox', { name: 'Message' })).toBeInTheDocument();
+  });
+
+  it('carries a toolbar label distinct from any other on the route', async () => {
+    mockApi(allRoutes);
+    const user = userEvent.setup();
+    renderSurface(<SystemPage />);
+    await openLogsTab(user);
+
+    // PageToolbar requires an accessible name precisely so a page that grew a
+    // second toolbar would not give a screen-reader user two indistinguishable
+    // ones. A toolbar inside a tab panel is exactly that situation, so the name
+    // says which data set it governs rather than naming the route.
+    const toolbars = screen.getAllByRole('toolbar');
+    const names = toolbars.map((toolbar) => toolbar.getAttribute('aria-label'));
+    expect(names).toContain('Log filters');
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('no longer renders the bordered Filter panel the toolbar replaced', async () => {
+    mockApi(allRoutes);
+    const user = userEvent.setup();
+    renderSurface(<SystemPage />);
+    await openLogsTab(user);
+
+    // Without this, adding a toolbar and leaving the panel would still pass.
+    expect(screen.queryByRole('heading', { name: 'Filter' })).not.toBeInTheDocument();
+    // The sibling panel is still there, so the absence above is not the page
+    // having failed to render.
+    expect(screen.getByRole('heading', { name: 'Logs' })).toBeInTheDocument();
+  });
+
+  it('contributes no heading from the toolbar row', async () => {
+    mockApi(allRoutes);
+    const user = userEvent.setup();
+    renderSurface(<SystemPage />);
+    await openLogsTab(user);
+
+    // The per-surface half of the no-heading rule. The amendment permits the
+    // toolbar inside a tab panel; it does not relax this.
+    const toolbar = screen.getByRole('toolbar', { name: 'Log filters' });
+    expect(within(toolbar).queryAllByRole('heading')).toHaveLength(0);
+  });
+
+  it('keeps "and above" on every level, and not on Critical, in the menu items', async () => {
+    mockApi(allRoutes);
+    const user = userEvent.setup();
+    renderSurface(<SystemPage />);
+    await openLogsTab(user);
+
+    // The one place this migration could most plausibly lose meaning silently.
+    // The minimum-severity semantic is visible ONLY in the option text, and a
+    // migration that turned these into bare level names would reintroduce the
+    // exact bug that made the old exact filter hide Error and Critical. The
+    // strings are asserted as an exact sequence, not searched for.
+    await user.click(screen.getByRole('button', { name: /^Level:/ }));
+
+    const menu = screen.getByRole('menu', { name: /^Level:/ });
+    const labels = within(menu)
+      .getAllByRole('menuitemradio')
+      .map((item) => item.textContent);
+
+    expect(labels).toEqual([
+      'All levels',
+      'Information and above',
+      'Warning and above',
+      'Error and above',
+      'Critical',
+    ]);
+  });
+
+  it('states the active level on the trigger, so the filter is readable while closed', async () => {
+    mockApi(allRoutes);
+    const user = userEvent.setup();
+    renderSurface(<SystemPage />);
+    await openLogsTab(user);
+
+    // A <select> shows its value without being opened; a button reading only
+    // "Level" loses that. The default is Warning, which the API applies as a
+    // minimum -- so the trigger carries the same "and above" wording the item
+    // does rather than a bare level name.
+    expect(
+      screen.getByRole('button', { name: 'Level: Warning and above' }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^Level:/ }));
+    await user.click(screen.getByRole('menuitemradio', { name: 'Error and above' }));
+
+    expect(screen.getByRole('button', { name: 'Level: Error and above' })).toBeInTheDocument();
+  });
+
+  it('asks the server for a level chosen from the menu', async () => {
+    const api = mockApi(allRoutes);
+    const user = userEvent.setup();
+    renderSurface(<SystemPage />);
+    await openLogsTab(user);
+
+    await user.click(screen.getByRole('button', { name: /^Level:/ }));
+    await user.click(screen.getByRole('menuitemradio', { name: 'Error and above' }));
+
+    // Behaviour preserved control by control: the wire value stays the bare
+    // level name even though the label says "and above".
+    expect(api.callsTo('/api/admin/logs').at(-1)?.url.searchParams.get('level')).toBe('Error');
+  });
+
+  it('drops the level parameter when All levels is chosen from the menu', async () => {
+    const api = mockApi(allRoutes);
+    const user = userEvent.setup();
+    renderSurface(<SystemPage />);
+    await openLogsTab(user);
+
+    await user.click(screen.getByRole('button', { name: /^Level:/ }));
+    await user.click(screen.getByRole('menuitemradio', { name: 'All levels' }));
+
+    // Omitted, not `level=all`: the store would match no row spelled "all".
+    expect(api.callsTo('/api/admin/logs').at(-1)?.url.searchParams.has('level')).toBe(false);
+  });
+
+  it('populates the logger menu from the loggers the page returned', async () => {
+    const api = mockApi(allRoutes);
+    const user = userEvent.setup();
+    renderSurface(<SystemPage />);
+    await openLogsTab(user);
+
+    await user.click(screen.getByRole('button', { name: /^Logger:/ }));
+
+    const menu = screen.getByRole('menu', { name: /^Logger:/ });
+    expect(
+      within(menu)
+        .getAllByRole('menuitemradio')
+        .map((item) => item.textContent),
+    ).toEqual(['All loggers', ...loggers]);
+
+    await user.click(within(menu).getByRole('menuitemradio', { name: 'Search.SearchService' }));
+    expect(api.callsTo('/api/admin/logs').at(-1)?.url.searchParams.get('logger')).toBe(
+      'Search.SearchService',
+    );
+  });
+
+  it('reads "Logger: All loggers" before any response has named one', async () => {
+    // The logger options come from the query RESPONSE, unlike Activity's static
+    // arrays -- so this trigger's label depends on loaded data and the menu is
+    // empty of real loggers until the first page lands. The pending state shows
+    // the unfiltered selection rather than a blank or a spinner, because "no
+    // logger filter" is true before the response as well as after it.
+    mockApi({ ...statusRoutes, '/api/admin/logs': { body: { ...logsBody, loggers: [] } } });
+    const user = userEvent.setup();
+    renderSurface(<SystemPage />);
+    await openLogsTab(user);
+
+    expect(screen.getByRole('button', { name: 'Logger: All loggers' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^Logger:/ }));
+    const menu = screen.getByRole('menu', { name: /^Logger:/ });
+    // Never an empty panel: the "All loggers" escape hatch is always offered.
+    expect(
+      within(menu)
+        .getAllByRole('menuitemradio')
+        .map((item) => item.textContent),
+    ).toEqual(['All loggers']);
+  });
+});
+
+describe('System logs message filter in the toolbar', () => {
+  beforeEach(() => {
+    useAdminKeyStore.setState({ key: 'test-key', serverKeyUnset: false });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('still debounces from inside the toolbar, and still resets the page', async () => {
+    // The 250ms debounce and the page reset stayed in LogsTab as caller logic
+    // (owner ruling): PageToolbarInput owns no timer. This is the assertion that
+    // the move did not take the behaviour with it -- three keystrokes still cost
+    // one round trip, and the committed change still returns to page 1.
+    const api = mockApi(allRoutes);
+    const user = userEvent.setup({ delay: null });
+    renderSurface(<SystemPage />);
+    await openLogsTab(user);
+
+    const before = api.callsTo('/api/admin/logs').length;
+    await user.type(screen.getByRole('textbox', { name: 'Message' }), 'pro');
+    expect(api.callsTo('/api/admin/logs')).toHaveLength(before);
+
+    await vi.advanceTimersByTimeAsync(250);
+
+    const after = api.callsTo('/api/admin/logs');
+    expect(after).toHaveLength(before + 1);
+    expect(after.at(-1)?.url.searchParams.get('message')).toBe('pro');
+    // Page 1 is the omitted parameter, not `page=1`.
+    expect(after.at(-1)?.url.searchParams.has('page')).toBe(false);
   });
 });

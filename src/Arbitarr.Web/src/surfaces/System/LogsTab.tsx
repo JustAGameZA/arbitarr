@@ -1,5 +1,12 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
+import {
+  PageToolbar,
+  PageToolbarInput,
+  PageToolbarMenu,
+  PageToolbarMenuItem,
+  PageToolbarSection,
+} from '../../components/shell/toolbar';
 import { QueryState } from '../QueryState';
 import type { LogEntryResponse } from '../../api/types';
 import styles from '../surface.module.css';
@@ -9,7 +16,6 @@ import {
   LOG_PAGE_SIZE,
   useLogsQuery,
   type LogFilters,
-  type LogLevelName,
 } from './queries';
 
 /**
@@ -135,13 +141,48 @@ function LogsTable({ entries }: { entries: LogEntryResponse[] }) {
 }
 
 /**
+ * The visible label for one level filter choice.
+ *
+ * "and above" is spelled out on every option rather than left implicit, because the
+ * option the operator reads is the only place the minimum-severity semantic is
+ * visible -- a bare "Warning" reads as exact, which is precisely the
+ * misunderstanding that made the old exact filter hide Error and Critical. Critical
+ * is the exception: nothing sits above it, so the suffix there would promise a
+ * breadth that does not exist.
+ *
+ * Shared by the menu ITEMS and the menu's TRIGGER (arb-ajrv). When these were
+ * <option> elements the label existed in one place by construction; a toolbar menu
+ * states the active selection on its trigger too, so deriving both from this
+ * function is what stops the trigger from drifting into the bare level name the
+ * comment above exists to forbid.
+ */
+function levelOptionLabel(level: LogFilters['level']): string {
+  if (level === 'all') {
+    return 'All levels';
+  }
+
+  return level === LOG_LEVELS[LOG_LEVELS.length - 1] ? level : `${level} and above`;
+}
+
+/**
+ * The visible label for one logger filter choice.
+ *
+ * The empty string is the unfiltered case on the wire, and "All loggers" is what it
+ * reads as. Sharing this between the trigger and the item keeps the two spellings
+ * from diverging the way the level labels could.
+ */
+function loggerOptionLabel(logger: string): string {
+  return logger === '' ? 'All loggers' : logger;
+}
+
+/**
  * The Logs tab (#65, plan §4.6) -- application logs, filterable by level and logger.
  *
- * Two panels, matching the Activity surface's shape: the filter controls above, the table
- * below. The filter list of loggers comes back with each page of rows rather than from
- * its own query, so the <select> can never render empty beside a table already showing
- * rows from those loggers -- see LogsEndpoint's own note on why the server sends it that
- * way.
+ * A toolbar row above the table, matching the Activity surface's shape (arb-ajrv; it was
+ * a second `.panel` headed "Filter" until then). The filter list of loggers comes back
+ * with each page of rows rather than from its own query, so the logger menu can never
+ * render empty beside a table already showing rows from those loggers -- see
+ * LogsEndpoint's own note on why the server sends it that way.
  */
 export function LogsTab() {
   // Defaults to Warning, which the API applies as a MINIMUM severity (arb-pw7r), so this
@@ -165,10 +206,6 @@ export function LogsTab() {
   const [page, setPage] = useState(1);
 
   const logs = useLogsQuery(filters, page);
-
-  const levelFilterId = useId();
-  const loggerFilterId = useId();
-  const messageFilterId = useId();
 
   // Changing a filter resets to page 1: page 3 of an unfiltered store is a different set
   // of rows from page 3 of a filtered one, and staying there would show an operator a
@@ -225,68 +262,68 @@ export function LogsTab() {
 
   return (
     <>
-      <section className={styles.panel}>
-        <h2 className={styles.panelHeading}>Filter</h2>
-        <div className={styles.panelBody}>
-          <div className={styles.form}>
-            <label className={styles.field} htmlFor={levelFilterId}>
-              Level
-              <select
-                id={levelFilterId}
-                className={styles.select}
-                value={filters.level}
-                onChange={(event) =>
-                  applyFilters({ level: event.target.value as LogLevelName | 'all' })
-                }
-              >
-                <option value="all">All levels</option>
-                {/*
-                  "and above" is spelled out on every option rather than left implicit,
-                  because the option the operator reads is the only place the minimum-
-                  severity semantic is visible -- a bare "Warning" reads as exact, which
-                  is precisely the misunderstanding that made the old exact filter hide
-                  Error and Critical. Critical is the exception: nothing sits above it, so
-                  the suffix there would promise a breadth that does not exist.
-                */}
-                {LOG_LEVELS.map((level) => (
-                  <option key={level} value={level}>
-                    {level === LOG_LEVELS[LOG_LEVELS.length - 1] ? level : `${level} and above`}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className={styles.field} htmlFor={loggerFilterId}>
-              Logger
-              <select
-                id={loggerFilterId}
-                className={styles.select}
-                value={filters.logger}
-                onChange={(event) => applyFilters({ logger: event.target.value })}
-              >
-                <option value="">All loggers</option>
-                {loggers.map((logger) => (
-                  <option key={logger} value={logger}>
-                    {logger}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className={styles.field} htmlFor={messageFilterId}>
-              Message
-              <input
-                id={messageFilterId}
-                type="text"
-                className={styles.input}
-                placeholder="Search messages…"
-                value={messageInput}
-                onChange={(event) => setMessageInput(event.target.value)}
+      {/* The toolbar is this TAB PANEL's first child, not a sibling of a
+          PageHeader: System owns the route's single <h1> and this tab has no
+          header of its own. design-system/README.md permits that placement
+          explicitly (arb-ajrv) because Tabs partition a surface into
+          sub-surfaces, each governing its own data set -- these controls filter
+          the log store and nothing else on the System route. The label names
+          that data set rather than the route, because a second toolbar
+          elsewhere on the page must not be indistinguishable from this one in
+          the accessibility tree. */}
+      <PageToolbar label="Log filters">
+        <PageToolbarSection align="end">
+          <PageToolbarMenu label={`Level: ${levelOptionLabel(filters.level)}`} align="end">
+            <PageToolbarMenuItem
+              label={levelOptionLabel('all')}
+              checked={filters.level === 'all'}
+              onSelect={() => applyFilters({ level: 'all' })}
+            />
+            {LOG_LEVELS.map((level) => (
+              <PageToolbarMenuItem
+                key={level}
+                label={levelOptionLabel(level)}
+                checked={filters.level === level}
+                onSelect={() => applyFilters({ level })}
               />
-            </label>
-          </div>
-        </div>
-      </section>
+            ))}
+          </PageToolbarMenu>
+
+          {/* Unlike Activity's menus, these options come from the query RESPONSE
+              (`logs.data.loggers`), so before the first page lands the menu holds
+              only "All loggers". That is the honest pending state rather than a
+              spinner or a disabled trigger: "no logger filter" is true before the
+              response as well as after it, and the escape hatch back to unfiltered
+              must never be the thing that is missing. */}
+          <PageToolbarMenu label={`Logger: ${loggerOptionLabel(filters.logger)}`} align="end">
+            <PageToolbarMenuItem
+              label={loggerOptionLabel('')}
+              checked={filters.logger === ''}
+              onSelect={() => applyFilters({ logger: '' })}
+            />
+            {loggers.map((logger) => (
+              <PageToolbarMenuItem
+                key={logger}
+                label={logger}
+                checked={filters.logger === logger}
+                onSelect={() => applyFilters({ logger })}
+              />
+            ))}
+          </PageToolbarMenu>
+
+          {/* The debounce and the page reset stay HERE, in the caller, rather
+              than inside PageToolbarInput: Suppressions drives the same
+              primitive with an explicit Apply button, and folding a timer into
+              the component would impose this surface's interaction model on
+              that one. */}
+          <PageToolbarInput
+            label="Message"
+            value={messageInput}
+            placeholder="Search messages…"
+            onChange={setMessageInput}
+          />
+        </PageToolbarSection>
+      </PageToolbar>
 
       <section className={styles.panel}>
         <h2 className={styles.panelHeading}>Logs</h2>
