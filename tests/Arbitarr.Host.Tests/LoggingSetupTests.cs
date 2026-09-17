@@ -1,6 +1,8 @@
 using Arbitarr.Data.Logging;
 using Arbitarr.Host.Logging;
 using Arbitarr.TestSupport;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Xunit;
 
@@ -59,28 +61,28 @@ public sealed class LoggingSetupTests : IDisposable
     private async Task<IReadOnlyList<string>> CaptureStoredMessagesAsync(Action<ILoggerFactory> log)
     {
         var store = NewStore();
-        SqliteLoggerProvider? provider = null;
 
-        using (var factory = LoggerFactory.Create(builder =>
-        {
-            // The host's own floor. Without it LoggerFactory.Create defaults to Information anyway,
-            // but stating it means this test keeps testing the FILTER rather than silently starting
-            // to test a default if that default ever changes.
-            builder.SetMinimumLevel(LogLevel.Trace);
-            LoggingSetup.AddArbitarrSqliteLogging(builder, store);
+        // Resolved from a real container rather than read off the ServiceDescriptor (arb-2t9u).
+        // AddArbitarrSqliteLogging now registers a FACTORY, so there is no ImplementationInstance to
+        // pick up, and invoking the descriptor's factory by hand would construct a SECOND provider —
+        // one with its own pump, writing to the same store, and not the one the ILoggerFactory
+        // actually logs through. Asking the container for the singleton gets the same instance the
+        // factory below uses, which is what makes the flush deterministic.
+        await using var services = new ServiceCollection()
+            .AddLogging(builder =>
+            {
+                // The host's own floor. Without it the default is Information anyway, but stating it
+                // means this test keeps testing the FILTER rather than silently starting to test a
+                // default if that default ever changes.
+                builder.SetMinimumLevel(LogLevel.Trace);
+                LoggingSetup.AddArbitarrSqliteLogging(builder, store);
+            })
+            .BuildServiceProvider();
 
-            // The provider instance the method created, so the test can flush it deterministically
-            // rather than waiting out SqliteLoggerProvider.FlushInterval on every assertion.
-            provider = builder.Services
-                .Select(descriptor => descriptor.ImplementationInstance)
-                .OfType<SqliteLoggerProvider>()
-                .Single();
-        }))
-        {
-            log(factory);
-        }
+        var provider = services.GetServices<ILoggerProvider>().OfType<SqliteLoggerProvider>().Single();
 
-        Assert.NotNull(provider);
+        log(services.GetRequiredService<ILoggerFactory>());
+
         await provider.FlushAsync();
 
         var page = await store.ReadAsync(null, null, 1, LogStore.MaxPageSize);
@@ -160,6 +162,122 @@ public sealed class LoggingSetupTests : IDisposable
         }
 
         Assert.Contains(FrameworkInformation, otherProviderSaw);
+    }
+
+    /// <summary>
+    /// arb-2t9u, THE PROPERTY: a line logged while the host is running is IN THE STORE once the host
+    /// has stopped and been disposed — with nothing in the test disposing the provider by hand.
+    ///
+    /// <para><b>Why this is the right assertion.</b> The sink never writes on the caller's thread
+    /// (see <c>SqliteLoggerProvider</c>'s remarks, AC5); a line only reaches the database when the
+    /// pump drains, and the pump's FINAL drain only runs once it observes cancellation, which only
+    /// happens when something calls <c>Dispose</c>. So "the line is in the store after shutdown" is
+    /// true exactly when the container owns and disposes the provider — which is the defect, stated
+    /// as a behaviour rather than as a fact about a registration call. An assertion on the
+    /// ServiceDescriptor's shape would pass just as well against a registration that was a factory
+    /// AND still never disposed.</para>
+    ///
+    /// <para><b>The line is logged and the host stopped INSIDE the flush interval</b> — no
+    /// <c>FlushAsync</c>, no waiting out <c>SqliteLoggerProvider.FlushInterval</c>, no sleep. A
+    /// periodic drain landing the row anyway would make this pass in the broken world too, so the
+    /// test must reach the store only via the shutdown path. That is also why it is fast rather than
+    /// despite it.</para>
+    ///
+    /// <para><b>NON-VACUITY / POSITIVE CONTROL (CLAUDE.md §4).</b>
+    /// <see cref="A_line_logged_at_the_last_moment_is_LOST_when_the_provider_is_registered_as_an_instance"/>
+    /// runs the identical host, timing and assertion against the registration shape this bead
+    /// replaced, and finds the store EMPTY. Without it, "the row is present" would pass just as
+    /// happily if the row had arrived by some route other than the drain — and an empty store would
+    /// have been indistinguishable from a broken fixture. The control drives
+    /// <c>ILoggingBuilder.AddProvider(ILoggerProvider)</c>, a framework API, so the old shape is
+    /// reproduced without a test-only seam in production code and without leaving the vulnerable
+    /// registration anywhere in the tree.</para>
+    ///
+    /// <para><b>MUTATION-PROVED</b> (CLAUDE.md §4) outside the repository, in a throwaway console
+    /// project holding both registration shapes side by side; nothing was mutated in this worktree
+    /// and nothing is left behind. A probe provider registered via <c>AddProvider(instance)</c>
+    /// reported <c>Disposed = false</c> after a full <c>StartAsync</c>/<c>StopAsync</c>/<c>Dispose</c>
+    /// cycle, and the same provider registered via
+    /// <c>Services.AddSingleton&lt;ILoggerProvider&gt;(factory)</c> reported <c>true</c> — the
+    /// ownership difference the fix turns on, measured rather than assumed.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_line_logged_at_the_last_moment_reaches_the_store_when_the_host_stops()
+    {
+        const string ShutdownLine = "the-line-that-must-survive-shutdown";
+
+        var store = NewStore();
+
+        using (var host = BuildHost(builder => LoggingSetup.AddArbitarrSqliteLogging(builder, store)))
+        {
+            await host.StartAsync();
+            host.Services.GetRequiredService<ILogger<LoggingSetupTests>>().LogInformation(ShutdownLine);
+            await host.StopAsync();
+        }
+
+        var stored = (await store.ReadAsync(null, null, 1, LogStore.MaxPageSize))
+            .Entries.Select(entry => entry.Message).ToList();
+
+        Assert.Contains(ShutdownLine, stored);
+    }
+
+    /// <summary>
+    /// The positive control for the test above (CLAUDE.md §4): the SAME host, the SAME timing and
+    /// the SAME assertion, differing only in that the provider is handed over as an
+    /// already-constructed INSTANCE — the registration arb-2t9u replaced.
+    ///
+    /// <para><c>ILoggingBuilder.AddProvider(ILoggerProvider)</c> registers a constant singleton, and
+    /// the container does not dispose an instance it did not create, so nothing cancels the pump,
+    /// the final drain never runs and the line is still sitting in the in-memory queue when the
+    /// process would have exited. Asserting that here is what proves the test above is detecting the
+    /// drain rather than reporting a row that would have arrived regardless.</para>
+    ///
+    /// <para>The provider is disposed explicitly at the end, since nothing else will — the very
+    /// defect under test — and leaving a live pump holding a pooled handle on the log database would
+    /// lose a race with this class's directory teardown.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_line_logged_at_the_last_moment_is_LOST_when_the_provider_is_registered_as_an_instance()
+    {
+        const string ShutdownLine = "the-line-that-must-survive-shutdown";
+
+        var store = NewStore();
+        var undisposed = new SqliteLoggerProvider(store, LogLevel.Information);
+
+        try
+        {
+            using (var host = BuildHost(builder => builder.AddProvider(undisposed)))
+            {
+                await host.StartAsync();
+                host.Services.GetRequiredService<ILogger<LoggingSetupTests>>().LogInformation(ShutdownLine);
+                await host.StopAsync();
+            }
+
+            var stored = (await store.ReadAsync(null, null, 1, LogStore.MaxPageSize))
+                .Entries.Select(entry => entry.Message).ToList();
+
+            Assert.DoesNotContain(ShutdownLine, stored);
+        }
+        finally
+        {
+            undisposed.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// A real <see cref="IHost"/> with only the logging under test configured. Console and the
+    /// default providers are cleared so the only thing that can put a row in the store is the
+    /// registration <paramref name="configureLogging"/> adds.
+    /// </summary>
+    private static IHost BuildHost(Action<ILoggingBuilder> configureLogging)
+    {
+        // Fully qualified: the enclosing namespace is Arbitarr.Host, so a bare Host binds to that
+        // namespace rather than to Microsoft.Extensions.Hosting.Host.
+        var builder = Microsoft.Extensions.Hosting.Host.CreateApplicationBuilder();
+        builder.Logging.ClearProviders();
+        builder.Logging.SetMinimumLevel(LogLevel.Trace);
+        configureLogging(builder.Logging);
+        return builder.Build();
     }
 
     private sealed class CapturingLoggerProvider(List<string> sink) : ILoggerProvider
