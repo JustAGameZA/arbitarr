@@ -21,20 +21,38 @@ namespace Arbitarr.Integration.Tests.TestSupport;
 /// here is bounded by <c>Total</c>, which the store computes in the same transaction as the page, so it
 /// terminates even while the sink is still appending.</para>
 ///
-/// <para><b>Not a third copy.</b> <see cref="RedirectAccessModeKeyNeverReachesLogsTests"/> and
-/// <see cref="ProxyDownloadIndexerKeyNeverLeavesTheProcessTests"/> each already carry an identical
-/// private copy of this loop (arb-j4hq) and are deliberately left untouched here — one has an open PR
-/// against it. This helper exists for every OTHER absence sweep that needs the same coverage, so the
-/// method count does not keep growing by copy-paste.</para>
+/// <para><b>Not a copy, three times over.</b> <see cref="RedirectAccessModeKeyNeverReachesLogsTests"/>,
+/// <see cref="ProxyDownloadIndexerKeyNeverLeavesTheProcessTests"/> and
+/// <see cref="ReleaseLookupPayloadSecretTests"/> each carried an identical private copy of this loop
+/// (arb-j4hq). arb-ibzb folded all three into this one helper, which is now the single implementation
+/// every absence sweep in this project calls for a full-table log read.</para>
 /// </summary>
 internal static class LogStorePaging
 {
     /// <summary>
-    /// Reads EVERY row in the store, not the first page of them. See the type doc for why a single
-    /// page-1 read at <see cref="LogStore.MaxPageSize"/> is not sufficient for an absence sweep.
+    /// Flushes the log sink, then reads EVERY row in the store, not the first page of them. See the
+    /// type doc for why a single page-1 read at <see cref="LogStore.MaxPageSize"/> is not sufficient
+    /// for an absence sweep.
+    ///
+    /// <para><b>Why this method owns the flush rather than requiring the caller to do it first.</b>
+    /// This walks pages in <c>Id DESC</c> order (see <c>LogStoreTests</c>' paging fact), and a row
+    /// appended mid-walk shifts that window: a row that lands ahead of the page already read moves
+    /// every later row down by one, which can skip a row entirely rather than merely re-order it. A
+    /// precondition the caller has to remember is exactly the kind of thing that gets forgotten on a
+    /// new call site and still passes green, silently narrowing the sweep it is meant to protect — so
+    /// the flush lives here instead, where it cannot be skipped. Callers that already flush
+    /// immediately beforehand are unaffected: <c>IServiceProvider.FlushLogSinkAsync</c> is idempotent,
+    /// and flushing twice in a row is a no-op the second time.</para>
+    ///
+    /// <para><b>This throws on a host with no <c>SqliteLoggerProvider</c> registered.</b> That is
+    /// intended, not a defect to guard against: every caller here is an absence sweep that only makes
+    /// sense against a host with the real log store wired in, so a host missing it is a fixture bug
+    /// that should fail loudly rather than have this method silently no-op past it.</para>
     /// </summary>
     public static async Task<IReadOnlyList<LogEntry>> ReadAllAsync(WebApplicationFactory<Program> host)
     {
+        await host.Services.FlushLogSinkAsync();
+
         var store = host.Services.GetRequiredService<LogStore>();
         var entries = new List<LogEntry>();
 
