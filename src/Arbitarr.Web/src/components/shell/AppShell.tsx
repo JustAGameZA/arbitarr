@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { SidebarNav } from './SidebarNav';
 import { TopBar } from './TopBar';
-import { resolveDocumentTitle } from '../../routes.titles';
+import { ERROR_TITLE, resolveDocumentTitle } from '../../routes.titles';
+import { RouteErrorContext } from '../RouteError/RouteErrorContext';
 import { useLiveStatusStore } from '../../state/liveStatusStore';
 import { useTableDensityStore } from '../../state/tableDensityStore';
 import styles from './AppShell.module.css';
@@ -27,6 +28,11 @@ interface AppShellProps {
  * to keep the browser tab title in sync with the route (documentTitle.test.tsx):
  * a per-page hook would need six call sites and a new surface could silently
  * forget it, so this effect -- keyed on the pathname -- is the one source.
+ * It is also the single writer of `document.title` overall: RouteError (the
+ * error boundary nested below this shell, routes.tsx's "Placement 2") does
+ * not touch `document.title` itself, it signals this component through
+ * `RouteErrorContext` and this effect substitutes `ERROR_TITLE` while the
+ * panel is up. See RouteErrorContext.tsx for why that indirection exists.
  *
  * Below the 768px shell breakpoint (#48) it also owns the off-canvas drawer's
  * open/close state. This is ephemeral UI state scoped to one mounted
@@ -39,12 +45,13 @@ export function AppShell({ children }: AppShellProps) {
   const liveStatusMessage = useLiveStatusStore((state) => state.message);
   const liveStatusSeq = useLiveStatusStore((state) => state.seq);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [routeErrored, setRouteErrored] = useState(false);
   const drawerRef = useRef<HTMLElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    document.title = resolveDocumentTitle(pathname);
-  }, [pathname]);
+    document.title = routeErrored ? ERROR_TITLE : resolveDocumentTitle(pathname);
+  }, [pathname, routeErrored]);
 
   // Auto-close on navigation: a drawer left open after following a link would
   // sit on top of the very content the operator just asked to see.
@@ -154,7 +161,9 @@ export function AppShell({ children }: AppShellProps) {
           call site to remember. Row height only -- see the rule's comment.
         */}
         <div className={styles.contentInner} data-density={density}>
-          {children ?? <Outlet />}
+          <RouteErrorContext.Provider value={setRouteErrored}>
+            {children ?? <Outlet />}
+          </RouteErrorContext.Provider>
         </div>
       </main>
     </div>
