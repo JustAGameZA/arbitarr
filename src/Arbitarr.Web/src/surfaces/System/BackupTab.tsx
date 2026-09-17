@@ -19,6 +19,14 @@ import {
  *
  * The em-dash for "no data yet" is the same convention `formatRate` uses -- one
  * no-data idiom across this page, not two.
+ *
+ * `format.ts`'s `formatTimestamp`/`formatTimestampTitle` (arb-p94u) now hold this same
+ * reasoning for Activity, Dashboard, Suppressions, Search and ApiKeys, but this
+ * component keeps its own copy: it returns a `<time>` element (with `dateTime`/`title`
+ * attributes) or a `<span title>` fallback for a malformed value, not a plain string
+ * those callers render into a `<td>`. `formatTimestamp` is a string formatter, not a
+ * drop-in for a component with its own element shape, null handling and fallback
+ * rendering.
  */
 function Timestamp({ value }: { value: string | null }) {
   if (value === null) {

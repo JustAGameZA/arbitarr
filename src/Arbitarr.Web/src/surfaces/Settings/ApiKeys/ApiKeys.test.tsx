@@ -321,6 +321,37 @@ describe('ApiKeys', () => {
     expect(within(rowFor('Maintenance script')).getAllByText('—').length).toBeGreaterThan(0);
   });
 
+  /**
+   * arb-p94u: `formatTimestamp` here used to be a bare
+   * `new Date(v).toLocaleString()`, exactly the ambiguity Activity's AC9
+   * forbids for the same underlying data an operator correlates against logs.
+   * The `title` assertion is what pins the fix; the text assertion is an
+   * EXACT match against `toLocaleString(undefined, { timeZoneName: 'short'
+   * })`, with a positive control proving that string differs from the bare
+   * rendering on the CURRENT runner -- a `/[A-Za-z]/` "has a letter" check
+   * would be vacuous on an AM/PM (en-US-ish) locale, where the bare rendering
+   * already contains letters with no zone information.
+   */
+  it('renders the created column with a timezone abbreviation and the raw instant in title', async () => {
+    mockKeysApi({ [`GET ${KEYS}`]: { body: keys } });
+    renderSurface(<ApiKeysSection />);
+
+    await screen.findByRole('cell', { name: 'Sonarr' });
+    const row = within(rowFor('Sonarr'));
+    const cells = row.getAllByRole('cell');
+    const createdCell = cells[2];
+
+    const iso = '2026-01-05T10:00:00Z';
+    const parsed = new Date(iso);
+    const expected = parsed.toLocaleString(undefined, { timeZoneName: 'short' });
+    // Positive control: proves the exact-match assertion below could not have
+    // passed against the old bare rendering on this runner.
+    expect(expected).not.toBe(parsed.toLocaleString(undefined));
+
+    expect(createdCell).toHaveAttribute('title', iso);
+    expect(createdCell.textContent).toBe(expected);
+  });
+
   it('keeps a revoked key as a tombstone rather than dropping it from the list', async () => {
     mockKeysApi({ [`GET ${KEYS}`]: { body: keys } });
     renderSurface(<ApiKeysSection />);

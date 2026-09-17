@@ -17,6 +17,7 @@ import {
   useSendTestNotificationMutation,
   useUpdateNotificationConfigMutation,
 } from './queries';
+import { formatTimestamp } from '../../../format';
 
 /**
  * Friendlier labels and descriptions for the triggers #57 and #247 shipped, in
@@ -113,11 +114,6 @@ function outcomeBadgeClass(outcome: NotificationDeliveryOutcome): string {
     return styles.badgeOk;
   }
   return outcome === 'NotConfigured' ? styles.badgeWarn : styles.badgeDanger;
-}
-
-function formatTimestamp(value: string): string {
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
 }
 
 /**

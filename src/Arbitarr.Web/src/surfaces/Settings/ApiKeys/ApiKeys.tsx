@@ -12,6 +12,7 @@ import {
   useRemoveApiKeyMutation,
   useRevokeApiKeyMutation,
 } from './queries';
+import { formatTimestamp, formatTimestampTitle } from '../../../format';
 
 /**
  * What each scope actually reaches, in the vocabulary the routing layer uses.
@@ -28,13 +29,6 @@ const SCOPE_EXPLANATION: Record<ApiKeyScope, string> = {
   Admin:
     'Reaches public search and download routes, read-only admin routes, and every mutating admin route — rules, settings, sources, and this key list itself. Give it only to a caller you would trust with the box.',
 };
-
-function formatTimestamp(value: string | null): string {
-  if (value === null) {
-    return '—';
-  }
-  return new Date(value).toLocaleString();
-}
 
 /**
  * The two routes an *arr client is pointed at, as path literals.
@@ -385,8 +379,8 @@ function KeyRow({
         <span className={local.label}>{entry.label}</span>
       </td>
       <td>{entry.scope === 'Admin' ? 'Admin' : 'Read only'}</td>
-      <td>{formatTimestamp(entry.createdAt)}</td>
-      <td>{formatTimestamp(entry.lastUsedAt)}</td>
+      <td title={formatTimestampTitle(entry.createdAt)}>{formatTimestamp(entry.createdAt)}</td>
+      <td title={formatTimestampTitle(entry.lastUsedAt)}>{formatTimestamp(entry.lastUsedAt)}</td>
       <td>
         {revoked ? (
           <span className={`${styles.badge} ${styles.badgeDanger}`}>

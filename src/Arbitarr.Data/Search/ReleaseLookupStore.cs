@@ -111,6 +111,20 @@ public sealed class ReleaseLookupStore : IReleaseLookupStore
                 // index on ProxyGuid. The later occurrence's fields win, exactly as they would if
                 // the two occurrences arrived in separate batches (the update branch above always
                 // overwrites with the incoming release's fields).
+                //
+                // arb-n5gg: `existing` is a Dictionary<string, ReleaseLookupEntry> built by
+                // ToDictionaryAsync with no comparer argument, so it uses the default string
+                // comparer — which is ORDINAL — and that is ON PURPOSE, not an oversight to
+                // "improve" with StringComparer.OrdinalIgnoreCase or a culture-aware one.
+                // ProxyGuid's column carries no explicit collation (no UseCollation/HasCollation
+                // call anywhere in ArbitarrDbContext), so SQLite applies its own column default,
+                // BINARY — a byte-for-byte comparison, i.e. ordinal. A lenient in-memory comparer
+                // would therefore let two ProxyGuids the unique index treats as DISTINCT (differing
+                // only by case, for instance) collide in this dictionary and silently overwrite one
+                // row's fields onto the other, while the index itself still holds them apart as
+                // two separate rows on disk — the in-memory duplicate detection and the database's
+                // own uniqueness constraint would then disagree about what counts as "the same
+                // guid". Matching the column's collation here is what keeps them in agreement.
                 existing[release.ProxyGuid] = added;
             }
         }
