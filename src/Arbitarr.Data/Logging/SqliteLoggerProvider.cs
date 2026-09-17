@@ -59,6 +59,16 @@ public sealed class SqliteLoggerProvider : ILoggerProvider
     private readonly LogStore _store;
     private readonly LogLevel _minimumLevel;
     private readonly TimeProvider _timeProvider;
+    /// <summary>
+    /// Surfaces what the pump swallows. See the class remarks for why nothing here may throw.
+    ///
+    /// <para><b>Invoked while <see cref="_drainGate"/> is HELD</b> when the caller is the drain's own
+    /// write-failure path (arb-fjid review). A handler that drains or flushes THIS provider —
+    /// <see cref="FlushAsync"/>, directly or through anything that awaits it — therefore deadlocks
+    /// against a gate its own caller owns, and the wait is unbounded by design. Enqueuing is fine:
+    /// <see cref="SqliteLogger.Log"/> only touches the queue and never the gate, so logging from a
+    /// handler is safe (the entry simply lands in a later batch).</para>
+    /// </summary>
     private readonly Action<Exception>? _onError;
     private readonly ConcurrentQueue<PendingLogEntry> _queue = new();
     private readonly CancellationTokenSource _shutdown = new();
@@ -299,12 +309,16 @@ public sealed class SqliteLoggerProvider : ILoggerProvider
             // cannot cancel out of them and nothing new escapes here that did not before.
             _drainCompleted.TrySetResult();
 
-            // arb-fjid: disposed HERE rather than in Dispose. The pump is the last drain, and it has
-            // just released the gate, so nothing this provider owns will take it again — whereas
-            // Dispose can return while the pump is still inside a held drain (its wait is bounded on
-            // purpose), and disposing the gate there would pull it out from under that drain. A
-            // FlushAsync racing teardown lands on the ObjectDisposedException that DrainAsync
-            // swallows.
+            // arb-fjid: disposed HERE rather than in Dispose, because Dispose can return while the
+            // pump is still inside a held drain (its wait is bounded on purpose) and disposing the
+            // gate there would pull it out from under that drain.
+            //
+            // This is NOT the last moment a drain can hold the gate, and an earlier version of this
+            // comment wrongly claimed it was (arb-fjid review). The pump's own release, one frame
+            // above, is exactly what ADMITS a FlushAsync already queued on WaitAsync, so such a
+            // flush can still be running — and still owe a Release — when this Dispose lands. Both
+            // sides of that race are swallowed in DrainAsync: the WaitAsync for a flush that arrives
+            // after this, and the Release for one admitted just before it.
             _drainGate.Dispose();
         }
     }
@@ -333,7 +347,25 @@ public sealed class SqliteLoggerProvider : ILoggerProvider
         }
         finally
         {
-            _drainGate.Release();
+            try
+            {
+                _drainGate.Release();
+            }
+            catch (ObjectDisposedException)
+            {
+                // arb-fjid review: the gate can be disposed between this drain being ADMITTED and it
+                // getting here. The pump's final drain releases the gate, which is precisely what
+                // admits a FlushAsync already queued on WaitAsync above; the pump then completes its
+                // finally — TrySetResult, then Dispose — while that admitted flush is still running.
+                // Its release then lands on a disposed SemaphoreSlim, which really does throw on
+                // .NET 10 (verified, not assumed).
+                //
+                // Swallowed rather than allowed to escape, for the same reason the WaitAsync above
+                // swallows it and the write failure below does: the provider is finished by then, so
+                // there is nothing left to protect, and a FlushAsync must not throw at a caller that
+                // is shutting down. Releasing a gate nobody can take again has no effect worth
+                // reporting.
+            }
         }
     }
 

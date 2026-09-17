@@ -635,6 +635,64 @@ public sealed class SqliteLoggerProviderTests : IDisposable
     }
 
     /// <summary>
+    /// arb-fjid review: a flush ADMITTED by the pump's final release must not throw when it goes to
+    /// release a gate the pump has since disposed.
+    ///
+    /// <para><b>The interleaving.</b> The pump's final drain holds the gate; a <c>FlushAsync</c>
+    /// queues on <c>WaitAsync</c> behind it; the pump releases — and that release is exactly what
+    /// ADMITS the queued flush — then completes its <c>finally</c>, publishing
+    /// <see cref="SqliteLoggerProvider.DrainCompleted"/> and disposing the gate, while the admitted
+    /// flush is still running and still owes a <c>Release</c>. That release lands on a disposed
+    /// <c>SemaphoreSlim</c>, which really does throw on .NET 10 (verified, not assumed).</para>
+    ///
+    /// <para><b>MUTANT KILLED:</b> the same provider with the release UNGUARDED, as first pushed.
+    /// Run in a throwaway project outside the repository: guarded, the flush completes without
+    /// throwing; unguarded, it throws <c>ObjectDisposedException</c> straight out of
+    /// <c>FlushAsync</c>. Both runs confirmed the flush really was queued on the gate first, so the
+    /// test cannot pass by never reaching the race.</para>
+    ///
+    /// <para>Deterministic throughout: the hold is the cleanse seam, and each step waits on a
+    /// <c>TaskCompletionSource</c> rather than on elapsed time.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_flush_admitted_by_the_pumps_final_release_does_not_throw_on_the_disposed_gate()
+    {
+        var release = new TaskCompletionSource();
+        var entered = new TaskCompletionSource();
+
+        var store = NewStore();
+
+        // A LONG shutdown wait, so Dispose genuinely waits for the final drain rather than giving up
+        // and finishing teardown before the race can be set up.
+        var provider = NewProviderHoldingOn(
+            "HOLD-ME", entered, release, store, shutdownWait: TimeSpan.FromSeconds(30));
+
+        provider.CreateLogger("Arbitarr.Api.Search").LogInformation("HOLD-ME the final drain");
+
+        // Dispose on a background thread: it cancels, the pump runs its FINAL drain, and that drain
+        // takes the gate and blocks in the cleanse.
+        var disposing = Task.Run(provider.Dispose);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(30));
+
+        // Queue a flush behind the held gate. It cannot be admitted until the pump releases.
+        var flush = Task.Run(() => provider.FlushAsync());
+        var settled = await Task.WhenAny(flush, Task.Delay(TimeSpan.FromMilliseconds(500)));
+        Assert.True(
+            settled != flush,
+            "the flush was not waiting on the gate, so this test never reached the race it exists for");
+
+        // Let the pump finish: release (which admits the flush), publish, dispose the gate.
+        release.SetResult();
+
+        // THE ASSERTION THE UNGUARDED RELEASE FAILS.
+        var exception = await Record.ExceptionAsync(() => flush.WaitAsync(TimeSpan.FromSeconds(30)));
+        Assert.Null(exception);
+
+        await disposing.WaitAsync(TimeSpan.FromSeconds(30));
+        await provider.DrainCompleted.WaitAsync(TimeSpan.FromSeconds(30));
+    }
+
+    /// <summary>
     /// A provider whose drain BLOCKS while writing any row whose message contains
     /// <paramref name="marker"/>, signalling <paramref name="entered"/> when it gets there and
     /// waiting for <paramref name="release"/>.
