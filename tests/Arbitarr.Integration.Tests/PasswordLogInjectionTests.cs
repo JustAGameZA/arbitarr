@@ -4,6 +4,7 @@ using Arbitarr.Api.Admin;
 using Arbitarr.Api.Security;
 using Arbitarr.Core.Security;
 using Arbitarr.Data.Logging;
+using Arbitarr.Integration.Tests.TestSupport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Xunit;
@@ -94,7 +95,7 @@ public sealed class PasswordLogInjectionTests
             "upstream request failed: http://192.0.2.10:5076/api?t=search&apikey={0}",
             "secret-api-key-password-probe-control");
 
-        await FlushLogSinkAsync();
+        await factory.Services.FlushLogSinkAsync();
 
         var page = await store.ReadAsync(level: null, logger: null, page: 1, pageSize: LogStore.MaxPageSize);
 
@@ -153,13 +154,4 @@ public sealed class PasswordLogInjectionTests
             Assert.DoesNotContain(LogMessageCleanser.Replacement, entry.Exception ?? string.Empty, StringComparison.Ordinal);
         });
     }
-
-    /// <summary>
-    /// Waits for the sink's background pump to drain — it batches on a fixed interval by design and
-    /// must never write on the caller's thread, so a read taken immediately after a request can
-    /// legitimately see nothing yet. See <see cref="LogSecretInjectionTests"/>, which does the same.
-    /// </summary>
-    private static async Task FlushLogSinkAsync() =>
-        await Task.Delay(SqliteLoggerProvider.FlushInterval + TimeSpan.FromMilliseconds(750));
-
 }

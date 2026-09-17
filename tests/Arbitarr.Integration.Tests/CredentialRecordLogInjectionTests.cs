@@ -220,7 +220,7 @@ public sealed class CredentialRecordLogInjectionTests : IAsyncLifetime
                 break;
         }
 
-        await FlushLogSinkAsync();
+        await _root.Services.FlushLogSinkAsync();
 
         var entries = await ReadEntriesForLoggerAsync(store, loggerName);
 
@@ -314,7 +314,7 @@ public sealed class CredentialRecordLogInjectionTests : IAsyncLifetime
         logger.LogWarning(
             "created CreatedApiKey {{ Entry = ..., PlaintextKey = {0} }}", ApiKey);
 
-        await FlushLogSinkAsync();
+        await _root.Services.FlushLogSinkAsync();
 
         var entries = await ReadEntriesForLoggerAsync(store, LoggerName);
         Assert.NotEmpty(entries);
@@ -360,7 +360,7 @@ public sealed class CredentialRecordLogInjectionTests : IAsyncLifetime
 
         log(logger, credential);
 
-        await FlushLogSinkAsync();
+        await _root.Services.FlushLogSinkAsync();
 
         var entries = await ReadEntriesForLoggerAsync(store, loggerName);
 
@@ -409,23 +409,4 @@ public sealed class CredentialRecordLogInjectionTests : IAsyncLifetime
 
     /// <summary>The prefix <c>SqliteLoggerProvider</c> strips from every stored category.</summary>
     private const string ArbitarrCategoryPrefix = "Arbitarr.";
-
-    /// <summary>
-    /// Drains the sink's queue DETERMINISTICALLY via <see cref="SqliteLoggerProvider.FlushAsync"/>,
-    /// which exists for exactly this: the pump batches on
-    /// <see cref="SqliteLoggerProvider.FlushInterval"/> and must never write on the caller's thread,
-    /// so a read taken immediately after a log call can legitimately see nothing.
-    ///
-    /// <para>Preferred over sleeping out the interval — a <c>Task.Delay</c> long enough to be
-    /// reliable is a per-assertion cost the whole suite pays, and one short enough to be cheap is a
-    /// flake. Every assertion here is preceded by a non-empty check, so a failure to drain surfaces
-    /// as a loud failure rather than a vacuous pass either way.</para>
-    /// </summary>
-    private async Task FlushLogSinkAsync()
-    {
-        foreach (var provider in _root.Services.GetServices<ILoggerProvider>().OfType<SqliteLoggerProvider>())
-        {
-            await provider.FlushAsync();
-        }
-    }
 }

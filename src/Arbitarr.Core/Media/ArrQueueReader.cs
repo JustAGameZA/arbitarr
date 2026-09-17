@@ -183,7 +183,12 @@ public abstract class ArrQueueReader
                 DownloadClient: record.DownloadClient,
                 Indexer: record.Indexer,
                 StatusMessages: FlattenStatusMessages(record.StatusMessages),
-                ErrorMessage: record.ErrorMessage))
+                ErrorMessage: record.ErrorMessage,
+                // arb-6l9b.6: upstream's own queue id, carried so the Library screen has a stable
+                // React key per row across a poll. Named explicitly like every member above, which
+                // is what keeps this an ALLOWLIST: a field is served because someone wrote its name
+                // here, never because it happened to be on the document.
+                Id: record.Id))
             .ToList();
 
         return new ArrQueuePage(ArrSectionStatus.Ok, document.TotalRecords, items);

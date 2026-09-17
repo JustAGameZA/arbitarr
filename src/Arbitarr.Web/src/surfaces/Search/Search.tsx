@@ -5,7 +5,7 @@ import { PageHeader } from '../../components/shell/PageHeader';
 import { ApiError } from '../../api/client';
 import { QueryState, errorMessage } from '../QueryState';
 import { CACHE_BAND_LABELS } from '../../api/types';
-import type { AdHocSearchProvenance, AdHocSearchResponse } from '../../api/types';
+import type { AdHocRelease, AdHocSearchProvenance, AdHocSearchResponse } from '../../api/types';
 import styles from '../surface.module.css';
 import local from './Search.module.css';
 import { useEffectiveConfigQuery } from '../Dashboard/queries';
@@ -232,15 +232,157 @@ function NoSourceAnswered({ provenance }: { provenance: AdHocSearchProvenance })
   );
 }
 
+/**
+ * Notice that the on-screen page equals the limit ACTUALLY SENT with the
+ * request that produced it (po-gate-plan-cpdo ruling 1).
+ *
+ * The limit is read from the mutation's own retained `variables`, never from
+ * the live form field: the operator may have edited the limit or pressed
+ * Clear after submitting, and the results on screen still belong to whatever
+ * was sent when they were fetched. `criteria.limit` is a string straight from
+ * the number input; an empty or non-numeric value binds server-side to the
+ * default (50) rather than "no limit", so parsing it here and falling back to
+ * 50 mirrors what the server actually did with it.
+ */
+function ResultCount({
+  count,
+  submittedLimit,
+}: {
+  count: number;
+  submittedLimit: string;
+}) {
+  const parsedLimit = Number.parseInt(submittedLimit, 10);
+  // NaN > 0 is false, so an unparseable submittedLimit already falls through
+  // to the default without a separate Number.isFinite/isNaN guard.
+  const limit = parsedLimit > 0 ? parsedLimit : 50;
+  const plural = count === 1 ? 'result' : 'results';
+
+  if (count === limit) {
+    return (
+      <p className={local.resultCount}>
+        Showing {count} {plural}, the limit you asked for. There may be more.
+      </p>
+    );
+  }
+
+  return (
+    <p className={local.resultCount}>
+      Showing {count} {plural}.
+    </p>
+  );
+}
+
+type SortColumn = 'title' | 'size' | 'published';
+type SortDirection = 'asc' | 'desc';
+/** `null` is the server's own order -- the default, and the state a third
+ * click on the same column returns to (po-gate-plan-cpdo ruling 2). */
+type SortState = { column: SortColumn; direction: SortDirection } | null;
+
+/** Cycles one column: unsorted -> asc -> desc -> unsorted (server order). */
+function nextSortState(current: SortState, column: SortColumn): SortState {
+  if (current === null || current.column !== column) {
+    return { column, direction: 'asc' };
+  }
+  if (current.direction === 'asc') {
+    return { column, direction: 'desc' };
+  }
+  return null;
+}
+
+function ariaSortFor(current: SortState, column: SortColumn): 'ascending' | 'descending' | 'none' {
+  if (current === null || current.column !== column) {
+    return 'none';
+  }
+  return current.direction === 'asc' ? 'ascending' : 'descending';
+}
+
+/**
+ * Orders releases for display without mutating `response.releases` (ruling
+ * 3): `.slice()` first, since `.sort()` is in place. `null` sorts by the
+ * server's own order, i.e. does nothing.
+ *
+ * Size sorts on the raw byte count, never `formatSize`'s string. Published
+ * sorts on the raw date. Both treat "absent or unparseable" as sorting LAST in
+ * BOTH directions, so a comparator returning a fixed +1/-1 for that case would
+ * be wrong for desc; the direction is applied only to definite comparisons and
+ * the last-in-both-directions cases are handled ahead of it.
+ *
+ * `Array.prototype.sort` is stable per spec (guaranteed since ES2019, which
+ * every engine this app ships to implements), so two equal keys keep the
+ * server's relative order without extra bookkeeping.
+ */
+function sortedReleases(releases: AdHocRelease[], sort: SortState): AdHocRelease[] {
+  if (sort === null) {
+    return releases;
+  }
+
+  const { column, direction } = sort;
+  const sign = direction === 'asc' ? 1 : -1;
+
+  const rank = (release: AdHocRelease): number | null => {
+    if (column === 'size') {
+      return release.size > 0 ? release.size : null;
+    }
+    if (column === 'published') {
+      const time = new Date(release.pubDate).getTime();
+      return Number.isNaN(time) ? null : time;
+    }
+    return null;
+  };
+
+  return releases.slice().sort((a, b) => {
+    if (column === 'title') {
+      return sign * a.title.localeCompare(b.title);
+    }
+
+    const rankA = rank(a);
+    const rankB = rank(b);
+    if (rankA === null && rankB === null) {
+      return 0;
+    }
+    if (rankA === null) {
+      return 1;
+    }
+    if (rankB === null) {
+      return -1;
+    }
+    return sign * (rankA - rankB);
+  });
+}
+
+function SortableHeader({
+  label,
+  column,
+  sort,
+  onSort,
+}: {
+  label: string;
+  column: SortColumn;
+  sort: SortState;
+  onSort: (column: SortColumn) => void;
+}) {
+  return (
+    <th aria-sort={ariaSortFor(sort, column)}>
+      <button type="button" className={local.sortButton} onClick={() => onSort(column)}>
+        {label}
+      </button>
+    </th>
+  );
+}
+
 function Results({
   response,
   selectedGuid,
   onSelect,
+  submittedLimit,
 }: {
   response: AdHocSearchResponse;
   selectedGuid: string | null;
   onSelect: (guid: string | null) => void;
+  submittedLimit: string;
 }) {
+  const [sort, setSort] = useState<SortState>(null);
+  const onSort = (column: SortColumn) => setSort((current) => nextSortState(current, column));
   // One explanation panel at a time (mirrors selectedGuid), so one stable id
   // for the whole results list is enough for aria-controls to point at.
   const explanationId = useId();
@@ -266,24 +408,27 @@ function Results({
     );
   }
 
+  const rows = sortedReleases(response.releases, sort);
+
   return (
     <>
       <Provenance provenance={response.provenance} />
+      <ResultCount count={response.releases.length} submittedLimit={submittedLimit} />
       <div className={styles.tableScroll}>
         <table className={styles.table}>
           <thead>
             <tr>
-              <th>Title</th>
+              <SortableHeader label="Title" column="title" sort={sort} onSort={onSort} />
               <th>Source</th>
-              <th>Size</th>
+              <SortableHeader label="Size" column="size" sort={sort} onSort={onSort} />
               <th>Categories</th>
-              <th>Published</th>
+              <SortableHeader label="Published" column="published" sort={sort} onSort={onSort} />
               <th>AI verdict</th>
               <th />
             </tr>
           </thead>
           <tbody>
-            {response.releases.map((release) => (
+            {rows.map((release) => (
               <tr key={release.guid}>
                 <td>{release.title}</td>
                 <td>{release.sourceName}</td>
@@ -344,6 +489,18 @@ export default function SearchPage() {
     search.mutate(criteria);
   };
 
+  /**
+   * Resets the form to EMPTY_CRITERIA and clears the selected explanation
+   * (ruling 4). Results themselves are left alone -- they belong to whatever
+   * was last submitted, and clearing the form is not itself a new search, so
+   * the operator's last results stay visible until the next Search click
+   * replaces them.
+   */
+  const clear = () => {
+    setCriteria(EMPTY_CRITERIA);
+    setSelectedGuid(null);
+  };
+
   return (
     <>
       <PageHeader title="Search" description="Run an ad-hoc query against the configured sources." />
@@ -361,38 +518,49 @@ export default function SearchPage() {
                 onChange={(event) => update('q', event.target.value)}
               />
             </label>
-            <label className={styles.field}>
-              TVDB id
-              <input
-                className={`${styles.input} ${styles.inputNarrow}`}
-                value={criteria.tvdbid}
-                onChange={(event) => update('tvdbid', event.target.value)}
-              />
-            </label>
-            <label className={styles.field}>
-              TMDB id
-              <input
-                className={`${styles.input} ${styles.inputNarrow}`}
-                value={criteria.tmdbid}
-                onChange={(event) => update('tmdbid', event.target.value)}
-              />
-            </label>
-            <label className={styles.field}>
-              Season
-              <input
-                className={`${styles.input} ${styles.inputNarrow}`}
-                value={criteria.season}
-                onChange={(event) => update('season', event.target.value)}
-              />
-            </label>
-            <label className={styles.field}>
-              Episode
-              <input
-                className={`${styles.input} ${styles.inputNarrow}`}
-                value={criteria.ep}
-                onChange={(event) => update('ep', event.target.value)}
-              />
-            </label>
+            {/*
+             * arb-cpdo: TVDB/TMDB/Season/Episode all narrow the SAME query
+             * rather than standing alone like Query or Categories, so a
+             * fieldset groups them visibly for a sighted operator and names
+             * the group for assistive tech. No client-side validation is
+             * added beyond what the controls themselves impose -- the
+             * grouping is presentational, not a new constraint.
+             */}
+            <fieldset className={local.narrowingFields}>
+              <legend>Narrow by identity</legend>
+              <label className={styles.field}>
+                TVDB id
+                <input
+                  className={`${styles.input} ${styles.inputNarrow}`}
+                  value={criteria.tvdbid}
+                  onChange={(event) => update('tvdbid', event.target.value)}
+                />
+              </label>
+              <label className={styles.field}>
+                TMDB id
+                <input
+                  className={`${styles.input} ${styles.inputNarrow}`}
+                  value={criteria.tmdbid}
+                  onChange={(event) => update('tmdbid', event.target.value)}
+                />
+              </label>
+              <label className={styles.field}>
+                Season
+                <input
+                  className={`${styles.input} ${styles.inputNarrow}`}
+                  value={criteria.season}
+                  onChange={(event) => update('season', event.target.value)}
+                />
+              </label>
+              <label className={styles.field}>
+                Episode
+                <input
+                  className={`${styles.input} ${styles.inputNarrow}`}
+                  value={criteria.ep}
+                  onChange={(event) => update('ep', event.target.value)}
+                />
+              </label>
+            </fieldset>
             <label className={styles.field}>
               Categories
               <input
@@ -435,6 +603,9 @@ export default function SearchPage() {
             <button type="submit" className={styles.button} disabled={search.isPending}>
               {search.isPending ? 'Searching…' : 'Search'}
             </button>
+            <button type="button" className={styles.buttonSecondary} onClick={clear}>
+              Clear
+            </button>
           </form>
         </div>
       </section>
@@ -467,6 +638,7 @@ export default function SearchPage() {
               response={search.data}
               selectedGuid={selectedGuid}
               onSelect={setSelectedGuid}
+              submittedLimit={search.variables?.limit ?? EMPTY_CRITERIA.limit}
             />
           )}
         </div>
