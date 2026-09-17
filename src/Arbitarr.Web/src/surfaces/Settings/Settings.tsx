@@ -39,18 +39,41 @@ const STATIC_SECTIONS = [
   { id: 'ai', label: 'AI backend' },
 ] as const;
 
+/**
+ * One rendered catalog section: the server's group identifier, the heading to
+ * show for it, and the rows inside it.
+ *
+ * Both names are carried because they do different jobs and must not be
+ * conflated (arb-tk0r). `id` is the server-owned IDENTIFIER: it keys the
+ * grouping and is what slugifyGroup derives the anchor from, so an existing
+ * `#search-result-cache` bookmark survives a reworded heading. `displayName` is
+ * what the operator reads, and it is the server's wording rather than a
+ * client-side rename map -- a map would silently omit any group added to the
+ * catalog later, which is exactly what slugifyGroup's comment records arb-5oe
+ * forbidding. Never slugify `displayName`.
+ */
+export interface SettingGroupSection {
+  id: string;
+  displayName: string;
+  entries: SettingCatalogEntry[];
+}
+
 /** Groups the flat catalog into its declared groups, preserving server order. */
-export function groupSettings(entries: SettingCatalogEntry[]): [string, SettingCatalogEntry[]][] {
-  const groups = new Map<string, SettingCatalogEntry[]>();
+export function groupSettings(entries: SettingCatalogEntry[]): SettingGroupSection[] {
+  const groups = new Map<string, SettingGroupSection>();
   for (const entry of entries) {
     const existing = groups.get(entry.group);
     if (existing === undefined) {
-      groups.set(entry.group, [entry]);
+      groups.set(entry.group, {
+        id: entry.group,
+        displayName: entry.groupDisplayName,
+        entries: [entry],
+      });
     } else {
-      existing.push(entry);
+      existing.entries.push(entry);
     }
   }
-  return [...groups.entries()];
+  return [...groups.values()];
 }
 
 /**
@@ -210,9 +233,11 @@ export default function SettingsPage() {
    */
   const navEntries: SectionNavEntry[] = [
     ...STATIC_SECTIONS.map((section) => ({ id: section.id, label: section.label })),
-    ...groupSettings(settings.data ?? []).map(([group]) => ({
-      id: slugifyGroup(group),
-      label: group,
+    // The anchor comes off the IDENTIFIER and the label off the display name,
+    // so rewording a heading never moves an anchor (arb-tk0r).
+    ...groupSettings(settings.data ?? []).map((group) => ({
+      id: slugifyGroup(group.id),
+      label: group.displayName,
     })),
   ];
 
@@ -291,15 +316,15 @@ export default function SettingsPage() {
                 </section>
               ) : (
                 <>
-                  {groupSettings(entries).map(([group, groupEntries]) => (
+                  {groupSettings(entries).map((group) => (
                     <section
-                      key={group}
-                      id={slugifyGroup(group)}
+                      key={group.id}
+                      id={slugifyGroup(group.id)}
                       className={`${styles.panel} ${local.section}`}
                     >
-                      <h2 className={styles.panelHeading}>{group}</h2>
+                      <h2 className={styles.panelHeading}>{group.displayName}</h2>
                       <div className={styles.panelBody}>
-                        {groupEntries.map((entry) => (
+                        {group.entries.map((entry) => (
                           <SettingRow
                             // Keyed by key AND value so a successful save, which
                             // refetches the catalog, reseeds the field from the
