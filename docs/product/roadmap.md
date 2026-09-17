@@ -48,7 +48,9 @@ shipped well ahead of the surfaces that let an operator configure, observe, and 
   written through the explicit clear flags, never collapsed (`CONTEXT.md`, "Unlimited (null)";
   `docs/standards/data.md`). The API key field stays write-only as it is today. This item touches
   the source secret family but adds no reader: the form writes through the existing endpoint, so
-  ADR 0018's one-reader-one-provider count is untouched.
+  ADR 0018's one-reader-one-provider count is untouched. Landing this makes the Later item "an
+  install with only direct indexers reports itself unconfigured" reachable in practice, so the two
+  are best shipped close together.
 - **Done looks like:** An operator adds a direct Newznab indexer with a query limit and a priority
   entirely from `/settings`, without knowing that the kind string is ordinal-compared, and the
   budget engine meters it against the value they entered.
@@ -88,8 +90,10 @@ shipped well ahead of the surfaces that let an operator configure, observe, and 
   answers as an infrastructure error.
 - **Surface:** `src/Arbitarr.Web/src/surfaces/Search/Search.tsx` (the provenance chips and the empty
   state) and the ad-hoc provenance response in `src/Arbitarr.Api/Search/AdHocSearchEndpoint.cs`. Route `/search`.
-- **Evidence:** The provenance response carries only a rate-limited-sources list, and `Search.tsx`
-  renders a chip for that list alone; timed-out and failed sources have nowhere to travel. This
+- **Evidence:** The merge already names timed-out and failed sources (`MergeResult` since #461,
+  `PagedMergeResult` in `src/Arbitarr.Api/Search/PaginationSnapshotService.cs` since #506), but the
+  ad-hoc provenance response projects only the rate-limited list, and `Search.tsx` renders a chip
+  for that list alone, so the other two are produced and then dropped at the last step. This
   contradicts the product's own "fail loud, degrade visibly" rule (`CONTEXT.md`, "Degradation
   vocabulary") and the protocol-answer-versus-infrastructure-error distinction the Torznab path
   already honours (`CONTEXT.md`). Open bead `arb-cy1y` records the finding from an architectural
@@ -97,7 +101,8 @@ shipped well ahead of the surfaces that let an operator configure, observe, and 
 - **Shape:** Carry timed-out and failed sources beside the rate-limited ones, and give the surface a
   distinct "no source answered" empty state that names them. Copy matters here: a fan-out ceiling
   can time out a healthy-but-slow source, so the wording is "did not answer in time", not "is down".
-  Keep this out of the Torznab search path and out of `MergeResult`, which are governed separately.
+  Project the lists the merge already produces rather than detecting timeouts a second time in the
+  ad-hoc path, and keep this out of the Torznab XML rendering path, which is governed separately.
 - **Done looks like:** An operator whose indexers are all unreachable is told that, by name, instead
   of being advised to change their query.
 - **Confidence:** high.
@@ -207,7 +212,8 @@ shipped well ahead of the surfaces that let an operator configure, observe, and 
 - **Shape:** Define and surface the exit criterion — what the operator should look at, and what it
   should say, before enabling arbitration — and make the current posture legible on the AI section
   rather than only in a catalog toggle. This is primarily a product and copy decision resting on
-  evidence the product already collects, not new machinery.
+  evidence the product already collects, not new machinery. The criterion itself is an
+  [ADR](../adr/) once the owner answers question 3; this item is the surfacing of it.
 - **Done looks like:** An operator can see how well arbitration has been doing on their own library
   and make an informed call, rather than toggling a setting whose consequences are undocumented.
 - **Confidence:** medium — the measurement surfaces exist; whether the collected sample is large
@@ -281,6 +287,11 @@ shipped well ahead of the surfaces that let an operator configure, observe, and 
    documentation forbids. The security posture of every admin surface depends on the answer.
 5. **What is the intended first deployment target, and what does upgrade mean for it?** Everything in
    this document is grounded in source rather than observation, because nothing is deployed.
-6. **Is there a bead-graph inconsistency worth correcting?** `arb-x7w8.16` resolves and is plainly
-   epic work, but does not appear in `arb-x7w8`'s children list — so epic-level progress reporting
-   undercounts the remaining operator-surface work.
+
+## Tracker notes
+
+Not product questions, recorded so they are not lost. Bead ids in this document (`arb-…`) refer to
+the project's issue tracker; open beads are mirrored to the repository's GitHub Issues.
+
+- `arb-x7w8.16` resolves and is plainly epic work, but does not appear in `arb-x7w8`'s children
+  list, so epic-level progress reporting undercounts the remaining operator-surface work.
