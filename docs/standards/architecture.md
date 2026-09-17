@@ -112,6 +112,19 @@ upstream key into a second, off-origin request. See
 A second, per-source mechanism beside it: **origin pin** rejects a shared allow-list of every
 configured origin. See CONTEXT.md, "Origin pin", for why.
 
+**Every secret-bearing record renders safely, or is documented as never rendering.** A positional
+record's compiler-synthesised `ToString` prints every member by name and value, so a raw API key
+or webhook URL reaches any `$"…{credential}…"` or `logger.LogWarning("… {Credential}", credential)`
+verbatim — a hazard neither the query-string URI redaction nor `LogMessageCleanser` fully closes
+(see Logging, below). Every such record either declares its own `ToString` that redacts or omits
+the secret (most types), or is named in a size-pinned exclusion table as one that must declare NO
+`ToString` at all — a password-only record with no non-secret member to render safely, defended by
+its own log-injection test. Scope is records only, by design: a plain class inherits
+`object.ToString`, which cannot leak a member, so the hazard does not apply; secret-bearing plain
+classes are tracked separately (arb-8ljf). Enforced by `CredentialRecordToStringTests`
+(`tests/Arbitarr.Architecture.Tests`), which scans every production assembly for a fixed list of
+secret-bearing property names and asserts each found record matches its documented posture.
+
 ---
 
 ## Parsing user-supplied enums
