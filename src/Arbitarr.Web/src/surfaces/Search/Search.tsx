@@ -252,7 +252,9 @@ function ResultCount({
   submittedLimit: string;
 }) {
   const parsedLimit = Number.parseInt(submittedLimit, 10);
-  const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 50;
+  // NaN > 0 is false, so an unparseable submittedLimit already falls through
+  // to the default without a separate Number.isFinite/isNaN guard.
+  const limit = parsedLimit > 0 ? parsedLimit : 50;
   const plural = count === 1 ? 'result' : 'results';
 
   if (count === limit) {

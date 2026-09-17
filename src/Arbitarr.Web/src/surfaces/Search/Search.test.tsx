@@ -552,7 +552,21 @@ describe('Search', () => {
 
     it('sorts Published on the raw date with an unparseable date last in both directions', async () => {
       const user = userEvent.setup();
-      mockApi({ '/api/admin/search': { body: sortResponse } });
+      // A dedicated fixture with four DISTINCT titles, one per date, so the asc
+      // and desc expectations below are actually different arrays: the shared
+      // `sortResponse` has two rows both titled 'Alpha' (g-alpha, g-alpha-2),
+      // and since only their relative order (not membership) flips between
+      // directions, a title-only assertion could not tell asc from desc apart.
+      const publishedFixture = {
+        releases: [
+          { ...response.releases[0], title: 'Bravo', pubDate: '2026-09-02T00:00:00+00:00', guid: 'g-bravo' },
+          { ...response.releases[0], title: 'Delta', pubDate: '2026-09-01T00:00:00+00:00', guid: 'g-delta' },
+          { ...response.releases[0], title: 'Charlie', pubDate: 'not-a-date', guid: 'g-charlie' },
+          { ...response.releases[0], title: 'Echo', pubDate: '2026-09-03T00:00:00+00:00', guid: 'g-echo' },
+        ],
+        provenance: response.provenance,
+      };
+      mockApi({ '/api/admin/search': { body: publishedFixture } });
       renderSurface(<SearchPage />);
 
       await runSearch(user);
@@ -561,10 +575,12 @@ describe('Search', () => {
       const publishedButton = screen.getByRole('button', { name: 'Published' });
 
       await user.click(publishedButton);
-      expect(rowTitles()).toEqual(['Alpha', 'Bravo', 'Alpha', 'Charlie']);
+      // asc: Delta(09-01) < Bravo(09-02) < Echo(09-03), Charlie (unparseable) last.
+      expect(rowTitles()).toEqual(['Delta', 'Bravo', 'Echo', 'Charlie']);
 
       await user.click(publishedButton);
-      expect(rowTitles()).toEqual(['Alpha', 'Bravo', 'Alpha', 'Charlie']);
+      // desc: Echo(09-03) > Bravo(09-02) > Delta(09-01), Charlie still last.
+      expect(rowTitles()).toEqual(['Echo', 'Bravo', 'Delta', 'Charlie']);
     });
   });
 
