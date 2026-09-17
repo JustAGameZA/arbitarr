@@ -306,33 +306,81 @@ public sealed class SourcePermanentDisableNotifierTests : IDisposable
 
     /// <summary>
     /// Waits until at least <paramref name="count"/> bodies have been posted, or fails. Used only
-    /// where a notice is EXPECTED; the silence assertions instead settle with
-    /// <see cref="SettleAsync"/>, which cannot pass early.
+    /// where a notice is EXPECTED; the silence assertions instead await
+    /// <see cref="SettledAsync"/>, which cannot pass early.
+    ///
+    /// <para><paramref name="notifier"/> names the instance that raised the delivery, defaulting to
+    /// the container's singleton because that is what nearly every test drives. Pass it explicitly
+    /// when the test built its own.</para>
     /// </summary>
-    private async Task<IReadOnlyList<string>> WaitForBodiesAsync(int count)
+    private async Task<IReadOnlyList<string>> WaitForBodiesAsync(
+        int count,
+        SourcePermanentDisableNotifier? notifier = null)
     {
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
-        while (DateTime.UtcNow < deadline)
-        {
-            var bodies = _handler.Bodies;
-            if (bodies.Count >= count)
-            {
-                return bodies;
-            }
+        // The seam rather than a poll against a wall clock, for the same reason SettledAsync uses it:
+        // every caller here has already awaited the call that RAISED the delivery, so the work is
+        // counted and this cannot complete before the POST has landed.
+        //
+        // The instance matters. Most tests drive the container's singleton, which is the default, but
+        // the restart test builds a notifier of its OWN and its positive control is delivered by that
+        // one — awaiting the singleton's seam there observes an instance that was never asked to send
+        // anything, finds it idle immediately, and reads the capture before the real delivery lands.
+        // That is not hypothetical: it failed this test three runs out of three.
+        var settled = notifier ?? _provider?.GetService<SourcePermanentDisableNotifier>();
 
-            await Task.Delay(10);
+        if (settled is not null)
+        {
+            try
+            {
+                await settled.DeliveriesIdle.WaitAsync(HangGuard);
+            }
+            catch (TimeoutException)
+            {
+                // Fall through to the count assertion below, which names what was actually seen.
+            }
         }
 
-        Assert.Fail($"Expected at least {count} notification(s); saw {_handler.Bodies.Count}.");
-        return Array.Empty<string>();
+        var bodies = _handler.Bodies;
+
+        if (bodies.Count < count)
+        {
+            Assert.Fail($"Expected at least {count} notification(s); saw {bodies.Count}.");
+        }
+
+        return bodies;
     }
 
     /// <summary>
-    /// Gives any notification that WAS going to be sent time to arrive before a count is asserted.
-    /// A silence assertion taken the instant the search returns would pass against a real duplicate
-    /// simply because the background delivery had not run yet — which is the vacuous shape §4 bans.
+    /// Waits until every notice raised so far has finished being delivered, so a count asserted
+    /// afterwards is a real observation.
+    ///
+    /// <para><b>This is what a silence assertion must wait on.</b> A count taken the instant a search
+    /// returns would pass against a real duplicate simply because the background delivery had not run
+    /// yet — the vacuous shape CLAUDE.md §4 bans. The previous version of this helper waited a fixed
+    /// 300 ms instead, which is the same defect wearing a longer coat: under a saturated thread pool
+    /// a late duplicate still arrives after the sleep expires and reads as silence. The seam cannot
+    /// pass early, because a delivery is COUNTED before its task is scheduled, and it cannot pass
+    /// late either, because it completes as soon as the work is genuinely done.</para>
+    ///
+    /// <para>Pass the notifier the test actually DROVE. The restart case builds its own, and awaiting
+    /// the container's singleton there would rule out a duplicate from an instance that was never
+    /// asked to send one.</para>
+    ///
+    /// <para>The bound is a HANG GUARD, not the synchronisation.</para>
     /// </summary>
-    private static Task SettleAsync() => Task.Delay(300);
+    private static async Task SettledAsync(SourcePermanentDisableNotifier notifier)
+    {
+        try
+        {
+            await notifier.DeliveriesIdle.WaitAsync(HangGuard);
+        }
+        catch (TimeoutException)
+        {
+            Assert.Fail(
+                "A notification delivery never completed, so this test cannot tell silence from a "
+                + "notice that is merely still in flight.");
+        }
+    }
 
     private static string MessageOf(string body) =>
         JsonDocument.Parse(body).RootElement.GetProperty("message").GetString() ?? string.Empty;
@@ -383,7 +431,7 @@ public sealed class SourcePermanentDisableNotifierTests : IDisposable
             await gated.SearchAsync(Query);
         }
 
-        await SettleAsync();
+        await SettledAsync(provider.GetRequiredService<SourcePermanentDisableNotifier>());
         Assert.Single(_handler.Bodies);
     }
 
@@ -406,7 +454,7 @@ public sealed class SourcePermanentDisableNotifierTests : IDisposable
             await notifier.RecordAndNotifyAsync(SourceName, SourceCallOutcome.AuthenticationFailure, scopeFactory);
         }
 
-        await SettleAsync();
+        await SettledAsync(provider.GetRequiredService<SourcePermanentDisableNotifier>());
         Assert.Single(_handler.Bodies);
     }
 
@@ -435,7 +483,7 @@ public sealed class SourcePermanentDisableNotifierTests : IDisposable
         // A SECOND success is not a second edge. The positive control for this silence is the pair of
         // notices already captured above, in this same harness.
         await notifier.RecordAndNotifyAsync(SourceName, SourceCallOutcome.Success, scopeFactory);
-        await SettleAsync();
+        await SettledAsync(provider.GetRequiredService<SourcePermanentDisableNotifier>());
         Assert.Equal(2, _handler.Bodies.Count);
     }
 
@@ -447,7 +495,7 @@ public sealed class SourcePermanentDisableNotifierTests : IDisposable
 
         await healthy.SearchAsync(Query);
         await healthy.SearchAsync(Query);
-        await SettleAsync();
+        await SettledAsync(provider.GetRequiredService<SourcePermanentDisableNotifier>());
         Assert.Empty(_handler.Bodies);
 
         // POSITIVE CONTROL: the same harness, the same capture, a source that IS rejected — so the
@@ -464,7 +512,7 @@ public sealed class SourcePermanentDisableNotifierTests : IDisposable
         var flaky = Gate(provider, new ScriptedSource(OtherSourceName) { Failure = new TimeoutException("slow") });
 
         await Assert.ThrowsAsync<TimeoutException>(() => flaky.SearchAsync(Query));
-        await SettleAsync();
+        await SettledAsync(provider.GetRequiredService<SourcePermanentDisableNotifier>());
         Assert.Empty(_handler.Bodies);
 
         // POSITIVE CONTROL in the same harness.
@@ -486,7 +534,7 @@ public sealed class SourcePermanentDisableNotifierTests : IDisposable
             new ScriptedSource(OtherSourceName) { Failure = new SourceUnavailableException("breaker open") });
 
         await Assert.ThrowsAsync<SourceUnavailableException>(() => refused.SearchAsync(Query));
-        await SettleAsync();
+        await SettledAsync(provider.GetRequiredService<SourcePermanentDisableNotifier>());
         Assert.Empty(_handler.Bodies);
 
         // POSITIVE CONTROL in the same harness.
@@ -507,7 +555,7 @@ public sealed class SourcePermanentDisableNotifierTests : IDisposable
             new ScriptedSource(OtherSourceName) { Failure = new OperationCanceledException(cts.Token) });
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelled.SearchAsync(Query, cts.Token));
-        await SettleAsync();
+        await SettledAsync(provider.GetRequiredService<SourcePermanentDisableNotifier>());
         Assert.Empty(_handler.Bodies);
 
         // POSITIVE CONTROL in the same harness.
@@ -534,7 +582,7 @@ public sealed class SourcePermanentDisableNotifierTests : IDisposable
 
         // B searching successfully while A is disabled adds nothing: B was never disabled.
         await b.SearchAsync(Query);
-        await SettleAsync();
+        await SettledAsync(provider.GetRequiredService<SourcePermanentDisableNotifier>());
         Assert.Single(_handler.Bodies);
 
         // Now B is rejected too: a SECOND, DISTINCT notice naming B.
@@ -571,13 +619,19 @@ public sealed class SourcePermanentDisableNotifierTests : IDisposable
         var scopeFactory = provider.GetRequiredService<ISourceGateScopeFactory>();
 
         await fresh.RecordAndNotifyAsync(SourceName, SourceCallOutcome.AuthenticationFailure, scopeFactory);
-        await SettleAsync();
+
+        // The FRESH notifier's seam, not the container's singleton: this silence is about what THIS
+        // instance did or did not raise, and the singleton knows nothing about it.
+        await SettledAsync(fresh);
         Assert.Empty(_handler.Bodies);
 
         // POSITIVE CONTROL: the SAME fresh notifier over a source it has not seen disabled does
         // notify, so the silence above is the flag being read and not a notifier that never works.
         await fresh.RecordAndNotifyAsync(OtherSourceName, SourceCallOutcome.AuthenticationFailure, scopeFactory);
-        Assert.Single(await WaitForBodiesAsync(1));
+
+        // The FRESH notifier again, for the same reason as the silence above: this delivery is its
+        // work, and the container's singleton would report idle without ever having been involved.
+        Assert.Single(await WaitForBodiesAsync(1, fresh));
     }
 
     [Fact]
@@ -602,7 +656,7 @@ public sealed class SourcePermanentDisableNotifierTests : IDisposable
                 scopeFactory)));
 
         await WaitForBodiesAsync(1);
-        await SettleAsync();
+        await SettledAsync(provider.GetRequiredService<SourcePermanentDisableNotifier>());
         Assert.Single(_handler.Bodies);
     }
 
@@ -653,7 +707,7 @@ public sealed class SourcePermanentDisableNotifierTests : IDisposable
         var scopeFactory = provider.GetRequiredService<ISourceGateScopeFactory>();
 
         await notifier.RecordAndNotifyAsync(SourceName, SourceCallOutcome.AuthenticationFailure, scopeFactory);
-        await SettleAsync();
+        await SettledAsync(provider.GetRequiredService<SourcePermanentDisableNotifier>());
         Assert.Empty(_handler.Bodies);
 
         // POSITIVE CONTROL: the state still transitioned, so the CLEARING edge — whose trigger IS
