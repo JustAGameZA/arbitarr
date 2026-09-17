@@ -214,3 +214,12 @@ Prowlarr's `IndexerLimitService` model, and that attribution stands.)
 - **This ADR unblocks arb-x7w8.10**, which lands the budget check on the search path, the
   `SourceBackoffState` table and its migration, the new event kind with its `MayCoalesce` opt-in
   and its upstream write sites, and the correction to `Source.cs`'s counter clause noted above.
+
+**Amended 2026-09-17 (arb-2cjk).** Recording what this decision's machinery makes the system do
+unattended, which was true before this note and undocumented: the maintenance caps pass re-fetches
+every *enabled* source's caps on the maintenance interval, so a configured source keeps receiving
+recurring outbound requests carrying its indexer key — with no operator present and no client
+request prompting them — until that source's row is disabled or deleted. Disabling or deleting the
+row is therefore the only thing that stops the traffic; leaving a source configured but unused does
+not. The per-source ceiling on that pass (`CapsRefresher.DefaultPerSourceCeiling`) bounds how long
+each such request may take, not whether it recurs.

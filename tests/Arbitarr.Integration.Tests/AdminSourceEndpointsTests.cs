@@ -446,7 +446,10 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
             baseUrl = "http://127.0.0.1:40",
             apiPath = "/api/v2.0/indexers/example/results/torznab",
             priority = 15,
-            timeoutSeconds = 60,
+            // Inside [MinTimeoutSeconds, MaxTimeoutSeconds] since arb-2cjk bounded the write path.
+            // This test is about an omitted field being PRESERVED, so the value only has to be
+            // distinct from the others and legal.
+            timeoutSeconds = 26,
             queryLimit = 200,
             grabLimit = 20,
             limitsUnit = "Hour",
@@ -473,7 +476,7 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
         // ...and every tuning field it did not carry is untouched, asserted per field.
         Assert.Equal("/api/v2.0/indexers/example/results/torznab", updated.ApiPath);
         Assert.Equal(15, updated.Priority);
-        Assert.Equal(60, updated.TimeoutSeconds);
+        Assert.Equal(26, updated.TimeoutSeconds);
         Assert.Equal(200, updated.QueryLimit);
         Assert.Equal(20, updated.GrabLimit);
         Assert.Equal("Hour", updated.LimitsUnit);

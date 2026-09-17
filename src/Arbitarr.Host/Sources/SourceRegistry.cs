@@ -343,6 +343,13 @@ public sealed class SourceRegistry : ISourceRegistry
     /// <see cref="Source.TimeoutSeconds"/>. A non-positive stored value is treated the same way,
     /// because a zero or negative <see cref="HttpClient.Timeout"/> is rejected by
     /// <see cref="HttpClient"/> itself and would fault the whole set at construction.
+    ///
+    /// <para><b>Since arb-2cjk the WRITE path rejects such a value outright</b>
+    /// (<c>SourceRepository.ValidateTimeoutSeconds</c>, floor
+    /// <c>SourceRepository.MinTimeoutSeconds</c>), so the two are not two opinions about the same
+    /// input. This is the fallback for ROWS ALREADY STORED when that validation landed — nothing
+    /// re-validates or migrates them — and it must stay for exactly that reason: dropping it because
+    /// "the write path handles it now" would fault the whole source set on one old row.</para>
     /// </summary>
     private static TimeSpan? RequestTimeoutFor(Source row) =>
         row.TimeoutSeconds is > 0 ? TimeSpan.FromSeconds(row.TimeoutSeconds.Value) : null;
