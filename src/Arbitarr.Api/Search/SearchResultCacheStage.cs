@@ -180,6 +180,13 @@ public sealed class SearchResultCacheStage
         {
             // Sick upstream, nothing usable: leave whatever the store holds untouched (M3-10) and
             // flag the (empty) response as expired — nothing servable exists for this key right now.
+            //
+            // arb-apm8: the counter below therefore counts THREE causes, not one. It was named and
+            // documented when a rate limit was the only failure the merge could report; it now also
+            // ticks for a merge whose sources timed out or failed outright. The name is left alone
+            // (it is an emitted metric name, and renaming it would break whatever reads it), but
+            // read it as "an empty fetch was withheld because the upstreams were unhealthy" rather
+            // than as a rate-limit counter.
             _counters?.RecordSearchCacheDegradedMiss();
             return new CacheStageResult(Array.Empty<RenderedRelease>(), CacheBand.Expired, null);
         }
@@ -201,7 +208,20 @@ public sealed class SearchResultCacheStage
 /// Outcome of one inline upstream fetch handed to <see cref="SearchResultCacheStage.GetAsync"/>.
 /// </summary>
 /// <param name="Releases">Merged, rendered releases from every source that answered.</param>
-/// <param name="Degraded">True when at least one source was rate-limited/failed, i.e. the set may be partial.</param>
+/// <param name="Degraded">
+/// True when at least one source did not contribute, i.e. the set may be partial.
+///
+/// <para>
+/// <b>arb-apm8: "did not contribute" covers all THREE of the ways a source can drop out</b> —
+/// rate-limited, timed out under its own budget, or failed any other way (transport, protocol,
+/// parse) — which are <see cref="MergeResult"/>'s three name lists. This doc previously said
+/// "rate-limited/failed" while the only caller computed the flag from the rate-limit list alone, so
+/// a merge in which every source timed out arrived here as Degraded=false and took the store-and-
+/// serve-as-fresh path below. The flag is deliberately a bool rather than the lists themselves:
+/// this stage's only question is whether an empty set is trustworthy enough to cache, and all three
+/// causes answer it the same way. Callers that must tell the causes apart read the lists.
+/// </para>
+/// </param>
 public sealed record UpstreamFetchResult(IReadOnlyList<RenderedRelease> Releases, bool Degraded);
 
 /// <summary>
