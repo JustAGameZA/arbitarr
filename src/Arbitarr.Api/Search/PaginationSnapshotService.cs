@@ -159,12 +159,16 @@ public sealed class PaginationSnapshotService
             return new PagedMergeResult(
                 Slice(payload.Releases, query.Offset, query.Limit),
                 Array.Empty<string>(),
+                Array.Empty<string>(),
+                Array.Empty<string>(),
                 payload.Age,
                 payload.Band,
                 ServedFromSnapshot: true);
         }
 
         var rateLimitedSources = new List<string>();
+        var timedOutSources = new List<string>();
+        var failedSources = new List<string>();
 
         // No inline refresh trigger is supplied: a stale-but-valid read stamps LastRequestedAt,
         // which is what places the entry inside the RefreshWorker's active_window selection, so the
@@ -175,6 +179,8 @@ public sealed class PaginationSnapshotService
             {
                 var merged = await _mergeStage.MergeAsync(query, ct).ConfigureAwait(false);
                 rateLimitedSources.AddRange(merged.RateLimitedSources);
+                timedOutSources.AddRange(merged.TimedOutSources);
+                failedSources.AddRange(merged.FailedSources);
 
                 // arb-x7w8.8: dedup sits BETWEEN the merge and the cache, so what the two-age cache
                 // stores is already grouped. Deduplicating on the way IN rather than on the way out
@@ -192,15 +198,40 @@ public sealed class PaginationSnapshotService
                 // one result.
                 var deduplicated = _dedupStage.Deduplicate(merged.Releases);
 
-                return new UpstreamFetchResult(deduplicated, Degraded: merged.RateLimitedSources.Count > 0);
+                // arb-apm8: Degraded is ANY of the three failure lists, not just the rate-limited
+                // one. Before arb-x7w8.7 a rate limit was the only failure that had a NAME, so
+                // reading that one list was the whole of what the merge could report; since that
+                // bead a timeout and a transport/protocol/parse failure are named too, and a merge
+                // where EVERY source timed out or failed still produced Degraded=false. That is the
+                // defect: the guard in SearchResultCacheStage only withholds an empty set when it is
+                // ALSO degraded, so an all-timed-out merge was stored as a legitimate fresh answer
+                // and served for the whole FreshUntil/ServeUntil band -- a half-down install reading
+                // as "there is nothing to find" for as long as the band lasts.
+                //
+                // Budget-SKIPPED sources are deliberately NOT part of this: MergeResult carries no
+                // such list today (that belongs to arb-9ael), and inventing one here would be a
+                // shape change this bead does not own.
+                return new UpstreamFetchResult(
+                    deduplicated,
+                    Degraded: merged.RateLimitedSources.Count > 0
+                        || merged.TimedOutSources.Count > 0
+                        || merged.FailedSources.Count > 0);
             },
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
         // Only persist a snapshot when the resolved set actually has results or every source is
-        // healthy-but-empty; a fully rate-limited fresh merge should not be cached, so the next
-        // request gets a fresh chance once sources recover. A cache-served set (no fresh merge
-        // performed) always persists — it carries no rate-limit signal to withhold on.
-        if (stageResult.Releases.Count > 0 || rateLimitedSources.Count == 0)
+        // healthy-but-empty; a fresh merge in which some source did not answer should not be cached,
+        // so the next request gets a fresh chance once sources recover. A cache-served set (no fresh
+        // merge performed) always persists — it carries no failure signal to withhold on.
+        //
+        // arb-apm8: this guard now aggregates all three failure lists for the same reason the
+        // Degraded flag above does. Withholding only on a rate limit meant an all-timed-out merge
+        // materialized an EMPTY snapshot, which is strictly worse than the two-age cache writing one:
+        // the snapshot is checked BEFORE the cache stage and returns without consulting it at all, so
+        // the empty set would be replayed for the snapshot's whole TTL even after the cache stage had
+        // correctly refused to store it.
+        if (stageResult.Releases.Count > 0
+            || (rateLimitedSources.Count == 0 && timedOutSources.Count == 0 && failedSources.Count == 0))
         {
             var ttl = await _ttlSource.GetAsync(cancellationToken).ConfigureAwait(false);
             var payload = new SnapshotPayload(stageResult.Releases, stageResult.Age, stageResult.Band);
@@ -208,7 +239,13 @@ public sealed class PaginationSnapshotService
             await _snapshotStore.SaveAsync(snapshotToken, payloadJson, now, ttl, cancellationToken).ConfigureAwait(false);
         }
 
-        return new PagedMergeResult(Slice(stageResult.Releases, query.Offset, query.Limit), rateLimitedSources, stageResult.Age, stageResult.Band);
+        return new PagedMergeResult(
+            Slice(stageResult.Releases, query.Offset, query.Limit),
+            rateLimitedSources,
+            timedOutSources,
+            failedSources,
+            stageResult.Age,
+            stageResult.Band);
     }
 
     private static IReadOnlyList<RenderedRelease> Slice(IReadOnlyList<RenderedRelease> releases, int offset, int limit)
@@ -299,9 +336,19 @@ public sealed class PaginationSnapshotService
 }
 
 /// <summary>
-/// A single requested page (offset/limit slice) of a snapshot, plus any sources rate-limited
-/// while materializing it, plus the set-level two-age cache provenance (AC-M7a-cache) every
-/// served response must carry.
+/// A single requested page (offset/limit slice) of a snapshot, plus the name of every source that
+/// did not contribute while materializing it — separated, as <see cref="MergeResult"/> separates
+/// them, by WHY — plus the set-level two-age cache provenance (AC-M7a-cache) every served response
+/// must carry.
+///
+/// <para>
+/// <b>arb-nus0: the three lists are carried separately rather than pre-collapsed into a count or a
+/// bool.</b> <see cref="SearchEndpoint"/> renders a DIFFERENT outcome for each: a total rate limit is
+/// the protocol's own code 500 answer at HTTP 200, while a total timeout/failure is an
+/// infrastructure error at code 900/HTTP 5xx (CONTEXT.md's protocol-answer vs infrastructure-error
+/// distinction). A single merged list could not tell those two apart, and a bool could not tell
+/// either from a partial degradation that still renders normally.
+/// </para>
 /// </summary>
 /// <param name="ServedFromSnapshot">
 /// True when this page came from an already-materialized pagination snapshot, which performs no
@@ -320,6 +367,8 @@ public sealed class PaginationSnapshotService
 public sealed record PagedMergeResult(
     IReadOnlyList<RenderedRelease> Releases,
     IReadOnlyList<string> RateLimitedSources,
+    IReadOnlyList<string> TimedOutSources,
+    IReadOnlyList<string> FailedSources,
     TimeSpan? CacheAge,
     CacheBand CacheBand,
     bool ServedFromSnapshot = false);
