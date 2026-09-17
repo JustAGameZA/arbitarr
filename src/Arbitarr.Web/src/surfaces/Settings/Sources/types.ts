@@ -39,6 +39,43 @@ export interface SourceSummary {
    * server said.
    */
   nzbAccessMode: string;
+  /**
+   * arb-x7w8.1 — the path appended to `baseUrl` to reach the indexer's API.
+   *
+   * Non-nullable on the wire: the server stores an entity default rather than
+   * null, so there is no "unset" state here and no null policy to get wrong.
+   * Validated at the repository boundary, which rejects an empty value and one
+   * carrying a query string.
+   */
+  apiPath: string;
+  /**
+   * arb-x7w8.1 — the search weight. Non-nullable, and `0` is an ORDINARY WEIGHT
+   * rather than an unset state, which is why the update contract gives it no
+   * clear flag while the three nullable columns each have one.
+   */
+  priority: number;
+  /**
+   * arb-x7w8.1 — the per-source upstream timeout, or null to fall back to the
+   * global default.
+   *
+   * A THIRD NULLABLE COLUMN WITH THE SAME NULL-IS-A-REAL-STATE RULE as the two
+   * limits below, though the state it names is different: null here is "use the
+   * global default", not "unlimited". Accepted range is 1..30 seconds and the
+   * server REJECTS anything outside it rather than clamping (AC24), so a value
+   * out of range comes back as a 400 whose message the form renders.
+   */
+  timeoutSeconds: number | null;
+  /**
+   * arb-x7w8.1 — the rolling window the two limits are counted over: `'Hour'` or
+   * `'Day'`.
+   *
+   * A STRING, NOT A UNION, for the same reason as `nzbAccessMode` above: the
+   * server matches it by exact ordinal name at the repository boundary, so a
+   * union here would be a second weaker copy of that rule that also turns an
+   * unrecognised value from another server version into a boundary type error
+   * rather than something the UI can render.
+   */
+  limitsUnit: string;
   /** arb-x7w8.11 — one of `SourceRuntimeState`, as a stable enum name. */
   runtimeState: string;
   /**
@@ -97,6 +134,28 @@ export const REDIRECT_ACCESS_MODE = 'Redirect';
  * operator changes it.
  */
 export const PROXY_ACCESS_MODE = 'Proxy';
+
+/**
+ * arb-x7w8.1 — the three `Source.Kind` values the running system can resolve
+ * into a search source, in `SourceRepository.KnownKinds` order.
+ *
+ * SPELLED EXACTLY AS THE SERVER ACCEPTS THEM, and exported as constants for the
+ * same reason `REDIRECT_ACCESS_MODE` is: the comparison at the repository
+ * boundary is ORDINAL, so `'nzbhydra'` and `'NZBHYDRA'` are 400s rather than
+ * near misses. This is also the whole accepted set — the form offers a picker
+ * over these three and no free-text path survives, because a typed kind outside
+ * the set is stored nowhere and rejected everywhere.
+ */
+export const NZBHYDRA_KIND = 'NzbHydra';
+export const NEWZNAB_KIND = 'Newznab';
+export const TORZNAB_KIND = 'Torznab';
+
+/**
+ * arb-x7w8.1 — the two accepted `Source.LimitsUnit` values, matched by the
+ * server exactly and ordinally on the same terms as the kinds above.
+ */
+export const HOUR_LIMITS_UNIT = 'Hour';
+export const DAY_LIMITS_UNIT = 'Day';
 
 /**
  * The four states a configured source can be in, mirroring the server's closed
@@ -164,6 +223,28 @@ export interface CreateSourceRequest {
    * rather than relying on a default agreeing with the control's initial value.
    */
   nzbAccessMode?: string;
+  /**
+   * arb-x7w8.1 — the tuning fields, every one of them optional server-side.
+   *
+   * OMITTING ONE TAKES THE ENTITY DEFAULT AND NOT ZERO, which is why each is
+   * added to the body only when the operator actually typed something. Sending
+   * `0` for an untouched `priority`, or `0` for a limit nobody set, would each
+   * be a real value the server stores — and for the limits that is the exact
+   * collapse `queryLimit`'s doc above forbids, in the one direction that turns
+   * "no cap at all" into "a cap of nothing".
+   */
+  apiPath?: string;
+  priority?: number;
+  timeoutSeconds?: number;
+  /**
+   * The caps. ABSENT MEANS UNLIMITED on create, because the column's default is
+   * null and null is unlimited. There is deliberately no explicit `null` sent
+   * here: absent and null mean the same thing to the create handler, and having
+   * one spelling keeps this builder from acquiring a second.
+   */
+  queryLimit?: number;
+  grabLimit?: number;
+  limitsUnit?: string;
 }
 
 /**
@@ -208,4 +289,43 @@ export interface UpdateSourceRequest {
    * see is a field the submit must mean.
    */
   nzbAccessMode?: string;
+  /**
+   * arb-x7w8.1 — the non-nullable tuning columns, which are `nzbAccessMode`-shaped:
+   * omitting one leaves the stored value alone.
+   *
+   * Both are sent on EVERY edit for the reason `nzbAccessMode` gives: the form
+   * displays them, so the save must mean them. `priority` in particular has NO
+   * clear flag below and needs none — it is non-nullable and `0` is an ordinary
+   * weight, so it has no unset state to express and no null policy to confuse
+   * with the three that follow.
+   */
+  apiPath?: string;
+  priority?: number;
+  limitsUnit?: string;
+  /**
+   * A FIFTH NULL POLICY, and it needs a companion flag rather than a spelling of
+   * its own.
+   *
+   * For these three columns `null` is a REAL STORED VALUE and not an absence —
+   * unlimited for the two limits, "fall back to the global default" for the
+   * timeout — so the two-state convention the fields above use cannot express
+   * all three cases. The contract is therefore:
+   *
+   * - value absent, flag absent — DO NOT TOUCH the stored value.
+   * - value present — set the column to it. A `0` is a real cap of zero and is
+   *   sent as `0`; the server decides whether it likes it.
+   * - flag `true` — set the column BACK TO NULL.
+   *
+   * THE CLEAR FLAG IS THE ONLY WAY TO EXPRESS "UNLIMITED", AND `0` IS NEVER IT.
+   * Sending `queryLimit: 0` to mean "the operator emptied the box" stores a cap
+   * of zero, which is a source that can never be searched rather than one with
+   * no cap at all — the exact collapse `SourceSummary.queryLimit` warns about,
+   * arriving here by the one route that doc cannot see.
+   */
+  timeoutSeconds?: number;
+  queryLimit?: number;
+  grabLimit?: number;
+  clearTimeoutSeconds?: boolean;
+  clearQueryLimit?: boolean;
+  clearGrabLimit?: boolean;
 }
