@@ -337,8 +337,21 @@ public static class TorznabFeedParser
             // attribute beats a value read out of the link. Both are taken VERBATIM: neither is
             // case-folded nor converted between hex and base32, because this value is rendered
             // straight back out and a reshaped hash is no longer the one the indexer published.
+            //
+            // arb-xgv3: the declared attr is admitted only if it fits one of the three shapes a real
+            // info hash can take (40 hex, 32 base32, or 64 hex for a v2/btmh hash); anything else
+            // falls back to the magnet's btih exactly as an absent attr would. This is an admission
+            // check, never a transform — an admitted value is still carried verbatim below, case and
+            // all, because base32 is upper-case by convention and reshaping it would corrupt it. It
+            // also closes the control-character gap #507 left open (the char.IsControl refusal there
+            // covers only the magnet link, not this attr): a raw CR/LF or an oversized value fails
+            // every shape and is refused here.
+            //
+            // Note: the attr and the magnet's btih can legitimately disagree even when both are
+            // well-formed — the client derives the true hash from the magnet, the attr is *arr
+            // bookkeeping only.
             var infoHash = ReadAttr(item, "infohash") is { } declaredInfoHash
-                && !string.IsNullOrWhiteSpace(declaredInfoHash)
+                && IsAdmissibleDeclaredInfoHash(declaredInfoHash)
                     ? declaredInfoHash
                     : magnetInfoHash;
 
@@ -425,6 +438,61 @@ public static class TorznabFeedParser
         item.Elements(TorznabNs + "attr")
             .FirstOrDefault(a => string.Equals(a.Attribute("name")?.Value, name, StringComparison.OrdinalIgnoreCase))
             ?.Attribute("value")?.Value;
+
+    /// <summary>
+    /// arb-xgv3: whether a declared <c>torznab:attr name="infohash"</c> value fits one of the three
+    /// shapes a real info hash can take — 40 hex (btih v1), 32 base32 (also btih v1, some indexers'
+    /// preferred encoding), or 64 hex (btmh/v2). Nothing outside those three lengths and alphabets is
+    /// a real hash, so anything else is refused rather than reshaped: the magnet-btih fallback
+    /// applies exactly as it does for an absent attr.
+    ///
+    /// <para><b>Ordinal, per-character checks only — no culture-sensitive char class.</b>
+    /// <see cref="char.IsLetterOrDigit(char)"/> admits non-ASCII letters and digits (Unicode has
+    /// plenty of both), which would let a value THROUGH that merely matches the length while
+    /// carrying characters no hex or base32 alphabet contains. Each shape is matched against its own
+    /// explicit, ASCII-only character set instead.</para>
+    ///
+    /// <para>This is an admission gate, never a transform: it returns a bool and touches nothing in
+    /// the string. Case is part of the value's shape here (both cases are admissible; see the base32
+    /// check below) but the returned value — whichever the caller carries forward — is exactly what
+    /// the feed wrote, never case-folded.</para>
+    /// </summary>
+    private static bool IsAdmissibleDeclaredInfoHash(string value) => value.Length switch
+    {
+        40 or 64 => IsAllAsciiHex(value),
+        32 => IsAllAsciiBase32(value),
+        _ => false,
+    };
+
+    private static bool IsAllAsciiHex(string value)
+    {
+        foreach (var c in value)
+        {
+            if (c is not ((>= '0' and <= '9') or (>= 'a' and <= 'f') or (>= 'A' and <= 'F')))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// RFC 4648 base32 alphabet (A-Z, 2-7), either case admitted since indexers vary and the value is
+    /// carried verbatim regardless of which case it arrived in.
+    /// </summary>
+    private static bool IsAllAsciiBase32(string value)
+    {
+        foreach (var c in value)
+        {
+            if (c is not ((>= 'a' and <= 'z') or (>= 'A' and <= 'Z') or (>= '2' and <= '7')))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     /// <summary>
     /// Newznab reports <c>password</c> as an integer severity (0 = none, non-zero = protected),
