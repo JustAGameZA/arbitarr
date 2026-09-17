@@ -1,6 +1,5 @@
-import { Fragment, useState } from 'react';
+import { useState } from 'react';
 
-import { ApiError } from '../../api/client';
 import { PageHeader } from '../../components/shell/PageHeader';
 import {
   PageToolbar,
@@ -8,67 +7,18 @@ import {
   PageToolbarInput,
   PageToolbarSection,
 } from '../../components/shell/toolbar';
-import { QueryState, errorMessage } from '../QueryState';
+import { QueryState } from '../QueryState';
 import type { SuppressionViewEntry } from '../../api/types';
 import styles from '../surface.module.css';
 import local from './Suppressions.module.css';
 import { DecisionReviewPanel } from './DecisionReview';
-import { useExplanationQuery, useSuppressionsQuery } from './queries';
+import { useSuppressionsQuery } from './queries';
 
 function formatTimestamp(value: string): string {
   return new Date(value).toLocaleString();
 }
 
-/**
- * The original-vs-rewritten title pair for one suppressed release (AC11).
- *
- * The 404 branch is the expected outcome today, not an edge case: see the gap
- * documented on useExplanationQuery. It is written as a sentence that names the
- * cause, because "404" on its own would read as a bug in this page rather than
- * a missing column in the audit log.
- *
- * BEHAVIOUR CHANGE, arb-z505: that sentence never reached the screen before.
- * The hand-rolled branches this replaces tested pending FIRST, as
- * `isPending || data === undefined` — and `data` is `undefined` on an error, so
- * the error branch below it was unreachable and every failure, 404 included,
- * rendered a permanent "Loading…" spinner. QueryState tests error first, which
- * is the precedence this component's own comment always assumed, so the
- * sentence now renders for the case it was written for. Pinned by
- * Suppressions.test.tsx's "renders the 404 sentence rather than a permanent
- * spinner" test, which fails against the old ordering.
- */
-function Explanation({ releaseIdentifier }: { releaseIdentifier: string }) {
-  const explanation = useExplanationQuery(releaseIdentifier);
-
-  return (
-    <QueryState
-      isPending={explanation.isPending}
-      error={explanation.error}
-      data={explanation.data}
-      renderError={(error) =>
-        error instanceof ApiError && error.status === 404
-          ? 'No stored explanation for this release. The audit log records the upstream guid only, while the explanation lookup is keyed on the proxy guid, so suppressed releases cannot be resolved to their titles yet.'
-          : errorMessage(error)
-      }
-    >
-      {(loaded) => (
-        <dl className={local.titles}>
-          <dt>Title used for matching</dt>
-          <dd>{loaded.title}</dd>
-          <dt>Original title</dt>
-          <dd>{loaded.originalTitle}</dd>
-        </dl>
-      )}
-    </QueryState>
-  );
-}
-
 function SuppressionsTable({ entries }: { entries: SuppressionViewEntry[] }) {
-  // Only one row's explanation is open at a time: each one is its own request,
-  // and expanding them all at once would fire a request per row on a page whose
-  // whole purpose is to review a long list.
-  const [openRow, setOpenRow] = useState<number | null>(null);
-
   if (entries.length === 0) {
     return (
       <p className={styles.empty}>
@@ -84,73 +34,60 @@ function SuppressionsTable({ entries }: { entries: SuppressionViewEntry[] }) {
         <thead>
           <tr>
             <th>Occurred</th>
-            <th>Release</th>
+            {/* This is the upstream identifier the audit row was written with
+                (Candidate.Guid), not a release title -- there is no title in
+                this row to show. See the KNOWN BACKEND GAP note above the
+                identifier cell for why no row can offer a titles lookup from
+                it today. */}
+            <th>Upstream identifier</th>
             <th>Query key</th>
             <th>Layer</th>
             <th>Reason</th>
             <th>Enforced</th>
-            <th />
           </tr>
         </thead>
         <tbody>
-          {entries.map((entry, index) => {
-            const isOpen = openRow === index;
-            // index alone is unique within this rendered array -- that is
-            // all aria-controls needs. The ISO timestamp's ':' and '+' are
-            // valid there (getElementById and AT IDREF resolution do not
-            // care), but they make the id unsafe to use in a bare '#id' CSS
-            // selector, so they are left out rather than included for
-            // "extra" uniqueness the index doesn't need.
-            const detailId = `suppression-titles-${index}`;
-
-            return (
-              <Fragment key={`${entry.occurredAt}:${entry.releaseIdentifier}:${index}`}>
-                <tr>
-                  <td>{formatTimestamp(entry.occurredAt)}</td>
-                  <td className={local.identifier}>{entry.releaseIdentifier}</td>
-                  <td>{entry.queryKey}</td>
-                  {/* The layer that acted: a rule name for the rule-engine
-                      layers, or a stable label such as "ai"/"pass" for the
-                      others. This is the attribution AC11 asks for. */}
-                  <td>
-                    <span className={styles.badge}>{entry.layer}</span>
-                  </td>
-                  <td>{entry.reason}</td>
-                  {/* shadowMode means the decision was RECORDED BUT NOT ENFORCED.
-                      The legacy page printed the raw flag as "yes"/"no" under a
-                      "Shadow Mode" heading, which inverts the sense an operator
-                      reads at a glance: "yes" looked like the suppression
-                      happened. Naming the column for the consequence removes the
-                      double negative. */}
-                  <td>
-                    {entry.shadowMode ? (
-                      <span className={`${styles.badge} ${styles.badgeWarn}`}>Shadow only</span>
-                    ) : (
-                      <span className={`${styles.badge} ${styles.badgeDanger}`}>Suppressed</span>
-                    )}
-                  </td>
-                  <td>
-                    <button
-                      type="button"
-                      className={styles.buttonSecondary}
-                      aria-expanded={isOpen}
-                      aria-controls={isOpen ? detailId : undefined}
-                      onClick={() => setOpenRow(isOpen ? null : index)}
-                    >
-                      {isOpen ? 'Hide titles' : 'Show titles'}
-                    </button>
-                  </td>
-                </tr>
-                {isOpen && (
-                  <tr>
-                    <td id={detailId} colSpan={7}>
-                      <Explanation releaseIdentifier={entry.releaseIdentifier} />
-                    </td>
-                  </tr>
+          {entries.map((entry, index) => (
+            <tr key={`${entry.occurredAt}:${entry.releaseIdentifier}:${index}`}>
+              <td>{formatTimestamp(entry.occurredAt)}</td>
+              {/* KNOWN BACKEND GAP: this is the raw upstream identifier the
+                  audit log stores (Candidate.Guid), never a release title,
+                  and the explanation lookup this surface used to offer here is
+                  keyed on ProxyGuid -- a different value this row does not
+                  carry (see queries.ts's history for the full chain). Every
+                  such lookup would 404, so no "Show titles" control is
+                  offered from this column; closing that gap needs a schema
+                  change under src/Arbitarr.Api/ and src/Arbitarr.Data/ plus
+                  the open product question of whether the audit log should
+                  carry the lookup key at all. The value can still run long,
+                  so it keeps the title attribute + selectable-text pattern
+                  Activity uses for its own long machine-shaped values. */}
+              <td className={local.identifier} title={entry.releaseIdentifier}>
+                {entry.releaseIdentifier}
+              </td>
+              <td>{entry.queryKey}</td>
+              {/* The layer that acted: a rule name for the rule-engine
+                  layers, or a stable label such as "ai"/"pass" for the
+                  others. This is the attribution AC11 asks for. */}
+              <td>
+                <span className={styles.badge}>{entry.layer}</span>
+              </td>
+              <td>{entry.reason}</td>
+              {/* shadowMode means the decision was RECORDED BUT NOT ENFORCED.
+                  The legacy page printed the raw flag as "yes"/"no" under a
+                  "Shadow Mode" heading, which inverts the sense an operator
+                  reads at a glance: "yes" looked like the suppression
+                  happened. Naming the column for the consequence removes the
+                  double negative. */}
+              <td>
+                {entry.shadowMode ? (
+                  <span className={`${styles.badge} ${styles.badgeWarn}`}>Shadow only</span>
+                ) : (
+                  <span className={`${styles.badge} ${styles.badgeDanger}`}>Suppressed</span>
                 )}
-              </Fragment>
-            );
-          })}
+              </td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>
@@ -162,8 +99,9 @@ function SuppressionsTable({ entries }: { entries: SuppressionViewEntry[] }) {
  *
  * A read-only view over the append-only suppression audit log: every
  * suppressed-or-de-ranked result, attributed to the layer that acted, with the
- * reason recorded at the time and the original-vs-rewritten title pair on
- * demand.
+ * reason recorded at the time. It no longer offers an original-vs-rewritten
+ * title lookup per row: see the KNOWN BACKEND GAP comment on the identifier
+ * column for why that control could only ever 404.
  */
 export default function SuppressionsPage() {
   // The submitted filter, not the typed one: the query key is a server-side
