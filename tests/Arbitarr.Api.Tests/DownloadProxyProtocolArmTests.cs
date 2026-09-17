@@ -109,7 +109,7 @@ public class DownloadProxyProtocolArmTests
 
         var bytes = Assert.IsType<FileContentHttpResult>(result);
         Assert.Equal(payload, bytes.FileContents);
-        Assert.IsNotType<RedirectHttpResult>(result);
+        await RedirectResponseAssertions.AssertIsNotARedirectAsync(result);
 
         // The identical path: the adapter WAS asked, for this candidate, exactly once — the same
         // assertion the Usenet arm above makes.
@@ -171,8 +171,10 @@ public class DownloadProxyProtocolArmTests
             release.ProxyGuid, ValidApiKey, Resolver(), lookup,
             new StaticSourceRegistry(new IUpstreamSource[] { source }), NullEventSink.Instance, CancellationToken.None);
 
-        var redirect = Assert.IsType<RedirectHttpResult>(result);
-        Assert.Equal(MagnetLink, redirect.Url);
+        // Asserted on the RESPONSE (302 + Location) rather than on the result's type, per
+        // RedirectResponseAssertions — the endpoint no longer returns the framework's redirect
+        // result, and this is the stronger statement anyway.
+        await RedirectResponseAssertions.AssertRedirectsToAsync(result, MagnetLink);
 
         // "A magnet is never fetched as HTTP" — the assertion the bead names, made on the spy.
         Assert.Empty(source.DownloadRequests);
@@ -227,7 +229,7 @@ public class DownloadProxyProtocolArmTests
             release.ProxyGuid, ValidApiKey, Resolver(), lookup,
             new StaticSourceRegistry(new IUpstreamSource[] { source }), NullEventSink.Instance, CancellationToken.None);
 
-        Assert.Equal(MagnetLink, Assert.IsType<RedirectHttpResult>(result).Url);
+        await RedirectResponseAssertions.AssertRedirectsToAsync(result, MagnetLink);
         Assert.Empty(source.DownloadRequests);
     }
 
@@ -252,7 +254,7 @@ public class DownloadProxyProtocolArmTests
             new StaticSourceRegistry(new IUpstreamSource[] { other }), NullEventSink.Instance, CancellationToken.None);
 
         Assert.IsType<NotFound>(result);
-        Assert.IsNotType<RedirectHttpResult>(result);
+        await RedirectResponseAssertions.AssertIsNotARedirectAsync(result);
         Assert.Empty(other.DownloadRequests);
     }
 
@@ -278,7 +280,11 @@ public class DownloadProxyProtocolArmTests
         foreach (var result in new[] { missing, wrong })
         {
             Assert.Equal(StatusCodes.Status401Unauthorized, Assert.IsAssignableFrom<IStatusCodeHttpResult>(result).StatusCode);
-            Assert.IsNotType<RedirectHttpResult>(result);
+
+            // "No Location header" asserted on the RESPONSE, which is what an open-redirector claim
+            // is actually about. The type check this replaces could not see a Location header set by
+            // any other result type, so it was the weaker form of this assertion.
+            await RedirectResponseAssertions.AssertIsNotARedirectAsync(result);
         }
     }
 
@@ -312,7 +318,7 @@ public class DownloadProxyProtocolArmTests
             new StaticSourceRegistry(new IUpstreamSource[] { source }), NullEventSink.Instance, CancellationToken.None,
             refusalTracker: tracker);
 
-        Assert.IsType<RedirectHttpResult>(result);
+        await RedirectResponseAssertions.AssertRedirectsToAsync(result, MagnetLink);
         Assert.Empty(source.DownloadRequests);
 
         // Still refused: Arbitarr observed no payload, so nothing demonstrated the download path works.
@@ -377,8 +383,13 @@ public class DownloadProxyProtocolArmTests
             new StaticSourceRegistry(new IUpstreamSource[] { source }), events, CancellationToken.None,
             refusalTracker: tracker);
 
-        // ...and it IS in the Location header, which is the one permitted destination.
-        Assert.Contains(InfoHash, Assert.IsType<RedirectHttpResult>(result).Url, StringComparison.Ordinal);
+        // ...and it IS in the Location header, which is the one permitted destination. Read off the
+        // executed response rather than the result object, so this proves the header was actually
+        // written (see RedirectResponseAssertions).
+        var redirected = new DefaultHttpContext();
+        await result.ExecuteAsync(redirected);
+        Assert.Equal(StatusCodes.Status302Found, redirected.Response.StatusCode);
+        Assert.Contains(InfoHash, redirected.Response.Headers.Location.ToString(), StringComparison.Ordinal);
 
         // Per row, over every field an event can carry. A magnet redirect writes no event at all,
         // and that is asserted too — but the per-field sweep is what would catch a future arm that
