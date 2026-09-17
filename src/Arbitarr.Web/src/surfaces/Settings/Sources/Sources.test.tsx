@@ -24,6 +24,13 @@ const sources = [
     // The default. The second fixture is Redirect, so the edit form's seeding is
     // exercised for BOTH modes rather than for whichever happens to come first.
     nzbAccessMode: 'Proxy',
+    // arb-x7w8.16 — the tuning columns, with values DISTINCT from the second
+    // fixture's so an edit form seeded from the wrong row is visible rather than
+    // coincidentally right.
+    apiPath: '/api',
+    priority: 5,
+    timeoutSeconds: 12,
+    limitsUnit: 'Day',
     runtimeState: 'Healthy',
     disabledUntil: null,
     disabledLevel: 0,
@@ -43,6 +50,13 @@ const sources = [
     enabled: false,
     hasApiKey: false,
     nzbAccessMode: 'Redirect',
+    // A null timeout alongside the null limits below, so the "stored null seeds
+    // an empty box" path is exercised by the baseline fixture for all three
+    // nullable columns and not only by the test that is about them.
+    apiPath: '/api/v2',
+    priority: 0,
+    timeoutSeconds: null,
+    limitsUnit: 'Hour',
     runtimeState: 'Healthy',
     disabledUntil: null,
     disabledLevel: 0,
@@ -334,6 +348,13 @@ describe('Sources section', () => {
       // arb-x7w8.14: always sent, and 'Proxy' unless the operator chose otherwise
       // — the wire half of "Redirect ships OFF by default".
       nzbAccessMode: 'Proxy',
+      // arb-x7w8.16: the window is a select that always holds a value, so it is
+      // always sent. NOTE WHAT IS ABSENT alongside it — this is an exact
+      // `toEqual`, so it also asserts that the five tuning fields the operator
+      // did not type send NOTHING rather than a zero: no apiPath, no priority,
+      // no timeoutSeconds, and crucially no `queryLimit: 0` or `grabLimit: 0`,
+      // which would store a cap of nothing on a source meant to be uncapped.
+      limitsUnit: 'Day',
     });
   }, TEST_TIMEOUT_MS);
 
@@ -853,5 +874,497 @@ describe('Sources section', () => {
 
     const put = api.calls.find((call) => call.method === 'PUT');
     expect(JSON.parse(put!.body!).nzbAccessMode).toBe('Redirect');
+  }, TEST_TIMEOUT_MS);
+
+  /**
+   * arb-x7w8.16 — KIND IS A CLOSED PICKER AND THE FREE-TEXT PATH IS GONE.
+   *
+   * The option list is asserted EXACTLY rather than by presence, because
+   * `getByRole('option', { name: /Torznab/ })` passes just as well against a
+   * picker that also offers a fourth value the server would reject — and the
+   * whole reason this control replaced a text box is that the accepted set is
+   * closed. Asserting the set is asserting the thing that changed.
+   */
+  it('offers exactly the three kinds the server accepts, and no free-text box', async () => {
+    mockApi({ [SOURCES]: { body: [] } });
+    renderSurface(<SourcesSection />);
+
+    const select = await screen.findByLabelText('New source kind');
+    // A <select>, not an <input>: a text box with the same label would satisfy
+    // every value assertion below while still letting an operator type 'nzbhydra'.
+    expect(select.tagName).toBe('SELECT');
+
+    expect(
+      within(select)
+        .getAllByRole('option')
+        .map((option) => (option as HTMLOptionElement).value),
+    ).toEqual(['NzbHydra', 'Newznab', 'Torznab']);
+  }, TEST_TIMEOUT_MS);
+
+  /**
+   * Each kind reaches the wire as the EXACT ordinal spelling.
+   *
+   * Per kind rather than once, because a picker that emitted its label, its
+   * index, or a lower-cased value would pass a single-kind test whose fixture
+   * happened to be the default. The negative assertion on the lower-cased form
+   * is the one that names the actual failure mode: `SourceRepository` compares
+   * ordinally, so 'nzbhydra' is a 400 rather than a tolerated variant.
+   */
+  it.each(['NzbHydra', 'Newznab', 'Torznab'])(
+    'sends %s as the exact string the server matches ordinally',
+    async (kind) => {
+      const user = userEvent.setup({ delay: null });
+      const api = mockApi({ [SOURCES]: { body: [] } });
+      renderSurface(<SourcesSection />);
+
+      await user.type(await screen.findByLabelText('New source display name'), `A ${kind}`);
+      await user.type(screen.getByLabelText('New source base URL'), 'http://192.0.2.30:5076');
+      await user.selectOptions(screen.getByLabelText('New source kind'), kind);
+      await user.click(screen.getByRole('button', { name: 'Add source' }));
+
+      const body = JSON.parse(api.calls.find((call) => call.method === 'POST')!.body!);
+      expect(body.kind).toBe(kind);
+      expect(body.kind).not.toBe(kind.toLowerCase());
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  /**
+   * A stored kind outside the three is SHOWN, not silently rewritten.
+   *
+   * Such a row should not exist — every write path validates — but if one does,
+   * an operator opening the form must see what is actually stored. A select that
+   * re-selected the first option instead would make an unrelated save rewrite a
+   * column nobody looked at, which is a data change disguised as a render.
+   */
+  it('shows a stored kind outside the three as-is rather than rewriting it', async () => {
+    const user = userEvent.setup({ delay: null });
+    mockApi({
+      [SOURCES]: {
+        body: [{ ...sources[0], id: 61, displayName: 'Legacy hydra', kind: 'SomethingElse' }],
+      },
+    });
+    renderSurface(<SourcesSection />);
+
+    await user.click(within(await rowFor('Legacy hydra')).getByRole('button', { name: 'Edit' }));
+
+    const select = await screen.findByLabelText('Edit source kind');
+    expect(select).toHaveValue('SomethingElse');
+    // And specifically NOT quietly snapped to the first option.
+    expect(select).not.toHaveValue('NzbHydra');
+  }, TEST_TIMEOUT_MS);
+
+  /**
+   * arb-x7w8.16 — every tuning field reaches the create body, with its own name
+   * and as a NUMBER where the contract says a number.
+   *
+   * The types are asserted as well as the values because `<input type="number">`
+   * hands back a string: a builder that forwarded `event.target.value` untouched
+   * would produce `priority: "7"`, which `toEqual`'s own loose reading of a
+   * body would not catch if only the digits were compared. `typeof` is what
+   * makes this test about the coercion.
+   */
+  it('sends every tuning field on create, with numbers as numbers', async () => {
+    const user = userEvent.setup({ delay: null });
+    const api = mockApi({ [SOURCES]: { body: [] } });
+    renderSurface(<SourcesSection />);
+
+    await user.type(await screen.findByLabelText('New source display name'), 'Tuned hydra');
+    await user.type(screen.getByLabelText('New source base URL'), 'http://192.0.2.30:5076');
+    await user.type(screen.getByLabelText('New source API path'), '/api/v2');
+    await user.type(screen.getByLabelText('New source priority'), '7');
+    await user.type(screen.getByLabelText('New source timeout seconds'), '12');
+    await user.type(screen.getByLabelText('New source query limit'), '400');
+    await user.type(screen.getByLabelText('New source grab limit'), '25');
+    await user.selectOptions(screen.getByLabelText('New source limits window'), 'Hour');
+    await user.click(screen.getByRole('button', { name: 'Add source' }));
+
+    const body = JSON.parse(api.calls.find((call) => call.method === 'POST')!.body!);
+    expect(body.apiPath).toBe('/api/v2');
+    expect(body.priority).toBe(7);
+    expect(body.timeoutSeconds).toBe(12);
+    expect(body.queryLimit).toBe(400);
+    expect(body.grabLimit).toBe(25);
+    expect(body.limitsUnit).toBe('Hour');
+
+    // Numbers, not the strings the inputs hold.
+    expect(typeof body.priority).toBe('number');
+    expect(typeof body.timeoutSeconds).toBe('number');
+    expect(typeof body.queryLimit).toBe('number');
+    expect(typeof body.grabLimit).toBe('number');
+  }, TEST_TIMEOUT_MS);
+
+  /**
+   * UNLIMITED IS ABSENT, AND IT IS NOT ZERO — on the create path.
+   *
+   * THE POSITIVE CONTROL IS THE FIRST HALF OF THIS TEST, in the same harness: a
+   * typed limit IS sent, which proves the field reaches the body at all. Only
+   * then does the absence assertion mean anything — `not.toHaveProperty` passes
+   * just as happily against a form that never wired the field up, and this test
+   * would otherwise be vacuous in exactly the way CLAUDE.md §4 describes.
+   */
+  it('sends a typed limit on create but omits an empty one rather than sending zero', async () => {
+    const user = userEvent.setup({ delay: null });
+    const api = mockApi({ [SOURCES]: { body: [] } });
+    renderSurface(<SourcesSection />);
+
+    // CONTROL: a limit that IS typed reaches the body.
+    await user.type(await screen.findByLabelText('New source display name'), 'Capped hydra');
+    await user.type(screen.getByLabelText('New source base URL'), 'http://192.0.2.30:5076');
+    await user.type(screen.getByLabelText('New source query limit'), '400');
+    await user.click(screen.getByRole('button', { name: 'Add source' }));
+
+    const control = JSON.parse(api.calls.find((call) => call.method === 'POST')!.body!);
+    expect(control.queryLimit).toBe(400);
+    // The grab limit was left empty in the very same submission, so the two
+    // arms are compared under identical conditions.
+    expect(control).not.toHaveProperty('grabLimit');
+    // And absent means absent: never the zero that would store a cap of nothing.
+    expect(control.grabLimit).not.toBe(0);
+  }, TEST_TIMEOUT_MS);
+
+  /**
+   * THE UPDATE'S THREE STATES, ASSERTED AS THREE — untouched, cleared, changed.
+   *
+   * These are one test rather than three because the distinction between them is
+   * the whole contract: asserting only "a cleared limit sends the clear flag"
+   * passes against an implementation that sends the flag unconditionally, which
+   * would blank a limit on every unrelated edit. Driven from a fixture with a
+   * stored value in each of the three nullable columns, so every arm has
+   * something real to leave alone, clear, or change.
+   */
+  it('distinguishes an untouched limit, a cleared one and a changed one on edit', async () => {
+    const user = userEvent.setup({ delay: null });
+    const api = mockApi({
+      [SOURCES]: {
+        body: [
+          {
+            ...sources[0],
+            id: 71,
+            displayName: 'Three state hydra',
+            timeoutSeconds: 12,
+            queryLimit: 400,
+            grabLimit: 25,
+          },
+        ],
+      },
+    });
+    renderSurface(<SourcesSection />);
+
+    await user.click(
+      within(await rowFor('Three state hydra')).getByRole('button', { name: 'Edit' }),
+    );
+
+    // The boxes seed from the stored values -- the control for everything below:
+    // without this the "untouched" arm could pass against a form that never read
+    // them, and the "cleared" arm against one where they arrived empty already.
+    expect(await screen.findByLabelText('Edit source timeout seconds')).toHaveValue(12);
+    expect(screen.getByLabelText('Edit source query limit')).toHaveValue(400);
+    expect(screen.getByLabelText('Edit source grab limit')).toHaveValue(25);
+
+    // CLEARED: the operator empties the query limit.
+    await user.clear(screen.getByLabelText('Edit source query limit'));
+    // CHANGED: the grab limit gets a new number.
+    const grab = screen.getByLabelText('Edit source grab limit');
+    await user.clear(grab);
+    await user.type(grab, '30');
+    // UNTOUCHED: the timeout is not touched at all.
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    const body = JSON.parse(api.calls.find((call) => call.method === 'PUT')!.body!);
+
+    // CLEARED -- the flag, and emphatically not a zero. `0` here would store a
+    // cap of nothing rather than restoring "no cap at all".
+    expect(body.clearQueryLimit).toBe(true);
+    expect(body).not.toHaveProperty('queryLimit');
+    expect(body.queryLimit).not.toBe(0);
+
+    // CHANGED -- the number, and no flag alongside it.
+    expect(body.grabLimit).toBe(30);
+    expect(typeof body.grabLimit).toBe('number');
+    expect(body).not.toHaveProperty('clearGrabLimit');
+
+    // UNTOUCHED -- neither. The stored value is left exactly as it was, which is
+    // what stops an unrelated edit from disturbing a limit nobody looked at.
+    expect(body.timeoutSeconds).toBe(12);
+    expect(body).not.toHaveProperty('clearTimeoutSeconds');
+  }, TEST_TIMEOUT_MS);
+
+  /**
+   * An ALREADY-NULL limit that stays empty sends NOTHING — not even the flag.
+   *
+   * The distinction this protects is between "the operator cleared it" and
+   * "there was never a value": both leave an empty box, and only the first is a
+   * write. The positive control is the third assertion, which shows the same
+   * submission DOES carry a clear flag for the column that really was cleared —
+   * so the two absences above it are evidence rather than a silent no-op.
+   */
+  it('sends no clear flag for a limit that was already unlimited', async () => {
+    const user = userEvent.setup({ delay: null });
+    const api = mockApi({
+      [SOURCES]: {
+        body: [
+          {
+            ...sources[0],
+            id: 72,
+            displayName: 'Half capped hydra',
+            queryLimit: null,
+            grabLimit: 25,
+            timeoutSeconds: null,
+          },
+        ],
+      },
+    });
+    renderSurface(<SourcesSection />);
+
+    await user.click(within(await rowFor('Half capped hydra')).getByRole('button', { name: 'Edit' }));
+
+    // Stored null seeds an EMPTY box -- never a '0'.
+    expect(await screen.findByLabelText('Edit source query limit')).toHaveValue(null);
+
+    // Clear the one that DOES have a stored value, and leave the null one alone.
+    await user.clear(screen.getByLabelText('Edit source grab limit'));
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    const body = JSON.parse(api.calls.find((call) => call.method === 'PUT')!.body!);
+
+    // Already null, still empty: no value and no flag.
+    expect(body).not.toHaveProperty('queryLimit');
+    expect(body).not.toHaveProperty('clearQueryLimit');
+    expect(body).not.toHaveProperty('clearTimeoutSeconds');
+
+    // CONTROL: the column that really was cleared does carry its flag, so the
+    // three absences above are a distinction this code draws and not a builder
+    // that emits no flags at all.
+    expect(body.clearGrabLimit).toBe(true);
+  }, TEST_TIMEOUT_MS);
+
+  /**
+   * A TYPED `0` IS A CAP OF ZERO AND IS SENT AS `0`.
+   *
+   * The mirror image of the clear-flag rule, and the reason that rule is written
+   * as "empty box" rather than "falsy value": `0` is a real value the server
+   * accepts, so the form must not helpfully translate it into "unlimited". Both
+   * directions in one test, because each alone passes against an implementation
+   * that collapses the two.
+   */
+  it('sends a typed zero as a cap of zero, not as unlimited', async () => {
+    const user = userEvent.setup({ delay: null });
+    const api = mockApi({
+      [SOURCES]: {
+        body: [{ ...sources[0], id: 73, displayName: 'Zeroed hydra', queryLimit: 400 }],
+      },
+    });
+    renderSurface(<SourcesSection />);
+
+    await user.click(within(await rowFor('Zeroed hydra')).getByRole('button', { name: 'Edit' }));
+
+    const field = await screen.findByLabelText('Edit source query limit');
+    await user.clear(field);
+    await user.type(field, '0');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    const body = JSON.parse(api.calls.find((call) => call.method === 'PUT')!.body!);
+    expect(body.queryLimit).toBe(0);
+    expect(typeof body.queryLimit).toBe('number');
+    // A typed zero is NOT a clear: the operator asked for a cap of nothing, and
+    // the server decides whether it likes that.
+    expect(body).not.toHaveProperty('clearQueryLimit');
+  }, TEST_TIMEOUT_MS);
+
+  /**
+   * A STORED NULL RENDERS AS UNLIMITED AND A STORED ZERO RENDERS AS ZERO, in one
+   * render.
+   *
+   * Both in the same test because the distinction is what is being asserted:
+   * separately, the null case passes against a surface that renders "unlimited"
+   * for everything, and the zero case against one that coalesces null to zero.
+   * This covers both the table cell and the edit form's box, since the collapse
+   * can be introduced independently in either.
+   */
+  it('renders a stored null as unlimited and a stored zero as zero, in the table and the form', async () => {
+    const user = userEvent.setup({ delay: null });
+    mockApi({
+      [SOURCES]: {
+        body: [
+          { ...sources[0], id: 81, displayName: 'Null limit hydra', queriesUsed: 2, queryLimit: null },
+          { ...sources[0], id: 82, displayName: 'Zero limit hydra', queriesUsed: 2, queryLimit: 0 },
+        ],
+      },
+    });
+    renderSurface(<SourcesSection />);
+
+    const nulled = await rowFor('Null limit hydra');
+    expect(within(nulled).getByText('2 used, unlimited')).toBeInTheDocument();
+    expect(within(nulled).queryByText('2 of 0')).not.toBeInTheDocument();
+
+    // The zero row reads as a real cap of zero, which is a different fact.
+    const zeroed = await rowFor('Zero limit hydra');
+    expect(within(zeroed).getByText('2 of 0')).toBeInTheDocument();
+
+    // And the same distinction survives into the form: empty box versus '0'.
+    await user.click(within(nulled).getByRole('button', { name: 'Edit' }));
+    expect(await screen.findByLabelText('Edit source query limit')).toHaveValue(null);
+
+    await user.click(within(await rowFor('Zero limit hydra')).getByRole('button', { name: 'Edit' }));
+    await waitFor(() =>
+      expect(screen.getByLabelText('Edit source query limit')).toHaveValue(0),
+    );
+  }, TEST_TIMEOUT_MS);
+
+  /**
+   * The timeout box carries the SERVER'S OWN bounds as native attributes, and an
+   * out-of-range value is stopped by the browser's constraint validation rather
+   * than by any code in this file.
+   *
+   * `min`/`max` are asserted as the literal 1 and 30 because they mirror
+   * `SourceRepository.MinTimeoutSeconds` and `MaxTimeoutSeconds` -- a bound
+   * invented here instead would let the form accept a value the server rejects,
+   * or refuse one it accepts.
+   *
+   * THE ABSENCE OF A POST IS ASSERTED AGAINST A POSITIVE CONTROL: the same
+   * harness first shows that an IN-RANGE value does submit, so "no POST" is
+   * evidence about the out-of-range value and not about a form that never
+   * submits at all. Without that half this would pass against a broken button.
+   */
+  it('mirrors the server bounds on the timeout box and lets the browser stop an out-of-range value', async () => {
+    const user = userEvent.setup({ delay: null });
+    const api = mockApi({ [SOURCES]: { body: [] } });
+    renderSurface(<SourcesSection />);
+
+    const timeout = await screen.findByLabelText('New source timeout seconds');
+    expect(timeout).toHaveAttribute('min', '1');
+    expect(timeout).toHaveAttribute('max', '30');
+
+    await user.type(screen.getByLabelText('New source display name'), 'Slow hydra');
+    await user.type(screen.getByLabelText('New source base URL'), 'http://192.0.2.30:5076');
+
+    // CONTROL: an in-range value submits, so the button and the wiring work.
+    await user.type(timeout, '30');
+    await user.click(screen.getByRole('button', { name: 'Add source' }));
+    await waitFor(() => expect(api.calls.some((call) => call.method === 'POST')).toBe(true));
+    expect(JSON.parse(api.calls.find((call) => call.method === 'POST')!.body!).timeoutSeconds).toBe(
+      30,
+    );
+
+    // Now one second past the maximum, in the same form: the native constraint
+    // refuses the submit, so no second POST is made.
+    const postsBefore = api.calls.filter((call) => call.method === 'POST').length;
+    await user.clear(timeout);
+    await user.type(timeout, '31');
+    await user.click(screen.getByRole('button', { name: 'Add source' }));
+    expect(api.calls.filter((call) => call.method === 'POST')).toHaveLength(postsBefore);
+  }, TEST_TIMEOUT_MS);
+
+  /**
+   * A SERVER 400 ON A TUNING FIELD RENDERS THE SERVER'S OWN MESSAGE.
+   *
+   * Driven with an in-range timeout so the native attributes cannot be what
+   * stops it: the request genuinely reaches the wire and genuinely comes back
+   * rejected, which is the only way to prove this form adds no validation layer
+   * of its own. A form that pre-empted the server here would show different
+   * words -- or none -- and would have put a second copy of the rule in the tree.
+   *
+   * The POST body assertion is the positive control: it shows the value that was
+   * rejected is the value that was sent, so the message below answers this
+   * submission rather than merely being present on the page.
+   */
+  it("renders the server's own rejection of a tuning field", async () => {
+    const user = userEvent.setup({ delay: null });
+    const api = mockApi({ [SOURCES]: { body: [] } });
+    renderSurface(<SourcesSection />);
+
+    await user.type(await screen.findByLabelText('New source display name'), 'Pathy hydra');
+    await user.type(screen.getByLabelText('New source base URL'), 'http://192.0.2.30:5076');
+    await user.type(screen.getByLabelText('New source timeout seconds'), '25');
+    await user.type(screen.getByLabelText('New source API path'), '/api?t=caps');
+
+    api.set(SOURCES, {
+      status: 400,
+      body: {
+        error:
+          'Source API path must not contain a query string; search parameters are appended by Arbitarr.',
+      },
+    });
+    await user.click(screen.getByRole('button', { name: 'Add source' }));
+
+    expect(
+      await screen.findByText(
+        'Source API path must not contain a query string; search parameters are appended by Arbitarr.',
+      ),
+    ).toBeInTheDocument();
+
+    // CONTROL: the rejected value is the one this form sent.
+    const body = JSON.parse(api.calls.find((call) => call.method === 'POST')!.body!);
+    expect(body.apiPath).toBe('/api?t=caps');
+    expect(body.timeoutSeconds).toBe(25);
+  }, TEST_TIMEOUT_MS);
+
+  /**
+   * The tuning fields did not disturb the apiKey contract.
+   *
+   * A regression guard rather than new behaviour: `toUpdateRequest` grew six
+   * fields and three flags in arb-x7w8.16, and the one property in that body
+   * whose presence blanks a working credential is still absent when untouched.
+   * The control is the positive assertion that the new fields ARE present in the
+   * same body -- without it this restates an existing test against a builder
+   * that might have stopped sending anything at all.
+   */
+  it('still omits an untouched apiKey from an edit that carries the tuning fields', async () => {
+    const user = userEvent.setup({ delay: null });
+    const api = mockApi({ [SOURCES]: { body: sources } });
+    renderSurface(<SourcesSection />);
+
+    await user.click(within(await rowFor('Primary hydra')).getByRole('button', { name: 'Edit' }));
+
+    const priority = await screen.findByLabelText('Edit source priority');
+    await user.clear(priority);
+    await user.type(priority, '9');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    const body = JSON.parse(api.calls.find((call) => call.method === 'PUT')!.body!);
+    // CONTROL: the edited tuning field is in the body, so this really is the
+    // arb-x7w8.16 code path and not a build that dropped the fields.
+    expect(body.priority).toBe(9);
+    expect(body.apiPath).toBe('/api');
+    expect(body.limitsUnit).toBe('Day');
+
+    // And the field whose presence would clear the stored key is still absent.
+    expect(body).not.toHaveProperty('apiKey');
+  }, TEST_TIMEOUT_MS);
+
+  /**
+   * Toggling Enabled from the row disturbs no tuning value.
+   *
+   * That path builds its body inline and shows the operator no form, so absence
+   * is correct for every tuning field -- and a clear flag leaking into it would
+   * blank a limit on a click that says only "Enable". The positive control is the
+   * `enabled` assertion: the body reached the wire and carried the edit that was
+   * asked for.
+   */
+  it('sends no tuning field or clear flag when Enabled is toggled from the row', async () => {
+    const user = userEvent.setup({ delay: null });
+    const api = mockApi({ [SOURCES]: { body: sources } });
+    renderSurface(<SourcesSection />);
+
+    await user.click(within(await rowFor('Spare hydra')).getByRole('button', { name: 'Enable' }));
+
+    const body = JSON.parse(api.calls.find((call) => call.method === 'PUT')!.body!);
+    // CONTROL: the toggle really did write.
+    expect(body.enabled).toBe(true);
+
+    for (const field of [
+      'apiPath',
+      'priority',
+      'timeoutSeconds',
+      'queryLimit',
+      'grabLimit',
+      'limitsUnit',
+      'clearTimeoutSeconds',
+      'clearQueryLimit',
+      'clearGrabLimit',
+    ]) {
+      expect(body).not.toHaveProperty(field);
+    }
   }, TEST_TIMEOUT_MS);
 });
