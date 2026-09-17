@@ -109,6 +109,8 @@ A related mechanism outside this list: **upstream redirect refusal** (SEC-M1, CO
 any 3xx on the download path rather than following it, because following it would carry the
 upstream key into a second, off-origin request. See
 [ADR 0014](../adr/0014-refuse-upstream-download-redirects.md).
+A second, per-source mechanism beside it: **origin pin** rejects a shared allow-list of every
+configured origin. See CONTEXT.md, "Origin pin", for why.
 
 **Every secret-bearing record renders safely, or is documented as never rendering.** A positional
 record's compiler-synthesised `ToString` prints every member by name and value, so a raw API key
