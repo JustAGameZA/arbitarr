@@ -248,6 +248,118 @@ describe('Rules', () => {
     expect(screen.getByRole('button', { name: 'Delete deny-x265' })).not.toBeDisabled();
   });
 
+  it('tracks two concurrent deletes independently, each clearing on its own settle', async () => {
+    // The comment above `disabled={pendingDeleteIds.has(rule.id)}` states the
+    // real invariant: `confirmingId` being section-wide means only one row's
+    // Confirm is ever RENDERED at once, but nothing stops the operator moving
+    // it to a different row while an earlier delete is still in flight, so two
+    // deletes CAN run at the same time. `remove.variables` could only ever
+    // name the latest one; `pendingDeleteIds` is a Set so it has to be proven
+    // per row, with two calls open at once, not just for a single in-flight id.
+    const user = userEvent.setup();
+    const threeRules = [
+      ...rules,
+      { id: 3, name: 'deny-x265', isAllow: false, pattern: 'x265', precedence: 30, enabled: true },
+    ];
+    mockApi({ '/api/admin/rules': { body: threeRules } });
+    renderSurface(<RulesPage />);
+    await screen.findByText('block-cam');
+
+    // POSITIVE CONTROL: before either delete starts, no row reads pending --
+    // so the assertions below detect the Set gaining/losing entries rather
+    // than a `disabled` that is unconditionally true.
+    expect(screen.getByRole('button', { name: 'Delete block-cam' })).not.toBeDisabled();
+
+    // Row A's ("block-cam") delete is held open indefinitely; row B's
+    // ("allow-1080p") gets its own controllable promise so it can be settled
+    // independently, after A is proven to still be pending.
+    let resolveB: (() => void) | undefined;
+    vi.mocked(fetch)
+      .mockImplementationOnce(() => new Promise(() => {}))
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveB = () =>
+              resolve(new Response(null, { status: 204 }));
+          }),
+      );
+
+    await user.click(screen.getByRole('button', { name: 'Delete block-cam' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm delete block-cam' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Confirm delete block-cam' })).toBeDisabled();
+    });
+
+    // `confirmingId` moves to row B once its Delete is clicked, which is the
+    // section-wide half of the invariant: row A's Confirm/Cancel UI is no
+    // longer RENDERED. That does not mean row A's delete stopped, which is
+    // exactly the gap `pendingDeleteIds` closes -- proven below once row A's
+    // row is back on screen.
+    await user.click(screen.getByRole('button', { name: 'Delete allow-1080p' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm delete allow-1080p' }));
+
+    // PER-ROW, with both in flight at once: row B reads pending, and untouched
+    // row C ("deny-x265") does not -- its Delete button stays fully operable
+    // rather than a section-wide flag catching it too.
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Confirm delete allow-1080p' })).toBeDisabled();
+    });
+    expect(screen.getByRole('button', { name: 'Delete deny-x265' })).not.toBeDisabled();
+
+    // Cancel back to row A to read its own state: STILL disabled, because its
+    // delete is still in flight -- `pendingDeleteIds` kept it, even though
+    // `confirmingId` moved away and back. A single `remove.variables` check
+    // could never show this: by now `variables` names row B's call, not row A's.
+    await user.click(screen.getByRole('button', { name: 'Cancel delete allow-1080p' }));
+    await user.click(screen.getByRole('button', { name: 'Delete block-cam' }));
+    expect(screen.getByRole('button', { name: 'Confirm delete block-cam' })).toBeDisabled();
+
+    // Settle B only, with its delete succeeding. Row B leaves the confirming
+    // state on success -- proof its own pending entry cleared -- while row A's
+    // delete is still outstanding: its promise never resolved.
+    resolveB?.();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Delete allow-1080p' })).toBeInTheDocument();
+    });
+  });
+
+  it('does not carry a rejected save on one rule into another rule\'s editor', async () => {
+    // Finding 2: update.error used to survive startEditing/Cancel, so a
+    // rejected save on rule 1 followed by Cancel and Edit on rule 2 rendered
+    // rule 1's refusal inside rule 2's form. Positive control first: the
+    // refusal IS shown in rule 1's own editor, proving the search below would
+    // catch it if it leaked; then it must be absent once rule 2 is opened.
+    const user = userEvent.setup();
+    const refusal = 'Precedence must be between 1 and 1000.';
+    const api = mockApi({
+      '/api/admin/rules': { body: rules },
+      '/api/admin/rules/1': { status: 400, body: { error: refusal } },
+    });
+    renderSurface(<RulesPage />);
+    await screen.findByText('block-cam');
+
+    // Reject a save on rule 1 ("block-cam").
+    await user.click(screen.getAllByRole('button', { name: 'Edit' })[0]);
+    let editPanel = screen.getByRole('heading', { name: 'Edit rule' }).closest('section')!;
+    const precedence = within(editPanel).getByLabelText('Precedence');
+    await user.clear(precedence);
+    await user.type(precedence, '99999');
+    await user.click(within(editPanel).getByRole('button', { name: 'Save changes' }));
+
+    // POSITIVE CONTROL: the refusal really is shown, in rule 1's own editor.
+    expect(await screen.findByText(refusal)).toBeInTheDocument();
+
+    // Cancel out, then open rule 2 ("allow-1080p").
+    await user.click(within(editPanel).getByRole('button', { name: 'Cancel' }));
+    await user.click(screen.getAllByRole('button', { name: 'Edit' })[1]);
+    editPanel = screen.getByRole('heading', { name: 'Edit rule' }).closest('section')!;
+
+    // Rule 1's refusal must not follow the operator into rule 2's form.
+    expect(within(editPanel).queryByText(refusal)).not.toBeInTheDocument();
+    expect(api.calls.filter((call) => call.method === 'PUT')).toHaveLength(1);
+  });
+
   it('renders a refused delete in its own row, and nowhere else', async () => {
     const user = userEvent.setup();
     const threeRules = [
