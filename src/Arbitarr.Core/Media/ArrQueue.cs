@@ -69,6 +69,23 @@ public enum ArrSectionStatus
 /// <c>ArrQueueProjectionExcludesPathsTests</c> plants those fields in a multi-record fixture and
 /// asserts PER RECORD that none of them reaches the response.</para>
 /// </summary>
+/// <param name="Id">
+/// The *arr's own queue id (arb-6l9b.6). ADDED LAST so the positional record's existing parameter
+/// order is untouched and no call site silently re-binds a different argument.
+///
+/// <para>It is served because the Library screen renders these rows in a browser and needs a STABLE
+/// key per row: without one the client would have to synthesise a key from the title, which is
+/// neither unique (two files of the same release) nor stable across a poll, so React would re-key
+/// and lose row state every five minutes. The id is upstream's own primary key, which is exactly the
+/// thing that does not move between polls.</para>
+///
+/// <para>It does NOT weaken the exclusion rule above. An integer queue id is not a path, is not
+/// key-shaped, and describes nothing about the operator's filesystem or their instance's address —
+/// it is an opaque row number inside a queue the caller is already authenticated to read in full.
+/// The rule that stays absolute is the one the summary states: this record ENUMERATES what is
+/// served, so adding a member is a deliberate, reviewed edit rather than something a passthrough
+/// could do by accident.</para>
+/// </param>
 public sealed record ArrQueueItem(
     string? Title,
     string? Status,
@@ -82,7 +99,8 @@ public sealed record ArrQueueItem(
     string? DownloadClient,
     string? Indexer,
     IReadOnlyList<string> StatusMessages,
-    string? ErrorMessage);
+    string? ErrorMessage,
+    int? Id);
 
 /// <summary>
 /// A page of an *arr queue together with how the read went. <see cref="Status"/> is the whole
@@ -130,6 +148,14 @@ internal sealed class UpstreamQueueDocument
 /// </summary>
 internal sealed class UpstreamQueueRecord
 {
+    /// <summary>
+    /// Upstream's queue id (arb-6l9b.6). Nullable rather than <c>int</c> so a record that omits it
+    /// stays a valid row that simply has no id, instead of defaulting to 0 and giving several
+    /// id-less rows the same key — which is the one failure the id was added to prevent.
+    /// </summary>
+    [JsonPropertyName("id")]
+    public int? Id { get; set; }
+
     [JsonPropertyName("title")]
     public string? Title { get; set; }
 

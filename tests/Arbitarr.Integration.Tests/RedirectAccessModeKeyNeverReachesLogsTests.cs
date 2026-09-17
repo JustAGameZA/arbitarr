@@ -415,7 +415,7 @@ public sealed class RedirectAccessModeKeyNeverReachesLogsTests : IAsyncLifetime
             .CreateLogger("Arbitarr.Test.RedirectLocationLeakProbe")
             .LogWarning("Redirecting to {Location}", DownloadLink);
 
-        await FlushLogSinkAsync();
+        await host.Services.FlushLogSinkAsync();
         var probed = (await ReadLogEntriesAsync(host))
             .Where(entry => entry.Logger.Contains("RedirectLocationLeakProbe", StringComparison.Ordinal))
             .ToList();
@@ -553,7 +553,7 @@ public sealed class RedirectAccessModeKeyNeverReachesLogsTests : IAsyncLifetime
         // AND THE BLIND SPOT, DEMONSTRATED RATHER THAN ASSERTED IN PROSE: that same Trace line, which
         // the capture just proved exists and carries both values, reaches NO log row. This is why
         // this test had to be added alongside the store scans instead of trusting them.
-        await FlushLogSinkAsync();
+        await host.Services.FlushLogSinkAsync();
         var rows = await ReadLogEntriesAsync(host);
         Assert.DoesNotContain(rows, entry => entry.Logger.Contains("RedirectTraceLevelLeakProbe", StringComparison.Ordinal));
     }
@@ -705,7 +705,7 @@ public sealed class RedirectAccessModeKeyNeverReachesLogsTests : IAsyncLifetime
         // other one (CLAUDE.md §4). Per field because the exception text is the field most likely to
         // carry a URI, and checking only Message would look thorough while leaving the likeliest leak
         // unexamined.
-        await FlushLogSinkAsync();
+        await host.Services.FlushLogSinkAsync();
         var entries = await ReadLogEntriesAsync(host);
 
         // The table is non-empty, so the per-row loop below is not iterating over nothing. This is
@@ -802,22 +802,27 @@ public sealed class RedirectAccessModeKeyNeverReachesLogsTests : IAsyncLifetime
     {
         using var response = await client.GetAsync(
             $"/newznab/api?t=search&q=redirect+probe&apikey={Uri.EscapeDataString(ClientKey)}");
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
+        // arb-krtr: on a non-OK status, name the status and the server's body rather than just
+        // "Expected OK, Actual X" — that is all CI's failure gave the last time this flaked
+        // (InternalServerError under full-shard load; see arb-krtr's diagnosis). Printing the body
+        // here is safe: SearchEndpoint.InfrastructureErrorResult and NoSourceAnsweredResult are the
+        // ONLY ways this route answers non-OK, and both render the FIXED string
+        // SearchEndpoint.InfrastructureErrorDescription ("The indexer encountered an internal
+        // error") — the endpoint's own doc guarantees the underlying exception's message never
+        // reaches this body (CLAUDE.md §1). So there is no server-side detail, upstream URL or the
+        // planted IndexerKey to leak here; a cleanser pass or length cap would just be theatre. No
+        // truncation is applied for the same reason.
         var body = await response.Content.ReadAsStringAsync();
+        Assert.True(
+            response.StatusCode == HttpStatusCode.OK,
+            $"Search returned {(int)response.StatusCode} {response.StatusCode}, body: {body}");
         var item = Assert.Single(XDocument.Parse(body).Descendants("item"));
         var enclosureUrl = item.Elements("enclosure").Single().Attribute("url")!.Value;
 
         var path = new Uri(enclosureUrl).AbsolutePath;
         return Uri.UnescapeDataString(path["/download/".Length..]);
     }
-
-    /// <summary>
-    /// The sink batches on a fixed interval by design (it must never write on the caller's thread), so
-    /// a read taken immediately after a request can legitimately see nothing yet.
-    /// </summary>
-    private static async Task FlushLogSinkAsync() =>
-        await Task.Delay(SqliteLoggerProvider.FlushInterval + TimeSpan.FromMilliseconds(750));
 
     public Task InitializeAsync() => Task.CompletedTask;
 

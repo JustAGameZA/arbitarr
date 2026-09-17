@@ -243,7 +243,7 @@ public sealed class MintedClientApiKeyTests : IAsyncLifetime
         }
         Assert.NotNull(lastUsed);
 
-        await FlushLogSinkAsync();
+        await _factory.Services.FlushLogSinkAsync();
         var page = await _factory.Services.GetRequiredService<LogStore>()
             .ReadAsync(level: null, logger: null, page: 1, pageSize: LogStore.MaxPageSize);
 
@@ -281,7 +281,7 @@ public sealed class MintedClientApiKeyTests : IAsyncLifetime
             "client request failed: http://192.0.2.10:8080/torznab/api?t=caps&apikey={ApiKey}",
             mintedKey);
 
-        await FlushLogSinkAsync();
+        await _factory.Services.FlushLogSinkAsync();
         var page = await _factory.Services.GetRequiredService<LogStore>()
             .ReadAsync(level: null, logger: null, page: 1, pageSize: LogStore.MaxPageSize);
         var probed = page.Entries
@@ -321,13 +321,6 @@ public sealed class MintedClientApiKeyTests : IAsyncLifetime
             .GetAllAsync(CancellationToken.None);
         return keys.Single(key => key.Id == id).LastUsedAt;
     }
-
-    /// <summary>
-    /// The sink batches on a fixed interval by design (it must never write on the caller's thread),
-    /// so a read taken immediately after a request can legitimately see nothing yet.
-    /// </summary>
-    private static async Task FlushLogSinkAsync() =>
-        await Task.Delay(SqliteLoggerProvider.FlushInterval + TimeSpan.FromMilliseconds(750));
 
     public Task InitializeAsync() => Task.CompletedTask;
 
