@@ -40,12 +40,19 @@ function formatTimestamp(value: string): string {
  * state. That defect is why this is a name-matched table rather than a range check
  * or a heuristic: each of the three real values is listed once, explicitly, against
  * the endpoint that produces it.
+ *
+ * A `Map`, not a plain object: `state` is a server-supplied string, and a plain-object
+ * lookup resolves inherited names (`constructor`, `toString`, `__proto__`, ...) against
+ * `Object.prototype` rather than failing the `undefined` check below, so one of those
+ * wire values would silently render an inherited function/object instead of falling
+ * through to the verbatim-unknown-state branch. A `Map` has no prototype entries to
+ * collide with, so only a genuine own entry here ever matches.
  */
-const SOURCE_STATE_BADGES: Record<string, { label: string; className: string }> = {
-  closed: { label: 'Healthy', className: styles.badgeOk },
-  open: { label: 'Paused after failures', className: styles.badgeDanger },
-  'half-open': { label: 'Retrying', className: styles.badgeWarn },
-};
+const SOURCE_STATE_BADGES: Map<string, { label: string; className: string }> = new Map([
+  ['closed', { label: 'Healthy', className: styles.badgeOk }],
+  ['open', { label: 'Paused after failures', className: styles.badgeDanger }],
+  ['half-open', { label: 'Retrying', className: styles.badgeWarn }],
+]);
 
 /**
  * An unknown state (a future `CircuitState` member `ToStateLabel` learns to emit
@@ -55,11 +62,15 @@ const SOURCE_STATE_BADGES: Record<string, { label: string; className: string }> 
  * that invents new operator wording for a state nobody has named yet.
  */
 function SourceStateBadge({ state }: { state: string }) {
-  const known = SOURCE_STATE_BADGES[state];
+  const known = SOURCE_STATE_BADGES.get(state);
   if (known === undefined) {
     return <span className={styles.badge}>{state}</span>;
   }
-  return <span className={`${styles.badge} ${known.className}`}>{known.label}</span>;
+  return (
+    <span className={`${styles.badge} ${known.className}`} title={state}>
+      {known.label}
+    </span>
+  );
 }
 
 /**

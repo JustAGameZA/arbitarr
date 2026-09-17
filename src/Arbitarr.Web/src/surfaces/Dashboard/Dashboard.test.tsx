@@ -495,18 +495,22 @@ describe('Dashboard', () => {
       expect(closedBadge.classList).toContain(surfaceStyles.badgeOk);
       expect(closedBadge.classList).not.toContain(surfaceStyles.badgeWarn);
       expect(closedBadge.classList).not.toContain(surfaceStyles.badgeDanger);
+      // The raw wire value stays available per row via the title attribute.
+      expect(closedBadge).toHaveAttribute('title', 'closed');
 
       const openBadge = within(openRow as HTMLElement).getByText('Paused after failures');
       expect(openBadge.classList).toContain(surfaceStyles.badge);
       expect(openBadge.classList).toContain(surfaceStyles.badgeDanger);
       expect(openBadge.classList).not.toContain(surfaceStyles.badgeOk);
       expect(openBadge.classList).not.toContain(surfaceStyles.badgeWarn);
+      expect(openBadge).toHaveAttribute('title', 'open');
 
       const halfOpenBadge = within(halfOpenRow as HTMLElement).getByText('Retrying');
       expect(halfOpenBadge.classList).toContain(surfaceStyles.badge);
       expect(halfOpenBadge.classList).toContain(surfaceStyles.badgeWarn);
       expect(halfOpenBadge.classList).not.toContain(surfaceStyles.badgeOk);
       expect(halfOpenBadge.classList).not.toContain(surfaceStyles.badgeDanger);
+      expect(halfOpenBadge).toHaveAttribute('title', 'half-open');
     });
 
     it('renders an unrecognised state verbatim with no ok/warn/danger badge class', async () => {
@@ -532,6 +536,64 @@ describe('Dashboard', () => {
       expect(badge.classList).not.toContain(surfaceStyles.badgeOk);
       expect(badge.classList).not.toContain(surfaceStyles.badgeWarn);
       expect(badge.classList).not.toContain(surfaceStyles.badgeDanger);
+    });
+
+    /**
+     * `constructor` and `__proto__` are own-property misses on a plain-object
+     * lookup table that nonetheless resolve through `Object.prototype`, so a
+     * naive `table[state]` reads `Object.prototype.constructor` /
+     * `Object.prototype.__proto__` instead of hitting `=== undefined` and
+     * falling through to the verbatim-unknown-state branch. Both are asserted
+     * beside a known state in the SAME render (arb-dash-state-badge review
+     * fixup): the sibling row is the positive control proving a real state
+     * still resolves through this table while the two adversarial names do
+     * not borrow anything from its prototype chain.
+     */
+    it('renders constructor and __proto__ state values verbatim, not an inherited prototype member', async () => {
+      const withPrototypeNames = {
+        ...status,
+        sources: [
+          { sourceName: 'closed-source', state: 'closed', consecutiveFailures: 0, lastError: null },
+          {
+            sourceName: 'constructor-source',
+            state: 'constructor',
+            consecutiveFailures: 0,
+            lastError: null,
+          },
+          {
+            sourceName: 'proto-source',
+            state: '__proto__',
+            consecutiveFailures: 0,
+            lastError: null,
+          },
+        ],
+      };
+      mockApi({ ...allOk, '/api/status': { body: withPrototypeNames } });
+      renderSurface(<DashboardPage />);
+
+      // Positive control: a known state in a sibling row still renders its mapped label.
+      const closedRow = (await screen.findByText('closed-source')).closest('tr');
+      expect(closedRow).not.toBeNull();
+      const closedBadge = within(closedRow as HTMLElement).getByText('Healthy');
+      expect(closedBadge.classList).toContain(surfaceStyles.badgeOk);
+
+      const constructorRow = screen.getByText('constructor-source').closest('tr');
+      expect(constructorRow).not.toBeNull();
+      const constructorBadge = within(constructorRow as HTMLElement).getByText('constructor');
+      expect(constructorBadge.classList).toContain(surfaceStyles.badge);
+      expect(constructorBadge.classList).not.toContain(surfaceStyles.badgeOk);
+      expect(constructorBadge.classList).not.toContain(surfaceStyles.badgeWarn);
+      expect(constructorBadge.classList).not.toContain(surfaceStyles.badgeDanger);
+      expect(constructorRow?.textContent).not.toContain('undefined');
+
+      const protoRow = screen.getByText('proto-source').closest('tr');
+      expect(protoRow).not.toBeNull();
+      const protoBadge = within(protoRow as HTMLElement).getByText('__proto__');
+      expect(protoBadge.classList).toContain(surfaceStyles.badge);
+      expect(protoBadge.classList).not.toContain(surfaceStyles.badgeOk);
+      expect(protoBadge.classList).not.toContain(surfaceStyles.badgeWarn);
+      expect(protoBadge.classList).not.toContain(surfaceStyles.badgeDanger);
+      expect(protoRow?.textContent).not.toContain('undefined');
     });
   });
 
@@ -567,12 +629,21 @@ describe('Dashboard', () => {
     renderSurface(<DashboardPage />);
 
     await screen.findByText('quiet-source');
-    const dashes = await screen.findAllByText('—');
-    // Exactly the three blank cells this bead touches: Last error, Resolved
-    // identity and Band. A fourth or fifth em-dash sneaking in elsewhere (a
-    // duration formatter, an unrelated empty state) would change this count and
-    // is deliberately not swallowed by a looser `toBeGreaterThan`.
-    expect(dashes).toHaveLength(3);
+    // Asserted per cell, not as a page-wide count: a global toHaveLength(3)
+    // proves only that three em-dashes exist SOMEWHERE, which still passes if
+    // one of the three intended cells renders something else and an unrelated
+    // fourth cell happens to also render '—'. Naming each cell's row and
+    // header column pins the dash to the specific field this bead touches.
+    const sourceRow = screen.getByText('quiet-source').closest('tr');
+    expect(sourceRow).not.toBeNull();
+    const [, , , lastErrorCell] = within(sourceRow as HTMLElement).getAllByRole('cell');
+    expect(lastErrorCell).toHaveTextContent('—');
+
+    const searchRow = screen.getByText('no identity or band').closest('tr');
+    expect(searchRow).not.toBeNull();
+    const [, , identityCell, , , bandCell] = within(searchRow as HTMLElement).getAllByRole('cell');
+    expect(identityCell).toHaveTextContent('—');
+    expect(bandCell).toHaveTextContent('—');
   });
 
   it('renders the sources table, not an empty message, when sources are present', async () => {
