@@ -64,6 +64,7 @@ function RuleForm({
   onCancel,
   submitLabel,
   busy,
+  error,
 }: {
   draft: RuleDraft;
   onChange: (draft: RuleDraft) => void;
@@ -71,6 +72,8 @@ function RuleForm({
   onCancel?: () => void;
   submitLabel: string;
   busy: boolean;
+  /** The server's rejection for THIS form's last submit, or null/undefined. */
+  error?: unknown;
 }) {
   const set = <K extends keyof RuleDraft>(name: K, value: RuleDraft[K]) =>
     onChange({ ...draft, [name]: value });
@@ -135,6 +138,11 @@ function RuleForm({
           Cancel
         </button>
       )}
+      {error !== null && error !== undefined && (
+        <p className={styles.error} role="alert">
+          {errorMessage(error)}
+        </p>
+      )}
     </form>
   );
 }
@@ -157,13 +165,62 @@ export default function RulesPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState<RuleDraft>(BLANK_DRAFT);
   const [testTitle, setTestTitle] = useState('');
+  const [confirmingId, setConfirmingId] = useState<number | null>(null);
+  // #98/ApiKeys's shape (A1): the id a refused DELETE belongs to, plus a
+  // CAPTURED copy of the error, since `remove.error` is shared across rows
+  // and would be read by whichever row renders after the mutation's own
+  // state has moved on to the next call.
+  const [deleteFailedId, setDeleteFailedId] = useState<number | null>(null);
+  const [deleteFailure, setDeleteFailure] = useState<unknown>(null);
+  // The real invariant this rests on: `confirmingId` being section-wide means
+  // only one row's Confirm is ever RENDERED at a time, but nothing stops the
+  // operator moving `confirmingId` to a different row while an earlier
+  // `remove.mutate` is still in flight -- there is no guard against it. A
+  // single `remove.variables === rule.id` check tracks only the LATEST call,
+  // so a second delete started before the first settles would silently stop
+  // showing the first row as pending. This Set is kept in local state instead,
+  // one id added right before each `mutate` and removed once IT settles, so
+  // every row still in flight reads pending regardless of how many others have
+  // started since -- and unlike the removed shared-boolean defect, a row not
+  // in this Set stays fully operable no matter how many other deletes are
+  // running.
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<ReadonlySet<number>>(new Set());
 
   const startEditing = (rule: FilterRule) => {
+    // A rejected save from a PREVIOUS edit target must not outlive it: without
+    // this reset, `update.error` stays on the mutation until the next save
+    // settles, so opening a different rule's editor rendered the last rule's
+    // refusal inside this one's form.
+    update.reset();
     setEditingId(rule.id);
     setEditDraft(draftOf(rule));
   };
 
-  const writeError = create.error ?? update.error ?? remove.error;
+  const onDelete = (id: number) => {
+    // The previous refusal must not outlive its attempt, or the operator reads
+    // a rejection the server has not issued for the row now under the cursor.
+    setDeleteFailedId(null);
+    setDeleteFailure(null);
+    setPendingDeleteIds((ids) => new Set(ids).add(id));
+    remove.mutate(id, {
+      onSuccess: () => {
+        // The row is gone from the refetched list, so the confirm it was
+        // showing has nothing left to confirm.
+        setConfirmingId(null);
+      },
+      onError: (error) => {
+        setDeleteFailedId(id);
+        setDeleteFailure(error);
+      },
+      onSettled: () => {
+        setPendingDeleteIds((ids) => {
+          const next = new Set(ids);
+          next.delete(id);
+          return next;
+        });
+      },
+    });
+  };
 
   return (
     <>
@@ -172,12 +229,6 @@ export default function RulesPage() {
       <section className={styles.panel}>
         <h2 className={styles.panelHeading}>Rules</h2>
         <div className={styles.panelBody}>
-          {writeError !== null && writeError !== undefined && (
-            <p className={`${styles.error} ${local.writeError}`} role="alert">
-              {errorMessage(writeError)}
-            </p>
-          )}
-
           <QueryState isPending={rules.isPending} error={rules.error} data={rules.data}>
             {(data) =>
               data.length === 0 ? (
@@ -213,22 +264,74 @@ export default function RulesPage() {
                             <code className={local.pattern}>{rule.pattern}</code>
                           </td>
                           <td>{rule.enabled ? 'Yes' : 'No'}</td>
-                          <td className={local.rowActions}>
-                            <button
-                              type="button"
-                              className={styles.buttonSecondary}
-                              onClick={() => startEditing(rule)}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              className={styles.buttonDanger}
-                              onClick={() => remove.mutate(rule.id)}
-                              disabled={remove.isPending}
-                            >
-                              Delete
-                            </button>
+                          <td>
+                            <div className={local.rowActions}>
+                              <button
+                                type="button"
+                                className={styles.buttonSecondary}
+                                onClick={() => startEditing(rule)}
+                              >
+                                Edit
+                              </button>
+                              {confirmingId === rule.id ? (
+                                <>
+                                  <span className={local.confirm}>
+                                    Delete &ldquo;{rule.name}&rdquo;?
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className={styles.buttonDanger}
+                                    // Per-row pending (A1): only THIS row's delete
+                                    // in flight disables its own button, tracked via
+                                    // `pendingDeleteIds` rather than
+                                    // `remove.isPending && remove.variables === rule.id`.
+                                    // The mutation's own `variables` holds only the
+                                    // LATEST call's argument, so it cannot tell two
+                                    // concurrent deletes apart -- and nothing stops a
+                                    // second row's delete from starting while an
+                                    // earlier one is still in flight: `confirmingId`
+                                    // being section-wide means only one row's Confirm
+                                    // is ever rendered at once, but `setConfirmingId`
+                                    // has no guard against moving to a different row
+                                    // mid-flight. `pendingDeleteIds` is a Set keyed by
+                                    // id instead, so however many deletes are running
+                                    // at once, each row reads pending only for its own.
+                                    // Copying ApiKeys's PRE-arb-kytb shared
+                                    // `revoke.isPending || remove.isPending` boolean
+                                    // here would disable every row's Delete again --
+                                    // the exact defect this bead removes -- so this
+                                    // must stay per-id, never a shared flag.
+                                    disabled={pendingDeleteIds.has(rule.id)}
+                                    onClick={() => onDelete(rule.id)}
+                                    aria-label={`Confirm delete ${rule.name}`}
+                                  >
+                                    Confirm delete
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={styles.buttonSecondary}
+                                    onClick={() => setConfirmingId(null)}
+                                    aria-label={`Cancel delete ${rule.name}`}
+                                  >
+                                    Cancel
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className={styles.buttonDanger}
+                                  onClick={() => setConfirmingId(rule.id)}
+                                  aria-label={`Delete ${rule.name}`}
+                                >
+                                  Delete
+                                </button>
+                              )}
+                            </div>
+                            {deleteFailedId === rule.id && (
+                              <p className={`${styles.error} ${local.rowError}`} role="alert">
+                                {errorMessage(deleteFailure)}
+                              </p>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -250,7 +353,13 @@ export default function RulesPage() {
               onChange={setEditDraft}
               submitLabel={update.isPending ? 'Saving…' : 'Save changes'}
               busy={update.isPending}
-              onCancel={() => setEditingId(null)}
+              error={update.error}
+              onCancel={() => {
+                // Same reason as startEditing: Cancel leaves the mutation's own
+                // error sitting there for whichever rule is edited next.
+                update.reset();
+                setEditingId(null);
+              }}
               onSubmit={() =>
                 update.mutate(
                   { id: editingId, rule: toRequest(editDraft) },
@@ -272,6 +381,7 @@ export default function RulesPage() {
             onChange={setNewDraft}
             submitLabel={create.isPending ? 'Adding…' : 'Add rule'}
             busy={create.isPending}
+            error={create.error}
             onSubmit={() =>
               create.mutate(toRequest(newDraft), { onSuccess: () => setNewDraft(BLANK_DRAFT) })
             }
