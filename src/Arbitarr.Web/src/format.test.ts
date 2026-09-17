@@ -97,19 +97,30 @@ describe('formatBytes', () => {
 });
 
 describe('formatTimestamp', () => {
-  // Assertions here must hold under ANY runner locale/timezone (CI's may differ
-  // from a developer machine's), so they check SHAPE -- digits present, a
-  // timezone abbreviation present -- rather than an exact localized string.
-  it('renders a valid ISO instant with a timezone abbreviation', () => {
-    const rendered = formatTimestamp('2026-09-07T12:30:00+00:00');
+  /**
+   * arb-p94u review fixup: a `/[A-Za-z]/` "has letters" shape check is vacuous
+   * under an en-US-ish runner, because a BARE `toLocaleString()` there already
+   * renders "AM"/"PM" -- letters with no zone information at all. The check
+   * only bit on this machine's en-ZA 24-hour locale, which has no AM/PM. So
+   * this asserts the EXACT string `formatTimestamp` must produce
+   * (`toLocaleString(undefined, { timeZoneName: 'short' })`), and then proves
+   * that string is not what the OLD bare rendering would have produced --
+   * the positive control that makes the assertion non-tautological, run
+   * against whatever locale/timezone the CURRENT runner actually has, not a
+   * hard-coded one.
+   */
+  it('renders a valid ISO instant the way toLocaleString with timeZoneName renders it', () => {
+    const iso = '2026-09-07T12:30:00+00:00';
+    const parsed = new Date(iso);
+    const expected = parsed.toLocaleString(undefined, { timeZoneName: 'short' });
+    const bare = parsed.toLocaleString(undefined);
 
-    // A bare `toLocaleString()` (no timeZoneName) renders only digits, slashes,
-    // commas and colons -- AC9's whole point is that a letter-bearing zone
-    // abbreviation (SAST, UTC, GMT+2, EST, ...) must be present alongside it,
-    // which `timeZoneName: 'short'` guarantees regardless of which zone/locale
-    // the runner happens to be in.
-    expect(rendered).toMatch(/\d/);
-    expect(rendered).toMatch(/[A-Za-z]/);
+    // Positive control: if the zone-bearing and bare renderings were identical
+    // on this runner, the exact-match assertion below could pass against the
+    // old, ambiguous rendering too, and would prove nothing.
+    expect(expected).not.toBe(bare);
+
+    expect(formatTimestamp(iso)).toBe(expected);
   });
 
   it('renders the em-dash for an absent value, matching the file\'s other sentinels', () => {
