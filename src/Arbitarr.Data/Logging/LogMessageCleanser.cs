@@ -117,6 +117,32 @@ public static partial class LogMessageCleanser
     /// PATH, not a query parameter, so the patterns above cannot see it. #57 will store webhook
     /// targets as secrets "in the same sense as a source API key"; this is here ahead of that so
     /// the sink is not the thing that has to change when #57 lands.
+    ///
+    /// <para><b>arb-0na2: backtracking engine, deliberately — measured, not assumed.</b> This arm
+    /// does carry a variable-length <c>[\w.-]*</c> next to a literal (<c>discord</c>), which is the
+    /// same broad structure that made <c>CredentialPatterns.NamedCredential</c> quadratic, so it was
+    /// the prime suspect and was measured rather than reasoned about. It is linear. The difference
+    /// from that arm is the <c>https?://</c> anchor in front: <c>NamedCredential</c>'s prefix opens at
+    /// every word boundary, whereas this one can only open where a literal scheme appears, so a long
+    /// run supplies one candidate start rather than one per position. Measured outside this repo (a
+    /// throwaway console project, deleted after, no code from it in this repository) from 2k to
+    /// 32k characters across four adversarial shapes for THIS prefix: a single <c>https://</c>
+    /// followed by a <c>[\w.-]</c> variety run; a near-miss host repeating <c>discord</c> fragments;
+    /// MANY <c>https://</c> starts each opening a fresh <c>[\w.-]*</c> scan (the shape that removes
+    /// the single-candidate-start advantage); and an unterminated discord-like run. All four are
+    /// linear across that range, the time merely doubling as the input doubles. The same run's
+    /// positive control, the pre-#546 backtracking <c>NamedCredential</c> pattern, grew roughly
+    /// fivefold per doubling and reached the match timeout, so the harness was capable of observing
+    /// a blowup and these results are not vacuous. No engine switch was applied.</para>
+    ///
+    /// <para>This arm's redaction is pinned in <c>Arbitarr.Data.Tests</c>, since it lives here in
+    /// <c>Arbitarr.Data</c>, which <c>Arbitarr.Core.Tests</c> cannot reference, by
+    /// <c>LogMessageCleanserTests.Redacts_a_webhook_url_whose_secret_is_in_the_path</c>. The
+    /// adversarial long-input theory for this arm specifically (as opposed to the correctness of its
+    /// redaction) was scoped out of arb-0na2 and is tracked as a follow-up. The fail-closed guarantee
+    /// in <see cref="Cleanse(string?, Func{string, string}?)"/> covers it either way: a timeout from
+    /// THIS arm, like one from any shared arm, replaces the row's text with
+    /// <see cref="TimeoutPlaceholder"/> and never passes it through unscrubbed.</para>
     /// </summary>
     [GeneratedRegex(
         @"(?<prefix>https?://(?:[\w.-]*discord(?:app)?\.com/api/webhooks/|api\.telegram\.org/bot))(?<value>\S+)",
@@ -197,7 +223,11 @@ public static partial class LogMessageCleanser
             // RegexOptions.NonBacktracking, which closes the quadratic scan against a long
             // unterminated [\w-] run that used to reliably exceed PublicMatchTimeoutMilliseconds —
             // but the other three shared arms, and any shape not yet found in NamedCredential
-            // itself, may still reach this timeout (tracked for those other arms as arb-0na2). That
+            // itself, may still reach this timeout (tracked for those other arms as arb-0na2, which
+            // measured all three plus the local WebhookUrl arm against the adversarial input for
+            // each one's own prefix shape and found every one of them linear — so no arm is known to
+            // reach this timeout today, and this catch is now purely the ceiling for shapes not yet
+            // found rather than a live degradation path for any of them). That
             // is precisely why this catch stays and why it must keep returning a constant: on a
             // timeout from ANY arm, this row's text is replaced by TimeoutPlaceholder and never
             // passed through unscrubbed — the arb-gbj0 guarantee above holds regardless of which

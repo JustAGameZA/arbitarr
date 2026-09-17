@@ -62,6 +62,14 @@ public static partial class CredentialPatterns
     /// closes its specific quadratic case, but this timeout still guards the other three arms and
     /// remains NamedCredential's own ceiling as defence in depth against any shape not yet found.</para>
     ///
+    /// <para>arb-0na2: those other three arms have since been measured against the adversarial input
+    /// for each one's OWN prefix shape and are linear, so none of them was switched — this timeout is
+    /// not currently load-bearing for any known shape in these four shared arms. This value is also
+    /// shared with <see cref="SanitizedErrorDescription"/>'s local arms (see the arb-hihr remark
+    /// below); arb-0na2 did not measure those, so no claim is made about them here. Keep the timeout
+    /// anyway: it is the ceiling for the shapes nobody has found yet, in all four shared arms, and it
+    /// is what makes <c>LogMessageCleanser</c>'s per-row fail-closed path reachable at all.</para>
+    ///
     /// <para>arb-hihr: <c>internal</c> rather than <c>private</c> so <see cref="SanitizedErrorDescription"/>'s
     /// nine local host/URL arms — which face the same attacker-influenced <c>/api/status</c> input as
     /// these four shared credential arms, per that file's remarks — reference the SAME value instead
@@ -107,6 +115,19 @@ public static partial class CredentialPatterns
     /// <c>token</c>, <c>passkey</c>, <c>password</c>. This is the shape most likely to appear here
     /// by accident, because it survives being embedded in an exception's request URI, which is text
     /// no call site deliberately composed.
+    ///
+    /// <para><b>arb-0na2: backtracking engine, deliberately — measured, not assumed.</b> This arm
+    /// does NOT carry <see cref="NamedCredential"/>'s <c>\b[\w-]*</c> variable-length prefix beside
+    /// the keyword, which is the structure that made that arm quadratic. Its prefix is anchored on a
+    /// literal <c>[?&amp;]</c>, so each candidate start is a single character the engine can reject
+    /// or commit on immediately. Measured outside this repo against the adversarial shape for THIS
+    /// prefix — a dense field of <c>?</c>/<c>&amp;</c> starts each followed by near-keyword text that
+    /// fails as late as possible: it is linear from 2k to 32k characters, with the time merely
+    /// doubling as the input doubles. The same harness run drove the pre-#546 backtracking
+    /// <see cref="NamedCredential"/> pattern as a positive control and saw it grow roughly fivefold
+    /// per doubling and reach <see cref="MatchTimeoutMilliseconds"/>, so the linear result here is
+    /// evidence, not an unexercised harness. No engine switch was applied. Pinned by
+    /// <c>CredentialPatternsTests.An_adversarial_run_for_each_shared_arms_own_prefix_shape_completes_and_still_redacts</c>.</para>
     /// </summary>
     [GeneratedRegex(
         @"(?<prefix>[?&](?:api_?key|token|passkey|password)=)(?<value>[^&\s""']+)",
@@ -118,6 +139,20 @@ public static partial class CredentialPatterns
     /// An <c>Authorization</c>-style header value, either a scheme-prefixed token
     /// (<c>Bearer …</c>, <c>Basic …</c>) or a <c>key: value</c> / <c>key=value</c> pair whose name
     /// is credential-shaped. Header dumps are the other text an exception drags along unbidden.
+    ///
+    /// <para><b>arb-0na2: backtracking engine, deliberately — measured, not assumed.</b> Like
+    /// <see cref="QueryParameterCredential"/> and unlike <see cref="NamedCredential"/>, this arm has
+    /// no variable-length prefix beside its keyword: <c>\b(?:bearer|basic)\s+</c> is a word-boundary
+    /// anchor followed by two fixed literals. Measured outside this repo at 2k, 4k, 8k, 16k and 32k
+    /// characters against both adversarial shapes for THIS arm — a dense field of
+    /// <c>bearer</c>/<c>basic</c> near-misses at word boundaries, and one keyword followed by an
+    /// unterminated run of this arm's own <c>[A-Za-z0-9+/=._~-]</c> value class (the shape that would
+    /// backtrack if a variable value sat next to a variable prefix): it is linear in both from 2k to
+    /// 32k characters, the time merely doubling as the input doubles. The same run's positive control
+    /// (the pre-#546 backtracking <see cref="NamedCredential"/> pattern) grew roughly fivefold per
+    /// doubling and did reach <see cref="MatchTimeoutMilliseconds"/>, so the harness demonstrably
+    /// observes a blowup when one exists. No engine switch was applied.
+    /// Pinned by the two <c>arb-0na2</c> adversarial theories in <c>CredentialPatternsTests</c>.</para>
     /// </summary>
     [GeneratedRegex(
         @"(?<prefix>\b(?:bearer|basic)\s+)(?<value>[A-Za-z0-9+/=._~-]{8,})",
@@ -200,6 +235,15 @@ public static partial class CredentialPatterns
     /// does not publish trimmed or Native AOT — the two scenarios where losing generated (reflection-
     /// free, trimming-safe) code would matter. If either changes, this arm's degrade-to-reflection cost
     /// is the thing to re-examine, not the correctness of the redaction.</para>
+    ///
+    /// <para><b>arb-0na2: this remains the ONLY arm on the non-backtracking engine.</b> The other
+    /// three shared arms, and the cleanser's local <c>WebhookUrl</c> arm, were each measured against
+    /// the adversarial input for their OWN prefix shape and are linear, so none of them was switched.
+    /// The discriminator is this arm's <c>\b[\w-]*</c> sitting beside the keyword alternation: it is
+    /// the only shared pattern with a variable-length prefix adjacent to the literal it must find,
+    /// which is what lets a single long run supply a fresh candidate start at every position. An arm
+    /// that later grows such a prefix inherits the same hazard and should be re-measured, not assumed
+    /// safe by analogy with these three.</para>
     /// </summary>
     [GeneratedRegex(
         @"(?<prefix>\b[\w-]*(?:api[_-]?key|apikey|token|passkey|password|secret|plaintext[_-]?(?:key|token|secret|password|passkey))[\w-]*""?\s*[:=]\s*""?)(?<value>[^\s,;""'}\]]{4,})",
@@ -220,6 +264,25 @@ public static partial class CredentialPatterns
     /// formats (base64url padding aside, vendors use both as segment separators), and admitting them
     /// cannot widen this arm onto ordinary prose because the credential-shaped NAME and the
     /// 12-character floor still gate it.</para>
+    ///
+    /// <para><b>arb-0na2: backtracking engine, deliberately — measured, not assumed.</b> This arm is
+    /// the one arb-0na2 was opened on by name, because it is the closest sibling of
+    /// <see cref="NamedCredential"/>: same keyword alternation, same credential nouns. The structural
+    /// difference is the one that matters — this arm has NO <c>[\w-]*</c> before the alternation, so
+    /// its prefix is a word boundary followed immediately by a fixed literal, and a long run offers
+    /// the engine no extra candidate start points to explore. Measured outside this repo at 2k, 4k,
+    /// 8k, 16k and 32k characters against three adversarial shapes for THIS arm — a dense field of
+    /// bare credential nouns at word boundaries each failing on the <c>{12,}</c> value floor, one
+    /// keyword followed by an unterminated run of this arm's own <c>[A-Za-z0-9_.+-]</c> value class,
+    /// and the separator-less variety run that defeats <see cref="NamedCredential"/> — it is linear
+    /// in all three from 2k to 32k characters, the time merely doubling as the input doubles.
+    /// The same run's positive control (the pre-#546 backtracking <see cref="NamedCredential"/>
+    /// pattern) grew roughly fivefold per doubling and then reached
+    /// <see cref="MatchTimeoutMilliseconds"/>, so the harness was demonstrably capable of seeing a
+    /// blowup here and did not. No engine switch was
+    /// applied, and none should be applied without a measurement that shows one is needed: the
+    /// non-backtracking engine is not free, and this arm has no case to spend it on. Pinned by the
+    /// two <c>arb-0na2</c> adversarial theories in <c>CredentialPatternsTests</c>.</para>
     /// </summary>
     [GeneratedRegex(
         @"(?<prefix>\b(?:api[_-]?key|apikey|key|token|secret|password|passkey)\s+)(?<value>[A-Za-z0-9_.+-]{12,})",
