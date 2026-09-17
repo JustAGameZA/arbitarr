@@ -35,6 +35,56 @@ public enum SettingGroup
 }
 
 /// <summary>
+/// arb-tk0r: the operator-facing heading for a <see cref="SettingGroup"/>.
+///
+/// <para>The enum member name is a CODE identifier and reads as one on the page: the settings
+/// surface rendered "SearchResultCache", "SuppressionAudit" and "Ai" verbatim as section headings,
+/// because it had nothing else to render. The fix belongs here, at the source, and not in a
+/// client-side rename map: a map silently omits any group added to this enum later, which is the
+/// property <c>SectionNav.slugifyGroup</c>'s own comment records arb-5oe forbidding.</para>
+///
+/// <para><b>The identifier stays on the wire unchanged.</b> It is what the group is keyed by and
+/// what <c>slugifyGroup</c> derives anchor ids from, so an existing <c>#search-result-cache</c>
+/// bookmark keeps resolving. The display name is served ALONGSIDE it and is used only for the
+/// rendered heading and the nav label; it never becomes an id.</para>
+///
+/// <para><b>Every group has one by construction, and the guard is a test, not the compiler.</b>
+/// An arm-per-member switch expression with no default arm looks like the compile-time guard and
+/// is not one: CS8524 fires on the UNNAMED values of the underlying int regardless of how many
+/// members are covered, so it would be a permanent warning against the repository's 0-warning gate
+/// rather than a signal that a member was missed, and the only way to silence it is the very
+/// default arm that would hide the omission. The default arm here THROWS instead of falling back to
+/// the identifier, so a missed member is a loud failure rather than a heading that quietly reads as
+/// code again, and <c>SettingsCatalogTests.Every_setting_group_has_a_display_name</c> walks
+/// <c>Enum.GetValues&lt;SettingGroup&gt;()</c> and asserts it PER GROUP, so the omission is caught
+/// at test time before it can ever reach a request.</para>
+/// </summary>
+public static class SettingGroupDisplay
+{
+    /// <summary>
+    /// The heading to render for <paramref name="group"/>. Sentence case, matching the
+    /// <see cref="SettingCatalogEntry.DisplayName"/> convention of the rows inside each section
+    /// ("Fresh until", "Session idle timeout"), so the page reads consistently top to bottom.
+    /// </summary>
+    public static string DisplayNameOf(SettingGroup group) => group switch
+    {
+        SettingGroup.SearchResultCache => "Search result cache",
+        SettingGroup.Worker => "Worker",
+        // "AI", not "Ai": an initialism, and the rows under it already spell it that way
+        // ("Disable AI layer", "AI verdict cache TTL").
+        SettingGroup.Ai => "AI",
+        SettingGroup.Metadata => "Metadata",
+        SettingGroup.SuppressionAudit => "Suppression audit",
+        SettingGroup.Pagination => "Pagination",
+        SettingGroup.Maintenance => "Maintenance",
+        SettingGroup.Filtering => "Filtering",
+        SettingGroup.Sessions => "Sessions",
+        _ => throw new ArgumentOutOfRangeException(
+            nameof(group), group, $"No display name declared in {nameof(SettingGroupDisplay)} for '{group}'."),
+    };
+}
+
+/// <summary>
 /// One catalog entry: the admin-UI-facing description of a single setting, independent of its
 /// current value. Every field here exists so an operator is never shown a bare, unexplained
 /// number — AC24 requires "why this bound exists" to be legible, not just enforced.
