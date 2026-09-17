@@ -67,9 +67,10 @@ public sealed record CreateSourceRequest(
     /// <remarks>
     /// <para>The synthesised <c>ToString</c> on a positional record prints every member by name and
     /// value, so the default here rendered the operator-supplied <c>ApiKey</c> verbatim. This is a
-    /// REQUEST BODY on the admin write path, and neither existing scrubbing layer covers it: both the
-    /// <c>IHttpClientFactory</c> URI redaction and <c>LogMessageCleanser</c> are scoped to query
-    /// strings, while a bare <c>ApiKey = value</c> in a record's string form is not a URI at all
+    /// REQUEST BODY on the admin write path, and neither existing scrubbing layer covers it: the
+    /// <c>IHttpClientFactory</c> URI redaction is scoped to query strings, and <c>LogMessageCleanser</c>
+    /// scrubs credentials in query strings, covering neither a bare value nor a URL path, while a bare
+    /// <c>ApiKey = value</c> in a record's string form is not a URI at all
     /// (CLAUDE.md §1) — it would land verbatim in the store served at <c>/api/admin/logs</c>.</para>
     ///
     /// <para><b>Only the identifying fields are rendered, not every member.</b> The tuning fields are
