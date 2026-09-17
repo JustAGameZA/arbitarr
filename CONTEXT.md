@@ -461,6 +461,16 @@ needs no opt-in and no warning; like it, the URI is upstream-supplied text and m
 `Location` header and nowhere else — no event, no health item, no `/api/activity`, no
 `/api/status`.
 
+**Origin pin.** A release link is re-validated against ITS OWN source's `BaseUrl`, twice: at
+parse time (`TorznabFeedParser.TryValidateOriginPinnedLink`) and again at fetch time
+(`NewznabSource.FetchDownloadAsync`), each pinning to the origin of the row that adapter
+instance was built from. The rejected alternative is a shared allow-list of every configured
+origin: it weakens with every source added, and it admits exactly the substitution the
+per-source pin refuses, indexer A's feed naming indexer B's host so B's key is spent on a
+request B never made. See `FetchDownloadAsync`'s doc comment for the full reasoning and
+[ADR 0014](docs/adr/0014-refuse-upstream-download-redirects.md) for the related upstream
+redirect refusal.
+
 **Limits unit.** The rolling window `QueryLimit` and `GrabLimit` are both counted over —
 `Hour` or `Day`, the two entries in `SourceRepository.KnownLimitsUnits`. There is **one
 unit per source**, covering both limits; a source cannot meter queries hourly and grabs
