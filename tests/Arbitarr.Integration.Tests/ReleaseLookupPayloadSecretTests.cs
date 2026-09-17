@@ -182,7 +182,7 @@ public sealed class ReleaseLookupPayloadSecretTests : IAsyncLifetime
             "upstream fetch failed: https://indexer.example.invalid/getnzb/abc?apikey={ApiKey}",
             UpstreamSourceKey);
 
-        await FlushLogSinkAsync();
+        await host.Services.FlushLogSinkAsync();
         var probed = (await ReadLogEntriesAsync(host))
             .Where(entry => entry.Logger.Contains("ReleaseLookupLeakProbe", StringComparison.Ordinal))
             .ToList();
@@ -237,7 +237,7 @@ public sealed class ReleaseLookupPayloadSecretTests : IAsyncLifetime
         _ = await client.GetAsync($"/download/{Uri.EscapeDataString(proxyGuid)}?apikey={Uri.EscapeDataString(ClientKey)}");
         _ = await client.GetAsync($"/download/not-a-real-guid?apikey={Uri.EscapeDataString(ClientKey)}");
 
-        await FlushLogSinkAsync();
+        await host.Services.FlushLogSinkAsync();
         var entries = await ReadLogEntriesAsync(host);
 
         // Without this the loop below is a no-op the day the sink stops recording anything — and
@@ -285,13 +285,6 @@ public sealed class ReleaseLookupPayloadSecretTests : IAsyncLifetime
         var path = new Uri(enclosureUrl).AbsolutePath;
         return Uri.UnescapeDataString(path["/download/".Length..]);
     }
-
-    /// <summary>
-    /// The sink batches on a fixed interval by design (it must never write on the caller's thread),
-    /// so a read taken immediately after a request can legitimately see nothing yet.
-    /// </summary>
-    private static async Task FlushLogSinkAsync() =>
-        await Task.Delay(SqliteLoggerProvider.FlushInterval + TimeSpan.FromMilliseconds(750));
 
     public Task InitializeAsync() => Task.CompletedTask;
 

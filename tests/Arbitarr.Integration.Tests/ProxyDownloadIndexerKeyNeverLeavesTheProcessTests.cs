@@ -201,7 +201,7 @@ public sealed class ProxyDownloadIndexerKeyNeverLeavesTheProcessTests : IAsyncLi
 
         // SURFACE 3: the persistent log store, PER ROW. "Some row is clean" would pass against an
         // implementation that redacted one row and leaked on every other one.
-        await FlushLogSinkAsync();
+        await host.Services.FlushLogSinkAsync();
         var entries = await ReadLogEntriesAsync(host);
         Assert.NotEmpty(entries);
         foreach (var entry in entries)
@@ -272,7 +272,7 @@ public sealed class ProxyDownloadIndexerKeyNeverLeavesTheProcessTests : IAsyncLi
             "download fetch failed: {Url}",
             $"{IndexerBaseUrl}getnzb/proxy-probe-1?apikey={IndexerKey}");
 
-        await FlushLogSinkAsync();
+        await host.Services.FlushLogSinkAsync();
         var probed = (await ReadLogEntriesAsync(host))
             .Where(entry => entry.Logger.Contains("ProxyIndexerKeyLeakProbe", StringComparison.Ordinal))
             .ToList();
@@ -365,13 +365,6 @@ public sealed class ProxyDownloadIndexerKeyNeverLeavesTheProcessTests : IAsyncLi
         var path = new Uri(enclosureUrl).AbsolutePath;
         return Uri.UnescapeDataString(path["/download/".Length..]);
     }
-
-    /// <summary>
-    /// The sink batches on a fixed interval by design (it must never write on the caller's thread),
-    /// so a read taken immediately after a request can legitimately see nothing yet.
-    /// </summary>
-    private static async Task FlushLogSinkAsync() =>
-        await Task.Delay(SqliteLoggerProvider.FlushInterval + TimeSpan.FromMilliseconds(750));
 
     public Task InitializeAsync() => Task.CompletedTask;
 

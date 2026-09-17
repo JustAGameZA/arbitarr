@@ -357,7 +357,7 @@ public sealed class RedirectAccessModeKeyNeverReachesLogsTests : IAsyncLifetime
             .CreateLogger("Arbitarr.Test.RedirectLocationLeakProbe")
             .LogWarning("Redirecting to {Location}", DownloadLink);
 
-        await FlushLogSinkAsync();
+        await host.Services.FlushLogSinkAsync();
         var probed = (await ReadLogEntriesAsync(host))
             .Where(entry => entry.Logger.Contains("RedirectLocationLeakProbe", StringComparison.Ordinal))
             .ToList();
@@ -427,7 +427,7 @@ public sealed class RedirectAccessModeKeyNeverReachesLogsTests : IAsyncLifetime
         // other one (CLAUDE.md §4). Per field because the exception text is the field most likely to
         // carry a URI, and checking only Message would look thorough while leaving the likeliest leak
         // unexamined.
-        await FlushLogSinkAsync();
+        await host.Services.FlushLogSinkAsync();
         var entries = await ReadLogEntriesAsync(host);
 
         // The table is non-empty, so the per-row loop below is not iterating over nothing. This is
@@ -507,13 +507,6 @@ public sealed class RedirectAccessModeKeyNeverReachesLogsTests : IAsyncLifetime
         var path = new Uri(enclosureUrl).AbsolutePath;
         return Uri.UnescapeDataString(path["/download/".Length..]);
     }
-
-    /// <summary>
-    /// The sink batches on a fixed interval by design (it must never write on the caller's thread), so
-    /// a read taken immediately after a request can legitimately see nothing yet.
-    /// </summary>
-    private static async Task FlushLogSinkAsync() =>
-        await Task.Delay(SqliteLoggerProvider.FlushInterval + TimeSpan.FromMilliseconds(750));
 
     public Task InitializeAsync() => Task.CompletedTask;
 
