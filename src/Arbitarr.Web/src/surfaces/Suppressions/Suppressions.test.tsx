@@ -28,6 +28,26 @@ const entries = [
 ];
 
 /**
+ * A separate fixture (not `entries`) for the identifier-column tests below, so
+ * adding a long identifier does not perturb the badge-text assertions the
+ * other describe block already makes against the shared two-row `entries`.
+ */
+const entriesWithLongIdentifier = [
+  ...entries,
+  {
+    occurredAt: '2026-09-01T12:28:00+00:00',
+    // Longer than what fits in the column, so it is the positive control for
+    // "the full value is still reachable" -- a test that only ever renders
+    // short identifiers cannot fail if truncation swallowed the rest.
+    releaseIdentifier: 'upstream-guid-with-a-very-long-value-that-does-not-fit-in-the-column-3',
+    queryKey: 'tvdbid=1234&season=2',
+    layer: 'pass',
+    reason: 'No layer acted; the release was left untouched.',
+    shadowMode: false,
+  },
+];
+
+/**
  * The decisions panel (#54) shares this surface, so every test here answers its
  * GET too. Left EMPTY on purpose: these tests are about the audit-log table, and
  * a populated decisions table would put a second "Shadow only" badge on the page
@@ -81,82 +101,56 @@ describe('Suppressions', () => {
     expect(screen.getByText('Shadow only')).toBeInTheDocument();
   });
 
-  it('shows both title forms for a row that resolves (AC11)', async () => {
-    const user = userEvent.setup();
-    mockApi({
-      ...EMPTY_DECISIONS,
-      '/api/admin/suppressions': { body: entries },
-      '/api/admin/search/upstream-guid-1/explanation': {
-        body: { title: 'Some Show S02E01 1080p', originalTitle: 'Some.Show.S02E01.1080p.WEB' },
-      },
-    });
+  it('heads the identifier column for what it holds, not for a release title', async () => {
+    mockApi({ ...EMPTY_DECISIONS, '/api/admin/suppressions': { body: entries } });
     renderSurface(<SuppressionsPage />);
     await screen.findByText('upstream-guid-1');
 
-    await user.click(screen.getAllByRole('button', { name: 'Show titles' })[0]);
-
-    // Original vs rewritten, side by side -- the pair AC11 asks for.
-    expect(await screen.findByText('Some Show S02E01 1080p')).toBeInTheDocument();
-    expect(screen.getByText('Some.Show.S02E01.1080p.WEB')).toBeInTheDocument();
+    expect(
+      screen.getByRole('columnheader', { name: 'Upstream identifier' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Release' })).not.toBeInTheDocument();
   });
 
-  it('renders the 404 sentence rather than a permanent spinner (arb-z505)', async () => {
-    // BEHAVIOUR CHANGE pinned, not merely covered. Before arb-z505 the
-    // Explanation panel tested pending FIRST, as `isPending || data ===
-    // undefined`; `data` is undefined on an error too, so the error branch
-    // underneath it was unreachable and a 404 -- the EXPECTED outcome here,
-    // per useExplanationQuery's documented guid mismatch -- rendered
-    // "Loading…" forever. This test FAILS against that ordering: the sentence
-    // never appeared and "Loading…" never went away. Asserting the sentence by
-    // its own text, because "an error rendered" would also pass with the
-    // generic errorMessage output this surface specifically does not want.
-    const user = userEvent.setup();
-    mockApi({
-      ...EMPTY_DECISIONS,
-      '/api/admin/suppressions': { body: entries },
-      '/api/admin/search/upstream-guid-1/explanation': {
-        status: 404,
-        body: { error: 'not found' },
-      },
-    });
+  it('keeps the full identifier reachable via its title attribute even when it is long', async () => {
+    mockApi({ ...EMPTY_DECISIONS, '/api/admin/suppressions': { body: entriesWithLongIdentifier } });
     renderSurface(<SuppressionsPage />);
-    await screen.findByText('upstream-guid-1');
 
-    await user.click(screen.getAllByRole('button', { name: 'Show titles' })[0]);
-
-    const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent(
-      'No stored explanation for this release. The audit log records the upstream guid only, while the explanation lookup is keyed on the proxy guid, so suppressed releases cannot be resolved to their titles yet.',
-    );
-    // The spinner must be GONE, not merely joined by the sentence: the old
-    // behaviour was a spinner that never resolved, so its absence is the half
-    // of this assertion that actually bites. `renderSurface` mounts no shell,
-    // so the shared live region -- which legitimately keeps the "Loading…" it
-    // announced while the query was in flight -- is not present to match here.
-    expect(screen.queryByText('Loading…')).not.toBeInTheDocument();
+    const longIdentifier = 'upstream-guid-with-a-very-long-value-that-does-not-fit-in-the-column-3';
+    // Positive control: this fixture value is longer than the column visually
+    // shows, so this assertion only passes if the full string is genuinely on
+    // the element (in the title attribute and as its selectable text), not
+    // merely present somewhere in the fixture data.
+    const cell = await screen.findByTitle(longIdentifier);
+    expect(cell).toHaveTextContent(longIdentifier);
   });
 
-  it('renders a non-404 explanation failure through errorMessage (arb-z505)', async () => {
-    // The 404 override must not swallow every other failure into the same
-    // sentence: a 500 has a different cause and the server's own reason is
-    // what the operator needs.
-    const user = userEvent.setup();
-    mockApi({
-      ...EMPTY_DECISIONS,
-      '/api/admin/suppressions': { body: entries },
-      '/api/admin/search/upstream-guid-1/explanation': {
-        status: 500,
-        body: { error: 'Explanation store unavailable.' },
-      },
-    });
+  it('offers no "Show titles" control on any row, because none can resolve', async () => {
+    mockApi({ ...EMPTY_DECISIONS, '/api/admin/suppressions': { body: entriesWithLongIdentifier } });
     renderSurface(<SuppressionsPage />);
     await screen.findByText('upstream-guid-1');
 
-    await user.click(screen.getAllByRole('button', { name: 'Show titles' })[0]);
+    // Asserted per row, across all three fixture rows: "some row lacks it"
+    // would also pass an implementation that dropped the control from only
+    // one row.
+    const rows = screen.getAllByRole('row').slice(1); // drop the header row
+    expect(rows).toHaveLength(3);
+    for (const row of rows) {
+      expect(within(row).queryByRole('button', { name: /show titles/i })).not.toBeInTheDocument();
+      expect(within(row).queryByRole('button', { name: /hide titles/i })).not.toBeInTheDocument();
+    }
+  });
 
-    const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('Explanation store unavailable.');
-    expect(alert).not.toHaveTextContent('The audit log records the upstream guid only');
+  it('never requests the explanation endpoint for this surface', async () => {
+    const api = mockApi({ ...EMPTY_DECISIONS, '/api/admin/suppressions': { body: entries } });
+    renderSurface(<SuppressionsPage />);
+    // Positive control: the list request itself IS recorded by the same spy,
+    // so an empty explanation call count here reflects a control that was
+    // never rendered, not a spy that records nothing.
+    await screen.findByText('upstream-guid-1');
+    expect(api.callsTo('/api/admin/suppressions').length).toBeGreaterThan(0);
+
+    expect(api.calls.some((call) => call.path.includes('/explanation'))).toBe(false);
   });
 
   it('filters by query key server-side and attaches the admin key to its GET', async () => {

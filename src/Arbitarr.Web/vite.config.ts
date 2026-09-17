@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import { configDefaults } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 
 // Local dev proxy targets the Host on loopback. 127.0.0.1 is deliberate: an
@@ -58,5 +59,10 @@ export default defineConfig({
     // so a genuinely slow test still fails -- it just no longer fails for being
     // scheduled late on a busy machine.
     testTimeout: 20_000,
+    // e2e/** holds the Playwright specs (arb-qp5), which use their own test
+    // runner (`npm run test:e2e`) and must never be collected by vitest --
+    // spread configDefaults.exclude first so vitest's own defaults (node_modules,
+    // dist, etc.) are kept rather than replaced.
+    exclude: [...configDefaults.exclude, 'e2e/**'],
   },
 });
