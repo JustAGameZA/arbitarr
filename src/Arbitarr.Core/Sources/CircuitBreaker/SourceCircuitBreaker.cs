@@ -108,6 +108,13 @@ public sealed class SourceCircuitBreaker
         var snapshot = GetSnapshot(sourceName);
         var now = _timeProvider.GetUtcNow();
         var errorMessage = DescribeSanitized(ex);
+        // arb-mhd2: classified HERE, from the exception itself and alongside the text rather than
+        // from it. The unauthenticated /api/status publishes this closed value; errorMessage moved
+        // behind the admin key. Every arm below sets the two together — they describe one failure,
+        // and a path that updated only one would publish an outcome contradicting the detail.
+        // NOTHING about which arm runs, or about the backoff figures, changes here.
+        var outcome = SourceStatusOutcomeClassifier.Classify(ex);
+        var upstreamStatusCode = SourceStatusOutcomeClassifier.UpstreamStatusCode(ex);
 
         switch (snapshot.State)
         {
@@ -126,6 +133,8 @@ public sealed class SourceCircuitBreaker
                         CurrentBackoff = backoff,
                         LastFailureAt = now,
                         LastError = errorMessage,
+                        LastOutcome = outcome,
+                        LastUpstreamStatusCode = upstreamStatusCode,
                         NextProbeAt = now + backoff,
                     };
                 }
@@ -136,6 +145,8 @@ public sealed class SourceCircuitBreaker
                         ConsecutiveFailures = failures,
                         LastFailureAt = now,
                         LastError = errorMessage,
+                        LastOutcome = outcome,
+                        LastUpstreamStatusCode = upstreamStatusCode,
                     };
                 }
 
@@ -158,6 +169,8 @@ public sealed class SourceCircuitBreaker
                     CurrentBackoff = jittered,
                     LastFailureAt = now,
                     LastError = errorMessage,
+                    LastOutcome = outcome,
+                    LastUpstreamStatusCode = upstreamStatusCode,
                     NextProbeAt = now + jittered,
                 };
                 break;
@@ -170,6 +183,8 @@ public sealed class SourceCircuitBreaker
                 {
                     LastFailureAt = now,
                     LastError = errorMessage,
+                    LastOutcome = outcome,
+                    LastUpstreamStatusCode = upstreamStatusCode,
                 };
                 break;
 

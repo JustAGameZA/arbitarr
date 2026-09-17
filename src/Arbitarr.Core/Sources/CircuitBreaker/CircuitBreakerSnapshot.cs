@@ -1,3 +1,5 @@
+using Arbitarr.Core.Diagnostics;
+
 namespace Arbitarr.Core.Sources.CircuitBreaker;
 
 /// <summary>
@@ -21,6 +23,21 @@ namespace Arbitarr.Core.Sources.CircuitBreaker;
 /// <param name="LastFailureAt">Timestamp of the most recent failure, if any.</param>
 /// <param name="LastSuccessAt">Timestamp of the most recent success, if any.</param>
 /// <param name="LastError">Most recent error message, if any.</param>
+/// <param name="LastOutcome">
+/// arb-mhd2: WHY the most recent failure happened, as a closed
+/// <see cref="SourceStatusOutcome"/>. The companion to
+/// <paramref name="LastError"/>, written in the same place from the same exception, but unlike it
+/// this value is safe on the unauthenticated <c>GET /api/status</c> — an enum cannot be minted from
+/// upstream text. That route publishes this; <paramref name="LastError"/> moved behind the admin
+/// key. <see cref="SourceStatusOutcome.None"/> while nothing has failed.
+/// </param>
+/// <param name="LastUpstreamStatusCode">
+/// arb-mhd2: the HTTP status upstream answered the most recent failure with, or null when the
+/// failure carried none (a connection failure, a timeout, an internal fault). Captured from the
+/// exception at the writer for the same reason <paramref name="LastOutcome"/> is: re-deriving it by
+/// parsing <paramref name="LastError"/>'s prose would make it depend on the scrubber's wording.
+/// Admin-gated — it is served by the diagnostics route, never by <c>/api/status</c>.
+/// </param>
 /// <param name="NextProbeAt">When the breaker may next attempt a probe call while Open. Null when Closed.</param>
 public sealed record CircuitBreakerSnapshot(
     CircuitState State,
@@ -30,6 +47,8 @@ public sealed record CircuitBreakerSnapshot(
     DateTimeOffset? LastFailureAt,
     DateTimeOffset? LastSuccessAt,
     string? LastError,
+    SourceStatusOutcome LastOutcome,
+    int? LastUpstreamStatusCode,
     DateTimeOffset? NextProbeAt)
 {
     /// <summary>The initial state for a source that has never recorded a call: Closed, zero failures, no backoff.</summary>
@@ -41,5 +60,7 @@ public sealed record CircuitBreakerSnapshot(
         LastFailureAt: null,
         LastSuccessAt: null,
         LastError: null,
+        LastOutcome: SourceStatusOutcome.None,
+        LastUpstreamStatusCode: null,
         NextProbeAt: null);
 }

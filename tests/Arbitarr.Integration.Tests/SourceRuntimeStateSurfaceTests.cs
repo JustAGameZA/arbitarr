@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Arbitarr.Api.Admin;
 using Arbitarr.Api.Dashboard;
 using Arbitarr.Api.Routing;
@@ -232,10 +233,33 @@ public sealed class SourceRuntimeStateSurfaceTests : IDisposable
         foreach (var field in new[]
                  {
                      "queriesUsed", "grabsUsed", "queryLimit", "grabLimit",
-                     "disabledUntil", "disabledLevel", "lastOutcome", "runtimeState",
+                     "disabledUntil", "disabledLevel", "runtimeState",
                  })
         {
             Assert.DoesNotContain(field, body, StringComparison.OrdinalIgnoreCase);
+        }
+
+        // arb-mhd2: `lastOutcome` can no longer be hunted by NAME here, because the name now has two
+        // unrelated owners. The backoff row's LastOutcome (a SourceCallOutcome: the escalation
+        // decision, and still admin-only) is NOT the same field as SourceStatus.LastOutcome (a
+        // SourceStatusOutcome: the closed diagnostic value this route publishes by design).
+        //
+        // So the property is asserted on the VALUE SPACE instead, which is the stronger form anyway:
+        // every published lastOutcome must be one of the closed status names, which means no
+        // SourceCallOutcome member can have reached this body through the collided name. The two
+        // vocabularies are disjoint, so this fails if the backoff value is ever projected here.
+        using var parsed = JsonDocument.Parse(body);
+        var published = parsed.RootElement.GetProperty("sources").EnumerateArray().ToList();
+        Assert.NotEmpty(published);
+        foreach (var row in published)
+        {
+            Assert.Contains(row.GetProperty("lastOutcome").GetString(), ClosedStatusOutcomeNames);
+        }
+
+        // The backoff vocabulary's own members, by name, are absent regardless.
+        foreach (var backoffOutcome in Enum.GetNames<SourceCallOutcome>())
+        {
+            Assert.DoesNotContain(backoffOutcome, body, StringComparison.OrdinalIgnoreCase);
         }
 
         // Positive control for the sweep: the SAME source's detail IS on the admin route, so the
@@ -245,6 +269,18 @@ public sealed class SourceRuntimeStateSurfaceTests : IDisposable
         Assert.Contains("disabledLevel", adminBody, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("queriesUsed", adminBody, StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>
+    /// arb-mhd2: the closed vocabulary <c>/api/status</c> may publish for a source's last failure.
+    /// Spelled out as literals rather than derived from <c>SourceStatusOutcome</c>: deriving them
+    /// would make this agree with the implementation automatically, including about a member added
+    /// later that was never meant to be public.
+    /// </summary>
+    private static readonly string[] ClosedStatusOutcomeNames =
+    [
+        "none", "upstream-error", "unreachable", "timeout", "auth-rejected", "internal-error",
+        "unknown",
+    ];
 
     /// <summary>
     /// <b>THE ADMIN DETAIL, ASSERTED PER SOURCE AT N=3.</b> Three sources in one list response must

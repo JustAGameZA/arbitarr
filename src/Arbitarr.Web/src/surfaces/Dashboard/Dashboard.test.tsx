@@ -17,12 +17,14 @@ const status = {
   // rendered the warn treatment regardless of its real state, and no test caught
   // it because nothing here matched the real wire shape.
   sources: [
-    { sourceName: 'nzbhydra', state: 'closed', consecutiveFailures: 0, lastError: null },
+    { sourceName: 'nzbhydra', state: 'closed', consecutiveFailures: 0, lastOutcome: 'none' },
     {
       sourceName: 'flaky-indexer',
       state: 'open',
       consecutiveFailures: 3,
-      lastError: 'upstream timed out',
+      // arb-mhd2: the public body carries a closed outcome, never free text. The detail that used
+      // to sit here is admin-gated now; the tests that want it mock the diagnostics read.
+      lastOutcome: 'timeout',
     },
   ],
   worker: {
@@ -32,7 +34,7 @@ const status = {
     lastCycleCandidates: 42,
     lastCycleRefreshed: 40,
     lastCycleFailed: 2,
-    lastError: null,
+    lastOutcome: 'none',
     consecutiveFailedCycles: 0,
   },
   // arb-ln0: the healthy default. The banner tests below override this rather than the fixture
@@ -270,7 +272,10 @@ describe('Dashboard', () => {
     expect(await screen.findByText('42 candidates · 40 refreshed · 2 failed')).toBeInTheDocument();
 
     expect(screen.getByText('nzbhydra')).toBeInTheDocument();
-    expect(screen.getByText('upstream timed out')).toBeInTheDocument();
+    // arb-mhd2: the fixture's failing source publishes the closed outcome `timeout`,
+    // and the row renders its operator label. The free text that used to be asserted
+    // here is not in this response at all any more -- it is on the admin-gated read.
+    expect(screen.getByText('Timed out')).toBeInTheDocument();
     expect(screen.getByText('some series s01e02')).toBeInTheDocument();
     expect(screen.getByText('17')).toBeInTheDocument();
 
@@ -468,13 +473,18 @@ describe('Dashboard', () => {
     const threeStates = {
       ...status,
       sources: [
-        { sourceName: 'closed-source', state: 'closed', consecutiveFailures: 0, lastError: null },
-        { sourceName: 'open-source', state: 'open', consecutiveFailures: 5, lastError: 'boom' },
+        { sourceName: 'closed-source', state: 'closed', consecutiveFailures: 0, lastOutcome: 'none' },
+        {
+          sourceName: 'open-source',
+          state: 'open',
+          consecutiveFailures: 5,
+          lastOutcome: 'upstream-error',
+        },
         {
           sourceName: 'half-open-source',
           state: 'half-open',
           consecutiveFailures: 1,
-          lastError: null,
+          lastOutcome: 'none',
         },
       ],
     };
@@ -524,7 +534,12 @@ describe('Dashboard', () => {
           body: {
             ...status,
             sources: [
-              { sourceName: 'mystery-source', state: marker, consecutiveFailures: 0, lastError: null },
+              {
+                sourceName: 'mystery-source',
+                state: marker,
+                consecutiveFailures: 0,
+                lastOutcome: 'none',
+              },
             ],
           },
         },
@@ -553,18 +568,23 @@ describe('Dashboard', () => {
       const withPrototypeNames = {
         ...status,
         sources: [
-          { sourceName: 'closed-source', state: 'closed', consecutiveFailures: 0, lastError: null },
+          {
+            sourceName: 'closed-source',
+            state: 'closed',
+            consecutiveFailures: 0,
+            lastOutcome: 'none',
+          },
           {
             sourceName: 'constructor-source',
             state: 'constructor',
             consecutiveFailures: 0,
-            lastError: null,
+            lastOutcome: 'none',
           },
           {
             sourceName: 'proto-source',
             state: '__proto__',
             consecutiveFailures: 0,
-            lastError: null,
+            lastOutcome: 'none',
           },
         ],
       };
@@ -599,17 +619,26 @@ describe('Dashboard', () => {
 
   /**
    * The blank-cell convention (`format.ts`'s U+2014) applies to all three `?? ''`
-   * cells this surface used to render, or none -- Last error, Resolved identity and
+   * cells this surface used to render, or none -- Last failure, Resolved identity and
    * Band. Asserted together so a fix that only reaches one of the three cannot pass.
+   *
+   * arb-mhd2: the first of the three is now driven by the closed outcome `none`
+   * rather than by a null free-text `lastError`. The convention is unchanged: a
+   * source that has not failed renders the dash, never a blank cell.
    */
-  it('renders the em-dash, not a blank cell, for a missing last error, identity and band', async () => {
+  it('renders the em-dash, not a blank cell, for a missing last failure, identity and band', async () => {
     mockApi({
       ...allOk,
       '/api/status': {
         body: {
           ...status,
           sources: [
-            { sourceName: 'quiet-source', state: 'closed', consecutiveFailures: 0, lastError: null },
+            {
+              sourceName: 'quiet-source',
+              state: 'closed',
+              consecutiveFailures: 0,
+              lastOutcome: 'none',
+            },
           ],
         },
       },
@@ -636,8 +665,8 @@ describe('Dashboard', () => {
     // header column pins the dash to the specific field this bead touches.
     const sourceRow = screen.getByText('quiet-source').closest('tr');
     expect(sourceRow).not.toBeNull();
-    const [, , , lastErrorCell] = within(sourceRow as HTMLElement).getAllByRole('cell');
-    expect(lastErrorCell).toHaveTextContent('—');
+    const [, , , lastFailureCell] = within(sourceRow as HTMLElement).getAllByRole('cell');
+    expect(lastFailureCell).toHaveTextContent('—');
 
     const searchRow = screen.getByText('no identity or band').closest('tr');
     expect(searchRow).not.toBeNull();
@@ -714,21 +743,188 @@ describe('Dashboard', () => {
     expect(await screen.findByText('Not set')).toBeInTheDocument();
   });
 
-  it('sends no admin key header, because none of its endpoints is admin-gated', async () => {
-    // The inverse of the four admin surfaces' assertion. A key is present in
-    // the store precisely so the absence proves the path rule, not an empty
-    // store: /api/status, /api/searches/recent and /api/config/effective are
-    // all PublicRead, and attaching the key would leak it to routes that never
-    // asked for it.
+  /**
+   * arb-mhd2 rewrote this test's premise. The surface is no longer entirely
+   * public: `/api/admin/status/diagnostics` carries the error detail that
+   * `/api/status` stopped publishing. What still holds -- and is what the
+   * original assertion was really protecting -- is the PATH rule: `apiFetch`
+   * attaches the key by path prefix, so the three PublicRead reads must carry
+   * no key even when one is in the store, while the admin read must carry it.
+   * Asserted per call rather than "some call has no key", because a table-wide
+   * assertion passes an implementation that attaches the key to everything but
+   * one request.
+   */
+  it('attaches the admin key only to the admin-prefixed diagnostics read, never to the public reads', async () => {
     useAdminKeyStore.getState().setKey('operator-key');
-    const api = mockApi(allOk);
+    const api = mockApi({
+      ...allOk,
+      '/api/admin/status/diagnostics': { body: { sources: [], worker: { lastError: null } } },
+    });
     renderSurface(<DashboardPage />);
 
     await screen.findByText('some series s01e02');
+    await vi.waitFor(() =>
+      expect(api.calls.some((call) => call.path === '/api/admin/status/diagnostics')).toBe(true),
+    );
 
-    expect(api.calls.length).toBeGreaterThan(0);
-    for (const call of api.calls) {
+    const publicCalls = api.calls.filter((call) => !call.path.startsWith('/api/admin/'));
+    // Positive control: the public reads actually happened, so the absence
+    // assertion below runs over a non-empty set rather than vacuously passing.
+    expect(publicCalls.length).toBeGreaterThan(0);
+    for (const call of publicCalls) {
       expect(call.headers[ADMIN_KEY_HEADER]).toBeUndefined();
+    }
+
+    for (const call of api.calls.filter((c) => c.path.startsWith('/api/admin/'))) {
+      expect(call.headers[ADMIN_KEY_HEADER]).toBe('operator-key');
+    }
+  });
+
+  /**
+   * arb-mhd2. The dashboard is a PublicRead surface that renders without the
+   * admin key by design: the closed outcome always, the detail only when the
+   * admin read succeeds. Without a key in the store the diagnostics query never
+   * fires at all, so no request carries the header and nothing on the page
+   * reports a failure. Both halves matter -- an implementation that surfaced
+   * the missing detail as an error banner would still pass a detail-absence
+   * assertion on its own.
+   */
+  describe('admin-gated error detail (arb-mhd2)', () => {
+    const DETAIL_MARKER = 'detail-marker-zzq47';
+    const WORKER_DETAIL_MARKER = 'worker-detail-marker-zzq47';
+
+    /**
+     * ONE fixture serving both tests below. The marker is present on the
+     * diagnostics route in both, so the absence test cannot pass by the route
+     * having had nothing to give -- the difference between the two is only
+     * whether a key is in the store.
+     */
+    const withDetail = {
+      ...allOk,
+      '/api/status': {
+        body: {
+          ...status,
+          sources: [
+            {
+              sourceName: 'flaky-indexer',
+              state: 'open',
+              consecutiveFailures: 3,
+              lastOutcome: 'timeout',
+            },
+          ],
+          worker: { ...status.worker, lastOutcome: 'internal-error' },
+        },
+      },
+      '/api/admin/status/diagnostics': {
+        body: {
+          sources: [
+            { sourceName: 'flaky-indexer', lastError: DETAIL_MARKER, upstreamStatusCode: null },
+          ],
+          worker: { lastError: WORKER_DETAIL_MARKER },
+        },
+      },
+    };
+
+    /**
+     * POSITIVE CONTROL FIRST (CLAUDE.md section 4). This proves the marker is
+     * detectable on this surface at all: it reaches the row and the worker
+     * panel and the assertions below would fail if it leaked. Without this,
+     * the absence test is an assertion over an empty set.
+     */
+    it('renders the detail beside the outcome when the admin read succeeds', async () => {
+      useAdminKeyStore.getState().setKey('operator-key');
+      mockApi(withDetail);
+      renderSurface(<DashboardPage />);
+
+      const row = (await screen.findByText('flaky-indexer')).closest('tr');
+      expect(row).not.toBeNull();
+      await vi.waitFor(() => expect(row?.textContent).toContain(DETAIL_MARKER));
+      // The outcome label sits beside the detail, not replaced by it.
+      expect(row).toHaveTextContent('Timed out');
+      await vi.waitFor(() =>
+        expect(screen.getByText(new RegExp(WORKER_DETAIL_MARKER))).toBeInTheDocument(),
+      );
+    });
+
+    it('renders the outcome with no detail and no error when no admin key is in the store', async () => {
+      const api = mockApi(withDetail);
+      renderSurface(<DashboardPage />);
+
+      const row = (await screen.findByText('flaky-indexer')).closest('tr');
+      expect(row).not.toBeNull();
+      // The outcome label renders regardless of the key, for the source and the worker.
+      expect(row).toHaveTextContent('Timed out');
+      expect(screen.getByText(/Internal error/)).toBeInTheDocument();
+      // The admin-gated detail does not, and neither does any error treatment.
+      expect(document.body.textContent).not.toContain(DETAIL_MARKER);
+      expect(document.body.textContent).not.toContain(WORKER_DETAIL_MARKER);
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Failed to load/i)).not.toBeInTheDocument();
+      expect(api.calls.some((call) => call.path.startsWith('/api/admin/'))).toBe(false);
+    });
+
+    /**
+     * The other ordinary case: a key IS present but the admin read fails (a
+     * stale or wrong key, a 403). The detail is simply absent -- no banner, no
+     * broken row. Same fixture shape, the route answering with a status instead.
+     */
+    it('renders no detail and no error when the admin read fails', async () => {
+      useAdminKeyStore.getState().setKey('stale-key');
+      mockApi({ ...withDetail, '/api/admin/status/diagnostics': { status: 403, body: {} } });
+      renderSurface(<DashboardPage />);
+
+      const row = (await screen.findByText('flaky-indexer')).closest('tr');
+      expect(row).not.toBeNull();
+      expect(row).toHaveTextContent('Timed out');
+      expect(document.body.textContent).not.toContain(DETAIL_MARKER);
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Failed to load/i)).not.toBeInTheDocument();
+    });
+  });
+
+  /**
+   * arb-mhd2. Every value the closed enum can publish gets a label, asserted
+   * PER ROW in one render: a table-wide "some row says Timed out" still passes
+   * an implementation that writes one label to every row. `unknown` is included
+   * because a legacy stored row projects as it -- it is unreachable from a live
+   * writer, but it is reachable on the wire.
+   */
+  it('renders an operator label for each published outcome, per row', async () => {
+    const expected: ReadonlyArray<readonly [string, string]> = [
+      ['none', '—'],
+      ['upstream-error', 'Upstream returned an error'],
+      ['unreachable', 'Could not be reached'],
+      ['timeout', 'Timed out'],
+      ['auth-rejected', 'Rejected our API key'],
+      ['internal-error', 'Internal error'],
+      ['unknown', 'Failed (reason not recorded)'],
+    ];
+    mockApi({
+      ...allOk,
+      '/api/status': {
+        body: {
+          ...status,
+          sources: expected.map(([outcome]) => ({
+            sourceName: `source-${outcome}`,
+            state: 'closed',
+            consecutiveFailures: 0,
+            lastOutcome: outcome,
+          })),
+        },
+      },
+    });
+    renderSurface(<DashboardPage />);
+
+    await screen.findByText('source-none');
+    for (const [outcome, label] of expected) {
+      const row = screen.getByText(`source-${outcome}`).closest('tr');
+      expect(row).not.toBeNull();
+      const [, , , lastFailureCell] = within(row as HTMLElement).getAllByRole('cell');
+      expect(lastFailureCell).toHaveTextContent(label);
+      // No raw wire value leaks into the cell in place of a label.
+      if (outcome !== 'none') {
+        expect(lastFailureCell.textContent).not.toContain(outcome);
+      }
     }
   });
 });

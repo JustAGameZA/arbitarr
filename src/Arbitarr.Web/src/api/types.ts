@@ -58,15 +58,45 @@ export function serverReason(body: unknown, fallback: string): string {
 
 // --- Dashboard (public, no admin key) -------------------------------------
 
-/** StatusEndpoint.cs — SourceStatus. */
+/**
+ * One of the closed outcome names `StatusEndpoint.ToOutcomeLabel` emits (arb-mhd2).
+ *
+ * A union rather than a bare `string`, so a `SOURCE_OUTCOME_LABELS` entry missing for one of them
+ * is a TYPE error here rather than a blank cell in the browser. `unknown` is the server's own
+ * value for a persisted row it could not interpret (a row written before the column existed); it
+ * is not a client-side fallback, and the renderer still handles a value outside this union,
+ * because the server is free to add one before this file learns about it.
+ */
+export type SourceOutcome =
+  | 'none'
+  | 'upstream-error'
+  | 'unreachable'
+  | 'timeout'
+  | 'auth-rejected'
+  | 'internal-error'
+  | 'unknown';
+
+/**
+ * StatusEndpoint.cs — SourceStatus.
+ *
+ * arb-mhd2: `lastError` is GONE from this (public, un-gated) shape and is not coming back. The
+ * free text it carried moved behind the admin key; what is published instead is `lastOutcome`, a
+ * closed set the server emits from a C# enum, so no upstream text can reach this body at all. The
+ * detail lives on `/api/admin/status/diagnostics` — see `useStatusDiagnosticsQuery`.
+ */
 export interface SourceStatus {
   sourceName: string;
   state: string;
   consecutiveFailures: number;
-  lastError: string | null;
+  lastOutcome: SourceOutcome;
 }
 
-/** StatusEndpoint.cs — WorkerHealthResponse. */
+/**
+ * StatusEndpoint.cs — WorkerHealthResponse.
+ *
+ * arb-mhd2: `lastError` was removed here for the same reason and in the same change as on
+ * `SourceStatus` above.
+ */
 export interface WorkerHealth {
   enabled: boolean;
   lastCycleStartedUtc: string | null;
@@ -74,8 +104,31 @@ export interface WorkerHealth {
   lastCycleCandidates: number;
   lastCycleRefreshed: number;
   lastCycleFailed: number;
-  lastError: string | null;
+  lastOutcome: SourceOutcome;
   consecutiveFailedCycles: number;
+}
+
+/** AdminStatusDiagnosticsEndpoint.cs — SourceDiagnostics (admin-gated, arb-mhd2). */
+export interface SourceDiagnostics {
+  sourceName: string;
+  lastError: string | null;
+  upstreamStatusCode: number | null;
+}
+
+/** AdminStatusDiagnosticsEndpoint.cs — WorkerDiagnostics (admin-gated, arb-mhd2). */
+export interface WorkerDiagnostics {
+  lastError: string | null;
+}
+
+/**
+ * AdminStatusDiagnosticsEndpoint.cs — StatusDiagnosticsResponse (admin-gated, arb-mhd2).
+ *
+ * The error detail `/api/status` no longer publishes. The Dashboard renders without it by design:
+ * an operator with no admin key sees every outcome label and simply no detail, never an error.
+ */
+export interface StatusDiagnosticsResponse {
+  sources: SourceDiagnostics[];
+  worker: WorkerDiagnostics;
 }
 
 /**

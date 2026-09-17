@@ -1,6 +1,11 @@
+using System.Net;
 using System.Text.RegularExpressions;
+using Arbitarr.Api.Admin;
 using Arbitarr.Core.Ai;
+using Arbitarr.Core.Caching;
+using Arbitarr.Core.Settings;
 using Arbitarr.Core.Sources.CircuitBreaker;
+using Arbitarr.Data.Entities;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -31,6 +36,14 @@ namespace Arbitarr.Integration.Tests;
 /// arrived (CLAUDE.md §4: an empty set contains nothing).</para>
 ///
 /// <para>Host is an RFC 2606 documentation name; the key is an obvious placeholder.</para>
+///
+/// <para><b>arb-mhd2 moved the surface under test, not the property.</b> <c>GET /api/status</c> no
+/// longer publishes the error text at all: it publishes a closed outcome, and the sanitized detail
+/// moved behind the admin key on <c>GET /api/admin/status/diagnostics</c>. So the positive controls
+/// that used to read the excerpt off the public body now read it off the ADMIN body, and the public
+/// body is asserted to carry neither the excerpt nor the planted values. That is a strictly stronger
+/// statement than before -- previously the excerpt was public and only the secrets inside it were
+/// scrubbed; now the excerpt is gated AND still scrubbed, so a regression in either fails here.</para>
 /// </summary>
 public sealed partial class OllamaErrorBodyStatusLeakTests : IClassFixture<ArbitarrWebApplicationFactory>
 {
@@ -38,11 +51,48 @@ public sealed partial class OllamaErrorBodyStatusLeakTests : IClassFixture<Arbit
     private const string PlantedKey = "PLANTEDSTATUSKEY13579";
     private const string SourceName = "Ollama";
 
+    /// <summary>arb-mhd2: the admin-gated read the sanitized detail moved to.</summary>
+    private const string DiagnosticsRoute = "/api/admin/status/diagnostics";
+    private const string AdminKey = "the-real-admin-key";
+
     private readonly ArbitarrWebApplicationFactory _factory;
 
     public OllamaErrorBodyStatusLeakTests(ArbitarrWebApplicationFactory factory)
     {
         _factory = factory;
+    }
+
+    // Upsert, not Add: the factory's SQLite database is shared across every [Fact] in this
+    // IClassFixture-scoped class, so a second seed of the same primary key would collide.
+    private async Task SeedAdminKeyAsync()
+    {
+        await _factory.SeedAsync(async db =>
+        {
+            var existing = await db.Settings.FindAsync(SettingKey.AdminApiKey.ToString());
+            if (existing is null)
+            {
+                db.Settings.Add(new SettingEntry
+                {
+                    Name = SettingKey.AdminApiKey.ToString(),
+                    Value = AdminKey,
+                    UpdatedAt = DateTimeOffset.UtcNow,
+                });
+            }
+            else
+            {
+                existing.Value = AdminKey;
+                existing.UpdatedAt = DateTimeOffset.UtcNow;
+            }
+        });
+    }
+
+    private async Task<string> GetDiagnosticsBodyAsync(HttpClient client)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, DiagnosticsRoute);
+        request.Headers.Add(AdminApiKeyFilter.HeaderName, AdminKey);
+        var response = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return await response.Content.ReadAsStringAsync();
     }
 
     [Fact]
@@ -71,24 +121,68 @@ public sealed partial class OllamaErrorBodyStatusLeakTests : IClassFixture<Arbit
             await breaker.RecordFailureAsync(SourceName, exception);
         }
 
+        await SeedAdminKeyAsync();
         using var client = _factory.CreateClient();
-        var body = await client.GetStringAsync("/api/status");
 
-        // NON-VACUITY: the error really did travel to the dashboard. Everything below is about what
-        // it carried, and would be meaningless if it had not arrived at all.
-        Assert.Contains("400", body, StringComparison.Ordinal);
-        Assert.Contains("missing unit in duration", body, StringComparison.Ordinal);
+        // POSITIVE CONTROL FIRST (arb-mhd2). The excerpt is read off the ADMIN body, which is where
+        // it now lives. This is what makes every absence assertion on the public body below bite:
+        // it proves the error genuinely travelled the whole chain and is findable by these very
+        // searches, so the public body carrying none of it is a real gating result rather than an
+        // assertion over an error that never arrived.
+        var adminBody = await GetDiagnosticsBodyAsync(client);
+        Assert.Contains("400", adminBody, StringComparison.Ordinal);
+        Assert.Contains("missing unit in duration", adminBody, StringComparison.Ordinal);
 
         // SCRUBBING CONTROL (CLAUDE.md §4, added by arb-fbx): the redaction token is PRESENT, which
         // is what distinguishes "the planted values reached the scrubber and were replaced" from
-        // "the excerpt never arrived". The non-vacuity assertions above prove the error travelled;
-        // only this one proves the scrub is what removed the secrets from it.
+        // "the excerpt never arrived". Gating did not replace scrubbing -- the admin body is still
+        // sanitized, because an admin reader has no business seeing an upstream's credentials either.
         Assert.Contains(
             Arbitarr.Core.Diagnostics.SanitizedErrorDescription.Replacement,
-            body,
+            adminBody,
             StringComparison.Ordinal);
+        Assert.DoesNotContain(PlantedHost, adminBody, StringComparison.Ordinal);
+        Assert.DoesNotContain(PlantedKey, adminBody, StringComparison.Ordinal);
 
-        // THE PROPERTY: neither the host nor the key survived the trip.
+        var body = await client.GetStringAsync("/api/status");
+
+        // NON-VACUITY for the public body: the failure IS reported there, as a closed outcome. So
+        // the absence of the text below is the gating working, not the source having gone missing
+        // from the response entirely.
+        using var status = System.Text.Json.JsonDocument.Parse(body);
+        var sources = status.RootElement.GetProperty("sources").EnumerateArray().ToList();
+        Assert.NotEmpty(sources);
+        Assert.Contains(
+            sources,
+            s => s.GetProperty("sourceName").GetString() == SourceName
+                && s.GetProperty("lastOutcome").GetString() == "upstream-error");
+
+        // THE PROPERTY, asserted PER SOURCE ROW (CLAUDE.md §4: "some row has it" still passes an
+        // implementation that writes one value to all of them). Every row publishes a closed
+        // outcome and no free text at all.
+        foreach (var source in sources)
+        {
+            var raw = source.GetRawText();
+            Assert.False(
+                source.TryGetProperty("lastError", out _),
+                $"A source row still carries lastError: {raw}");
+            Assert.Contains(
+                source.GetProperty("lastOutcome").GetString(),
+                ClosedOutcomeNames);
+            Assert.DoesNotContain("missing unit in duration", raw, StringComparison.Ordinal);
+            Assert.DoesNotContain(PlantedHost, raw, StringComparison.Ordinal);
+            Assert.DoesNotContain(PlantedKey, raw, StringComparison.Ordinal);
+        }
+
+        // And the worker block, which publishes the same closed vocabulary and no text.
+        var worker = status.RootElement.GetProperty("worker");
+        Assert.False(
+            worker.TryGetProperty("lastError", out _),
+            $"The worker block still carries lastError: {worker.GetRawText()}");
+        Assert.Contains(worker.GetProperty("lastOutcome").GetString(), ClosedOutcomeNames);
+
+        // Whole-body sweep, belt and braces over the per-row assertions above.
+        Assert.DoesNotContain("missing unit in duration", body, StringComparison.Ordinal);
         Assert.DoesNotContain(PlantedHost, body, StringComparison.Ordinal);
         Assert.DoesNotContain(PlantedKey, body, StringComparison.Ordinal);
         Assert.DoesNotContain("11434", body, StringComparison.Ordinal);
@@ -99,6 +193,23 @@ public sealed partial class OllamaErrorBodyStatusLeakTests : IClassFixture<Arbit
             CredentialLikePattern().IsMatch(body),
             $"Status body matched a credential pattern: {body}");
     }
+
+    /// <summary>
+    /// The closed vocabulary <c>StatusEndpoint.ToOutcomeLabel</c> may publish. Spelled out here as
+    /// literals rather than derived from the enum on purpose: deriving them would make this test
+    /// agree with the implementation automatically, including about a member added later that was
+    /// never meant to be public. The wire format is closed by construction, and this is the list.
+    /// </summary>
+    private static readonly string[] ClosedOutcomeNames =
+    [
+        "none",
+        "upstream-error",
+        "unreachable",
+        "timeout",
+        "auth-rejected",
+        "internal-error",
+        "unknown",
+    ];
 
     /// <summary>
     /// <b>arb-fbx: the proven leak body, end to end on the real endpoint.</b> This exact excerpt
@@ -130,19 +241,88 @@ public sealed partial class OllamaErrorBodyStatusLeakTests : IClassFixture<Arbit
             await breaker.RecordFailureAsync(breakerSourceName, exception);
         }
 
+        await SeedAdminKeyAsync();
         using var client = _factory.CreateClient();
-        var body = await client.GetStringAsync("/api/status");
 
-        // NON-VACUITY: the error arrived, and the useful reason survived the scrubbing.
-        Assert.Contains("missing unit in duration", body, StringComparison.Ordinal);
+        // POSITIVE CONTROL FIRST: the error arrived and the useful reason survived the scrubbing,
+        // read off the admin body where arb-mhd2 moved it.
+        var adminBody = await GetDiagnosticsBodyAsync(client);
+        Assert.Contains("missing unit in duration", adminBody, StringComparison.Ordinal);
         Assert.Contains(
             Arbitarr.Core.Diagnostics.SanitizedErrorDescription.Replacement,
-            body,
+            adminBody,
             StringComparison.Ordinal);
 
         // THE PROPERTY: both hostnames are gone, not just the one a single-shape fix would catch.
+        Assert.DoesNotContain(dottedHost, adminBody, StringComparison.Ordinal);
+        Assert.DoesNotContain(bareHost, adminBody, StringComparison.Ordinal);
+
+        // And the public body carries neither the names nor the excerpt that contained them.
+        var body = await client.GetStringAsync("/api/status");
+        Assert.DoesNotContain("missing unit in duration", body, StringComparison.Ordinal);
         Assert.DoesNotContain(dottedHost, body, StringComparison.Ordinal);
         Assert.DoesNotContain(bareHost, body, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// arb-mhd2: the OTHER writer, end to end on the real routes. The two published fields changed
+    /// together, so both are driven here: the breaker path above, and the WORKER's faulted refresh
+    /// cycle here. A change that gated the source detail while leaving the worker's free text on the
+    /// unauthenticated body would pass every assertion above and fail this one.
+    ///
+    /// <para>The real singleton is resolved from the composed host and faulted with a real
+    /// exception, so the sanitize-and-classify step under test is the one Program.cs wired — not a
+    /// stub standing in for it.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_faulted_refresh_cycle_reaches_status_as_an_outcome_with_its_detail_admin_gated()
+    {
+        const string WorkerMarker = "WorkerCycleMarkerZzq47";
+        // A documentation host, never a real one: this file is public.
+        var faultMessage = $"No such host is known. (refresh.example.invalid:5076) {WorkerMarker}";
+        var cycleFault = new HttpRequestException(faultMessage, inner: null, HttpStatusCode.BadGateway);
+
+        // DETECTABILITY CONTROL: the marker really is in what the worker will be handed.
+        Assert.Contains(WorkerMarker, cycleFault.Message, StringComparison.Ordinal);
+
+        await SeedAdminKeyAsync();
+
+        // The REAL health sink Program.cs registered and the refresh worker writes to — a singleton,
+        // so what is recorded here is exactly what both endpoints read.
+        var health = _factory.Services.GetRequiredService<IRefreshWorkerHealth>();
+        health.CycleFaulted(
+            DateTimeOffset.UtcNow,
+            Arbitarr.Core.Diagnostics.SanitizedErrorDescription.Describe(cycleFault),
+            Arbitarr.Core.Diagnostics.SourceStatusOutcomeClassifier.Classify(cycleFault));
+
+        using var client = _factory.CreateClient();
+
+        // POSITIVE CONTROL FIRST: the worker's detail IS on the admin read, so its absence from the
+        // public body below is the gating working rather than a cycle that never faulted.
+        var adminBody = await GetDiagnosticsBodyAsync(client);
+        Assert.Contains("HttpRequestException", adminBody, StringComparison.Ordinal);
+        Assert.Contains("502", adminBody, StringComparison.Ordinal);
+
+        // The marker itself never survives sanitization, so the control above is the type-and-status
+        // description. This asserts the sanitizer still did its job on the ADMIN surface too.
+        Assert.DoesNotContain(WorkerMarker, adminBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("refresh.example.invalid", adminBody, StringComparison.Ordinal);
+
+        var body = await client.GetStringAsync("/api/status");
+
+        using var status = System.Text.Json.JsonDocument.Parse(body);
+        var worker = status.RootElement.GetProperty("worker");
+
+        // NON-VACUITY: the worker block reports the failure, as a closed outcome.
+        Assert.Equal("upstream-error", worker.GetProperty("lastOutcome").GetString());
+
+        // THE PROPERTY: no free text on the worker block at all.
+        Assert.False(
+            worker.TryGetProperty("lastError", out _),
+            $"The worker block still carries lastError: {worker.GetRawText()}");
+        Assert.DoesNotContain(WorkerMarker, body, StringComparison.Ordinal);
+        Assert.DoesNotContain("refresh.example.invalid", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("HttpRequestException", body, StringComparison.Ordinal);
     }
 
     /// <summary>

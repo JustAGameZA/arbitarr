@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Arbitarr.Core.Diagnostics;
 using Arbitarr.Data.Entities;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -73,7 +74,15 @@ public sealed partial class ConfigMaskingTests : IClassFixture<ArbitarrWebApplic
         // populated via RecordFailure's capture point, so a raw leaky value can't reach this table
         // in the first place — that guarantee is SourceCircuitBreakerTests' concern, not this
         // endpoint-level test's.
-        const string sanitizedError = "HttpRequestException (503 ServiceUnavailable)";
+        //
+        // arb-mhd2 STRENGTHENED what this asserts. /api/status no longer passes the sanitized text
+        // through at all: it publishes a closed outcome, and the text moved behind the admin key.
+        // So the seeded value is now asserted ABSENT rather than present. The seeded string is
+        // deliberately given a distinctive marker so its absence is a real result — the old
+        // "HttpRequestException (503 ServiceUnavailable)" would have been a weak thing to hunt,
+        // since nothing else on the body would contain it either way.
+        const string errorMarker = "SeededDetailMarkerZzq47";
+        const string sanitizedError = $"HttpRequestException (503 ServiceUnavailable) {errorMarker}";
 
         await _factory.SeedAsync(db =>
         {
@@ -83,6 +92,7 @@ public sealed partial class ConfigMaskingTests : IClassFixture<ArbitarrWebApplic
                 State = CircuitBreakerState.Open,
                 ConsecutiveFailures = 3,
                 LastError = sanitizedError,
+                LastOutcome = nameof(SourceStatusOutcome.UpstreamError),
             });
             return Task.CompletedTask;
         });
@@ -90,7 +100,17 @@ public sealed partial class ConfigMaskingTests : IClassFixture<ArbitarrWebApplic
         using var client = _factory.CreateClient();
         var body = await client.GetStringAsync("/api/status");
 
-        Assert.Contains(sanitizedError, body);
+        // POSITIVE CONTROL (CLAUDE.md §4). The row IS on the response and IS reporting a failure,
+        // so the absence of its text below is the projection withholding it rather than the row
+        // never having arrived. Without this the DoesNotContain is an assertion over an empty set.
+        Assert.Contains("leaky-source", body, StringComparison.Ordinal);
+        Assert.Contains("upstream-error", body, StringComparison.Ordinal);
+
+        // THE PROPERTY: the detail text is not on the unauthenticated body in any form.
+        Assert.DoesNotContain(errorMarker, body, StringComparison.Ordinal);
+        Assert.DoesNotContain("HttpRequestException", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("lastError", body, StringComparison.OrdinalIgnoreCase);
+
         Assert.DoesNotContain("example.invalid", body);
         Assert.DoesNotContain("192.0.2", body);
         Assert.False(PrivateLanAddressPattern().IsMatch(body), $"Response body matched RFC 1918 pattern: {body}");

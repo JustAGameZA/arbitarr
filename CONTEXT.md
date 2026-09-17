@@ -256,6 +256,64 @@ at both ends, and each difference is load-bearing:
 
 ---
 
+## Source status outcome
+
+`SourceStatusOutcome` (`src/Arbitarr.Core/Diagnostics/SourceStatusOutcome.cs`) is
+**why** a source's, or the refresh worker's, most recent failure happened, as
+published by the unauthenticated `GET /api/status`. Like the probe outcomes it is
+a **closed** enum with no free-text field, which is the point: it replaced the
+free-text `lastError` that route used to publish, so no sanitiser's output and no
+upstream prose reaches an unauthenticated caller. The matching detail text, and
+the upstream HTTP status code beside it, moved to the admin-gated
+`GET /api/admin/status/diagnostics` (arb-mhd2).
+
+Recorded **at the writer**, never classified at projection time: the breaker and
+the worker each name the outcome from the exception they caught, and the
+projection only reads the stored value. Inferring one from the error text would
+make the public body depend on the scrubber's wording.
+
+| Outcome | Wire name | Means |
+|---|---|---|
+| `None` | `none` | Nothing has failed: no failure recorded, or the last call succeeded |
+| `UpstreamError` | `upstream-error` | Upstream answered, and its answer was an error that is not an auth rejection |
+| `Unreachable` | `unreachable` | Upstream could not be reached at all: DNS, refused, no route |
+| `Timeout` | `timeout` | The call was made and never answered in time |
+| `AuthRejected` | `auth-rejected` | Upstream rejected our credential (401 or 403) |
+| `InternalError` | `internal-error` | The failure was ours, not upstream's |
+| `Unknown` | `unknown` | The stored outcome could not be interpreted |
+
+**`unknown` is a persistence artefact, never produced by a live writer.** No
+classification path can return it; it is only what the read substitutes for a
+stored name it does not recognise, or for a legacy row that kept an error but no
+outcome. A legacy row with no error at all reads back as `none`, so an upgrade
+does not turn every healthy source into an unexplained failure. A test asserts no
+writer can mint it.
+
+Persisted **by name, not by number**, and read back by explicit name matching
+rather than `Enum.TryParse` (CLAUDE.md section 3). Renumbering the members is
+therefore safe; renaming one is a data migration.
+
+**Not to be confused with `SourceCallOutcome`.** Both surface as a JSON field
+literally named `lastOutcome`, on different routes: on the admin sources route it
+is `SourceCallOutcome`, the backoff store's record of what the last call did, and
+on the public `/api/status` it is this. The vocabularies are disjoint and the
+questions differ. `SourceCallOutcome` answers "should this source be backed off",
+so its `TransientFailure` covers what this enum splits into `Timeout` and
+`Unreachable`, because those call for the same pause but for different operator
+remedies. Its `NotAttempted` has no counterpart here at all, since a call that was
+never made produced no diagnostic to publish.
+
+**Nor with `SourceProbeOutcome`, `OllamaProbeOutcome` or `ArrSectionStatus`**
+(see the two sections above). `Unreachable` is shared with all three and means the
+same thing, and `AuthRejected` is the near twin of their `AuthenticationFailed`.
+The separation is one of trigger and audience: those answer an operator who just
+pressed a button or opened a section, and are free to distinguish a TLS handshake
+or an unparseable body because a human is reading the result right then. This one
+is a durable record of the last observed failure, kept so an unauthenticated
+status read can say why without saying what.
+
+---
+
 ## AI backend
 
 An **AI backend** is the LLM instance the classifier speaks to — today Ollama, at
