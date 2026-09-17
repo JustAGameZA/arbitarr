@@ -93,9 +93,9 @@ public sealed class RadarrCredentialProviderTests : IDisposable
     /// without the override this type would print its own key — and it is handed to code about to
     /// make a network request, which is the code most likely to reach a log line or an exception
     /// message. Neither existing layer covers that shape: <c>IHttpClientFactory</c>'s redaction
-    /// collapses a URI's query string and <c>LogMessageCleanser</c> scrubs query strings but not
-    /// paths, while a bare <c>ApiKey = value</c> inside a record's string form is not a URI at all
-    /// (CLAUDE.md §1).</para>
+    /// collapses a URI's query string and <c>LogMessageCleanser</c> scrubs credentials in query
+    /// strings, covering neither a bare value nor a URL path, while a bare <c>ApiKey = value</c>
+    /// inside a record's string form is not a URI at all (CLAUDE.md §1).</para>
     ///
     /// <para><b>POSITIVE CONTROL (CLAUDE.md §4):</b> the redaction marker must BE PRESENT. That is
     /// what proves the key reached the formatter and was replaced there, rather than the absence
