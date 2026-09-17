@@ -100,8 +100,10 @@ describe('Rules', () => {
     expect(put.path).toBe('/api/admin/rules/1');
     expect(JSON.parse(put.body!)).toMatchObject({ name: 'block-cam', pattern: 'CAM' });
 
-    // Delete.
-    await user.click(screen.getAllByRole('button', { name: 'Delete' })[0]);
+    // Delete: asking is not doing, so the click that names the row must be
+    // followed by a Confirm before anything reaches the server.
+    await user.click(screen.getByRole('button', { name: 'Delete block-cam' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm delete block-cam' }));
     const del = await findCall(api, 'DELETE');
     expect(del.path).toBe('/api/admin/rules/1');
   });
@@ -162,7 +164,8 @@ describe('Rules', () => {
     renderSurface(<RulesPage />);
     await screen.findByText('block-cam');
 
-    await user.click(screen.getAllByRole('button', { name: 'Delete' })[0]);
+    await user.click(screen.getByRole('button', { name: 'Delete block-cam' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm delete block-cam' }));
 
     // Waits for the DELETE itself, not for 'block-cam'. The old wait here was
     // `findByText('block-cam')`, which was already on screen from the initial
@@ -187,5 +190,92 @@ describe('Rules', () => {
     expect(useAdminKeyStore.getState().key).toBe('operator-key');
     expect(useAdminKeyStore.getState().serverKeyUnset).toBe(true);
     expect(screen.queryByLabelText(/admin api key/i)).toBeNull();
+  });
+
+  it('does not delete on one click, names the rule, and lets Cancel restore the row', async () => {
+    const user = userEvent.setup();
+    const api = mockApi({ '/api/admin/rules': { body: rules } });
+    renderSurface(<RulesPage />);
+    await screen.findByText('block-cam');
+
+    await user.click(screen.getByRole('button', { name: 'Delete block-cam' }));
+
+    // The prompt names the rule.
+    expect(screen.getByText('Delete “block-cam”?')).toBeInTheDocument();
+    // Asking is not doing: a single click must not have reached the server.
+    expect(api.calls.filter((call) => call.method === 'DELETE')).toHaveLength(0);
+
+    await user.click(screen.getByRole('button', { name: 'Cancel delete block-cam' }));
+
+    // Cancel restores the row: the confirm is gone, the plain Delete is back,
+    // and still nothing was sent.
+    expect(screen.queryByText('Delete “block-cam”?')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete block-cam' })).toBeInTheDocument();
+    expect(api.calls.filter((call) => call.method === 'DELETE')).toHaveLength(0);
+
+    // Positive control: the same sequence with Confirm instead DOES reach the
+    // server, proving the assertions above are not vacuous.
+    await user.click(screen.getByRole('button', { name: 'Delete block-cam' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm delete block-cam' }));
+    const del = await findCall(api, 'DELETE');
+    expect(del.path).toBe('/api/admin/rules/1');
+  });
+
+  it('disables only the row whose delete is in flight, leaving the others operable', async () => {
+    const user = userEvent.setup();
+    const threeRules = [
+      ...rules,
+      { id: 3, name: 'deny-x265', isAllow: false, pattern: 'x265', precedence: 30, enabled: true },
+    ];
+    mockApi({ '/api/admin/rules': { body: threeRules } });
+    renderSurface(<RulesPage />);
+    await screen.findByText('block-cam');
+
+    // Never resolves within the test, so the row stays "in flight" the whole
+    // time the assertions below run.
+    vi.mocked(fetch).mockImplementationOnce(() => new Promise(() => {}));
+
+    await user.click(screen.getByRole('button', { name: 'Delete block-cam' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm delete block-cam' }));
+
+    // Positive control first: the in-flight row's own Confirm IS disabled.
+    expect(screen.getByRole('button', { name: 'Confirm delete block-cam' })).toBeDisabled();
+
+    // THEN the other two rows' Delete buttons are not — each asserted per row,
+    // not as "some row is enabled", which would pass even if every row were
+    // disabled together.
+    expect(screen.getByRole('button', { name: 'Delete allow-1080p' })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Delete deny-x265' })).not.toBeDisabled();
+  });
+
+  it('renders a refused delete in its own row, and nowhere else', async () => {
+    const user = userEvent.setup();
+    const threeRules = [
+      ...rules,
+      { id: 3, name: 'deny-x265', isAllow: false, pattern: 'x265', precedence: 30, enabled: true },
+    ];
+    const refusal = 'This rule is referenced by an active dry run and cannot be deleted.';
+    mockApi({
+      '/api/admin/rules': { body: threeRules },
+      '/api/admin/rules/1': { status: 400, body: { error: refusal } },
+    });
+    renderSurface(<RulesPage />);
+    await screen.findByText('block-cam');
+
+    await user.click(screen.getByRole('button', { name: 'Delete block-cam' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm delete block-cam' }));
+
+    // Positive control first: the message DOES land, in the refused row.
+    const rowMessage = await screen.findByText(refusal);
+    expect(rowMessage).toBeInTheDocument();
+    expect(rowMessage).toHaveAttribute('role', 'alert');
+    const row = rowMessage.closest('tr')!;
+    expect(within(row).getByText('block-cam')).toBeInTheDocument();
+
+    // THEN confirm it is absent from the sibling rows and from above the
+    // table: exactly one role="alert" exists, and it is the row's own.
+    expect(screen.getAllByText(refusal)).toHaveLength(1);
+    const otherRow = screen.getByText('allow-1080p').closest('tr')!;
+    expect(within(otherRow).queryByText(refusal)).not.toBeInTheDocument();
   });
 });

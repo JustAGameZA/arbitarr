@@ -64,6 +64,7 @@ function RuleForm({
   onCancel,
   submitLabel,
   busy,
+  error,
 }: {
   draft: RuleDraft;
   onChange: (draft: RuleDraft) => void;
@@ -71,6 +72,8 @@ function RuleForm({
   onCancel?: () => void;
   submitLabel: string;
   busy: boolean;
+  /** The server's rejection for THIS form's last submit, or null/undefined. */
+  error?: unknown;
 }) {
   const set = <K extends keyof RuleDraft>(name: K, value: RuleDraft[K]) =>
     onChange({ ...draft, [name]: value });
@@ -135,6 +138,11 @@ function RuleForm({
           Cancel
         </button>
       )}
+      {error !== null && error !== undefined && (
+        <p className={styles.error} role="alert">
+          {errorMessage(error)}
+        </p>
+      )}
     </form>
   );
 }
@@ -157,13 +165,39 @@ export default function RulesPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState<RuleDraft>(BLANK_DRAFT);
   const [testTitle, setTestTitle] = useState('');
+  const [confirmingId, setConfirmingId] = useState<number | null>(null);
+  // #98/ApiKeys's shape (A1): the id a refused DELETE belongs to, plus a
+  // CAPTURED copy of the error. remove.reset() below clears remove.error the
+  // moment the call settles (see the mutation for why), so a render that
+  // consulted remove.error instead would show nothing by the time it runs.
+  const [deleteFailedId, setDeleteFailedId] = useState<number | null>(null);
+  const [deleteFailure, setDeleteFailure] = useState<unknown>(null);
 
   const startEditing = (rule: FilterRule) => {
     setEditingId(rule.id);
     setEditDraft(draftOf(rule));
   };
 
-  const writeError = create.error ?? update.error ?? remove.error;
+  const onDelete = (id: number) => {
+    // The previous refusal must not outlive its attempt, or the operator reads
+    // a rejection the server has not issued for the row now under the cursor.
+    setDeleteFailedId(null);
+    setDeleteFailure(null);
+    remove.reset();
+    remove.mutate(id, {
+      onSuccess: () => {
+        // The row is gone from the refetched list, so the confirm it was
+        // showing has nothing left to confirm.
+        setConfirmingId(null);
+        remove.reset();
+      },
+      onError: (error) => {
+        setDeleteFailedId(id);
+        setDeleteFailure(error);
+        remove.reset();
+      },
+    });
+  };
 
   return (
     <>
@@ -172,12 +206,6 @@ export default function RulesPage() {
       <section className={styles.panel}>
         <h2 className={styles.panelHeading}>Rules</h2>
         <div className={styles.panelBody}>
-          {writeError !== null && writeError !== undefined && (
-            <p className={`${styles.error} ${local.writeError}`} role="alert">
-              {errorMessage(writeError)}
-            </p>
-          )}
-
           <QueryState isPending={rules.isPending} error={rules.error} data={rules.data}>
             {(data) =>
               data.length === 0 ? (
@@ -213,22 +241,63 @@ export default function RulesPage() {
                             <code className={local.pattern}>{rule.pattern}</code>
                           </td>
                           <td>{rule.enabled ? 'Yes' : 'No'}</td>
-                          <td className={local.rowActions}>
-                            <button
-                              type="button"
-                              className={styles.buttonSecondary}
-                              onClick={() => startEditing(rule)}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              className={styles.buttonDanger}
-                              onClick={() => remove.mutate(rule.id)}
-                              disabled={remove.isPending}
-                            >
-                              Delete
-                            </button>
+                          <td>
+                            <div className={local.rowActions}>
+                              <button
+                                type="button"
+                                className={styles.buttonSecondary}
+                                onClick={() => startEditing(rule)}
+                              >
+                                Edit
+                              </button>
+                              {confirmingId === rule.id ? (
+                                <>
+                                  <span className={local.confirm}>
+                                    Delete &ldquo;{rule.name}&rdquo;?
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className={styles.buttonDanger}
+                                    // Per-row pending (A1): only THIS row's delete
+                                    // in flight disables its own button. remove's
+                                    // variables is the id most recently passed to
+                                    // mutate, so a second row confirming while this
+                                    // one is in flight is unaffected -- copying
+                                    // ApiKeys's shared `revoke.isPending ||
+                                    // remove.isPending` boolean here would disable
+                                    // every row's Delete again, the exact defect
+                                    // this bead removes.
+                                    disabled={remove.isPending && remove.variables === rule.id}
+                                    onClick={() => onDelete(rule.id)}
+                                    aria-label={`Confirm delete ${rule.name}`}
+                                  >
+                                    Confirm delete
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={styles.buttonSecondary}
+                                    onClick={() => setConfirmingId(null)}
+                                    aria-label={`Cancel delete ${rule.name}`}
+                                  >
+                                    Cancel
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className={styles.buttonDanger}
+                                  onClick={() => setConfirmingId(rule.id)}
+                                  aria-label={`Delete ${rule.name}`}
+                                >
+                                  Delete
+                                </button>
+                              )}
+                            </div>
+                            {deleteFailedId === rule.id && (
+                              <p className={`${styles.error} ${local.rowError}`} role="alert">
+                                {errorMessage(deleteFailure)}
+                              </p>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -250,6 +319,7 @@ export default function RulesPage() {
               onChange={setEditDraft}
               submitLabel={update.isPending ? 'Saving…' : 'Save changes'}
               busy={update.isPending}
+              error={update.error}
               onCancel={() => setEditingId(null)}
               onSubmit={() =>
                 update.mutate(
@@ -272,6 +342,7 @@ export default function RulesPage() {
             onChange={setNewDraft}
             submitLabel={create.isPending ? 'Adding…' : 'Add rule'}
             busy={create.isPending}
+            error={create.error}
             onSubmit={() =>
               create.mutate(toRequest(newDraft), { onSuccess: () => setNewDraft(BLANK_DRAFT) })
             }
