@@ -133,13 +133,95 @@ describe('Search', () => {
     await runSearch(user);
 
     expect(await screen.findByText('Some.Series.S01E02.1080p')).toBeInTheDocument();
-    expect(screen.getByText('1.5 GB')).toBeInTheDocument();
+    expect(screen.getByText('1.5 GiB')).toBeInTheDocument();
     expect(screen.getByText('5000, 5040')).toBeInTheDocument();
     // cacheBand 0 is a NUMBER on the wire and must be labelled, not printed.
     // The legacy admin-search.js read provenance.fromCache, which the DTO has
     // never carried, so its cache strip was always blank.
     expect(screen.getByText('Fresh')).toBeInTheDocument();
     expect(screen.getByText('1m 30s')).toBeInTheDocument();
+  });
+
+  describe('size rendering (arb-i3v7: binary units via the shared formatBytes)', () => {
+    // TorznabFeedParser leaves `size` at its 0 default when neither the
+    // torznab `size` attribute nor the `<size>` element parses, so a 0 on this
+    // wire means "unknown", not "a zero-byte release" -- unlike Library's
+    // sizes, which are real measurements and render "0 B" as a real 0. A
+    // negative size is included alongside 0 since AdHocSearchEndpoint's
+    // non-nullable `size: number` cannot itself distinguish "unknown" from
+    // "impossible"; both must render as absent here.
+    it.each([0, -1])(
+      'renders a non-positive size (%d) as the absence dash, not "0 B"',
+      async (size) => {
+        const user = userEvent.setup();
+        mockApi({
+          '/api/admin/search': {
+            body: {
+              ...response,
+              releases: [
+                { ...response.releases[0], size, guid: 'g-unknown-size' },
+                // Positive control in the same render: a real positive size
+                // still gets its unit label, so the em dash above cannot pass
+                // merely because the table rendered nothing.
+                {
+                  ...response.releases[0],
+                  size: 2048,
+                  guid: 'g-known-size',
+                  title: 'Known.Size.Release',
+                },
+              ],
+            },
+          },
+        });
+        renderSurface(<SearchPage />);
+
+        await runSearch(user);
+
+        expect(await screen.findByText('Some.Series.S01E02.1080p')).toBeInTheDocument();
+        expect(screen.getByText('—')).toBeInTheDocument();
+        expect(screen.getByText('2.0 KiB')).toBeInTheDocument();
+      },
+    );
+
+    it('renders the em dash only for a genuinely absent size', async () => {
+      const user = userEvent.setup();
+      mockApi({
+        '/api/admin/search': {
+          body: {
+            ...response,
+            // The DTO types `size` as non-nullable; this simulates a server
+            // response drifting from that contract, which formatBytes must
+            // still resolve to the absence dash rather than throwing or
+            // printing a fabricated figure.
+            releases: [{ ...response.releases[0], size: null as unknown as number }],
+          },
+        },
+      });
+      renderSurface(<SearchPage />);
+
+      await runSearch(user);
+
+      expect(await screen.findByText('Some.Series.S01E02.1080p')).toBeInTheDocument();
+      expect(screen.getByText('—')).toBeInTheDocument();
+    });
+
+    it('crosses the KiB boundary at 1024 bytes, labelled binary not decimal', async () => {
+      const user = userEvent.setup();
+      mockApi({
+        '/api/admin/search': {
+          body: {
+            ...response,
+            releases: [{ ...response.releases[0], size: 1024 }],
+          },
+        },
+      });
+      renderSurface(<SearchPage />);
+
+      await runSearch(user);
+
+      expect(await screen.findByText('Some.Series.S01E02.1080p')).toBeInTheDocument();
+      expect(screen.getByText('1.0 KiB')).toBeInTheDocument();
+    });
   });
 
   /**
