@@ -83,3 +83,35 @@ export function formatDurationSeconds(totalSeconds: number): string {
   const clock = `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
   return days > 0 ? `${days}.${clock}` : clock;
 }
+
+/**
+ * Formats a byte count in binary units (B, KiB, MiB, GiB, TiB), one decimal
+ * place once the value reaches KiB or above, whole bytes below that.
+ *
+ * Same absence convention as `formatRate` and `formatDurationSeconds` above:
+ * `null`, `undefined`, `NaN` and negative values all render the em-dash
+ * (U+2014) rather than a plausible-looking size. A release or file whose byte
+ * count is genuinely unknown is a different fact from one that is zero bytes
+ * long, and a size cannot be negative in the first place, so treating a
+ * negative input as "no data" rather than clamping it to zero avoids printing
+ * a confident, fabricated figure for a value the server never actually sent.
+ *
+ * Units are binary (1024-based, KiB/MiB/GiB/TiB) rather than decimal
+ * (1000-based, KB/MB/GB/TB): filesystems and the byte counts Sonarr/Radarr
+ * and NZB indexers report are all binary-multiple already, so a decimal
+ * label here would be a mislabelled unit, not just a rounding difference.
+ */
+export function formatBytes(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value) || value < 0) {
+    return '—';
+  }
+
+  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+  let amount = value;
+  let unit = 0;
+  while (amount >= 1024 && unit < units.length - 1) {
+    amount /= 1024;
+    unit += 1;
+  }
+  return `${amount.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
