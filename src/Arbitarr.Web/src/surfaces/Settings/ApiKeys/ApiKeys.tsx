@@ -679,7 +679,20 @@ export function ApiKeysSection() {
                           onCancelConfirm={() => setConfirmingId(null)}
                           onRevoke={onRevoke}
                           onRemove={onRemove}
-                          pending={revoke.isPending || remove.isPending}
+                          // Per row, not the section-wide `revoke.isPending ||
+                          // remove.isPending` (arb-kytb): both mutations take a
+                          // bare id as their variables, so a row is pending only
+                          // when the in-flight call's variables is THIS row's id.
+                          // A shared boolean disabled every row's action while any
+                          // one revoke or remove was in flight, which is wrong for
+                          // the same reason a section-wide error would be — the
+                          // call belongs to one key. Reusing `variables` rather
+                          // than adding local state keeps this converged with the
+                          // Rules surface's identical fix (arb-nizy).
+                          pending={
+                            (revoke.isPending && revoke.variables === entry.id) ||
+                            (remove.isPending && remove.variables === entry.id)
+                          }
                           // The refusal belongs to ONE key. AC5's message names the
                           // key it refused ("'X' is the last API key with admin
                           // scope"), so it renders in that key's row rather than
