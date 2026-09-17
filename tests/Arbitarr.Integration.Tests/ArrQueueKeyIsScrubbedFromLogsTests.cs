@@ -5,6 +5,7 @@ using Arbitarr.Data.Entities;
 using Arbitarr.Data.Logging;
 using Arbitarr.Data.Media;
 using Arbitarr.Integration.Tests.TestSupport;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -118,12 +119,14 @@ public sealed class ArrQueueKeyIsScrubbedFromLogsTests
     {
         await factory.Services.FlushLogSinkAsync();
 
-        var store = factory.Services.GetRequiredService<LogStore>();
-        var page = await store.ReadAsync(level: null, logger: null, page: 1, pageSize: LogStore.MaxPageSize);
+        // EVERY row, not the first page of them (arb-j6vk, following arb-j4hq). A page-1 read at
+        // LogStore.MaxPageSize silently bounds every absence assertion below at 200 rows, so a leak
+        // landing past that boundary would be invisible to a scan that never asked for it.
+        var allEntries = await LogStorePaging.ReadAllAsync(factory);
 
         // The rows IHttpClientFactory's own handler writes are logged under the client's name, which
         // is why the two queue clients are separate types rather than one shared instance.
-        var clientRows = page.Entries
+        var clientRows = allEntries
             .Where(e => e.Logger.Contains(clientCategory, StringComparison.Ordinal))
             .ToList();
 
@@ -152,7 +155,7 @@ public sealed class ArrQueueKeyIsScrubbedFromLogsTests
 
         // And nothing anywhere else in the store carries it either — the failure path runs through
         // the reader and the endpoint, which log under their own names.
-        foreach (var entry in page.Entries)
+        foreach (var entry in allEntries)
         {
             Assert.DoesNotContain(apiKey, entry.Message, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain(apiKey, entry.Exception ?? string.Empty, StringComparison.OrdinalIgnoreCase);
