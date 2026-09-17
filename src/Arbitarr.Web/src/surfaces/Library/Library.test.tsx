@@ -7,6 +7,7 @@ import { LIBRARY_POLL_INTERVAL_MS, buildLibraryQuery, buildQueueQuery } from './
 import { mockApi, type MockRoutes } from '../../test/mockApi';
 import { renderSurface } from '../../test/renderSurface';
 import { useAdminKeyStore } from '../../state/adminKeyStore';
+import styles from '../surface.module.css';
 
 const SONARR_QUEUE = '/api/admin/arr/sonarr/queue';
 const RADARR_QUEUE = '/api/admin/arr/radarr/queue';
@@ -321,8 +322,7 @@ describe('Library tables', () => {
     expect(known.className.split(/\s+/).length).toBeGreaterThan(1);
     const severityClasses = known.className
       .split(/\s+/)
-      .filter((name) => name !== '')
-      .slice(1);
+      .filter((name) => name !== '' && name !== styles.badge);
     expect(severityClasses.length).toBeGreaterThan(0);
     unmount();
 
@@ -487,6 +487,15 @@ describe('Library paging', () => {
    * the desync this guards is only reachable while a response is OUTSTANDING. So the stubbed fetch
    * is wrapped rather than replaced -- the routing, the recorded calls and the admin key all stay
    * `mockApi`'s -- and only the settling of the promise is taken over.
+   *
+   * Returns `release` (settles the held response) AND `restore`, which re-stubs `fetch` back to
+   * `real` -- `mockApi`'s own stub, not the pre-mock original. Each caller restores itself once its
+   * gated response has been used, rather than leaving the wrapper installed until the describe
+   * block's `afterEach`: a wrapper left in place after its one use is meant to serve would still be
+   * intercepting every later call in the same test, silently held to an `armed` flag that no longer
+   * describes what the test is doing next. A blanket `vi.unstubAllGlobals()` here would go too far
+   * the other way -- it reverts every stub, including `mockApi`'s, back to the real, unmocked
+   * `fetch`.
    */
   function deferNext() {
     const real = globalThis.fetch as unknown as (
@@ -508,7 +517,11 @@ describe('Library paging', () => {
       return gate.then(() => pending);
     });
 
-    return release;
+    const restore = () => {
+      vi.stubGlobal('fetch', real);
+    };
+
+    return { release, restore };
   }
 
   it('does not swallow a second Next pressed while the first is still in flight', async () => {
@@ -550,7 +563,7 @@ describe('Library paging', () => {
     renderSurface(<LibraryPage />);
     await screen.findByRole('table');
 
-    const release = deferNext();
+    const { release, restore } = deferNext();
     fresh.set(
       SONARR_QUEUE,
       envelope('Ok', 'Read the Sonarr queue successfully.', page1, {
@@ -571,6 +584,12 @@ describe('Library paging', () => {
 
     release();
     expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
+
+    // Restored HERE, not left for the describe block's afterEach: this test's gated wrapper has
+    // done its one job now that the held response has settled, and leaving it installed for the
+    // rest of this test would keep intercepting calls behind an `armed` flag that no longer
+    // describes anything this test is still doing.
+    restore();
 
     // And once it settles, Next advances to 3 rather than re-requesting 2 -- the click is routed
     // from the requested page, so no press is spent re-asking for the page already on screen.

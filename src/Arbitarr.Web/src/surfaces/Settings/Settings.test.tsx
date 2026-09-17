@@ -228,6 +228,77 @@ describe('Settings', () => {
       // captioning it is the easiest way to break this.
       expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     });
+
+    /*
+     * arb-lwcc. Every section id on the route must be unique: a duplicate is
+     * both an invalid document (two elements sharing one id) and a broken nav,
+     * since `getElementById` -- what a `#hash` navigation and this page's own
+     * IntersectionObserver setup both resolve against -- returns only the
+     * FIRST match, silently stranding every link to the second.
+     *
+     * POSITIVE CONTROL FIRST: a catalog group is planted whose identifier
+     * ("Account") slugifies to the SAME id as the static Account section, so
+     * the collector below must report a duplicate before the real fixture's
+     * absence of one means anything. Without this, an empty or broken
+     * collector (one that silently missed ids, or matched none) would report
+     * no duplicates just as happily as a correct one -- an id-uniqueness
+     * assertion with nothing to detect is exactly the vacuous shape CLAUDE.md
+     * warns "Assert.DoesNotContain" style checks fall into. `Account` is used
+     * for the plant rather than a bespoke label because it reproduces the
+     * actual failure mode arb-lwcc is filed against: a REAL section id
+     * (`ai`, before the fix moved it to `ai-backend`) being reachable from the
+     * catalog's own `slugifyGroup(entry.group)`, not a contrived string this
+     * test invented.
+     */
+    it('gives every section id on the route a unique element (planted collision detected first)', async () => {
+      const collidingCatalog = [
+        {
+          ...settings[0],
+          key: 'Account.Duplicate',
+          group: 'Account',
+          groupDisplayName: 'Duplicated account group',
+          displayName: 'Duplicate id probe',
+        },
+      ];
+      mockApi({ '/api/admin/settings': { body: collidingCatalog } });
+      const { unmount } = renderSurface(<SettingsPage />);
+      await screen.findByRole('heading', { name: 'Duplicated account group' });
+
+      // POSITIVE CONTROL: the planted `Account` catalog group really does
+      // produce an id (`account`, via slugifyGroup) that the static Account
+      // section already claims. Reproduced here rather than assumed, so the
+      // assertion below is evidence the fix holds and not evidence the
+      // collector never looked.
+      const plantedIds = Array.from(document.querySelectorAll('[id]')).map((el) => el.id);
+      const plantedCounts = new Map<string, number>();
+      for (const id of plantedIds) {
+        plantedCounts.set(id, (plantedCounts.get(id) ?? 0) + 1);
+      }
+      expect(
+        [...plantedCounts.values()].some((count) => count > 1),
+        'the planted Account group did not collide with anything -- the collector below would not catch a real one either',
+      ).toBe(true);
+      unmount();
+
+      // THE REAL CASE: the actual fixture catalog, including the AI backend
+      // section, must be collision-free without relying on the plant above.
+      mockApi({ '/api/admin/settings': { body: settings } });
+      renderSurface(<SettingsPage />);
+      await screen.findByRole('heading', { name: 'Caching' });
+
+      const ids = Array.from(document.querySelectorAll('[id]')).map((el) => el.id);
+      const counts = new Map<string, number>();
+      for (const id of ids) {
+        counts.set(id, (counts.get(id) ?? 0) + 1);
+      }
+      const duplicates = [...counts.entries()].filter(([, count]) => count > 1);
+      expect(duplicates, `duplicate section ids: ${JSON.stringify(duplicates)}`).toEqual([]);
+
+      // The AI backend section specifically -- what arb-lwcc actually collided
+      // on -- keeps its own distinct id and the catalog's `Ai` slug remains
+      // free for a real Ai group to use without a fixture needing to plant one.
+      expect(document.getElementById('ai-backend')).not.toBeNull();
+    });
   });
 
   it('renders bounds, rationale and every explanatory field the DTO carries', async () => {

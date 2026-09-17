@@ -4,6 +4,7 @@ using Arbitarr.Host.Maintenance;
 using Arbitarr.Integration.Tests.TestSupport;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -170,7 +171,17 @@ public sealed class ArbitarrWebApplicationFactory : WebApplicationFactory<Progra
         Convert.ToBase64String(System.Security.Cryptography.SHA256.HashData(
             System.Text.Encoding.UTF8.GetBytes(configDirectory)));
 
-    /// <summary>Runs <paramref name="seed"/> against a fresh scoped <see cref="ArbitarrDbContext"/> and saves changes.</summary>
+    /// <summary>
+    /// Runs <paramref name="seed"/> against a fresh scoped <see cref="ArbitarrDbContext"/> and saves
+    /// changes.
+    ///
+    /// <para><b>arb-tdc4: a <see cref="SqliteException"/> here is rethrown with diagnostics, not
+    /// swallowed or retried.</b> CI has seen an intermittent Error 5 ("database is locked") from this
+    /// path with no local repro after two rounds (see the bead), so the only thing left to improve is
+    /// what the NEXT sighting reveals. <see cref="SeedDiagnostics.Wrap"/> does the wrapping; kept as a
+    /// separate TestSupport helper so it has its own unit tests rather than only being exercised
+    /// end-to-end through a flaky integration failure.</para>
+    /// </summary>
     public async Task SeedAsync(Func<ArbitarrDbContext, Task> seed)
     {
         // Force host startup (and its Database.Migrate() call) before seeding against the same schema.
@@ -178,8 +189,64 @@ public sealed class ArbitarrWebApplicationFactory : WebApplicationFactory<Progra
 
         using var scope = Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ArbitarrDbContext>();
-        await seed(dbContext);
-        await dbContext.SaveChangesAsync();
+
+        var maintenanceFirstPassCompletedBefore = IsMaintenanceFirstPassCompleted();
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+        try
+        {
+            await seed(dbContext);
+            await dbContext.SaveChangesAsync();
+        }
+        catch (SqliteException ex)
+        {
+            stopwatch.Stop();
+
+            // arb-tdc4 review: sampled a SECOND time here, after the failure. A single sample taken
+            // only before the seed cannot tell "the pass had not started" from "the pass ran (and
+            // possibly held the lock) while the seed was in flight" -- both read as false at that one
+            // point. Two samples turn that into an observable before/after transition. Deliberately
+            // NOT a query against the failed connection (no PRAGMA, no retry): reading this in-process
+            // flag cannot itself contend for the lock or move the elapsed time being reported, which a
+            // query against a locked database could.
+            var maintenanceFirstPassCompletedAfter = IsMaintenanceFirstPassCompleted();
+
+            throw SeedDiagnostics.Wrap(
+                ex,
+                stopwatch.Elapsed,
+                maintenanceFirstPassCompletedBefore,
+                maintenanceFirstPassCompletedAfter,
+                _configDirectory);
+        }
+    }
+
+    /// <summary>
+    /// Whether this host's <see cref="MaintenanceHostedService"/> had already published
+    /// <see cref="MaintenanceHostedService.FirstPassCompleted"/> at the moment this was called.
+    ///
+    /// <para><b>Read via <c>Task.IsCompleted</c>, never awaited.</b> The whole point is to capture a
+    /// point-in-time snapshot of whether the automatic backup that pass takes had finished BEFORE the
+    /// seed ran — awaiting the task would itself wait for the pass, which defeats the diagnostic (it
+    /// would always report "completed" once observed). Modelled on
+    /// <see cref="WaitForFirstMaintenancePassAsync"/>'s own lookup, but that method's throwing
+    /// behaviour on a missing registration is deliberately NOT reused here: a diagnostics path must
+    /// not itself become a new way for seeding to fail, so a service that cannot be found or resolved
+    /// reports null (unknown) rather than throwing.</para>
+    /// </summary>
+    private bool? IsMaintenanceFirstPassCompleted()
+    {
+        try
+        {
+            var service = Services.GetServices<IHostedService>()
+                .OfType<MaintenanceHostedService>()
+                .SingleOrDefault();
+
+            return service?.FirstPassCompleted.IsCompleted;
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     /// <summary>

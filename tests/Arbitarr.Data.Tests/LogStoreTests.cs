@@ -504,9 +504,10 @@ public sealed class LogStoreTests : IDisposable
         var start = DateTimeOffset.UtcNow.AddHours(-1);
         var entries = new List<PendingLogEntry>
         {
-            // Written FIRST, so it is the OLDEST row. Under newest-first ordering, every filler row
-            // added below is newer and therefore sorts ahead of it, pushing the marker down to
-            // exactly the (MaxPageSize + 1)th position -- one past a single MaxPageSize-sized page.
+            // Written FIRST, so it gets the SMALLEST Id. LogStore.ReadAsync orders by Id DESC, so
+            // every filler row added below gets a larger Id and therefore sorts ahead of it,
+            // pushing the marker down to exactly the (MaxPageSize + 1)th position -- one past a
+            // single MaxPageSize-sized page.
             Entry(MarkerBeyondFirstPage, time: start),
         };
         for (var i = 1; i <= LogStore.MaxPageSize; i++)
@@ -523,8 +524,8 @@ public sealed class LogStoreTests : IDisposable
         // result below is a paging blind spot and not a fixture mistake that never wrote the row.
         Assert.Equal(LogStore.MaxPageSize + 1, firstPageOnly.Total);
 
-        // THE BLIND SPOT ITSELF: newest-first ordering puts every filler row (written after the
-        // marker, so newer) ahead of it, and the marker is exactly the (MaxPageSize + 1)th row --
+        // THE BLIND SPOT ITSELF: Id DESC ordering puts every filler row (written after the marker,
+        // so with a larger Id) ahead of it, and the marker is exactly the (MaxPageSize + 1)th row --
         // one past a single page -- so a page-1-only absence sweep never sees it.
         Assert.DoesNotContain(firstPageOnly.Entries, e => e.Message == MarkerBeyondFirstPage);
 

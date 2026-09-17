@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { QueryState, errorMessage } from '../../QueryState';
+import { QueryState, errorMessage, pruneToLiveIds } from '../../QueryState';
 import type { ApiKeyEntry, ApiKeyScope, CreatedApiKeyResponse } from '../../../api/types';
 import { useLiveStatusStore } from '../../../state/liveStatusStore';
 import styles from '../../surface.module.css';
@@ -562,40 +562,17 @@ export function ApiKeysSection() {
   // per-call callbacks, since a row can also vanish through another admin
   // session's action with no local callback of this component's own to hook.
   //
-  // Guarded by a functional update that returns the SAME Map reference when
-  // nothing needs pruning, so a fetch that changes unrelated fields (not row
-  // membership) does not produce a new Map identity and does not re-trigger
-  // this effect's own setState -- no render loop. A row that is still
-  // present is left untouched: this only ever deletes, it never clears or
-  // rewrites a surviving entry.
+  // Same-reference no-op guarantee lives on `pruneToLiveIds` itself
+  // (QueryState.tsx) -- it is what stops this effect re-triggering its own
+  // setState on a refetch that does not change row membership.
   useEffect(() => {
     const data = keys.data;
     if (data === undefined) {
       return;
     }
     const liveIds = new Set(data.map((entry) => entry.id).filter((id): id is number => id !== null));
-    setRevokeFailures((failures) => {
-      let changed = false;
-      const next = new Map(failures);
-      for (const id of failures.keys()) {
-        if (!liveIds.has(id)) {
-          next.delete(id);
-          changed = true;
-        }
-      }
-      return changed ? next : failures;
-    });
-    setRemoveFailures((failures) => {
-      let changed = false;
-      const next = new Map(failures);
-      for (const id of failures.keys()) {
-        if (!liveIds.has(id)) {
-          next.delete(id);
-          changed = true;
-        }
-      }
-      return changed ? next : failures;
-    });
+    setRevokeFailures((failures) => pruneToLiveIds(failures, liveIds));
+    setRemoveFailures((failures) => pruneToLiveIds(failures, liveIds));
   }, [keys.data]);
 
   const { settle } = useSecretEvictingMutation();
