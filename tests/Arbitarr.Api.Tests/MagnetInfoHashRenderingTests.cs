@@ -102,9 +102,10 @@ public sealed class MagnetInfoHashRenderingTests
 
     /// <summary>
     /// A whitespace-only declared <c>infohash</c> attr is not a declared value: the magnet's btih is
-    /// rendered instead. This pins <c>TorznabFeedParser</c>'s use of
-    /// <c>string.IsNullOrWhiteSpace</c> rather than <c>string.IsNullOrEmpty</c> — a tidy-up to the
-    /// latter would treat the whitespace run as "present" and blank a hash the magnet did supply.
+    /// rendered instead. This pins <c>TorznabFeedParser</c>'s shape gate
+    /// (<c>IsAdmissibleDeclaredInfoHash</c>, arb-xgv3) refusing a whitespace run — it fits none of
+    /// the three admitted shapes (40 hex, 32 base32, 64 hex) — rather than treating it as "present"
+    /// and blanking a hash the magnet did supply.
     /// </summary>
     [Fact]
     public void A_whitespace_only_declared_infohash_attr_falls_back_to_the_magnets_btih()

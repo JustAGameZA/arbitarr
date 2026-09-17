@@ -347,6 +347,13 @@ public static class TorznabFeedParser
             // covers only the magnet link, not this attr): a raw CR/LF or an oversized value fails
             // every shape and is refused here.
             //
+            // Multiple infohash attrs on one item: ReadAttr's FirstOrDefault means only the FIRST
+            // declared attr in document order is ever considered. If that first attr is refused, the
+            // fallback to the magnet's btih applies exactly as it does for an absent attr — a later,
+            // well-formed attr on the same item is NOT consulted. Scanning for "the first good one"
+            // would let a feed steer which value wins by ordering a bad attr ahead of a good one;
+            // taking only the first, unconditionally, closes that by construction.
+            //
             // Note: the attr and the magnet's btih can legitimately disagree even when both are
             // well-formed — the client derives the true hash from the magnet, the attr is *arr
             // bookkeeping only.

@@ -54,6 +54,36 @@ public sealed class TorznabInfoHashAttrShapeTests
         return item.InfoHash;
     }
 
+    /// <summary>
+    /// Same shape as <see cref="FeedWithDeclaredAttr"/>, but with an arbitrary number of
+    /// <c>infohash</c> attrs on the one item, in the order given — for pinning that only the FIRST
+    /// declared attr in document order is ever considered.
+    /// </summary>
+    private static string FeedWithDeclaredAttrs(params string[] declaredValues)
+    {
+        XNamespace torznab = "http://torznab.com/schemas/2015/feed";
+
+        var doc = new XDocument(new XElement("rss",
+            new XAttribute(XNamespace.Xmlns + "torznab", torznab),
+            new XElement("channel",
+                new XElement("item",
+                    new XElement("title", "Example Release 1080p"),
+                    new XElement("guid", "guid-1"),
+                    new XElement("link", $"magnet:?xt=urn:btih:{MagnetHash}&dn=Some.Release.1080p"),
+                    new XElement("pubDate", "Thu, 27 Aug 2026 12:00:00 +0000"),
+                    declaredValues.Select(v => new XElement(torznab + "attr",
+                        new XAttribute("name", "infohash"),
+                        new XAttribute("value", v)))))));
+
+        return doc.ToString();
+    }
+
+    private static string? ParsedInfoHashFor(params string[] declaredValues)
+    {
+        var item = Assert.Single(TorznabFeedParser.ParseFeedResponse(FeedWithDeclaredAttrs(declaredValues), Origin));
+        return item.InfoHash;
+    }
+
     // --- Admitted shapes: carried verbatim -----------------------------------------------------
 
     [Fact]
@@ -127,7 +157,7 @@ public sealed class TorznabInfoHashAttrShapeTests
     [Fact]
     public void An_attr_with_an_embedded_nul_cannot_form_a_well_formed_feed_and_is_refused_by_the_xml_layer_itself()
     {
-        Assert.ThrowsAny<Exception>(() =>
+        Assert.Throws<ArgumentException>(() =>
             FeedWithDeclaredAttr("0123456789abcdef0123456789abcdef0123456" + "\0"));
     }
 
@@ -178,5 +208,38 @@ public sealed class TorznabInfoHashAttrShapeTests
         var declared = "  0123456789abcdef0123456789abcdef01234567  ";
 
         Assert.Equal(MagnetHash, ParsedInfoHash(declared));
+    }
+
+    // --- Multiple infohash attrs on one item: only the FIRST in document order is considered ----
+
+    /// <summary>
+    /// Two well-formed attrs with DIFFERENT values: the first wins, the second is never consulted.
+    /// Using different values (rather than two copies of the same hash) is the point — equal values
+    /// would pass whichever one an implementation picked, proving nothing about ordering.
+    /// </summary>
+    [Fact]
+    public void Two_well_formed_attrs_with_different_values_resolve_to_the_first_in_document_order()
+    {
+        const string first = "0123456789abcdef0123456789abcdef01234567";
+        const string second = "fedcba9876543210fedcba9876543210fedcba9";
+
+        Assert.Equal(first, ParsedInfoHashFor(first, second));
+    }
+
+    /// <summary>
+    /// A malformed first attr followed by a well-formed second: the fallback to the magnet's btih
+    /// applies exactly as it does for a single malformed attr — the well-formed SECOND attr is not
+    /// scanned for. Positive control first (a lone well-formed attr resolves to itself), so this
+    /// reads as "the second attr was skipped", not "attrs are never read at all".
+    /// </summary>
+    [Fact]
+    public void A_malformed_first_attr_falls_back_to_the_magnet_btih_even_when_a_second_attr_is_well_formed()
+    {
+        const string wellFormed = "0123456789abcdef0123456789abcdef01234567";
+
+        Assert.Equal(wellFormed, ParsedInfoHashFor(wellFormed));
+
+        const string malformedFirst = "not-a-valid-shape";
+        Assert.Equal(MagnetHash, ParsedInfoHashFor(malformedFirst, wellFormed));
     }
 }
