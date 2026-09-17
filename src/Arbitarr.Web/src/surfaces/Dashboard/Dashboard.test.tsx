@@ -364,7 +364,7 @@ describe('Dashboard', () => {
     expect(await screen.findByText(/No sources configured/)).toBeInTheDocument();
     expect(
       screen.queryByText(
-        'NZBHydra2 is configured. Sources appear here after the first search runs.',
+        'A source is configured. Sources appear here after the first search runs.',
       ),
     ).not.toBeInTheDocument();
   });
@@ -389,10 +389,14 @@ describe('Dashboard', () => {
     const link = await screen.findByRole('link', { name: /Configure a source in Settings/i });
     expect(link).toHaveAttribute('href', '/settings');
 
-    // The sentence it was added to is unchanged: this bead adds the affordance
-    // and leaves the Hydra framing to arb-x7w8.17.
+    // The sentence names SOURCES, not NZBHydra (arb-72mf). arb-mn12 added the
+    // affordance and left the Hydra framing to arb-x7w8.17, which shipped as
+    // docs-only with no behaviour change, so it fell to the bead that widened
+    // the predicate this copy describes: the flag is now true for an enabled
+    // source of ANY kind, and naming one product here would send an operator
+    // with a working Torznab setup looking for something they do not run.
     expect(
-      screen.getByText(/No sources configured\. Add an NZBHydra2 URL and API key to start searching\./),
+      screen.getByText(/No sources configured\. Add a source URL and API key to start searching\./),
     ).toBeInTheDocument();
   });
 
@@ -405,7 +409,7 @@ describe('Dashboard', () => {
     renderSurface(<DashboardPage />);
 
     const empty = await screen.findByText(
-      'NZBHydra2 is configured. Sources appear here after the first search runs.',
+      'A source is configured. Sources appear here after the first search runs.',
     );
     expect(within(empty).queryByRole('link')).not.toBeInTheDocument();
     expect(
@@ -441,7 +445,7 @@ describe('Dashboard', () => {
 
     expect(
       await screen.findByText(
-        'NZBHydra2 is configured. Sources appear here after the first search runs.',
+        'A source is configured. Sources appear here after the first search runs.',
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/No sources configured/)).not.toBeInTheDocument();
@@ -455,7 +459,7 @@ describe('Dashboard', () => {
     expect(screen.queryByText(/No sources configured/)).not.toBeInTheDocument();
     expect(
       screen.queryByText(
-        'NZBHydra2 is configured. Sources appear here after the first search runs.',
+        'A source is configured. Sources appear here after the first search runs.',
       ),
     ).not.toBeInTheDocument();
   });

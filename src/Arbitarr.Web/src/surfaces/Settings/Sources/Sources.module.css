@@ -17,6 +17,18 @@
   color: var(--fg-muted);
 }
 
+/* arb-x7w8.11: the secondary lines under a status badge (how long a hold-off has
+   left, the last outcome). Blocks, so each takes its own line under the badge
+   rather than widening an already-wide table, and muted so the badge stays what
+   the eye lands on. */
+.stateDetail {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
 .rowActions {
   display: flex;
   flex-wrap: wrap;
