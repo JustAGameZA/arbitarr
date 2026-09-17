@@ -388,20 +388,33 @@ public sealed class AdminBackupEndpointsTests : IAsyncLifetime
         using var client = AuthorizedClient();
         var state = _factory.Services.GetRequiredService<BackupStateStore>();
 
-        // arb-lzf5: MaintenanceHostedService's ExecuteAsync starts its first automatic backup
-        // pass on host startup, before its first Task.Delay. That startup was triggered by
-        // SeedAdminKeyAsync()'s own CreateClient() call above (via SeedAsync), not by
-        // AuthorizedClient(). Because BackgroundService.StartAsync returns at ExecuteAsync's
-        // first await (ResolveIntervalAsync reads settings asynchronously), that startup pass
-        // runs concurrently with this test body rather than strictly before it. This line does
-        // not close that race, only narrow it: it forces a healthy state immediately before the
-        // read below, rather than assuming a fresh host has none, so a startup failure landing in
-        // the gap between this line and the read can still make the positive control false on a
-        // slow enough runner — not a change in behaviour. A durable fix needs a completion seam
-        // on MaintenanceHostedService (tracked on arb-lzf5/arb-hjp). This keeps the control
-        // meaningful in the meantime: it still proves a PLANTED failure below is visible, then
-        // that recovery clears it, without depending on the startup pass's outcome — see the
-        // comment inside RecordBackup for why it unconditionally clears the recorded failure.
+        // arb-km0a: MaintenanceHostedService's ExecuteAsync takes an automatic backup on its FIRST
+        // pass, before its first Task.Delay, and BackgroundService.StartAsync returns at that
+        // method's first await (ResolveIntervalAsync reads settings asynchronously) — so that pass
+        // used to run CONCURRENTLY with this test body, and a failure it recorded inside the window
+        // below made the positive control read a non-null LastBackupFailureAt. That went red three
+        // times on master. (History: arb-lzf5 narrowed the window with the RecordBackup line below
+        // and this comment said it could not close it.) This wait CLOSES it: the service publishes
+        // FirstPassCompleted from a finally covering every exit of the first pass, so once this
+        // returns that pass is FINISHED and can no longer write to BackupStateStore underneath the
+        // assertions.
+        await _factory.WaitForFirstMaintenancePassAsync();
+
+        // Awaiting the pass makes the startup backup's OUTCOME observable, so it is reported rather
+        // than silently overwritten by the RecordBackup below. It is expected to be null; naming the
+        // reason when it is not means a future occurrence arrives with its exception already
+        // identified instead of as another bare "expected null" on the positive control. Leading
+        // hypothesis for why it can throw at all, INFERRED rather than observed: this host's own
+        // pooled writers meeting the SQLite online snapshot of the live database. It is NOT
+        // cross-test directory contention — every factory has its own config directory.
+        var startupFailure = state.LastBackupFailure;
+        Assert.True(
+            startupFailure is null,
+            $"The startup automatic backup failed: {startupFailure?.Reason}");
+
+        // The startup pass is over, so this is no longer a race-narrowing hedge: it establishes the
+        // healthy baseline the positive control reads, rather than assuming a fresh host has none.
+        // See the comment inside RecordBackup for why it unconditionally clears any recorded failure.
         state.RecordBackup(DateTimeOffset.UtcNow, automatic: true);
 
         // POSITIVE CONTROL: healthy first. If the field were always set, the next assertion would
@@ -643,11 +656,21 @@ public sealed class AdminBackupEndpointsTests : IAsyncLifetime
     /// <summary>
     /// How many restore staging files exist in the GIVEN FACTORY'S OWN instance staging directory
     /// (<c>BackupPaths.StagingDirectory</c>, resolved from its service provider) — not the
-    /// machine-wide system temp directory this used before (arb-3gd). Compared as a DELTA so a
-    /// concurrent test in the SAME instance cannot make it flaky, and used to assert that a refusal
-    /// wrote nothing. Instance-scoped rather than process-global is what makes it parallel-safe
-    /// across assemblies: another test process's uploads land in a different instance directory
-    /// entirely and can no longer be counted here.
+    /// machine-wide system temp directory this used before (arb-3gd). Compared as a DELTA, and used
+    /// to assert that a refusal wrote nothing. Instance-scoped rather than process-global is what
+    /// makes it parallel-safe across assemblies: another test process's uploads land in a different
+    /// instance directory entirely and can no longer be counted here.
+    ///
+    /// <para><b>arb-hjp: the delta does NOT make this immune to concurrency, and this comment used
+    /// to claim it did.</b> A delta survives a neighbour that was already there when the first read
+    /// ran; it does not survive one that creates or deletes an <c>arbitarr-upload-*</c> entry
+    /// BETWEEN the two reads, which shifts the difference. Since Integration.Tests runs at
+    /// parallel width 4 (arb-rga.4) that is reachable in principle. What actually keeps it stable is
+    /// narrower and worth stating honestly: each caller builds its OWN factory, so the directory
+    /// counted here belongs to one host that no other test can reach, and the staging paths are
+    /// GUID-suffixed and only written past a gate none of these tests clear. If a future test ever
+    /// shares a factory with a neighbour that stages uploads, count only entries carrying this
+    /// test's own GUID rather than trusting the delta.</para>
     /// </summary>
     private static int CountStagedRestoreFiles(ArbitarrWebApplicationFactory factory)
     {
