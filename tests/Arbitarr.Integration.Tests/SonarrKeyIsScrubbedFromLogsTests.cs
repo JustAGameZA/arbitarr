@@ -6,6 +6,7 @@ using Arbitarr.Core.Settings;
 using Arbitarr.Data.Entities;
 using Arbitarr.Data.Logging;
 using Arbitarr.Integration.Tests.TestSupport;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -179,11 +180,13 @@ public sealed class SonarrKeyIsScrubbedFromLogsTests : IClassFixture<ArbitarrWeb
 
         await _factory.Services.FlushLogSinkAsync();
 
-        var store = _factory.Services.GetRequiredService<LogStore>();
-        var page = await store.ReadAsync(level: null, logger: null, page: 1, pageSize: LogStore.MaxPageSize);
+        // EVERY row, not the first page of them (arb-j6vk, following arb-j4hq). A page-1 read at
+        // LogStore.MaxPageSize silently bounds every absence assertion below at 200 rows, so a leak
+        // landing past that boundary would be invisible to a scan that never asked for it.
+        var allEntries = await LogStorePaging.ReadAllAsync(_factory);
 
         // The rows IHttpClientFactory's own handler writes are logged under the client's name.
-        var clientRows = page.Entries
+        var clientRows = allEntries
             .Where(e => e.Logger.Contains(nameof(SonarrConnectivityProber), StringComparison.Ordinal))
             .ToList();
 
@@ -220,7 +223,7 @@ public sealed class SonarrKeyIsScrubbedFromLogsTests : IClassFixture<ArbitarrWeb
 
         // And nothing anywhere else in the store carries it either — the probe's failure path runs
         // through the breaker and the endpoint, which log under their own names.
-        foreach (var entry in page.Entries)
+        foreach (var entry in allEntries)
         {
             Assert.DoesNotContain(SonarrKey, entry.Message, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain(SonarrKey, entry.Exception ?? string.Empty, StringComparison.OrdinalIgnoreCase);

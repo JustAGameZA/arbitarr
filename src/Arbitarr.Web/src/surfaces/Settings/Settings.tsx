@@ -28,6 +28,18 @@ import { SectionNav, slugifyGroup, type SectionNavEntry } from './SectionNav';
  * The ids are hard-coded rather than slugified from the labels: they are anchor
  * targets that may end up in a bookmark or a linked-to URL, so they should not
  * silently change if a label is reworded.
+ *
+ * `ai-backend`, not `ai` (arb-lwcc): the dynamic catalog carries a
+ * `SettingGroup.Ai` group whose identifier ("Ai") slugifies to `ai` via
+ * `slugifyGroup`, which is the SAME id this static section would otherwise
+ * claim -- two navigation entries pointing at one element, and a duplicate id
+ * in the document. The catalog's anchor is left alone rather than the static
+ * one changed to avoid it: `slugifyGroup`'s own comment (arb-tk0r) already
+ * establishes that a catalog group's anchor is the server-owned identifier and
+ * must not move under it, so this hand-written section is the one free to
+ * take a different, still-stable, id. No linked-to or documented `#ai` anchor
+ * exists anywhere in the repo (only `/settings#sonarr` and `/settings#radarr`,
+ * from Library.tsx), so moving THIS section's id breaks nothing.
  */
 const STATIC_SECTIONS = [
   { id: 'account', label: 'Account' },
@@ -36,7 +48,7 @@ const STATIC_SECTIONS = [
   { id: 'radarr', label: 'Radarr' },
   { id: 'api-keys', label: 'API keys' },
   { id: 'notifications', label: 'Notifications' },
-  { id: 'ai', label: 'AI backend' },
+  { id: 'ai-backend', label: 'AI backend' },
 ] as const;
 
 /**
@@ -302,7 +314,7 @@ export default function SettingsPage() {
             <NotificationsSection />
           </div>
 
-          <div id="ai" className={local.section}>
+          <div id="ai-backend" className={local.section}>
             <AiSection />
           </div>
 

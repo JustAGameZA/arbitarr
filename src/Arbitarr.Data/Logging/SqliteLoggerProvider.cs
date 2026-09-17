@@ -59,12 +59,46 @@ public sealed class SqliteLoggerProvider : ILoggerProvider
     private readonly LogStore _store;
     private readonly LogLevel _minimumLevel;
     private readonly TimeProvider _timeProvider;
+    /// <summary>
+    /// Surfaces what the pump swallows. See the class remarks for why nothing here may throw.
+    ///
+    /// <para><b>Invoked while <see cref="_drainGate"/> is HELD</b> when the caller is the drain's own
+    /// write-failure path (arb-fjid review). A handler that drains or flushes THIS provider —
+    /// <see cref="FlushAsync"/>, directly or through anything that awaits it — therefore deadlocks
+    /// against a gate its own caller owns, and the wait is unbounded by design. Enqueuing is fine:
+    /// <see cref="SqliteLogger.Log"/> only touches the queue and never the gate, so logging from a
+    /// handler is safe (the entry simply lands in a later batch).</para>
+    /// </summary>
     private readonly Action<Exception>? _onError;
     private readonly ConcurrentQueue<PendingLogEntry> _queue = new();
     private readonly CancellationTokenSource _shutdown = new();
     private readonly TimeSpan _shutdownWait;
+    private readonly Func<string?, string?>? _cleanse;
     private readonly TaskCompletionSource _drainCompleted =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>
+    /// arb-fjid: serialises <see cref="DrainAsync"/> against itself, so the pump's periodic drain and
+    /// a caller's <see cref="FlushAsync"/> can never be in flight at the same time.
+    ///
+    /// <para><b>Why the whole drain and not just the write.</b> Both drains loop on
+    /// <c>_queue.TryDequeue</c>. Gating the write alone leaves the dequeue racy: the pump takes the
+    /// rows, the flush's drain then finds an EMPTY queue, returns early on <c>batch.Count == 0</c> and
+    /// reports success while the pump is still inside <c>WriteAsync</c>'s BEGIN..COMMIT. A reader on a
+    /// separate connection — which is every <c>LogStore.ReadAsync</c> — sees nothing, and the flush's
+    /// contract is broken precisely when a test relies on it. So the gate spans the dequeue loop, the
+    /// dropped-count exchange and the write together.</para>
+    ///
+    /// <para>The second failure this closes: two overlapping drains are two write transactions on the
+    /// log database, and the loser takes SQLITE_BUSY into the catch below, which discards its whole
+    /// batch by design. The race could therefore LOSE lines, not merely delay them.</para>
+    ///
+    /// <para>The wait is unbounded apart from the caller's own cancellation token. A timeout
+    /// fall-through would reopen the hole it closes, by letting a flush return without the other
+    /// drain's transaction having committed.</para>
+    /// </summary>
+    private readonly SemaphoreSlim _drainGate = new(1, 1);
+
     private readonly Task _pump;
 
     private int _queueLength;
@@ -96,12 +130,48 @@ public sealed class SqliteLoggerProvider : ILoggerProvider
         TimeProvider? timeProvider,
         Action<Exception>? onError,
         TimeSpan shutdownWait)
+        : this(store, minimumLevel, timeProvider, onError, shutdownWait, cleanse: null)
+    {
+    }
+
+    /// <summary>
+    /// arb-fjid: test-only overload. <paramref name="cleanse"/>, when supplied, is handed to
+    /// <c>LogStore.WriteAsync</c>'s own arb-qafw test seam of the same name, which it exists to reach:
+    /// nothing here is new behaviour in the store, only a way for a test to supply what that overload
+    /// already accepts.
+    ///
+    /// <para><b>NEVER pass this in production.</b> It REPLACES
+    /// <see cref="LogMessageCleanser.Cleanse(string?)"/> for every row the drain writes, so a
+    /// production caller supplying one would send un-scrubbed log lines to disk — a secrets defect,
+    /// not a behaviour tweak. Both public constructors above pass <c>null</c>, which is what keeps the
+    /// scrubber on the only path the host ever builds.</para>
+    ///
+    /// <para><b>Why the provider needs the seam at all.</b> The drain's ordering property — that
+    /// <see cref="FlushAsync"/> cannot return while another drain holds an uncommitted batch — needs a
+    /// drain held open INSIDE <see cref="_drainGate"/>, asynchronously. A held SQLite write lock
+    /// cannot do it: <c>LogStore.WriteAsync</c> opens its connection synchronously, so a blocked drain
+    /// blocks its caller inline rather than yielding, and the write then FAILS rather than waiting. A
+    /// blocking cleanse runs inside the gate, under the caller's own await, and discriminates — an
+    /// ungated provider's concurrent flush sails past it and returns having committed nothing.</para>
+    ///
+    /// <para><c>public</c>, not <c>internal</c>: there is no <c>InternalsVisibleTo</c> from this
+    /// project to the test assembly, the same reason <c>LogStore.WriteAsync</c>'s <c>cleanse</c> seam
+    /// and <c>LogStore.ResolveLevelsAtOrAbove</c> give for being public.</para>
+    /// </summary>
+    public SqliteLoggerProvider(
+        LogStore store,
+        LogLevel minimumLevel,
+        TimeProvider? timeProvider,
+        Action<Exception>? onError,
+        TimeSpan shutdownWait,
+        Func<string?, string?>? cleanse)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _minimumLevel = minimumLevel;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _onError = onError;
         _shutdownWait = shutdownWait;
+        _cleanse = cleanse;
         _pump = Task.Run(PumpAsync);
     }
 
@@ -110,6 +180,15 @@ public sealed class SqliteLoggerProvider : ILoggerProvider
     /// <summary>
     /// Flushes anything still queued. Exposed for tests, which cannot wait out
     /// <see cref="FlushInterval"/> on every assertion without making the suite slow and timing-flaky.
+    ///
+    /// <para><b>The contract (arb-fjid, arb-mczu).</b> When this returns, every entry enqueued BEFORE
+    /// the call was made is committed and visible to another connection — which is what a caller
+    /// reading the rows back through <c>LogStore.ReadAsync</c> needs, since that opens a connection of
+    /// its own and so cannot see an uncommitted transaction. Entries enqueued concurrently with the
+    /// call may or may not be included; only the happens-before ones are promised.</para>
+    ///
+    /// <para>That guarantee rests on <see cref="_drainGate"/>: without it this could return while the
+    /// background pump still held the rows in an uncommitted batch. See the gate's remarks.</para>
     /// </summary>
     public Task FlushAsync(CancellationToken cancellationToken = default) => DrainAsync(cancellationToken);
 
@@ -132,6 +211,12 @@ public sealed class SqliteLoggerProvider : ILoggerProvider
     /// rather than being <c>_pump</c> handed out directly. This task therefore never faults and never
     /// cancels; awaiting it cannot throw. It is idempotent under a double <see cref="Dispose"/>
     /// because the pump runs, and so completes it, exactly once.</para>
+    ///
+    /// <para><b>arb-fjid's drain gate does not extend this bound.</b> Serialising the drains can make
+    /// the pump's final drain WAIT for an in-flight <see cref="FlushAsync"/> before it starts, but
+    /// <see cref="Dispose"/>'s wait stays bounded at <see cref="DefaultShutdownWait"/> and still gives
+    /// up; the gate only adds one more way for the drain to be the thing Dispose gives up ON, which is
+    /// the case this member already exists to cover.</para>
     /// </summary>
     public Task DrainCompleted => _drainCompleted.Task;
 
@@ -219,11 +304,76 @@ public sealed class SqliteLoggerProvider : ILoggerProvider
             // DrainAsync already swallows write failures, so reaching here by exception means
             // something outside the drain broke; either way the pump is done with the log database
             // and every handle it held has gone back to the pool.
+            //
+            // arb-fjid: the pump's own drains pass CancellationToken.None, so waiting on the gate
+            // cannot cancel out of them and nothing new escapes here that did not before.
             _drainCompleted.TrySetResult();
+
+            // arb-fjid: disposed HERE rather than in Dispose, because Dispose can return while the
+            // pump is still inside a held drain (its wait is bounded on purpose) and disposing the
+            // gate there would pull it out from under that drain.
+            //
+            // This is NOT the last moment a drain can hold the gate, and an earlier version of this
+            // comment wrongly claimed it was (arb-fjid review). The pump's own release, one frame
+            // above, is exactly what ADMITS a FlushAsync already queued on WaitAsync, so such a
+            // flush can still be running — and still owe a Release — when this Dispose lands. Both
+            // sides of that race are swallowed in DrainAsync: the WaitAsync for a flush that arrives
+            // after this, and the Release for one admitted just before it.
+            _drainGate.Dispose();
         }
     }
 
     private async Task DrainAsync(CancellationToken cancellationToken)
+    {
+        // arb-fjid: one drain at a time, taken around the WHOLE body — dequeue, dropped-count
+        // exchange and write — for the reasons in _drainGate's remarks. Unbounded apart from the
+        // caller's token.
+        try
+        {
+            await _drainGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+            // The gate is disposed only after the pump has published DrainCompleted, so reaching here
+            // means the provider is finished and there is nothing left this drain could usefully
+            // commit. Swallowed rather than thrown for the same reason the write failure below is:
+            // a late FlushAsync during teardown must not throw at a caller that is shutting down.
+            return;
+        }
+
+        try
+        {
+            await DrainCoreAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            try
+            {
+                _drainGate.Release();
+            }
+            catch (ObjectDisposedException)
+            {
+                // arb-fjid review: the gate can be disposed between this drain being ADMITTED and it
+                // getting here. The pump's final drain releases the gate, which is precisely what
+                // admits a FlushAsync already queued on WaitAsync above; the pump then completes its
+                // finally — TrySetResult, then Dispose — while that admitted flush is still running.
+                // Its release then lands on a disposed SemaphoreSlim, which really does throw on
+                // .NET 10 (verified, not assumed).
+                //
+                // Swallowed rather than allowed to escape, for the same reason the WaitAsync above
+                // swallows it and the write failure below does: the provider is finished by then, so
+                // there is nothing left to protect, and a FlushAsync must not throw at a caller that
+                // is shutting down. Releasing a gate nobody can take again has no effect worth
+                // reporting.
+            }
+        }
+    }
+
+    /// <summary>
+    /// The drain proper. Only ever called under <see cref="_drainGate"/> — see
+    /// <see cref="DrainAsync"/>, which is the single caller.
+    /// </summary>
+    private async Task DrainCoreAsync(CancellationToken cancellationToken)
     {
         var batch = new List<PendingLogEntry>();
         while (_queue.TryDequeue(out var entry))
@@ -254,7 +404,11 @@ public sealed class SqliteLoggerProvider : ILoggerProvider
 
         try
         {
-            await _store.WriteAsync(batch, cancellationToken).ConfigureAwait(false);
+            // cancellationToken BY NAME: LogStore.WriteAsync's two overloads both accept an untyped
+            // null second argument and the cleanse one wins as the more specific match, so a
+            // positional call here would silently pass no token (that overload's own remarks warn of
+            // it). _cleanse is null on every production path.
+            await _store.WriteAsync(batch, _cleanse, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {

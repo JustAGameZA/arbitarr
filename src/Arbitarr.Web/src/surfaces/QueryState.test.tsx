@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { QueryState, errorMessage } from './QueryState';
+import { QueryState, errorMessage, pruneToLiveIds } from './QueryState';
 import { SourcesSection } from './Settings/Sources/Sources';
 import { ApiError } from '../api/client';
 import { useAdminKeyStore } from '../state/adminKeyStore';
@@ -53,6 +53,72 @@ function renderInShell(children: ReactNode) {
     </QueryClientProvider>,
   );
 }
+
+describe('pruneToLiveIds (arb-kkgq)', () => {
+  // Rules and ApiKeys each feed this straight into a `useState` functional
+  // updater to prune per-row refusal Maps when a row leaves the list. The
+  // property that matters is reference identity on the no-op case: a version
+  // that always returns `new Map(prev)` would pass a "refusals survive a
+  // no-op refetch" assertion just as well, while re-triggering the effect's
+  // own setState on every refetch (a render loop, arb-kkgq) -- these tests
+  // observe the identity directly rather than through render count, which
+  // QueryState.tsx's `useAnnounceOnChange` makes an unreliable proxy in the
+  // full component tree.
+  it('returns the SAME Map reference when every key is still live', () => {
+    const failures = new Map([
+      [1, 'refusal A'],
+      [2, 'refusal B'],
+    ]);
+    const liveIds = new Set([1, 2, 3]);
+
+    const result = pruneToLiveIds(failures, liveIds);
+
+    expect(result).toBe(failures);
+  });
+
+  it('returns a new Map holding exactly the still-live entries when something is pruned', () => {
+    const failures = new Map([
+      [1, 'refusal A'],
+      [2, 'refusal B'],
+      [3, 'refusal C'],
+    ]);
+    const liveIds = new Set([1, 3]);
+
+    const result = pruneToLiveIds(failures, liveIds);
+
+    expect(result).not.toBe(failures);
+    expect(Array.from(result.entries())).toEqual([
+      [1, 'refusal A'],
+      [3, 'refusal C'],
+    ]);
+  });
+
+  it('returns the SAME empty Map reference for an empty input against any live set', () => {
+    const failures = new Map<number, string>();
+    const liveIds = new Set([1, 2]);
+
+    const result = pruneToLiveIds(failures, liveIds);
+
+    // An empty Map has no keys to prune, so `changed` never flips -- this
+    // pins that the empty case still takes the no-op (SAME reference) path,
+    // not a copy, which the mutant under test (`return next` unconditionally)
+    // would fail by never returning the original reference at all.
+    expect(result).toBe(failures);
+  });
+
+  it('never mutates the input Map', () => {
+    const failures = new Map([
+      [1, 'refusal A'],
+      [2, 'refusal B'],
+    ]);
+    const liveIds = new Set([1]);
+
+    pruneToLiveIds(failures, liveIds);
+
+    expect(failures.size).toBe(2);
+    expect(failures.get(2)).toBe('refusal B');
+  });
+});
 
 describe('QueryState (arb-z505)', () => {
   beforeEach(() => {

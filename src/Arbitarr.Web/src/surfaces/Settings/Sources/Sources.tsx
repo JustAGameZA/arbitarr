@@ -23,6 +23,7 @@ import {
   type SourceSummary,
   type UpdateSourceRequest,
 } from './types';
+import { formatTimestamp, formatTimestampTitle } from '../../../format';
 
 /**
  * The two NZB access modes the form offers, in the order they are shown — Proxy
@@ -1005,8 +1006,12 @@ export function SourcesSection() {
                             {source.hasApiKey ? 'Configured' : 'Not configured'}
                           </span>
                         </td>
-                        <td className={styles.muted}>{new Date(source.createdAt).toLocaleString()}</td>
-                        <td className={styles.muted}>{new Date(source.updatedAt).toLocaleString()}</td>
+                        <td className={styles.muted} title={formatTimestampTitle(source.createdAt)}>
+                          {formatTimestamp(source.createdAt)}
+                        </td>
+                        <td className={styles.muted} title={formatTimestampTitle(source.updatedAt)}>
+                          {formatTimestamp(source.updatedAt)}
+                        </td>
                         <td className={local.rowActions}>
                           <button
                             type="button"

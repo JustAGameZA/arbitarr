@@ -99,6 +99,102 @@ public sealed class MintedClientApiKeyTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// arb-xwl3: the same acceptance check as <see cref="AssertAcceptedAsync(HttpResponseMessage)"/>,
+    /// but able to explain a non-200 rather than merely report one.
+    ///
+    /// <para><b>WHY THE BODY CANNOT CARRY THE ANSWER.</b> This test host runs with the default
+    /// <c>WebApplicationFactory</c> environment (nothing here calls <c>UseEnvironment</c>, so it is
+    /// "Production", never "Development"), and <c>Program.cs</c> registers no
+    /// <c>UseDeveloperExceptionPage</c> and no <c>UseExceptionHandler</c> anywhere in its pipeline.
+    /// An unhandled exception thrown from a route delegate therefore reaches no code of ours at all:
+    /// ASP.NET Core's own default behaviour answers a bare, empty-body 500. Reading
+    /// <c>response.Content</c> on that path is not merely unhelpful, it is provably empty — the
+    /// exception has to be found somewhere else, or not at all.</para>
+    ///
+    /// <para><b>WHERE IT ACTUALLY GOES.</b> ASP.NET Core's own hosting diagnostics logs an unhandled
+    /// request exception at <c>Error</c> level under the category
+    /// <c>Microsoft.AspNetCore.Hosting.Diagnostics</c>, through the ordinary <c>ILogger</c> pipeline,
+    /// before it answers the empty 500. <c>LoggingSetup.AddArbitarrSqliteLogging</c> filters
+    /// <c>Microsoft</c>-prefixed categories down to a <c>Warning</c> FLOOR in the SQLite store — not a
+    /// ceiling — so an <c>Error</c> row from that category is not suppressed; it is written through
+    /// with its full <see cref="LogEntry.Exception"/> text intact. That is the one place this
+    /// diagnostic can still exist once the response is empty, so this reads it from there.
+    /// <see cref="An_error_row_logged_under_the_ASP_NET_hosting_diagnostics_category_reaches_the_store_and_the_diagnostic_helper"/>
+    /// is the control that proves this empirically rather than leaving it inferred.</para>
+    ///
+    /// <para><b>WHY PRINTING IT IS SAFE.</b> These rows come back through <see cref="LogStore.ReadAsync"/>
+    /// — the store's own read path, the same one <see cref="A_minted_key_driven_through_the_search_pipeline_appears_in_no_log_row"/>
+    /// already reads to assert the minted key is ABSENT from every field including
+    /// <see cref="LogEntry.Exception"/> — so any credential-shaped text has already passed through
+    /// whatever the sink itself applies before this method ever sees it. Nothing here reads a raw
+    /// exception object or forms a new sink; it re-reads the same store. And the key involved is a
+    /// same-test fixture minted moments earlier by <c>MintReadOnlyKeyAsync</c>, not a real operator's
+    /// credential, so even an uncleansed leak here would name nothing an operator holds.</para>
+    ///
+    /// <para><b>PAGES THROUGH THE WHOLE MATCHING SET, NOT ONE PAGE.</b> <see cref="LogStore.MaxPageSize"/>
+    /// caps a single page at 200 rows; a maintenance pass or a chatty run could still push the
+    /// Error/Critical rows past that in one page, and stopping at page 1 would silently drop whichever
+    /// row is the one actually worth printing.</para>
+    ///
+    /// <para><b>THE PASS/FAIL CONDITION DOES NOT CHANGE.</b> On success this asserts exactly what
+    /// <see cref="AssertAcceptedAsync(HttpResponseMessage)"/> already asserts, in the same order; the
+    /// diagnostic text is built ONLY when a non-200 is about to fail the test, and is appended to that
+    /// same assertion's message rather than replacing it.</para>
+    /// </summary>
+    private static async Task AssertAcceptedAsync(HttpResponseMessage response, IServiceProvider services)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+
+        if (response.StatusCode != HttpStatusCode.OK)
+        {
+            var diagnostic = await DescribeServerErrorsAsync(services);
+            Assert.Fail(
+                $"Expected {HttpStatusCode.OK} but the response was {(int)response.StatusCode} " +
+                $"{response.StatusCode}. {diagnostic}");
+        }
+
+        Assert.DoesNotContain("error code", body, StringComparison.Ordinal);
+        Assert.Contains("<caps", body, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Flushes the log sink and pages through every Error-or-above row the store holds, rendering
+    /// each one's category, message and exception text. See
+    /// <see cref="AssertAcceptedAsync(HttpResponseMessage, IServiceProvider)"/> for why this is the
+    /// only place a 500 from this host can still be explained.
+    /// </summary>
+    private static async Task<string> DescribeServerErrorsAsync(IServiceProvider services)
+    {
+        await services.FlushLogSinkAsync();
+
+        var store = services.GetRequiredService<LogStore>();
+        var rows = new List<LogEntry>();
+        var page = 1;
+        while (true)
+        {
+            var result = await store.ReadAsync(level: "Error", logger: null, page: page, pageSize: LogStore.MaxPageSize);
+            rows.AddRange(result.Entries);
+            if (rows.Count >= result.Total || result.Entries.Count == 0)
+            {
+                break;
+            }
+
+            page++;
+        }
+
+        if (rows.Count == 0)
+        {
+            return "No Error-or-above row was found in the log store to explain it.";
+        }
+
+        var rendered = rows.Select(entry =>
+            $"[{entry.Level}] {entry.Logger}: {entry.Message}" +
+            (string.IsNullOrEmpty(entry.Exception) ? string.Empty : $"{Environment.NewLine}{entry.Exception}"));
+
+        return $"Error-or-above log rows ({rows.Count}):{Environment.NewLine}{string.Join(Environment.NewLine + "---" + Environment.NewLine, rendered)}";
+    }
+
+    /// <summary>
     /// <c>/download/{proxyGuid}</c> gets its OWN by-name test on purpose. It is a templated route,
     /// and the route-gating sweep in <c>AdminApiKeyRouteEnumerationTests</c> skips every route
     /// containing "{" because a template needs a real value to resolve — so that sweep passing is
@@ -227,7 +323,7 @@ public sealed class MintedClientApiKeyTests : IAsyncLifetime
         // so a happy-path-only probe would miss the realistic leak.
         using (var caps = await client.GetAsync($"/torznab/api?t=caps&apikey={Uri.EscapeDataString(mintedKey)}"))
         {
-            await AssertAcceptedAsync(caps);
+            await AssertAcceptedAsync(caps, _factory.Services);
         }
         await client.GetAsync($"/newznab/api?t=search&q=probe&apikey={Uri.EscapeDataString(mintedKey)}");
         await client.GetAsync($"/torznab/api?t=notarealmode&apikey={Uri.EscapeDataString(mintedKey)}");
@@ -294,6 +390,36 @@ public sealed class MintedClientApiKeyTests : IAsyncLifetime
             Assert.DoesNotContain(mintedKey, entry.Message, StringComparison.OrdinalIgnoreCase);
             Assert.Contains(LogMessageCleanser.Replacement, entry.Message, StringComparison.Ordinal);
         }
+    }
+
+    /// <summary>
+    /// arb-xwl3: THE CONTROL for <see cref="DescribeServerErrorsAsync"/>. It plants an Error-level
+    /// row under the exact category ASP.NET Core's own hosting diagnostics use for an unhandled
+    /// request exception (<c>Microsoft.AspNetCore.Hosting.Diagnostics</c>) and asserts the helper's
+    /// rendered diagnostic text contains the planted exception's message.
+    ///
+    /// <para>This is the empirical half of <see cref="AssertAcceptedAsync(HttpResponseMessage, IServiceProvider)"/>'s
+    /// doc comment: "an Error row from a Microsoft-prefixed category is not suppressed by the
+    /// Warning floor" was, until this test, read off <c>LoggingSetup.AddArbitarrSqliteLogging</c>'s
+    /// filter call rather than observed. Logging directly under the framework's own category name
+    /// (rather than a fabricated stand-in) is what makes this a genuine proof that the filter lets
+    /// THIS category through at THIS level, not merely that some Microsoft-prefixed category does.
+    /// If this test ever fails because the row does not reach the store, that is a real finding
+    /// about the filter, not a defect in the test — the self-reporting design in this file would
+    /// need to change with it.</para>
+    /// </summary>
+    [Fact]
+    public async Task An_error_row_logged_under_the_ASP_NET_hosting_diagnostics_category_reaches_the_store_and_the_diagnostic_helper()
+    {
+        const string exceptionMessage = "arb-xwl3 control: planted unhandled-exception-shaped failure";
+
+        var logger = _factory.Services.GetRequiredService<ILoggerFactory>()
+            .CreateLogger("Microsoft.AspNetCore.Hosting.Diagnostics");
+        logger.LogError(new InvalidOperationException(exceptionMessage), "An unhandled exception has occurred while executing the request.");
+
+        var diagnostic = await DescribeServerErrorsAsync(_factory.Services);
+
+        Assert.Contains(exceptionMessage, diagnostic, StringComparison.Ordinal);
     }
 
     private Task<(long Id, string Plaintext)> MintReadOnlyKeyAsync() =>

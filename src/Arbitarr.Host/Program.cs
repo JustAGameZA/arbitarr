@@ -1243,11 +1243,26 @@ builder.Services.AddHostedService(sp => new Arbitarr.Host.Maintenance.Maintenanc
 // mid-restore/backup (each writer's own `finally` only runs if the process survives to reach it).
 // One-shot at startup, not a recurring timer -- see StagingSweepService's doc comment for why.
 // Registration order here does not guard against in-flight writers; ExecuteAsync is not awaited
-// before the host reports started, so Kestrel may already be serving. The no-race mechanism is
-// StagingSweep's processStartUtc cut-off -- see StagingSweepService's doc comment.
+// before the host reports started, so Kestrel may already be serving. TWO mechanisms make the
+// sweep safe and neither replaces the other (arb-07jl): StagingSweep's processStartUtc cut-off
+// covers every writer that STARTS after the sweep captures its instant, and the wait below covers
+// the one writer that starts BEFORE it -- the automatic backup MaintenanceHostedService takes
+// immediately on its first pass, whose in-flight snapshot is OLDER than the cut-off and so was
+// deleted mid-copy. See StagingSweepService's doc comment.
+//
+// The waiter resolves MaintenanceHostedService out of the hosted-service collection, the way the
+// integration factory does, rather than taking a second registration of it: AddHostedService above
+// is its ONLY registration, so re-registering it to inject it here would build and run a SECOND
+// maintenance loop. Resolution is deferred into the callback because the collection is not
+// complete while this lambda is being registered.
 builder.Services.AddHostedService(sp => new Arbitarr.Host.Backup.StagingSweepService(
     sp.GetRequiredService<Arbitarr.Data.Backup.BackupPaths>(),
     sp.GetRequiredService<TimeProvider>(),
+    token => sp.GetServices<IHostedService>()
+        .OfType<Arbitarr.Host.Maintenance.MaintenanceHostedService>()
+        .SingleOrDefault() is { } maintenance
+            ? maintenance.FirstPassCompleted.WaitAsync(token)
+            : Task.CompletedTask,
     sp.GetRequiredService<ILogger<Arbitarr.Host.Backup.StagingSweepService>>()));
 
 var app = builder.Build();

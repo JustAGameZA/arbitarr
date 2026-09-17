@@ -213,9 +213,10 @@ public sealed class ReleaseLookupSurvivesRestartAndTtlTests : IAsyncLifetime
     {
         using var response = await client.GetAsync(
             $"/newznab/api?t=search&q=some+release&apikey={Uri.EscapeDataString(ClientKey)}");
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-
         var body = await response.Content.ReadAsStringAsync();
+        // arb-wmbp: reports the status code and body on failure via the shared helper (see
+        // SearchResponseAssertion for why printing the body is safe on this route).
+        SearchResponseAssertion.AssertOk(response, body);
         Assert.DoesNotContain("error code", body, StringComparison.OrdinalIgnoreCase);
 
         var item = Assert.Single(XDocument.Parse(body).Descendants("item"));

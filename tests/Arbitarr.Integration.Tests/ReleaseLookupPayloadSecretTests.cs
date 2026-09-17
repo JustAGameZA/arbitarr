@@ -1,4 +1,3 @@
-using System.Net;
 using System.Xml.Linq;
 using Arbitarr.Core.Releases;
 using Arbitarr.Core.Sources;
@@ -192,7 +191,7 @@ public sealed class ReleaseLookupPayloadSecretTests : IAsyncLifetime
             UpstreamSourceKey);
 
         await host.Services.FlushLogSinkAsync();
-        var probed = (await ReadLogEntriesAsync(host))
+        var probed = (await LogStorePaging.ReadAllAsync(host))
             .Where(entry => entry.Logger.Contains("ReleaseLookupLeakProbe", StringComparison.Ordinal))
             .ToList();
 
@@ -247,7 +246,7 @@ public sealed class ReleaseLookupPayloadSecretTests : IAsyncLifetime
         _ = await client.GetAsync($"/download/not-a-real-guid?apikey={Uri.EscapeDataString(ClientKey)}");
 
         await host.Services.FlushLogSinkAsync();
-        var entries = await ReadLogEntriesAsync(host);
+        var entries = await LogStorePaging.ReadAllAsync(host);
 
         // Without this the loop below is a no-op the day the sink stops recording anything — and
         // the control above is what proves a leak of this value WOULD be caught in these fields.
@@ -274,40 +273,14 @@ public sealed class ReleaseLookupPayloadSecretTests : IAsyncLifetime
             .ToListAsync();
     }
 
-    /// <summary>
-    /// EVERY row, not the first page of them (arb-j4hq). This read used to take page 1 at
-    /// <see cref="LogStore.MaxPageSize"/>, which silently bounded every absence assertion in this
-    /// file at 200 rows: a leaked row landing past that boundary would be invisible to a scan that
-    /// never asked for it, and the test would stay green while covering less than it claims. The
-    /// loop is bounded by <see cref="LogPage.Total"/>, which the store computes in the same
-    /// transaction as the page, so it terminates even while the sink is still appending. Kept
-    /// identical to the copies in the two download-key sibling files so the three cannot drift in
-    /// what they scan.
-    /// </summary>
-    private static async Task<IReadOnlyList<LogEntry>> ReadLogEntriesAsync(WebApplicationFactory<Program> host)
-    {
-        var store = host.Services.GetRequiredService<LogStore>();
-        var entries = new List<LogEntry>();
-
-        for (var page = 1; ; page++)
-        {
-            var read = await store.ReadAsync(level: null, logger: null, page: page, pageSize: LogStore.MaxPageSize);
-            entries.AddRange(read.Entries);
-
-            if (read.Entries.Count == 0 || entries.Count >= read.Total)
-            {
-                return entries;
-            }
-        }
-    }
-
     private static async Task<string> SearchAndExtractProxyGuidAsync(HttpClient client)
     {
         using var response = await client.GetAsync(
             $"/newznab/api?t=search&q=some+release&apikey={Uri.EscapeDataString(ClientKey)}");
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-
         var body = await response.Content.ReadAsStringAsync();
+        // arb-wmbp: reports the status code and body on failure via the shared helper (see
+        // SearchResponseAssertion for why printing the body is safe on this route).
+        SearchResponseAssertion.AssertOk(response, body);
         var item = Assert.Single(XDocument.Parse(body).Descendants("item"));
         var enclosureUrl = item.Elements("enclosure").Single().Attribute("url")!.Value;
 

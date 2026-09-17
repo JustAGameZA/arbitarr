@@ -119,7 +119,11 @@ function SectionBody<T>({
   return <>{children(envelope.records)}</>;
 }
 
-/** The pager. Derived from the SERVER's own page/pageSize, never from what was requested. */
+/**
+ * The pager. It NAVIGATES from the requested page -- the local state a click just advanced -- and
+ * DISPLAYS the page the server actually served. Those are two different facts (see the comment
+ * below on `atFirst`/`atLast`), and this docblock previously stated only the served half.
+ */
 function Pager({
   envelope,
   requestedPage,
@@ -166,7 +170,10 @@ function Pager({
         type="button"
         className={styles.buttonSecondary}
         disabled={busy || atFirst}
-        onClick={() => onPage(Math.max(1, requestedPage - 1))}
+        // No Math.max(1, …) floor here: the button is disabled whenever atFirst
+        // (requestedPage <= 1), so this handler cannot fire from page 1 and the clamp had nothing
+        // left to guard against.
+        onClick={() => onPage(requestedPage - 1)}
       >
         Previous
       </button>
