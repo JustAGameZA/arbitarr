@@ -339,6 +339,266 @@ describe('Search', () => {
     expect(screen.queryByLabelText(/admin api key/i)).toBeNull();
   });
 
+  describe('result count (po-gate-plan-cpdo ruling 1)', () => {
+    // Positive control: the limit-hit notice must genuinely depend on the page
+    // equalling the limit ACTUALLY SENT, not just always render for any page.
+    it('shows the limit-hit notice when the result count equals the submitted limit', async () => {
+      const user = userEvent.setup();
+      mockApi({
+        '/api/admin/search': {
+          body: {
+            releases: [response.releases[0], response.releases[0], response.releases[0]],
+            provenance: response.provenance,
+          },
+        },
+      });
+      renderSurface(<SearchPage />);
+
+      await user.type(screen.getByLabelText('Query'), 'some series');
+      await user.clear(screen.getByLabelText('Limit'));
+      await user.type(screen.getByLabelText('Limit'), '3');
+      await user.click(screen.getByRole('button', { name: 'Search' }));
+
+      expect(
+        await screen.findByText('Showing 3 results, the limit you asked for. There may be more.'),
+      ).toBeInTheDocument();
+    });
+
+    it('does not show the limit-hit notice when the page is short of the submitted limit', async () => {
+      const user = userEvent.setup();
+      mockApi({
+        '/api/admin/search': {
+          body: {
+            releases: [response.releases[0], response.releases[0]],
+            provenance: response.provenance,
+          },
+        },
+      });
+      renderSurface(<SearchPage />);
+
+      await user.type(screen.getByLabelText('Query'), 'some series');
+      await user.clear(screen.getByLabelText('Limit'));
+      await user.type(screen.getByLabelText('Limit'), '3');
+      await user.click(screen.getByRole('button', { name: 'Search' }));
+
+      expect(await screen.findByText('Showing 2 results.')).toBeInTheDocument();
+      expect(screen.queryByText(/the limit you asked for/)).toBeNull();
+    });
+
+    it('renders singular wording for exactly one result', async () => {
+      const user = userEvent.setup();
+      mockApi({ '/api/admin/search': { body: response } });
+      renderSurface(<SearchPage />);
+
+      await runSearch(user);
+
+      expect(await screen.findByText('Showing 1 result.')).toBeInTheDocument();
+    });
+
+    it('renders zero results without the limit-hit notice', async () => {
+      const user = userEvent.setup();
+      mockApi({
+        '/api/admin/search': {
+          body: { releases: [], provenance: response.provenance },
+        },
+      });
+      renderSurface(<SearchPage />);
+
+      await runSearch(user);
+
+      // Zero releases takes the "no releases matched" empty-state branch, which
+      // never renders ResultCount at all -- asserted here as the absence of the
+      // limit-hit wording, since the empty state has its own dedicated test.
+      expect(screen.queryByText(/the limit you asked for/)).toBeNull();
+    });
+
+    // The notice is read from the SUBMITTED criteria, never the live form: an
+    // edit to the limit field after a search must not change what is shown for
+    // results that were already fetched under the old limit.
+    it('keeps the notice for on-screen results unchanged after editing the limit field post-submit', async () => {
+      const user = userEvent.setup();
+      mockApi({
+        '/api/admin/search': {
+          body: {
+            releases: [response.releases[0], response.releases[0], response.releases[0]],
+            provenance: response.provenance,
+          },
+        },
+      });
+      renderSurface(<SearchPage />);
+
+      await user.type(screen.getByLabelText('Query'), 'some series');
+      await user.clear(screen.getByLabelText('Limit'));
+      await user.type(screen.getByLabelText('Limit'), '3');
+      await user.click(screen.getByRole('button', { name: 'Search' }));
+
+      await screen.findByText('Showing 3 results, the limit you asked for. There may be more.');
+
+      await user.clear(screen.getByLabelText('Limit'));
+      await user.type(screen.getByLabelText('Limit'), '5');
+
+      expect(
+        screen.getByText('Showing 3 results, the limit you asked for. There may be more.'),
+      ).toBeInTheDocument();
+    });
+
+    // Same guard for Clear: pressing it must not alter the notice for results
+    // already on screen, since Clear only resets the form (ruling 4).
+    it('keeps the notice for on-screen results unchanged after pressing Clear', async () => {
+      const user = userEvent.setup();
+      mockApi({
+        '/api/admin/search': {
+          body: {
+            releases: [response.releases[0], response.releases[0], response.releases[0]],
+            provenance: response.provenance,
+          },
+        },
+      });
+      renderSurface(<SearchPage />);
+
+      await user.type(screen.getByLabelText('Query'), 'some series');
+      await user.clear(screen.getByLabelText('Limit'));
+      await user.type(screen.getByLabelText('Limit'), '3');
+      await user.click(screen.getByRole('button', { name: 'Search' }));
+
+      await screen.findByText('Showing 3 results, the limit you asked for. There may be more.');
+
+      await user.click(screen.getByRole('button', { name: 'Clear' }));
+
+      expect(
+        screen.getByText('Showing 3 results, the limit you asked for. There may be more.'),
+      ).toBeInTheDocument();
+    });
+  });
+
+  describe('sorting (po-gate-plan-cpdo ruling 2/3)', () => {
+    const sortResponse = {
+      releases: [
+        { ...response.releases[0], title: 'Bravo', size: 200, pubDate: '2026-09-02T00:00:00+00:00', guid: 'g-bravo' },
+        { ...response.releases[0], title: 'Alpha', size: 0, pubDate: '2026-09-01T00:00:00+00:00', guid: 'g-alpha' },
+        { ...response.releases[0], title: 'Charlie', size: 100, pubDate: 'not-a-date', guid: 'g-charlie' },
+        { ...response.releases[0], title: 'Alpha', size: 300, pubDate: '2026-09-03T00:00:00+00:00', guid: 'g-alpha-2' },
+      ],
+      provenance: response.provenance,
+    };
+
+    function rowTitles() {
+      return screen.getAllByRole('row').slice(1).map((row) => row.children[0].textContent);
+    }
+
+    it('renders in server order on first render with aria-sort="none" on every sortable header', async () => {
+      const user = userEvent.setup();
+      mockApi({ '/api/admin/search': { body: sortResponse } });
+      renderSurface(<SearchPage />);
+
+      await runSearch(user);
+      await screen.findByText('Bravo');
+
+      expect(rowTitles()).toEqual(['Bravo', 'Alpha', 'Charlie', 'Alpha']);
+      expect(screen.getByRole('columnheader', { name: 'Title' })).toHaveAttribute('aria-sort', 'none');
+      expect(screen.getByRole('columnheader', { name: 'Size' })).toHaveAttribute('aria-sort', 'none');
+      expect(screen.getByRole('columnheader', { name: 'Published' })).toHaveAttribute(
+        'aria-sort',
+        'none',
+      );
+    });
+
+    it('cycles Title asc -> desc -> server order on three clicks, updating aria-sort each time', async () => {
+      const user = userEvent.setup();
+      mockApi({ '/api/admin/search': { body: sortResponse } });
+      renderSurface(<SearchPage />);
+
+      await runSearch(user);
+      await screen.findByText('Bravo');
+
+      const titleHeader = screen.getByRole('columnheader', { name: 'Title' });
+      const titleButton = screen.getByRole('button', { name: 'Title' });
+
+      await user.click(titleButton);
+      expect(titleHeader).toHaveAttribute('aria-sort', 'ascending');
+      // Stability: the two 'Alpha' rows (g-alpha, g-alpha-2) keep their
+      // server-order relative position under an equal sort key.
+      expect(rowTitles()).toEqual(['Alpha', 'Alpha', 'Bravo', 'Charlie']);
+
+      await user.click(titleButton);
+      expect(titleHeader).toHaveAttribute('aria-sort', 'descending');
+      expect(rowTitles()).toEqual(['Charlie', 'Bravo', 'Alpha', 'Alpha']);
+
+      await user.click(titleButton);
+      expect(titleHeader).toHaveAttribute('aria-sort', 'none');
+      expect(rowTitles()).toEqual(['Bravo', 'Alpha', 'Charlie', 'Alpha']);
+    });
+
+    it('sorts Size on raw bytes with an absent size last in both directions', async () => {
+      const user = userEvent.setup();
+      mockApi({ '/api/admin/search': { body: sortResponse } });
+      renderSurface(<SearchPage />);
+
+      await runSearch(user);
+      await screen.findByText('Bravo');
+
+      const sizeButton = screen.getByRole('button', { name: 'Size' });
+
+      await user.click(sizeButton);
+      // The fixture's asc byte order is Charlie(100) < Bravo(200) < Alpha(300),
+      // with the OTHER Alpha (size 0, sitting in the MIDDLE of the fixture
+      // array) sorting last -- not merely excluded from the front.
+      expect(rowTitles()).toEqual(['Charlie', 'Bravo', 'Alpha', 'Alpha']);
+
+      await user.click(sizeButton);
+      // desc: Alpha(300) > Bravo(200) > Charlie(100), the zero-size Alpha still last.
+      expect(rowTitles()).toEqual(['Alpha', 'Bravo', 'Charlie', 'Alpha']);
+    });
+
+    it('sorts Published on the raw date with an unparseable date last in both directions', async () => {
+      const user = userEvent.setup();
+      mockApi({ '/api/admin/search': { body: sortResponse } });
+      renderSurface(<SearchPage />);
+
+      await runSearch(user);
+      await screen.findByText('Bravo');
+
+      const publishedButton = screen.getByRole('button', { name: 'Published' });
+
+      await user.click(publishedButton);
+      expect(rowTitles()).toEqual(['Alpha', 'Bravo', 'Alpha', 'Charlie']);
+
+      await user.click(publishedButton);
+      expect(rowTitles()).toEqual(['Alpha', 'Bravo', 'Alpha', 'Charlie']);
+    });
+  });
+
+  describe('Clear (ruling 4)', () => {
+    it('resets the form and the selection but leaves results in the DOM without issuing a request', async () => {
+      const user = userEvent.setup();
+      const api = mockApi({
+        '/api/admin/search': { body: response },
+        '/api/admin/search/upstream-guid-1/explanation': {
+          body: { title: 'x', originalTitle: 'y' },
+        },
+      });
+      renderSurface(<SearchPage />);
+
+      await user.type(screen.getByLabelText('TVDB id'), '12345');
+      await runSearch(user);
+      await screen.findByText('Some.Series.S01E02.1080p');
+
+      await user.click(await screen.findByRole('button', { name: 'Explain' }));
+      await screen.findByText('Match explanation');
+
+      const callsBeforeClear = api.callsTo('/api/admin/search').length;
+
+      await user.click(screen.getByRole('button', { name: 'Clear' }));
+
+      expect(screen.getByLabelText('Query')).toHaveValue('');
+      expect(screen.getByLabelText('TVDB id')).toHaveValue('');
+      expect(screen.queryByText('Match explanation')).toBeNull();
+      // Results stay until the next search.
+      expect(screen.getByText('Some.Series.S01E02.1080p')).toBeInTheDocument();
+      expect(api.callsTo('/api/admin/search')).toHaveLength(callsBeforeClear);
+    });
+  });
+
   it('explains a release, and reports the missing lookup entry without crashing', async () => {
     const user = userEvent.setup();
     useAdminKeyStore.getState().setKey('operator-key');
