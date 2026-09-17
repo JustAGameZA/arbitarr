@@ -273,9 +273,9 @@ public sealed class SourceBaseUrlOriginTests : IDisposable
     /// <summary>
     /// The existing-rows WARNING names the row id and NOTHING else — never the value, never the
     /// host, never the username. This line lands in the persistent log store served at
-    /// <c>/api/admin/logs</c> (CLAUDE.md §1), where <c>LogMessageCleanser</c> scrubs query strings
-    /// and would not touch a credential in a URL's userinfo component; logging the value in order to
-    /// complain about it would perform the leak. Same constraint as
+    /// <c>/api/admin/logs</c> (CLAUDE.md §1), where <c>LogMessageCleanser</c> scrubs credentials in
+    /// query strings and would not touch a credential in a URL's userinfo component; logging the
+    /// value in order to complain about it would perform the leak. Same constraint as
     /// <c>security-properties-x7w8.md</c>'s P7.
     ///
     /// <para>Asserted PER ROW over a three-row fixture: two affected, one clean. "Some row warned"
