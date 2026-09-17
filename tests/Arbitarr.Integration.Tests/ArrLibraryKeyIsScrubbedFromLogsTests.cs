@@ -1,3 +1,4 @@
+using System.Net.Http.Json;
 using Arbitarr.Api.Admin;
 using Arbitarr.Core.Media;
 using Arbitarr.Core.Settings;
@@ -5,6 +6,7 @@ using Arbitarr.Data.Entities;
 using Arbitarr.Data.Logging;
 using Arbitarr.Data.Media;
 using Arbitarr.Integration.Tests.TestSupport;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -83,6 +85,19 @@ public sealed class ArrLibraryKeyIsScrubbedFromLogsTests
         using var response = await client.SendAsync(request);
         Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
 
+        // POSITIVE CONTROL, part zero: the section reports Unreachable, not NotConfigured. The
+        // endpoint answers 200 for EVERY status (ArrSectionEnvelope's whole point — see its type
+        // doc), so a bare 200 assertion is not a control at all: it would pass identically whether
+        // the seeded credential was actually read by SonarrLibraryClient or the request never
+        // reached it because the credential provider returned null. Unreachable, not Ok, is the
+        // correct expectation here: the target is a documentation address nothing answers on (see
+        // this test's own doc above), so the real client genuinely cannot complete the call. Asserting
+        // the wire Status is what proves this test drove the real client down the failure path rather
+        // than the NotConfigured short-circuit skipping it entirely (arb-j6vk).
+        var envelope = await response.Content.ReadFromJsonAsync<ArrSectionEnvelope<ArrSeriesItem>>();
+        Assert.NotNull(envelope);
+        Assert.Equal(nameof(ArrSectionStatus.Unreachable), envelope!.Status);
+
         await AssertKeyIsAbsentFromEveryLogRowAsync(
             factory, nameof(SonarrLibraryClient), "/api/v3/series", SonarrKey);
     }
@@ -105,6 +120,15 @@ public sealed class ArrLibraryKeyIsScrubbedFromLogsTests
         using var response = await client.SendAsync(request);
         Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
 
+        // POSITIVE CONTROL, part zero: see the sibling Sonarr test above for why a bare 200 is not a
+        // control on this route, and why Unreachable rather than Ok is the correct expectation
+        // against a documentation address nothing answers on — the section's own Status is what
+        // proves the real Radarr library client ran down the failure path rather than the
+        // NotConfigured short-circuit skipping it entirely (arb-j6vk).
+        var envelope = await response.Content.ReadFromJsonAsync<ArrSectionEnvelope<ArrMovieItem>>();
+        Assert.NotNull(envelope);
+        Assert.Equal(nameof(ArrSectionStatus.Unreachable), envelope!.Status);
+
         await AssertKeyIsAbsentFromEveryLogRowAsync(
             factory, nameof(RadarrLibraryClient), "/api/v3/movie", RadarrKey);
     }
@@ -123,12 +147,14 @@ public sealed class ArrLibraryKeyIsScrubbedFromLogsTests
     {
         await factory.Services.FlushLogSinkAsync();
 
-        var store = factory.Services.GetRequiredService<LogStore>();
-        var page = await store.ReadAsync(level: null, logger: null, page: 1, pageSize: LogStore.MaxPageSize);
+        // EVERY row, not the first page of them (arb-j6vk, following arb-j4hq). A page-1 read at
+        // LogStore.MaxPageSize silently bounds every absence assertion below at 200 rows, so a leak
+        // landing past that boundary would be invisible to a scan that never asked for it.
+        var allEntries = await LogStorePaging.ReadAllAsync(factory);
 
         // The rows IHttpClientFactory's own handler writes are logged under the client's name, which
         // is why the two library clients are separate types rather than one shared instance.
-        var clientRows = page.Entries
+        var clientRows = allEntries
             .Where(e => e.Logger.Contains(clientCategory, StringComparison.Ordinal))
             .ToList();
 
@@ -157,7 +183,7 @@ public sealed class ArrLibraryKeyIsScrubbedFromLogsTests
 
         // And nothing anywhere else in the store carries it either — the failure path runs through the
         // reader and the endpoint, which log under their own names.
-        foreach (var entry in page.Entries)
+        foreach (var entry in allEntries)
         {
             Assert.DoesNotContain(apiKey, entry.Message, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain(apiKey, entry.Exception ?? string.Empty, StringComparison.OrdinalIgnoreCase);
