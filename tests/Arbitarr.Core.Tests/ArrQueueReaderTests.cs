@@ -133,6 +133,15 @@ public class ArrQueueReaderTests
     ///
     /// <para>Asserted against the rendered item rather than a field list, so a future member named
     /// something other than <c>Path</c> that nonetheless carried one would still be caught.</para>
+    ///
+    /// <para><b>THE SAME FIXTURE ALSO PINS THE ONE FIELD THAT IS SERVED</b> (arb-6l9b.6): every
+    /// record carries a DISTINCT <c>id</c> and the loop asserts PER RECORD that its own id arrived,
+    /// for the mirror of the reason the exclusions are per-record. A projection that carried the
+    /// first record's id onto all three — or that let a missing id default to 0 — would give several
+    /// rows the same React key, which is precisely the bug the id exists to prevent, and "some item
+    /// has an id" would pass against it. Keeping the two assertions in ONE fixture is deliberate:
+    /// the allowlist is a single decision about what this projection serves, so a future edit that
+    /// widens it meets both halves of that decision in the same test.</para>
     /// </summary>
     [Fact]
     public async Task No_record_carries_a_filesystem_path_through_the_projection()
@@ -146,6 +155,7 @@ public class ArrQueueReaderTests
 
         var records = string.Join(",", Enumerable.Range(1, 3).Select(i => $$"""
             {
+              "id": {{700 + i}},
               "title": "Example.Show.S01E0{{i}}.1080p.WEB-DL",
               "status": "downloading",
               "size": 100.0,
@@ -179,14 +189,20 @@ public class ArrQueueReaderTests
         // Non-vacuity: the records really did arrive, so the loop below iterates.
         Assert.Equal(3, result.Items.Count);
 
-        foreach (var item in result.Items)
+        for (var index = 0; index < result.Items.Count; index++)
         {
+            var item = result.Items[index];
             var rendered = System.Text.Json.JsonSerializer.Serialize(item);
 
             foreach (var planted in new[] { OutputPath, RecordPath, RootFolderPath, FolderName })
             {
                 Assert.DoesNotContain(planted, rendered, StringComparison.OrdinalIgnoreCase);
             }
+
+            // Per RECORD and against its OWN id (701, 702, 703), not merely "an id is present":
+            // carrying the first record's id onto every row, or defaulting a missing one to 0,
+            // both satisfy a weaker check while handing several rows the same key.
+            Assert.Equal(701 + index, item.Id);
         }
     }
 
