@@ -1,5 +1,29 @@
 /* Search-local layout. Colour comes from var(--token) only (AC3). */
 
+/*
+ * arb-cpdo: TVDB/TMDB/Season/Episode narrow the same query, so a fieldset
+ * groups them visibly. `display: flex` on the fieldset itself keeps its
+ * children laid out the same way as the surrounding .form (flex-wrap, the
+ * same gap), just with a border and legend added around them; the fieldset's
+ * own default block-level rendering would otherwise stack them.
+ */
+.narrowingFields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin: 0;
+  padding: 8px 12px 12px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.narrowingFields legend {
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
 .provenance {
   display: flex;
   flex-wrap: wrap;
@@ -12,6 +36,33 @@
 .provenance strong {
   color: var(--fg-primary);
   font-weight: 600;
+}
+
+.resultCount {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+/*
+ * Sortable column header button: fills the <th>, matches its heading
+ * typography (surface.module.css's `.table th` sets weight/colour on the
+ * th itself, which a nested interactive element does not inherit for
+ * `background`/`border` by default), and stays keyboard- and screen-reader
+ * operable as a real <button> rather than a click handler on the <th>.
+ */
+.sortButton {
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sortButton:hover {
+  color: var(--fg-primary);
 }
 
 .explanation {
