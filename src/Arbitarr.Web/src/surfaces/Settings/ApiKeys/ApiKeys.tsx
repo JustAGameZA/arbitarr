@@ -427,10 +427,16 @@ function KeyRow({
                   className={styles.buttonDanger}
                   disabled={pending}
                   onClick={() => onRemove(id)}
+                  aria-label={`Confirm remove ${entry.label}`}
                 >
                   Confirm remove
                 </button>
-                <button type="button" className={styles.buttonSecondary} onClick={onCancelConfirm}>
+                <button
+                  type="button"
+                  className={styles.buttonSecondary}
+                  onClick={onCancelConfirm}
+                  aria-label={`Cancel remove ${entry.label}`}
+                >
                   Cancel
                 </button>
               </>
@@ -452,10 +458,16 @@ function KeyRow({
                 className={styles.buttonDanger}
                 disabled={pending}
                 onClick={() => onRevoke(id)}
+                aria-label={`Confirm revoke ${entry.label}`}
               >
                 Confirm revoke
               </button>
-              <button type="button" className={styles.buttonSecondary} onClick={onCancelConfirm}>
+              <button
+                type="button"
+                className={styles.buttonSecondary}
+                onClick={onCancelConfirm}
+                aria-label={`Cancel revoke ${entry.label}`}
+              >
                 Cancel
               </button>
             </>
@@ -522,6 +534,20 @@ export function ApiKeysSection() {
   // what the row shows.
   const [removeFailedId, setRemoveFailedId] = useState<number | null>(null);
   const [removeFailure, setRemoveFailure] = useState<unknown>(null);
+  // The real invariant the per-row `pending` prop rests on: `confirmingId`
+  // being section-wide means only one row's Confirm is ever RENDERED at a
+  // time, but nothing stops the operator moving it to a different row while
+  // an earlier revoke or remove is still in flight -- there is no guard
+  // against it. `revoke.variables`/`remove.variables` can only ever name the
+  // LATEST call, so a second mutate started before the first settles would
+  // silently stop showing the first row as pending. These Sets are kept in
+  // local state instead: an id is added right before its `mutate` and removed
+  // once THAT call settles, so however many revokes or removes are running at
+  // once, each row reads pending only for its own — never a shared flag that
+  // would disable every other row, which is the arb-kytb defect this file
+  // already removed once.
+  const [pendingRevokeIds, setPendingRevokeIds] = useState<ReadonlySet<number>>(new Set());
+  const [pendingRemoveIds, setPendingRemoveIds] = useState<ReadonlySet<number>>(new Set());
   // Both outcomes of a create are held HERE rather than read back off the
   // mutation, because the mutation is reset (via `settle`/`create.reset()`
   // below) the moment it settles: after that `create.data` and `create.error`
@@ -575,9 +601,17 @@ export function ApiKeysSection() {
     setRevokeFailedId(null);
     // Same reason as create: the previous refusal must not outlive its attempt.
     revoke.reset();
+    setPendingRevokeIds((ids) => new Set(ids).add(id));
     revoke.mutate(id, {
       onSuccess: () => setConfirmingId(null),
       onError: () => setRevokeFailedId(id),
+      onSettled: () => {
+        setPendingRevokeIds((ids) => {
+          const next = new Set(ids);
+          next.delete(id);
+          return next;
+        });
+      },
     });
   };
 
@@ -603,6 +637,7 @@ export function ApiKeysSection() {
     setRemoveFailedId(null);
     setRemoveFailure(null);
     remove.reset();
+    setPendingRemoveIds((ids) => new Set(ids).add(id));
     remove.mutate(id, {
       onSuccess: () => {
         // The row is gone from the refetched list, so the confirm it was showing
@@ -614,6 +649,13 @@ export function ApiKeysSection() {
         setRemoveFailedId(id);
         setRemoveFailure(error);
         remove.reset();
+      },
+      onSettled: () => {
+        setPendingRemoveIds((ids) => {
+          const next = new Set(ids);
+          next.delete(id);
+          return next;
+        });
       },
     });
   };
@@ -679,7 +721,32 @@ export function ApiKeysSection() {
                           onCancelConfirm={() => setConfirmingId(null)}
                           onRevoke={onRevoke}
                           onRemove={onRemove}
-                          pending={revoke.isPending || remove.isPending}
+                          // Per row, not the section-wide `revoke.isPending ||
+                          // remove.isPending` (arb-kytb): a shared boolean
+                          // disabled every row's action while any ONE revoke or
+                          // remove was in flight, which is wrong for the same
+                          // reason a section-wide error would be — the call
+                          // belongs to one key.
+                          //
+                          // Tracked via `pendingRevokeIds`/`pendingRemoveIds`
+                          // rather than `revoke.variables === entry.id`: the
+                          // mutation's own `variables` names only the LATEST
+                          // call, and nothing stops a second row's revoke or
+                          // remove from starting while an earlier one is still
+                          // outstanding. `confirmingId` being section-wide means
+                          // only one row's Confirm is ever RENDERED at a time,
+                          // but `onAskConfirm`/`setConfirmingId` has no guard
+                          // against moving it to a different row mid-flight —
+                          // so two mutates CAN run at once, and a single
+                          // `variables` comparison could not tell them apart.
+                          // These Sets are keyed by id, so however many revokes
+                          // or removes are running at once, each row reads
+                          // pending only for its own. Converged with the Rules
+                          // surface's identical fix (arb-nizy).
+                          pending={
+                            entry.id !== null &&
+                            (pendingRevokeIds.has(entry.id) || pendingRemoveIds.has(entry.id))
+                          }
                           // The refusal belongs to ONE key. AC5's message names the
                           // key it refused ("'X' is the last API key with admin
                           // scope"), so it renders in that key's row rather than
