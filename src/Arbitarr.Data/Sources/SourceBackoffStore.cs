@@ -46,6 +46,45 @@ public sealed class SourceBackoffStore
             .SingleOrDefaultAsync(s => s.SourceName == sourceName, cancellationToken);
 
     /// <summary>
+    /// arb-x7w8.11: every stored state, keyed by source name — the LIST read the per-source operator
+    /// surface needs, and the counterpart <c>SourceHealthRepository.LoadAllAsync</c> has had since
+    /// the breaker shipped.
+    ///
+    /// <para><b>It returns the ROWS, not a verdict, and that is the point.</b>
+    /// <see cref="IsCallableAsync"/> collapses a state to a bool, which discards exactly the
+    /// distinction the surface exists to draw: backing off and permanently disabled are both
+    /// "not callable" and are two entirely different things to tell an operator (see
+    /// <see cref="SourceBackoffState"/>'s "Three states" paragraph). A caller wanting the verdict
+    /// still asks <see cref="IsCallableAsync"/>; a caller wanting to SAY WHY reads these.</para>
+    ///
+    /// <para>One query rather than N per-name <see cref="GetAsync"/> calls. The table holds exactly
+    /// one row per source and is bounded by set membership (see the entity's "cannot grow without
+    /// bound" note), so loading it whole costs one round trip where the keyed form costs one per
+    /// configured source on every render of the surface.</para>
+    ///
+    /// <para>A source with no row is simply ABSENT from the dictionary rather than present with a
+    /// blank state. A source that has never been called has recorded nothing, which the caller reads
+    /// the same way <see cref="IsCallableAsync"/> reads a null state — as no impediment — but
+    /// inventing a row here would make "never observed" indistinguishable from "observed healthy".
+    /// </para>
+    /// </summary>
+    public async Task<IReadOnlyDictionary<string, SourceBackoffState>> GetAllAsync(
+        CancellationToken cancellationToken = default)
+    {
+        // AsNoTracking because this is a read for projection: the tracked form would put every
+        // source's row into the change tracker of a context RecordOutcomeAsync also writes through.
+        var states = await _dbContext.SourceBackoffStates
+            .AsNoTracking()
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        // Ordinal, matching both the unique index's own comparison and GetAsync's equality above. A
+        // case-insensitive dictionary would try to merge two rows the table considers distinct and
+        // throw on the duplicate key rather than mis-report.
+        return states.ToDictionary(s => s.SourceName, StringComparer.Ordinal);
+    }
+
+    /// <summary>
     /// Whether <paramref name="sourceName"/> may be called right now.
     ///
     /// <para>A permanent disable wins outright and is checked FIRST: it is not a period that elapses,

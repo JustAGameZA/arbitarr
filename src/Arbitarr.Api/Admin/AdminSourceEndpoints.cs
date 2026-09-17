@@ -22,6 +22,41 @@ namespace Arbitarr.Api.Admin;
 /// It is projected as a nullable so the wire preserves that distinction rather than collapsing it.
 /// </param>
 /// <param name="GrabLimit">Same nullable semantics as <paramref name="QueryLimit"/>: null is unlimited, 0 is a cap of zero.</param>
+/// <param name="RuntimeState">
+/// arb-x7w8.11: the derived <see cref="Arbitarr.Data.Sources.SourceRuntimeState"/> as its enum NAME —
+/// healthy, budgeted, backing off, or permanently disabled.
+///
+/// <para><b>This is per-source RUNTIME intelligence and it lives on this ADMIN-GATED route rather
+/// than on <c>/api/status</c>.</b> That route is <c>RouteClassification.PublicRead</c> and un-gated,
+/// so "indexer X has spent 47 of its 50 daily queries" published there would be unratified
+/// disclosure about a private deployment. <c>/api/status</c> carries exactly ONE thing from this
+/// feature — the blocking health item a PERMANENTLY DISABLED indexer raises, whose summary is built
+/// from the configured source name alone — and nothing else. See
+/// <c>StatusEndpoint.SourcePermanentlyDisabledKey</c>.</para>
+///
+/// <para>An enum name and never free text, so no branch can interpolate an upstream body or a
+/// credential into it — the same closure <paramref name="LastOutcome"/> relies on and the same one
+/// <see cref="SourceTestResponse"/> already has.</para>
+/// </param>
+/// <param name="DisabledUntil">
+/// When a transient hold-off expires, or null. <b>A non-null value in the PAST is normal</b> and does
+/// NOT mean the source is backing off — the row retains it because the level it was reached at is
+/// still live information. <paramref name="RuntimeState"/> is what says whether anything is held off.
+/// </param>
+/// <param name="DisabledLevel">How far transient escalation has climbed; zero means not escalated.</param>
+/// <param name="LastOutcome">
+/// The last observed call outcome as a <c>SourceCallOutcome</c> enum name, or null before any outcome
+/// was recorded. Deliberately NOT a free-text <c>lastError</c>: this record's no-secret property is
+/// structural — no field here is capable of carrying a key or any upstream text — and adding a string
+/// field sourced from an upstream would trade that structure for care.
+/// </param>
+/// <param name="QueriesUsed">
+/// Query hits spent inside the current rolling <paramref name="LimitsUnit"/> window, summing
+/// RepeatCount. Read against <paramref name="QueryLimit"/>, whose null means UNLIMITED — "3 used"
+/// with a null limit is unlimited, and rendering that as "3 of 0" or as a percentage is exactly the
+/// collapse <see cref="Arbitarr.Data.Entities.Source.QueryLimit"/> warns about.
+/// </param>
+/// <param name="GrabsUsed">Grab hits spent inside the same window, read against <paramref name="GrabLimit"/> on the same terms.</param>
 public sealed record SourceResponse(
     long Id,
     string Kind,
@@ -36,6 +71,12 @@ public sealed record SourceResponse(
     int? GrabLimit,
     string LimitsUnit,
     string NzbAccessMode,
+    string RuntimeState,
+    DateTimeOffset? DisabledUntil,
+    int DisabledLevel,
+    string? LastOutcome,
+    int QueriesUsed,
+    int GrabsUsed,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
 
@@ -238,16 +279,35 @@ public static class AdminSourceEndpoints
             .RequireAdminApiKey();
     }
 
+    /// <summary>
+    /// The list read, and since arb-x7w8.11 the only path that carries per-source RUNTIME state.
+    ///
+    /// <para><b>The runtime read is batched, once, before the projection loop.</b>
+    /// <see cref="SourceRuntimeStateReader.GetAllAsync"/> loads every backoff row in one query and
+    /// counts each source's window hits; doing it inside the loop instead would issue one backoff
+    /// query per source on top of the counting that genuinely is per source.</para>
+    ///
+    /// <para><b>ON DEMAND, not on a poll.</b> <c>SourceApiHitCounter.CountAsync</c> filters its
+    /// window in memory because EF Core cannot translate the <c>DateTimeOffset</c> comparison on
+    /// SQLite, so this costs 2N event scans — bounded per source by arb-15u3's
+    /// <c>(Kind, SourceDisplayName)</c> index, but real work nonetheless. It rides the sources list
+    /// the operator already fetches when they open the surface, and is deliberately given no polling
+    /// interval of its own.</para>
+    /// </summary>
     private static async Task<IResult> GetSourcesAsync(
         SourceRepository repository,
+        SourceRuntimeStateReader runtimeStates,
         CancellationToken cancellationToken)
     {
         var sources = await repository.GetAllAsync(cancellationToken);
 
+        var runtime = await runtimeStates.GetAllAsync(sources, cancellationToken);
+
         var responses = new List<SourceResponse>(sources.Count);
         foreach (var source in sources)
         {
-            responses.Add(await ToResponseAsync(source, repository, cancellationToken));
+            runtime.TryGetValue(source.DisplayName, out var status);
+            responses.Add(await ToResponseAsync(source, repository, cancellationToken, status));
         }
 
         return Results.Ok(responses);
@@ -294,7 +354,10 @@ public static class AdminSourceEndpoints
                     NzbAccessMode = request.NzbAccessMode,
                 });
 
-            var response = await ToResponseAsync(source, repository, cancellationToken);
+            // Explicitly no runtime status: a source created in this request has no backoff row and
+            // no hits in the window, so the Healthy arm is the correct reading rather than an
+            // omission. See ToResponseAsync.
+            var response = await ToResponseAsync(source, repository, cancellationToken, runtime: null);
 
             // arb-x7w8.5: the add-indexer flow fetches caps in the same round trip that saved the
             // row, so a newly added indexer is searchable on its real capabilities immediately
@@ -372,7 +435,10 @@ public static class AdminSourceEndpoints
                     NzbAccessMode = request.NzbAccessMode,
                 });
 
-            var response = await ToResponseAsync(source, repository, cancellationToken);
+            // Explicitly no runtime status, as on create: the edit itself reports nothing about the
+            // source's runtime condition, and reading it here would cost two more event scans on a
+            // write path. See ToResponseAsync.
+            var response = await ToResponseAsync(source, repository, cancellationToken, runtime: null);
 
             // A RENAME ORPHANS THE OLD NAME'S CAPS ENTRIES (architect M1, ADR 0016). The cache key is
             // the display name, so after a rename the old name's entries describe a source that no
@@ -593,11 +659,30 @@ public static class AdminSourceEndpoints
     /// boolean from <see cref="SourceRepository.HasApiKeyAsync"/>, and
     /// <see cref="SourceResponse"/> has no field that could hold the value even if a future caller
     /// tried.
+    ///
+    /// <para>arb-x7w8.11's runtime fields are added HERE for the same reason everything else is: it
+    /// is the single chokepoint, so the list, the create and the update all report the same shape
+    /// without three places to keep in step. <paramref name="runtime"/> is passed IN rather than read
+    /// here because the list path reads every source's state in one batch (see
+    /// <see cref="SourceRuntimeStateReader.GetAllAsync"/>) and a per-source read inside this method
+    /// would turn that back into N round trips.</para>
+    ///
+    /// <para><b>A missing status projects as HEALTHY, not as an error.</b> That is the honest reading
+    /// of a source with no recorded backoff row and no hits in the window — a source that has never
+    /// been called is not in trouble. The write paths take this arm deliberately: a source that was
+    /// just created or edited has, by construction, nothing to report yet, and a second batch read
+    /// there would cost two more event scans to produce the same answer.</para>
+    ///
+    /// <para><b>Required rather than defaulted</b>, so taking that Healthy arm is
+    /// something a call site STATES by passing <c>null</c>. With a default a new read path picks the
+    /// arm up by omission and silently reports Healthy for a source whose state it never read, which
+    /// is the one failure this projection cannot detect from the inside.</para>
     /// </summary>
     private static async Task<SourceResponse> ToResponseAsync(
         Source source,
         SourceRepository repository,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        SourceRuntimeStatus? runtime) =>
         new(
             Id: source.Id,
             Kind: source.Kind,
@@ -614,6 +699,17 @@ public static class AdminSourceEndpoints
             GrabLimit: source.GrabLimit,
             LimitsUnit: source.LimitsUnit,
             NzbAccessMode: source.NzbAccessMode,
+            // The enum NAME, matching how SourceTestResponse carries SourceProbeOutcome: a closed set
+            // the UI switches on, with no string field anywhere in the path that could carry
+            // upstream text.
+            RuntimeState: (runtime?.State ?? SourceRuntimeState.Healthy).ToString(),
+            DisabledUntil: runtime?.DisabledUntil,
+            DisabledLevel: runtime?.DisabledLevel ?? 0,
+            LastOutcome: runtime?.LastOutcome,
+            // Zero used, never "zero limit": these are the tallies, and the CAPS above stay nullable
+            // beside them so null-is-unlimited survives onto the wire intact.
+            QueriesUsed: runtime?.QueriesUsed ?? 0,
+            GrabsUsed: runtime?.GrabsUsed ?? 0,
             CreatedAt: source.CreatedAt,
             UpdatedAt: source.UpdatedAt);
 }
