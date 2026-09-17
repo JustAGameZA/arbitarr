@@ -323,6 +323,207 @@ public sealed class SourceSeederTests : IDisposable
         Assert.False(whileDisabled.IsConfigured);
         Assert.Null(whileDisabled.BaseUrl);
         Assert.Null(whileDisabled.ApiKey);
+
+        // arb-72mf: the widened aggregate agrees. The row is disabled, so it is
+        // not an enabled source of ANY kind with a key either, and the widening
+        // must not have quietly turned "enabled" into "exists".
+        Assert.False(whileDisabled.AnySourceConfigured);
+    }
+
+    /// <summary>
+    /// arb-72mf: adds an enabled row of <paramref name="kind"/> carrying an API key, directly
+    /// against the DbContext. Bypasses <c>SourceSeeder</c>'s env seeding deliberately — seeding only
+    /// ever creates an NZBHydra row, which is the very limitation under test here.
+    /// </summary>
+    private static async Task AddEnabledKeyedSourceAsync(
+        ArbitarrDbContext context,
+        string kind,
+        bool enabled = true,
+        bool withKey = true)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var source = new Source
+        {
+            Kind = kind,
+            DisplayName = $"{kind} source",
+            BaseUrl = DatabaseBaseUrl,
+            Enabled = enabled,
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+
+        context.Sources.Add(source);
+        await context.SaveChangesAsync();
+
+        if (withKey)
+        {
+            context.Settings.Add(new SettingEntry
+            {
+                Name = SourceRepository.ApiKeySettingName(source.Id),
+                Value = "placeholder-source-key",
+                UpdatedAt = now,
+            });
+            await context.SaveChangesAsync();
+        }
+    }
+
+    /// <summary>
+    /// arb-72mf: an enabled, keyed source of ANY kind makes the install configured.
+    ///
+    /// <para>The bug: <c>nzbHydraConfigured</c> came off
+    /// <c>ResolvedSourceConfiguration.IsConfigured</c>, whose <c>ApiKey</c> is only ever populated
+    /// by <c>ResolveFromDatabaseAsync</c>'s <c>Kind == NzbHydraKind &amp;&amp; Enabled</c> query. An
+    /// install whose only sources are direct Newznab/Torznab rows — possible since #344 — searched
+    /// them correctly through <c>SourceRegistry</c> while the Dashboard showed #50's
+    /// not-configured empty state.</para>
+    ///
+    /// <para><b>A positive control PER KIND, not one case plus a comment.</b> A single NzbHydra case
+    /// passes against the old NZBHydra-only predicate, so it proves nothing about the fix; the
+    /// Newznab and Torznab cases are the ones that fail before it. Running all three through the
+    /// same theory also pins that the widening did not simply swap one hardcoded kind for another.
+    /// Each case additionally asserts the LEGACY leg is untouched for the non-NZBHydra kinds, which
+    /// is what keeps the two predicates from being silently collapsed into one.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(SourceRepository.NzbHydraKind)]
+    [InlineData(SourceRepository.NewznabKind)]
+    [InlineData(SourceRepository.TorznabKind)]
+    public async Task An_enabled_keyed_source_of_any_kind_is_reported_as_configured(string kind)
+    {
+        using var context = CreateContext();
+        await AddEnabledKeyedSourceAsync(context, kind);
+
+        var resolved = new ResolvedSourceConfiguration();
+        await SourceSeeder.SeedAndResolveAsync(
+            context, resolved, NoEnvironment(), new RecordingLogger());
+
+        Assert.True(
+            resolved.AnySourceConfigured,
+            $"an enabled {kind} source with a key must report the install as configured.");
+
+        // The legacy NZBHydra leg keeps its own, narrower meaning: it answers for
+        // the NZBHydra row alone and is null/false when there is not one. Asserted
+        // here so a future edit that "simplifies" the two into one predicate fails.
+        if (kind == SourceRepository.NzbHydraKind)
+        {
+            Assert.True(resolved.IsConfigured);
+        }
+        else
+        {
+            Assert.False(resolved.IsConfigured);
+            Assert.Null(resolved.BaseUrl);
+        }
+    }
+
+    /// <summary>
+    /// arb-72mf: an install whose only sources are DISABLED is not configured, whatever their kind.
+    ///
+    /// <para>Positive control first: the same rows, enabled, report configured. Without it the
+    /// <c>Assert.False</c> would pass just as happily against a predicate that reported everything
+    /// unconfigured, or against a fixture whose key rows were never written — an empty set satisfies
+    /// a negative assertion. The keys are asserted still present in the Settings table at the point
+    /// of the false assertion, so "not configured" is demonstrably the enabled filter's doing and
+    /// not a missing fixture.</para>
+    /// </summary>
+    [Fact]
+    public async Task An_install_whose_only_sources_are_disabled_is_not_configured()
+    {
+        using var context = CreateContext();
+        await AddEnabledKeyedSourceAsync(context, SourceRepository.NewznabKind);
+        await AddEnabledKeyedSourceAsync(context, SourceRepository.TorznabKind);
+
+        // POSITIVE CONTROL: enabled and keyed reports configured, so the negative
+        // assertion below is demonstrably capable of failing.
+        var whileEnabled = new ResolvedSourceConfiguration();
+        await SourceSeeder.SeedAndResolveAsync(
+            context, whileEnabled, NoEnvironment(), new RecordingLogger());
+        Assert.True(whileEnabled.AnySourceConfigured);
+
+        foreach (var source in await context.Sources.ToListAsync())
+        {
+            source.Enabled = false;
+        }
+
+        await context.SaveChangesAsync();
+
+        // The keys are untouched and still stored: what changed is only enabled-ness.
+        Assert.Equal(2, await context.Settings.AsNoTracking()
+            .CountAsync(e => e.Name.StartsWith("source:") && e.Name.EndsWith(":api_key")));
+
+        var whileDisabled = new ResolvedSourceConfiguration();
+        await SourceSeeder.SeedAndResolveAsync(
+            context, whileDisabled, NoEnvironment(), new RecordingLogger());
+
+        Assert.False(whileDisabled.AnySourceConfigured);
+    }
+
+    /// <summary>
+    /// arb-72mf: enabled sources with NO key are not configured. The other half of the predicate —
+    /// <see cref="An_install_whose_only_sources_are_disabled_is_not_configured"/> covers enabled-ness,
+    /// this covers key presence, and neither implies the other.
+    ///
+    /// <para>The positive control adds the key to one of the SAME rows afterwards and asserts the
+    /// answer flips to true, which proves the rows were visible to the predicate all along and that
+    /// the initial false was the missing key rather than a fixture that never arrived.</para>
+    /// </summary>
+    [Fact]
+    public async Task An_install_whose_enabled_sources_have_no_key_is_not_configured()
+    {
+        using var context = CreateContext();
+        await AddEnabledKeyedSourceAsync(context, SourceRepository.NewznabKind, withKey: false);
+        await AddEnabledKeyedSourceAsync(context, SourceRepository.TorznabKind, withKey: false);
+
+        var keyless = new ResolvedSourceConfiguration();
+        await SourceSeeder.SeedAndResolveAsync(
+            context, keyless, NoEnvironment(), new RecordingLogger());
+
+        Assert.False(keyless.AnySourceConfigured);
+
+        // POSITIVE CONTROL: give one of those same enabled rows a key and the
+        // answer flips, so the false above was the absent key and not an absent row.
+        var first = await context.Sources.OrderBy(s => s.Id).FirstAsync();
+        context.Settings.Add(new SettingEntry
+        {
+            Name = SourceRepository.ApiKeySettingName(first.Id),
+            Value = "placeholder-source-key",
+            UpdatedAt = DateTimeOffset.UtcNow,
+        });
+        await context.SaveChangesAsync();
+
+        var keyed = new ResolvedSourceConfiguration();
+        await SourceSeeder.SeedAndResolveAsync(
+            context, keyed, NoEnvironment(), new RecordingLogger());
+
+        Assert.True(keyed.AnySourceConfigured);
+    }
+
+    /// <summary>
+    /// arb-72mf: enabled-and-keyed must hold on the SAME row.
+    ///
+    /// <para>This is the case the obvious implementation gets wrong. Written as two independent
+    /// existentials — "any enabled source" AND "any source key row exists" — the predicate reports
+    /// CONFIGURED for the install below, which has an enabled source with no key sitting beside a
+    /// disabled source that has one. Neither row can answer a query, so the install is not
+    /// configured, and no other test in this file distinguishes the two implementations.</para>
+    /// </summary>
+    [Fact]
+    public async Task An_enabled_keyless_source_beside_a_disabled_keyed_one_is_not_configured()
+    {
+        using var context = CreateContext();
+        await AddEnabledKeyedSourceAsync(context, SourceRepository.NewznabKind, withKey: false);
+        await AddEnabledKeyedSourceAsync(context, SourceRepository.TorznabKind, enabled: false);
+
+        // Both halves are present in the database, just never on one row: an
+        // enabled source exists, and a stored source key exists.
+        Assert.True(await context.Sources.AsNoTracking().AnyAsync(s => s.Enabled));
+        Assert.True(await context.Settings.AsNoTracking()
+            .AnyAsync(e => e.Name.StartsWith("source:") && e.Name.EndsWith(":api_key")));
+
+        var resolved = new ResolvedSourceConfiguration();
+        await SourceSeeder.SeedAndResolveAsync(
+            context, resolved, NoEnvironment(), new RecordingLogger());
+
+        Assert.False(resolved.AnySourceConfigured);
     }
 
     /// <summary>Minimal in-memory <see cref="ILogger"/> capturing level and formatted message.</summary>
