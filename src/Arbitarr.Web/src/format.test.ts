@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatBytes, formatDurationSeconds } from './format';
+import { formatBytes, formatDurationSeconds, formatTimestamp, formatTimestampTitle } from './format';
 
 describe('formatDurationSeconds', () => {
   it('formats whole seconds as hh:mm:ss, matching .NET TimeSpan.ToString()', () => {
@@ -93,5 +93,50 @@ describe('formatBytes', () => {
   it('does not depend on locale-sensitive number formatting', () => {
     // toFixed is locale-independent (always uses '.'), unlike toLocaleString.
     expect(formatBytes(1536)).not.toContain(',');
+  });
+});
+
+describe('formatTimestamp', () => {
+  // Assertions here must hold under ANY runner locale/timezone (CI's may differ
+  // from a developer machine's), so they check SHAPE -- digits present, a
+  // timezone abbreviation present -- rather than an exact localized string.
+  it('renders a valid ISO instant with a timezone abbreviation', () => {
+    const rendered = formatTimestamp('2026-09-07T12:30:00+00:00');
+
+    // A bare `toLocaleString()` (no timeZoneName) renders only digits, slashes,
+    // commas and colons -- AC9's whole point is that a letter-bearing zone
+    // abbreviation (SAST, UTC, GMT+2, EST, ...) must be present alongside it,
+    // which `timeZoneName: 'short'` guarantees regardless of which zone/locale
+    // the runner happens to be in.
+    expect(rendered).toMatch(/\d/);
+    expect(rendered).toMatch(/[A-Za-z]/);
+  });
+
+  it('renders the em-dash for an absent value, matching the file\'s other sentinels', () => {
+    expect(formatTimestamp(null)).toBe('—');
+    expect(formatTimestamp(undefined)).toBe('—');
+    expect(formatTimestamp('')).toBe('—');
+  });
+
+  // arb-p94u: an invalid date string must not render "Invalid Date" -- that
+  // asserts nothing about what the server actually sent -- nor collapse to the
+  // em-dash, which would make a server-side format change indistinguishable
+  // from a genuinely missing timestamp. Showing the raw value is what
+  // Activity's own Timestamp already did before this helper existed.
+  it('renders an unparseable value verbatim rather than "Invalid Date" or the em-dash', () => {
+    expect(formatTimestamp('not-a-date')).toBe('not-a-date');
+    expect(formatTimestamp('not-a-date')).not.toBe('Invalid Date');
+    expect(formatTimestamp('not-a-date')).not.toBe('—');
+  });
+});
+
+describe('formatTimestampTitle', () => {
+  it('carries the raw ISO instant unchanged, for comparison against a log line', () => {
+    expect(formatTimestampTitle('2026-09-07T12:30:00+00:00')).toBe('2026-09-07T12:30:00+00:00');
+  });
+
+  it('falls back to the empty string for an absent value, so the attribute is omitted', () => {
+    expect(formatTimestampTitle(null)).toBe('');
+    expect(formatTimestampTitle(undefined)).toBe('');
   });
 });

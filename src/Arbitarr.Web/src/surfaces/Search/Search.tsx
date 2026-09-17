@@ -11,6 +11,7 @@ import local from './Search.module.css';
 import { useEffectiveConfigQuery } from '../Dashboard/queries';
 import { EMPTY_CRITERIA, useAdHocSearchMutation, useExplanationQuery } from './queries';
 import type { SearchCriteria } from './queries';
+import { formatTimestamp, formatTimestampTitle } from '../../format';
 
 /**
  * The "no sources configured" hint (audit F-020b), reusing the Dashboard's
@@ -434,7 +435,9 @@ function Results({
                 <td>{release.sourceName}</td>
                 <td>{formatSize(release.size)}</td>
                 <td>{release.category.join(', ')}</td>
-                <td>{new Date(release.pubDate).toLocaleString()}</td>
+                <td title={formatTimestampTitle(release.pubDate)}>
+                  {formatTimestamp(release.pubDate)}
+                </td>
                 <td>
                   {/* A name, not a number — see the note in Provenance. */}
                   {release.aiVerdict === null ? (

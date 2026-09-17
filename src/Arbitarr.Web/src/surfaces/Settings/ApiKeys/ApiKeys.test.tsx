@@ -321,6 +321,28 @@ describe('ApiKeys', () => {
     expect(within(rowFor('Maintenance script')).getAllByText('—').length).toBeGreaterThan(0);
   });
 
+  /**
+   * arb-p94u: `formatTimestamp` here used to be a bare
+   * `new Date(v).toLocaleString()`, exactly the ambiguity Activity's AC9
+   * forbids for the same underlying data an operator correlates against logs.
+   * Asserted by shape (a letter-bearing zone abbreviation, the raw ISO instant
+   * in `title`) so it holds under any runner locale/timezone -- and fails
+   * against the old bare rendering, which carried neither.
+   */
+  it('renders the created column with a timezone abbreviation and the raw instant in title', async () => {
+    mockKeysApi({ [`GET ${KEYS}`]: { body: keys } });
+    renderSurface(<ApiKeysSection />);
+
+    await screen.findByRole('cell', { name: 'Sonarr' });
+    const row = within(rowFor('Sonarr'));
+    const cells = row.getAllByRole('cell');
+    const createdCell = cells[2];
+
+    expect(createdCell).toHaveAttribute('title', '2026-01-05T10:00:00Z');
+    expect(createdCell.textContent).toMatch(/\d/);
+    expect(createdCell.textContent).toMatch(/[A-Za-z]/);
+  });
+
   it('keeps a revoked key as a tombstone rather than dropping it from the list', async () => {
     mockKeysApi({ [`GET ${KEYS}`]: { body: keys } });
     renderSurface(<ApiKeysSection />);

@@ -101,6 +101,27 @@ describe('Suppressions', () => {
     expect(screen.getByText('Shadow only')).toBeInTheDocument();
   });
 
+  /**
+   * arb-p94u: this row used to render a bare `new Date(v).toLocaleString()`,
+   * exactly the ambiguity Activity's AC9 forbids for the same underlying data
+   * an operator correlates against logs. Asserted by shape (a letter-bearing
+   * zone abbreviation, the raw ISO instant in `title`) so it holds under any
+   * runner locale/timezone -- and fails against the old bare rendering, which
+   * carried neither.
+   */
+  it('renders the occurred timestamp with a timezone abbreviation and the raw instant in title', async () => {
+    mockApi({ ...EMPTY_DECISIONS, '/api/admin/suppressions': { body: entries } });
+    renderSurface(<SuppressionsPage />);
+
+    const row = (await screen.findByText('block-cam')).closest('tr');
+    expect(row).not.toBeNull();
+    const [timeCell] = within(row as HTMLElement).getAllByRole('cell');
+
+    expect(timeCell).toHaveAttribute('title', '2026-09-01T12:30:00+00:00');
+    expect(timeCell.textContent).toMatch(/\d/);
+    expect(timeCell.textContent).toMatch(/[A-Za-z]/);
+  });
+
   it('heads the identifier column for what it holds, not for a release title', async () => {
     mockApi({ ...EMPTY_DECISIONS, '/api/admin/suppressions': { body: entries } });
     renderSurface(<SuppressionsPage />);

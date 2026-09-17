@@ -85,6 +85,67 @@ export function formatDurationSeconds(totalSeconds: number): string {
 }
 
 /**
+ * Formats an ISO-8601 instant unambiguously (AC9), or the em-dash when there is
+ * none.
+ *
+ * MOVED HERE FROM Activity.tsx's `Timestamp`/`repeatTitle` (arb-p94u), the
+ * original site of this reasoning: `toLocaleString` renders in the VIEWER's
+ * timezone, which is the right default -- an operator reads "did this happen
+ * during the outage?" in their own clock -- but a bare local time is exactly
+ * the ambiguity AC9 forbids, since the same string means different instants to
+ * two readers. So the offset comes with it via `timeZoneName: 'short'`.
+ *
+ * `null`/`undefined`/`''` render the em-dash (U+2014), the same absence
+ * convention `formatRate`/`formatDurationSeconds`/`formatBytes` use above --
+ * one "no data" idiom for this file, not a second one invented per caller.
+ *
+ * A value that fails to parse renders VERBATIM rather than as the em-dash or
+ * "Invalid Date": collapsing it to the absence sentinel would make a
+ * server-side format change look like a missing timestamp, and "Invalid Date"
+ * asserts nothing useful about what the server actually sent. Showing the raw
+ * string is what Activity's own `Timestamp` already did for this case.
+ *
+ * This deliberately does NOT invent a relative-time formatter ("3 minutes
+ * ago"). The project's convention for durations is verbatim
+ * `TimeSpan.ToString()` (System.tsx, a load-bearing comment there), and the
+ * same honesty principle applies here: state the instant, do not hide it
+ * behind a rounded approximation that cannot be compared against a log line.
+ */
+export function formatTimestamp(value: string | null | undefined): string {
+  if (value === null || value === undefined || value === '') {
+    return '—';
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return parsed.toLocaleString(undefined, { timeZoneName: 'short' });
+}
+
+/**
+ * The `title` attribute for a `formatTimestamp`-rendered element: the raw ISO
+ * instant the server sent, so a reader can compare it against a log line
+ * exactly, without relying on the (already-localized) visible text.
+ *
+ * Split out from `formatTimestamp` rather than folded into a combined
+ * "renderer" component: the five call sites this helper has (Activity,
+ * Dashboard, Suppressions, Search, ApiKeys) render the value in a `<td>` or a
+ * `<time>`, not a shared component shape, so a JSX-returning helper would force
+ * one of them into markup it does not otherwise use. A plain string pairs with
+ * either.
+ *
+ * Absent values fall back to the empty string rather than the em-dash used in
+ * the visible text: a `title=""` attribute is simply omitted from the
+ * accessibility tree, where `title="—"` would read as if the raw instant were
+ * itself unknown-but-present.
+ */
+export function formatTimestampTitle(value: string | null | undefined): string {
+  return value ?? '';
+}
+
+/**
  * Formats a byte count in binary units (B, KiB, MiB, GiB, TiB), one decimal
  * place once the value reaches KiB or above, whole bytes below that.
  *

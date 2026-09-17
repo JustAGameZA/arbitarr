@@ -14,6 +14,7 @@ import styles from '../surface.module.css';
 import local from './Activity.module.css';
 import { useActivityQuery, type ActivityFilters, type TimeWindow } from './queries';
 import { formatSeasonEpisode, parseSearchDetail } from './searchDetail';
+import { formatTimestamp } from '../../format';
 
 /**
  * The kind filter's options, and the human label for each.
@@ -73,6 +74,11 @@ function kindLabel(kind: ActivityKind): string {
  * (System.tsx:47-49, a load-bearing comment), and the same honesty principle
  * applies here: state the instant, do not hide it behind a rounded approximation
  * that cannot be compared against a log line.
+ *
+ * The rendering itself now lives in `format.ts`'s `formatTimestamp` (arb-p94u),
+ * shared with Dashboard, Suppressions, Search and ApiKeys, which had grown
+ * their own bare `toLocaleString()` calls that violated this exact rule for the
+ * same underlying data an operator correlates against logs.
  */
 function Timestamp({ value }: { value: string }) {
   const parsed = new Date(value);
@@ -85,7 +91,7 @@ function Timestamp({ value }: { value: string }) {
 
   return (
     <time dateTime={value} title={value} className={local.timestamp}>
-      {parsed.toLocaleString(undefined, { timeZoneName: 'short' })}
+      {formatTimestamp(value)}
     </time>
   );
 }
@@ -109,12 +115,7 @@ function repeatTitle(count: number, lastRepeatedAt: string | null): string {
     return `repeated ${count} times`;
   }
 
-  const parsed = new Date(lastRepeatedAt);
-  const rendered = Number.isNaN(parsed.getTime())
-    ? lastRepeatedAt
-    : parsed.toLocaleString(undefined, { timeZoneName: 'short' });
-
-  return `repeated ${count} times, last at ${rendered}`;
+  return `repeated ${count} times, last at ${formatTimestamp(lastRepeatedAt)}`;
 }
 
 function ActivityTable({ entries }: { entries: ActivityEntry[] }) {
