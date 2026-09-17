@@ -43,6 +43,14 @@ public class CredentialPatternsTests
         { "{\"password\": \"PLACEHOLDERPW88\"}", "PLACEHOLDERPW88" },
         { "apikey=PLACEHOLDERINLINE99 in config", "PLACEHOLDERINLINE99" },
         { "client_secret=PLACEHOLDERSECRET12 expired", "PLACEHOLDERSECRET12" },
+        // arb-cia3: the plaintext* arm. "PlaintextKey" matched NO word in the alternation before
+        // this bead — "key" alone is deliberately excluded from it — so a synthesised record
+        // ToString of CreatedApiKey / CreatedApiKeyResponse carried a live admin key through BOTH
+        // sinks verbatim. Measured against the unmodified regex these two rows fail and every
+        // other row still passes; with the arm added all of them pass. Both separator spellings,
+        // because the record form renders " = " while a config line renders ":" or "=".
+        { "CreatedApiKey { Entry = ApiKeyEntry, PlaintextKey = PLACEHOLDERPLAIN1234 }", "PLACEHOLDERPLAIN1234" },
+        { "plaintext-key: PLACEHOLDERPLAIN5678 minted", "PLACEHOLDERPLAIN5678" },
         // Space-separated prose form. This arm existed ONLY in the status scrubber before arb-6vf;
         // it is in the shared corpus now precisely because the log cleanser was missing it.
         { "invalid key PLACEHOLDERSPACED3344 supplied", "PLACEHOLDERSPACED3344" },
@@ -153,6 +161,16 @@ public class CredentialPatternsTests
     [InlineData("request took 12:34:56 789 ms")]
     [InlineData("commit 9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f09")]
     [InlineData("release guid 0b5f2c1e-7a3d-4f10-9c8b-2e6a4d5f1b30")]
+    // arb-cia3: the word "plaintext" is ordinary prose in this codebase (three probe outcomes say
+    // "https pointed at a plaintext port"), so the new arm must NOT fire on it. It does not,
+    // because the alternative requires a credential NOUN after it — "plaintext" alone is not in
+    // the alternation, only "plaintextkey"/"plaintext_token"/… are. Measured: a bare "plaintext"
+    // alternative redacted "TLS disabled, plaintext: true" and "plaintext: unavailable"; the
+    // noun-suffixed one leaves both intact. These rows are what keeps it that way.
+    [InlineData("https pointed at a plaintext port")]
+    [InlineData("stored in plaintext for now")]
+    [InlineData("TLS disabled, plaintext: true")]
+    [InlineData("plaintext: unavailable")]
     public void Ordinary_text_is_left_intact(string input)
     {
         Assert.Equal(input, CredentialPatterns.RedactCredentials(input));

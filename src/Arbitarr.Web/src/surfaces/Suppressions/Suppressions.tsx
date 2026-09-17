@@ -20,31 +20,40 @@ function formatTimestamp(value: string): string {
  * documented on useExplanationQuery. It is written as a sentence that names the
  * cause, because "404" on its own would read as a bug in this page rather than
  * a missing column in the audit log.
+ *
+ * BEHAVIOUR CHANGE, arb-z505: that sentence never reached the screen before.
+ * The hand-rolled branches this replaces tested pending FIRST, as
+ * `isPending || data === undefined` — and `data` is `undefined` on an error, so
+ * the error branch below it was unreachable and every failure, 404 included,
+ * rendered a permanent "Loading…" spinner. QueryState tests error first, which
+ * is the precedence this component's own comment always assumed, so the
+ * sentence now renders for the case it was written for. Pinned by
+ * Suppressions.test.tsx's "renders the 404 sentence rather than a permanent
+ * spinner" test, which fails against the old ordering.
  */
 function Explanation({ releaseIdentifier }: { releaseIdentifier: string }) {
   const explanation = useExplanationQuery(releaseIdentifier);
 
-  if (explanation.isPending || explanation.data === undefined) {
-    return <p className={styles.muted}>Loading…</p>;
-  }
-
-  if (explanation.error !== null) {
-    return (
-      <p className={styles.error} role="alert">
-        {explanation.error instanceof ApiError && explanation.error.status === 404
-          ? 'No stored explanation for this release. The audit log records the upstream guid only, while the explanation lookup is keyed on the proxy guid, so suppressed releases cannot be resolved to their titles yet.'
-          : errorMessage(explanation.error)}
-      </p>
-    );
-  }
-
   return (
-    <dl className={local.titles}>
-      <dt>Title used for matching</dt>
-      <dd>{explanation.data.title}</dd>
-      <dt>Original title</dt>
-      <dd>{explanation.data.originalTitle}</dd>
-    </dl>
+    <QueryState
+      isPending={explanation.isPending}
+      error={explanation.error}
+      data={explanation.data}
+      renderError={(error) =>
+        error instanceof ApiError && error.status === 404
+          ? 'No stored explanation for this release. The audit log records the upstream guid only, while the explanation lookup is keyed on the proxy guid, so suppressed releases cannot be resolved to their titles yet.'
+          : errorMessage(error)
+      }
+    >
+      {(loaded) => (
+        <dl className={local.titles}>
+          <dt>Title used for matching</dt>
+          <dd>{loaded.title}</dd>
+          <dt>Original title</dt>
+          <dd>{loaded.originalTitle}</dd>
+        </dl>
+      )}
+    </QueryState>
   );
 }
 
@@ -78,51 +87,64 @@ function SuppressionsTable({ entries }: { entries: SuppressionViewEntry[] }) {
           </tr>
         </thead>
         <tbody>
-          {entries.map((entry, index) => (
-            <Fragment key={`${entry.occurredAt}:${entry.releaseIdentifier}:${index}`}>
-              <tr>
-                <td>{formatTimestamp(entry.occurredAt)}</td>
-                <td className={local.identifier}>{entry.releaseIdentifier}</td>
-                <td>{entry.queryKey}</td>
-                {/* The layer that acted: a rule name for the rule-engine
-                    layers, or a stable label such as "ai"/"pass" for the
-                    others. This is the attribution AC11 asks for. */}
-                <td>
-                  <span className={styles.badge}>{entry.layer}</span>
-                </td>
-                <td>{entry.reason}</td>
-                {/* shadowMode means the decision was RECORDED BUT NOT ENFORCED.
-                    The legacy page printed the raw flag as "yes"/"no" under a
-                    "Shadow Mode" heading, which inverts the sense an operator
-                    reads at a glance: "yes" looked like the suppression
-                    happened. Naming the column for the consequence removes the
-                    double negative. */}
-                <td>
-                  {entry.shadowMode ? (
-                    <span className={`${styles.badge} ${styles.badgeWarn}`}>Shadow only</span>
-                  ) : (
-                    <span className={`${styles.badge} ${styles.badgeDanger}`}>Suppressed</span>
-                  )}
-                </td>
-                <td>
-                  <button
-                    type="button"
-                    className={styles.buttonSecondary}
-                    onClick={() => setOpenRow(openRow === index ? null : index)}
-                  >
-                    {openRow === index ? 'Hide titles' : 'Show titles'}
-                  </button>
-                </td>
-              </tr>
-              {openRow === index && (
+          {entries.map((entry, index) => {
+            const isOpen = openRow === index;
+            // index alone is unique within this rendered array -- that is
+            // all aria-controls needs. The ISO timestamp's ':' and '+' are
+            // valid there (getElementById and AT IDREF resolution do not
+            // care), but they make the id unsafe to use in a bare '#id' CSS
+            // selector, so they are left out rather than included for
+            // "extra" uniqueness the index doesn't need.
+            const detailId = `suppression-titles-${index}`;
+
+            return (
+              <Fragment key={`${entry.occurredAt}:${entry.releaseIdentifier}:${index}`}>
                 <tr>
-                  <td colSpan={7}>
-                    <Explanation releaseIdentifier={entry.releaseIdentifier} />
+                  <td>{formatTimestamp(entry.occurredAt)}</td>
+                  <td className={local.identifier}>{entry.releaseIdentifier}</td>
+                  <td>{entry.queryKey}</td>
+                  {/* The layer that acted: a rule name for the rule-engine
+                      layers, or a stable label such as "ai"/"pass" for the
+                      others. This is the attribution AC11 asks for. */}
+                  <td>
+                    <span className={styles.badge}>{entry.layer}</span>
+                  </td>
+                  <td>{entry.reason}</td>
+                  {/* shadowMode means the decision was RECORDED BUT NOT ENFORCED.
+                      The legacy page printed the raw flag as "yes"/"no" under a
+                      "Shadow Mode" heading, which inverts the sense an operator
+                      reads at a glance: "yes" looked like the suppression
+                      happened. Naming the column for the consequence removes the
+                      double negative. */}
+                  <td>
+                    {entry.shadowMode ? (
+                      <span className={`${styles.badge} ${styles.badgeWarn}`}>Shadow only</span>
+                    ) : (
+                      <span className={`${styles.badge} ${styles.badgeDanger}`}>Suppressed</span>
+                    )}
+                  </td>
+                  <td>
+                    <button
+                      type="button"
+                      className={styles.buttonSecondary}
+                      aria-expanded={isOpen}
+                      aria-controls={isOpen ? detailId : undefined}
+                      onClick={() => setOpenRow(isOpen ? null : index)}
+                    >
+                      {isOpen ? 'Hide titles' : 'Show titles'}
+                    </button>
                   </td>
                 </tr>
-              )}
-            </Fragment>
-          ))}
+                {isOpen && (
+                  <tr>
+                    <td id={detailId} colSpan={7}>
+                      <Explanation releaseIdentifier={entry.releaseIdentifier} />
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
         </tbody>
       </table>
     </div>

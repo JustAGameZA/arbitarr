@@ -1,11 +1,13 @@
 using System.Net;
 using Arbitarr.Data;
+using Arbitarr.Data.Logging;
 using Arbitarr.Integration.Tests.TestSupport;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Arbitarr.Integration.Tests;
 
@@ -105,19 +107,53 @@ public sealed class RemoteAddressWebApplicationFactory : WebApplicationFactory<P
     /// </summary>
     public override async ValueTask DisposeAsync()
     {
+        // arb-s3ky: BEFORE base.DisposeAsync, because Services is gone afterwards. KEEP IN STEP WITH
+        // ArbitarrWebApplicationFactory, which carries the full reasoning on CaptureLogDrainCompletions.
+        var drainCompletions = CaptureLogDrainCompletions();
+
         await base.DisposeAsync().ConfigureAwait(false);
 
-        DeleteConfigDirectory();
+        DeleteConfigDirectory(drainCompletions);
     }
 
     /// <inheritdoc cref="DisposeAsync" />
     protected override void Dispose(bool disposing)
     {
+        var drainCompletions = disposing ? CaptureLogDrainCompletions() : null;
+
         base.Dispose(disposing);
 
         if (disposing)
         {
-            DeleteConfigDirectory();
+            DeleteConfigDirectory(drainCompletions);
+        }
+    }
+
+    /// <summary>
+    /// The <c>DrainCompleted</c> task of every <see cref="SqliteLoggerProvider"/> this host
+    /// registered (arb-s3ky). KEEP IN STEP WITH <see cref="ArbitarrWebApplicationFactory"/>, which
+    /// carries the full account of why this must run BEFORE the base disposal, why the providers are
+    /// DISPOSED here (nothing else calls it, so the completion would otherwise never publish), and
+    /// why a failure to resolve returns null rather than throwing from a disposal path.
+    /// </summary>
+    private IReadOnlyList<Task>? CaptureLogDrainCompletions()
+    {
+        try
+        {
+            var providers = Services.GetServices<ILoggerProvider>()
+                .OfType<SqliteLoggerProvider>()
+                .ToArray();
+
+            foreach (var provider in providers)
+            {
+                provider.Dispose();
+            }
+
+            return providers.Select(provider => provider.DrainCompleted).ToArray();
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException)
+        {
+            return null;
         }
     }
 
@@ -126,7 +162,7 @@ public sealed class RemoteAddressWebApplicationFactory : WebApplicationFactory<P
     /// by <see cref="ConfigDirectoryIsDeletedOnDisposalTests"/>. Mirrors
     /// <see cref="ArbitarrWebApplicationFactory"/>, which carries the full reasoning.
     /// </summary>
-    private void DeleteConfigDirectory()
+    private void DeleteConfigDirectory(IReadOnlyList<Task>? drainCompletions)
     {
         // Closes the pooled handles on this instance's databases and then deletes. That is HALF of
         // what the delete needs: the other half is that a disposed ArbitarrDbContext actually
@@ -138,7 +174,10 @@ public sealed class RemoteAddressWebApplicationFactory : WebApplicationFactory<P
         // note above used to ask of a reader and now no longer has to (arb-gphi).
         //
         // TryDelete rather than Delete because this runs from Dispose -- see ConfigDirectoryTeardown.
-        LastDeleteFailure = ConfigDirectoryTeardown.TryDelete(_configDirectory);
+        //
+        // arb-s3ky: the captured drain completions are passed through, so the delete waits for the
+        // log sink's pump to FINISH rather than merely to have been asked to stop.
+        LastDeleteFailure = ConfigDirectoryTeardown.TryDelete(_configDirectory, drainCompletions);
     }
 
     private sealed class RemoteAddressStartupFilter : IStartupFilter

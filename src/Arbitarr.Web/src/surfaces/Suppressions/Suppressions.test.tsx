@@ -100,6 +100,65 @@ describe('Suppressions', () => {
     expect(screen.getByText('Some.Show.S02E01.1080p.WEB')).toBeInTheDocument();
   });
 
+  it('renders the 404 sentence rather than a permanent spinner (arb-z505)', async () => {
+    // BEHAVIOUR CHANGE pinned, not merely covered. Before arb-z505 the
+    // Explanation panel tested pending FIRST, as `isPending || data ===
+    // undefined`; `data` is undefined on an error too, so the error branch
+    // underneath it was unreachable and a 404 -- the EXPECTED outcome here,
+    // per useExplanationQuery's documented guid mismatch -- rendered
+    // "Loading…" forever. This test FAILS against that ordering: the sentence
+    // never appeared and "Loading…" never went away. Asserting the sentence by
+    // its own text, because "an error rendered" would also pass with the
+    // generic errorMessage output this surface specifically does not want.
+    const user = userEvent.setup();
+    mockApi({
+      ...EMPTY_DECISIONS,
+      '/api/admin/suppressions': { body: entries },
+      '/api/admin/search/upstream-guid-1/explanation': {
+        status: 404,
+        body: { error: 'not found' },
+      },
+    });
+    renderSurface(<SuppressionsPage />);
+    await screen.findByText('upstream-guid-1');
+
+    await user.click(screen.getAllByRole('button', { name: 'Show titles' })[0]);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(
+      'No stored explanation for this release. The audit log records the upstream guid only, while the explanation lookup is keyed on the proxy guid, so suppressed releases cannot be resolved to their titles yet.',
+    );
+    // The spinner must be GONE, not merely joined by the sentence: the old
+    // behaviour was a spinner that never resolved, so its absence is the half
+    // of this assertion that actually bites. `renderSurface` mounts no shell,
+    // so the shared live region -- which legitimately keeps the "Loading…" it
+    // announced while the query was in flight -- is not present to match here.
+    expect(screen.queryByText('Loading…')).not.toBeInTheDocument();
+  });
+
+  it('renders a non-404 explanation failure through errorMessage (arb-z505)', async () => {
+    // The 404 override must not swallow every other failure into the same
+    // sentence: a 500 has a different cause and the server's own reason is
+    // what the operator needs.
+    const user = userEvent.setup();
+    mockApi({
+      ...EMPTY_DECISIONS,
+      '/api/admin/suppressions': { body: entries },
+      '/api/admin/search/upstream-guid-1/explanation': {
+        status: 500,
+        body: { error: 'Explanation store unavailable.' },
+      },
+    });
+    renderSurface(<SuppressionsPage />);
+    await screen.findByText('upstream-guid-1');
+
+    await user.click(screen.getAllByRole('button', { name: 'Show titles' })[0]);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Explanation store unavailable.');
+    expect(alert).not.toHaveTextContent('The audit log records the upstream guid only');
+  });
+
   it('filters by query key server-side and attaches the admin key to its GET', async () => {
     const user = userEvent.setup();
     useAdminKeyStore.getState().setKey('operator-key');

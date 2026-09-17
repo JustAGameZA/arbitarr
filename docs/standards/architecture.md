@@ -131,8 +131,13 @@ wire format is closed by construction.
 absolute URI** at Information. Since #65 that lands in a persistent store served at
 `/api/admin/logs`.
 
-`LogMessageCleanser` scrubs credentials in **query strings**. A secret in a URL **path** (a webhook
-token, say) is not covered — such registrations need `.RemoveAllLoggers()`.
+`LogMessageCleanser` scrubs credentials **by shape, anywhere in the line** — not only in query
+strings. Only one of its shared arms (`QueryParameterCredential`) is scoped to `?…=`;
+`NamedCredential` matches a credential-shaped NAME followed by `:` or `=` anywhere in the text, and
+`AuthorizationScheme` and `SpaceSeparatedCredential` match the header and prose forms. What every
+arm requires is a credential-shaped **name or scheme adjacent to the value**. A secret in a URL
+**path** (a webhook token, say) has neither — it is a bare path segment — so it is still not
+covered, and such registrations need `.RemoveAllLoggers()`.
 
 *Why:* care taken inside a typed client cannot defend against a handler the container wraps around
 it. The defence has to be at registration.

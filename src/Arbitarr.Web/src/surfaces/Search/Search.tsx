@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { PageHeader } from '../../components/shell/PageHeader';
 import { ApiError } from '../../api/client';
-import { errorMessage } from '../QueryState';
+import { QueryState, errorMessage } from '../QueryState';
 import { CACHE_BAND_LABELS } from '../../api/types';
 import type { AdHocSearchProvenance, AdHocSearchResponse } from '../../api/types';
 import styles from '../surface.module.css';
@@ -119,33 +119,44 @@ function Provenance({ provenance }: { provenance: AdHocSearchProvenance }) {
  * therefore ported with the 404 rendered as a plain sentence instead of a
  * crash, and the gap is called out in the pull request.
  */
-function Explanation({ guid, onClose }: { guid: string; onClose: () => void }) {
+function Explanation({
+  id,
+  guid,
+  onClose,
+}: {
+  id: string;
+  guid: string;
+  onClose: () => void;
+}) {
   const explanation = useExplanationQuery(guid);
 
   return (
-    <div className={local.explanation}>
+    <div id={id} className={local.explanation}>
       <div className={local.explanationHead}>
         <strong>Match explanation</strong>
         <button type="button" className={styles.buttonSecondary} onClick={onClose}>
           Close
         </button>
       </div>
-      {explanation.isPending && <p className={styles.muted}>Loading…</p>}
-      {explanation.error !== null && (
-        <p className={styles.error} role="alert">
-          {explanation.error instanceof ApiError && explanation.error.status === 404
+      <QueryState
+        isPending={explanation.isPending}
+        error={explanation.error}
+        data={explanation.data}
+        renderError={(error) =>
+          error instanceof ApiError && error.status === 404
             ? 'No stored explanation for this release. Ad-hoc results are not recorded in the release lookup, so only releases served through a Torznab search have one.'
-            : errorMessage(explanation.error)}
-        </p>
-      )}
-      {explanation.data !== undefined && (
-        <dl className={local.explanationBody}>
-          <dt>Title</dt>
-          <dd>{explanation.data.title}</dd>
-          <dt>Original title</dt>
-          <dd>{explanation.data.originalTitle}</dd>
-        </dl>
-      )}
+            : errorMessage(error)
+        }
+      >
+        {(loaded) => (
+          <dl className={local.explanationBody}>
+            <dt>Title</dt>
+            <dd>{loaded.title}</dd>
+            <dt>Original title</dt>
+            <dd>{loaded.originalTitle}</dd>
+          </dl>
+        )}
+      </QueryState>
     </div>
   );
 }
@@ -159,6 +170,10 @@ function Results({
   selectedGuid: string | null;
   onSelect: (guid: string | null) => void;
 }) {
+  // One explanation panel at a time (mirrors selectedGuid), so one stable id
+  // for the whole results list is enough for aria-controls to point at.
+  const explanationId = useId();
+
   if (response.releases.length === 0) {
     return (
       <>
@@ -204,6 +219,8 @@ function Results({
                   <button
                     type="button"
                     className={styles.buttonSecondary}
+                    aria-expanded={release.guid === selectedGuid}
+                    aria-controls={release.guid === selectedGuid ? explanationId : undefined}
                     onClick={() => onSelect(release.guid === selectedGuid ? null : release.guid)}
                   >
                     Explain
@@ -214,7 +231,9 @@ function Results({
           </tbody>
         </table>
       </div>
-      {selectedGuid !== null && <Explanation guid={selectedGuid} onClose={() => onSelect(null)} />}
+      {selectedGuid !== null && (
+        <Explanation id={explanationId} guid={selectedGuid} onClose={() => onSelect(null)} />
+      )}
     </>
   );
 }
@@ -340,6 +359,17 @@ export default function SearchPage() {
       <section className={styles.panel}>
         <h2 className={styles.panelHeading}>Results</h2>
         <div className={styles.panelBody}>
+          {/* Deliberately NOT QueryState (arb-z505), unlike the Explanation
+              panel above and the other surfaces this bead migrated. `search` is
+              a MUTATION, not a query — see useSearchMutation's own doc for why
+              — and so it has a fourth state QueryState has no way to express:
+              `isIdle`, before anything has been asked for. QueryState computes
+              `pending = isPending || data === undefined`, which for an idle
+              mutation is true, so it would render "Loading…" where this panel
+              must render the prompt below. That prompt is the first thing an
+              operator sees on the app's primary surface, and "Searching…" is
+              likewise not QueryState's hardcoded "Loading…". Migrating this
+              would be a user-visible regression, not a de-duplication. */}
           {search.error !== null && (
             <p className={styles.error} role="alert">
               {errorMessage(search.error)}

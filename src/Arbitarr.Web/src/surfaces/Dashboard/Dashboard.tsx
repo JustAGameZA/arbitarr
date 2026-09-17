@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 
 import { PageHeader } from '../../components/shell/PageHeader';
 import { QueryState } from '../QueryState';
@@ -151,7 +152,25 @@ function SourcesTable({
     if (nzbHydraConfigured === false) {
       return (
         <p className={styles.empty}>
-          No sources configured. Add an NZBHydra2 URL and API key to start searching.
+          No sources configured. Add an NZBHydra2 URL and API key to start searching.{' '}
+          {/*
+            arb-mn12. ONLY this branch is a link. The other two are not calls to
+            action — one says the setup is already working and the other is the
+            still-pending case — so linking them would point an operator at a
+            settings page with nothing to do there.
+
+            The copy names the ACTION and deliberately does not promise this
+            message will clear. Per the doc above, `nzbHydraConfigured` resolves
+            once at startup, so an operator who follows this link and enables a
+            source still reads "No sources configured" here until a restart.
+            "Configure a source in Settings" is true regardless of when the flag
+            catches up; "this will go away once you do" would not be.
+
+            A react-router <Link>, not a bare <a href>: an anchor would do a full
+            document navigation and drop the client-side router, exactly as
+            Search.tsx's own no-sources hint already links.
+          */}
+          <Link to="/settings">Configure a source in Settings</Link>.
         </p>
       );
     }

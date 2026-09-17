@@ -121,6 +121,192 @@ public sealed class ConfigDirectoryTeardownTests
     }
 
     /// <summary>
+    /// arb-s3ky, THE PROPERTY: a pooled connection OPENED AND RELEASED after the teardown's first
+    /// pool clear is still beaten, because the clear runs on EVERY attempt rather than once before
+    /// the loop.
+    ///
+    /// <para><b>MUTANT KILLED: moving <c>ClearPools</c> back out of the loop.</b> That is the code as
+    /// it stood, and the shape this test forbids: a single pre-loop clear cannot close a handle that
+    /// enters the pool afterwards, so the ten attempts that follow all lose to the same lock and the
+    /// delete fails. Proved by running this test against that exact one-line change — it fails there
+    /// and passes here. This is the mechanism the bead recorded observing: the log pump's bounded
+    /// shutdown returns, its final drain opens a pooled connection a moment later, and that handle
+    /// lands in a pool the teardown had already done its only clear on.</para>
+    ///
+    /// <para><b>Why the connection must be OPENED after the clear, not merely RELEASED after it</b> —
+    /// which is the version of this test that does NOT bite, and the distinction is easy to get
+    /// wrong. <c>SqliteConnection.ClearPool</c> bumps the pool's generation, so a connection that was
+    /// already CHECKED OUT when the clear ran is CLOSED when it is released rather than returned to
+    /// the pool. Measured, not assumed. A test that opens a handle, lets the teardown clear, then
+    /// releases it therefore leaves nothing pooled and the delete succeeds with or without the
+    /// per-attempt clear — it passes against the mutant, which is to say it tests nothing. Only a
+    /// connection whose whole open-and-release cycle happens AFTER a clear ends up pooled where no
+    /// earlier clear could have reached it.</para>
+    ///
+    /// <para>Windows-only for the same platform reason as the control above: on POSIX a pooled handle
+    /// does not block a delete at all, so there is nothing for a second clear to win. The POSIX
+    /// branch asserts that instead of skipping.</para>
+    /// </summary>
+    [Fact]
+    public async Task Delete_wins_against_a_connection_pooled_after_the_first_attempt()
+    {
+        var directory = NewDirectoryWithAPooledDatabase();
+        var databasePath = new BackupPaths(directory).DatabasePath;
+
+        if (!OperatingSystem.IsWindows())
+        {
+            // On POSIX the pooled handle never blocks the delete, so the per-attempt clear has
+            // nothing to demonstrate. Assert the delete succeeds so this branch still says something
+            // true about the platform it runs on.
+            ConfigDirectoryTeardown.Delete(directory);
+            Assert.False(Directory.Exists(directory));
+            return;
+        }
+
+        var connectionFactory = new SqliteConnectionFactory(
+            new SqliteConnectionOptions { DatabasePath = databasePath });
+
+        // OPEN across the loop's first attempts, so those attempts FAIL and the loop is still running
+        // when the reopen below lands. Without this the very first attempt succeeds — measured — and
+        // there is no window inside the loop for anything to land in.
+        var blocker = connectionFactory.OpenConnection();
+
+        using var deleteEntered = new ManualResetEventSlim(false);
+        var reopened = 0;
+
+        try
+        {
+            var deleteTask = Task.Run(() =>
+            {
+                deleteEntered.Set();
+                return ConfigDirectoryTeardown.TryDelete(directory);
+            });
+
+            Assert.True(
+                deleteEntered.Wait(TimeSpan.FromSeconds(30)),
+                "The delete never started, so there was no loop for the reopen to land inside.");
+
+            // The loop sleeps 100ms between its ten attempts, so this lands after the first two or
+            // three have failed against the blocker and well before the tenth.
+            await Task.Delay(250);
+
+            // THE HANDLE THE PROPERTY IS ABOUT: a full open-and-release cycle occurring after the
+            // teardown's first clear, which therefore leaves a connection in the pool that no
+            // earlier clear could have reached. This is the log pump's final drain in miniature.
+            // (The blocker is dropped first so the delete's remaining attempts are contending only
+            // with this newly pooled handle.)
+            blocker.Dispose();
+            connectionFactory.OpenConnection().Dispose();
+            Interlocked.Exchange(ref reopened, 1);
+
+            var failure = await deleteTask;
+
+            Assert.Null(failure);
+            Assert.False(
+                Directory.Exists(directory),
+                "The delete lost to a connection pooled after the first attempt. That is only " +
+                "winnable if ClearPools runs on every attempt — a single clear before the loop " +
+                "cannot close a handle that entered the pool after it ran.");
+
+            // NON-VACUITY: the reopen really happened, so the delete above was won against a pooled
+            // handle rather than against an empty pool.
+            Assert.Equal(1, Volatile.Read(ref reopened));
+        }
+        finally
+        {
+            blocker.Dispose();
+            ConfigDirectoryTeardown.TryDelete(directory);
+        }
+    }
+
+    /// <summary>
+    /// arb-s3ky: the awaiting entry point WAITS for an incomplete drain completion before touching
+    /// the directory, and proceeds once it completes.
+    ///
+    /// <para><b>MUTANT KILLED:</b> ignoring <c>drainCompletions</c> (or waiting on it after the
+    /// delete). The directory would then be gone before the completion was signalled, which the
+    /// ordering assertion below catches.</para>
+    /// </summary>
+    [Fact]
+    public async Task The_teardown_waits_for_an_incomplete_drain_completion_before_deleting()
+    {
+        var directory = NewDirectoryWithAPooledDatabase();
+
+        var drain = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var deleteStarted = new ManualResetEventSlim(false);
+
+        var deleteTask = Task.Run(() =>
+        {
+            deleteStarted.Set();
+            ConfigDirectoryTeardown.Delete(directory, [drain.Task]);
+        });
+
+        Assert.True(deleteStarted.Wait(TimeSpan.FromSeconds(30)));
+
+        // While the completion is outstanding the teardown must not have deleted anything. The pause
+        // gives a non-waiting implementation ample time to finish, so this is evidence rather than a
+        // race the correct implementation happens to win.
+        await Task.Delay(500);
+        Assert.True(
+            Directory.Exists(directory),
+            "The teardown deleted the directory while a drain completion was still outstanding, so " +
+            "it is not waiting for it — the whole point of the entry point being given one.");
+        Assert.False(deleteTask.IsCompleted);
+
+        drain.SetResult();
+
+        await deleteTask.WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.False(Directory.Exists(directory));
+    }
+
+    /// <summary>
+    /// arb-s3ky: the wait GIVES UP at its bound rather than hanging the run. A pump that never
+    /// finishes must surface as the delete failure the caller already reports, not as a test process
+    /// that never exits.
+    ///
+    /// <para>The bound is passed in as a parameter — which is exactly why
+    /// <c>TryDelete</c> takes one. A 30-second constant inlined in the helper would leave this
+    /// property either untested or a 30-second test; a bound a test cannot reach is a bound nothing
+    /// pins.</para>
+    /// </summary>
+    [Fact]
+    public void The_teardown_gives_up_on_a_drain_completion_that_never_completes()
+    {
+        var directory = NewDirectoryWithAPooledDatabase();
+
+        // Never completed, and never will be.
+        var neverCompletes = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        try
+        {
+            var elapsed = System.Diagnostics.Stopwatch.StartNew();
+            var failure = ConfigDirectoryTeardown.TryDelete(
+                directory, [neverCompletes.Task], TimeSpan.FromMilliseconds(200));
+            elapsed.Stop();
+
+            // It RETURNED — the property. Had it awaited unboundedly this line would never run and
+            // the test would hang rather than fail, which is why the bound matters.
+            Assert.False(Directory.Exists(directory));
+            Assert.Null(failure);
+
+            // ... and it gave up near its bound rather than running to the 30s default. Loose on
+            // purpose: this guards against the bound being ignored, not against a slow machine.
+            Assert.True(
+                elapsed.Elapsed < TimeSpan.FromSeconds(15),
+                $"The teardown took {elapsed.Elapsed} against a 200ms bound, so the bound it was " +
+                "given is not the one it used.");
+
+            // NON-VACUITY: the task really never completed, so the return above was the give-up path
+            // and not the completion path arriving early.
+            Assert.False(neverCompletes.Task.IsCompleted);
+        }
+        finally
+        {
+            ConfigDirectoryTeardown.TryDelete(directory);
+        }
+    }
+
+    /// <summary>
     /// A failed delete must FAIL the caller, not be swallowed. This is the half that distinguishes
     /// the helper from the empty <c>catch (IOException)</c> blocks it replaced: those made a broken
     /// teardown indistinguishable from a working one, which is how 83 directories a run went
