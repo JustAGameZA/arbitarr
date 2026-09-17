@@ -39,6 +39,43 @@ export interface SourceSummary {
    * server said.
    */
   nzbAccessMode: string;
+  /** arb-x7w8.11 — one of `SourceRuntimeState`, as a stable enum name. */
+  runtimeState: string;
+  /**
+   * When a transient hold-off expires, or null.
+   *
+   * NON-NULL DOES NOT MEAN "BACKING OFF". A value in the PAST means the hold-off
+   * already elapsed; the row keeps it because the level it was reached at is
+   * still live information until the next outcome resolves it. `runtimeState` —
+   * and only `runtimeState` — says whether anything is being held off now.
+   * Rendering any non-null value as "backing off" shows recovered sources as
+   * broken indefinitely.
+   */
+  disabledUntil: string | null;
+  /** How far transient escalation has climbed. Zero means not escalated. */
+  disabledLevel: number;
+  /**
+   * The last observed call outcome as a server enum name, or null before any
+   * outcome was recorded. An enum name and never upstream text — the server
+   * record has no field able to carry one, which is what makes the no-secret
+   * property structural rather than maintained by care.
+   */
+  lastOutcome: string | null;
+  /** Query hits spent in the current rolling window. Read against `queryLimit`. */
+  queriesUsed: number;
+  /** Grab hits spent in the current rolling window. Read against `grabLimit`. */
+  grabsUsed: number;
+  /**
+   * The query cap, or null for UNLIMITED.
+   *
+   * NULL IS UNLIMITED AND IS NOT ZERO, on this side exactly as in the column. A
+   * source whose limit an operator never configured must render "unlimited" —
+   * never "0 of 0", never a percentage, and never via `queryLimit ?? 0`, which
+   * is the spelling that silently reports every unconfigured indexer as spent.
+   */
+  queryLimit: number | null;
+  /** The grab cap, with the same null-is-unlimited semantics as `queryLimit`. */
+  grabLimit: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -60,6 +97,27 @@ export const REDIRECT_ACCESS_MODE = 'Redirect';
  * operator changes it.
  */
 export const PROXY_ACCESS_MODE = 'Proxy';
+
+/**
+ * The four states a configured source can be in, mirroring the server's closed
+ * `SourceRuntimeState` enum.
+ *
+ * FOUR DISTINCT LABELS, NOT ONE "UNAVAILABLE". The server entity's own doc gives
+ * the reason: collapsing them "reports a broken key as a temporary pause and
+ * removes the signal to go and fix it". The fixes genuinely differ — a budgeted
+ * source needs a higher limit or patience, a backing-off one needs nothing at
+ * all, and a permanently disabled one needs a human to replace a credential.
+ * This is the same argument `OUTCOME_LABELS` in `Sources.tsx` makes for the five
+ * probe outcomes, and it is the house style for this kind of distinction.
+ *
+ * CLOSED ON PURPOSE, on both sides: the server enum carries no string field, so
+ * no upstream body, exception message or credential can travel with it.
+ */
+export type SourceRuntimeState =
+  | 'Healthy'
+  | 'Budgeted'
+  | 'BackingOff'
+  | 'PermanentlyDisabled';
 
 /**
  * The five outcomes of `POST /api/admin/sources/{id}/test`, mirroring the
