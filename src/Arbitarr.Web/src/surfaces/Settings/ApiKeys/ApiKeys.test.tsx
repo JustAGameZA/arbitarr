@@ -17,6 +17,12 @@ const KEYS = '/api/admin/keys';
 interface Reply {
   status?: number;
   body?: unknown;
+  /**
+   * Never resolves (arb-kytb). Used to hold one call's mutation `isPending`
+   * true for the lifetime of a test, so the per-row disabled state can be
+   * observed without racing a real settle.
+   */
+  pending?: boolean;
 }
 
 interface Call {
@@ -65,6 +71,10 @@ function mockKeysApi(replies: Record<string, Reply>) {
             headers: { 'Content-Type': 'application/json' },
           }),
         );
+      }
+
+      if (reply.pending === true) {
+        return new Promise<Response>(() => {});
       }
 
       const status = reply.status ?? 200;
@@ -718,7 +728,7 @@ describe('ApiKeys', () => {
     expect(api.of('DELETE')).toHaveLength(0);
 
     api.set(`DELETE ${KEYS}/1`, { status: 204 });
-    await user.click(screen.getByRole('button', { name: 'Confirm revoke' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm revoke Sonarr' }));
 
     const del = api.of('DELETE')[0];
     expect(del?.path).toBe(`${KEYS}/1`);
@@ -741,7 +751,7 @@ describe('ApiKeys', () => {
     await user.click(screen.getByRole('button', { name: 'Revoke Maintenance script' }));
 
     api.set(`DELETE ${KEYS}/2`, { status: 400, body: { error: refusal } });
-    await user.click(screen.getByRole('button', { name: 'Confirm revoke' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm revoke Maintenance script' }));
 
     expect(await screen.findByText(refusal)).toBeInTheDocument();
 
@@ -896,7 +906,7 @@ describe('ApiKeys', () => {
     expect(api.of('DELETE')).toHaveLength(0);
 
     api.set(`DELETE ${KEYS}/3/tombstone`, { status: 204 });
-    await user.click(screen.getByRole('button', { name: 'Confirm remove' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm remove Retired laptop' }));
 
     const del = api.of('DELETE')[0];
     // The tombstone sub-path, not the bare id: that route revokes, and hitting it
@@ -920,7 +930,7 @@ describe('ApiKeys', () => {
     api.set(`GET ${KEYS}`, { body: keys.filter((key) => key.id !== 3) });
 
     await user.click(screen.getByRole('button', { name: 'Remove Retired laptop' }));
-    await user.click(screen.getByRole('button', { name: 'Confirm remove' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm remove Retired laptop' }));
 
     await vi.waitFor(() =>
       expect(screen.queryByRole('cell', { name: 'Retired laptop' })).not.toBeInTheDocument(),
@@ -953,7 +963,7 @@ describe('ApiKeys', () => {
 
     api.set(`DELETE ${KEYS}/3/tombstone`, { status: 400, body: { error: refusal } });
     await user.click(screen.getByRole('button', { name: 'Remove Retired laptop' }));
-    await user.click(screen.getByRole('button', { name: 'Confirm remove' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm remove Retired laptop' }));
 
     // Reaching the operator at all is the first half: the mutation is reset the
     // moment it settles, so a render that read `remove.error` would show nothing.
@@ -970,6 +980,96 @@ describe('ApiKeys', () => {
     expect(screen.getByRole('cell', { name: 'Retired laptop' })).toBeInTheDocument();
   });
 
+  /**
+   * arb-kytb: a revoke or remove in flight disables only its own row.
+   *
+   * The section used to pass `revoke.isPending || remove.isPending` to EVERY
+   * row, so one key's in-flight call disabled the confirm button on every
+   * other row too. Each test below holds one request open (never resolving
+   * it) and asserts POSITIVELY that the in-flight row's own confirm button
+   * IS disabled first — proving the disabled state really fires for that
+   * call — before asserting the other rows are NOT, so the second assertion
+   * is evidence of per-row scoping rather than a check that could never have
+   * failed.
+   */
+  describe('per-row pending (arb-kytb)', () => {
+    it('disables only the confirming row while its revoke is in flight', async () => {
+      const user = userEvent.setup();
+      const api = mockKeysApi({ [`GET ${KEYS}`]: { body: keys } });
+      renderSurface(<ApiKeysSection />);
+
+      await screen.findByRole('cell', { name: 'Sonarr' });
+      await screen.findByRole('cell', { name: 'Maintenance script' });
+
+      // Hold Sonarr's revoke open — never resolved in this test.
+      api.set(`DELETE ${KEYS}/1`, { pending: true });
+
+      await user.click(screen.getByRole('button', { name: 'Revoke Sonarr' }));
+      await user.click(screen.getByRole('button', { name: 'Confirm revoke Sonarr' }));
+
+      // POSITIVE CONTROL: the in-flight row's own confirm button IS disabled,
+      // so the negative assertions below detect real per-row scoping rather
+      // than a `pending` that never fires at all.
+      await waitFor(() => {
+        expect(
+          within(rowFor('Sonarr')).getByRole('button', { name: 'Confirm revoke Sonarr' }),
+        ).toBeDisabled();
+      });
+
+      // A different row's revoke-confirm is untouched by Sonarr's in-flight call.
+      await user.click(screen.getByRole('button', { name: 'Revoke Maintenance script' }));
+      expect(
+        within(rowFor('Maintenance script')).getByRole('button', {
+          name: 'Confirm revoke Maintenance script',
+        }),
+      ).toBeEnabled();
+
+      // And a revoked row's remove-confirm is untouched too.
+      await user.click(screen.getByRole('button', { name: 'Remove Retired laptop' }));
+      expect(
+        within(rowFor('Retired laptop')).getByRole('button', {
+          name: 'Confirm remove Retired laptop',
+        }),
+      ).toBeEnabled();
+    });
+
+    it('disables only the confirming row while its remove is in flight', async () => {
+      const user = userEvent.setup();
+      const api = mockKeysApi({ [`GET ${KEYS}`]: { body: keys } });
+      renderSurface(<ApiKeysSection />);
+
+      await screen.findByRole('cell', { name: 'Retired laptop' });
+      await screen.findByRole('cell', { name: 'Old script' });
+
+      // Hold Retired laptop's tombstone removal open — never resolved.
+      api.set(`DELETE ${KEYS}/3/tombstone`, { pending: true });
+
+      await user.click(screen.getByRole('button', { name: 'Remove Retired laptop' }));
+      await user.click(screen.getByRole('button', { name: 'Confirm remove Retired laptop' }));
+
+      // POSITIVE CONTROL: the in-flight row's own confirm button IS disabled.
+      await waitFor(() => {
+        expect(
+          within(rowFor('Retired laptop')).getByRole('button', {
+            name: 'Confirm remove Retired laptop',
+          }),
+        ).toBeDisabled();
+      });
+
+      // A different tombstone's remove-confirm is untouched.
+      await user.click(screen.getByRole('button', { name: 'Remove Old script' }));
+      expect(
+        within(rowFor('Old script')).getByRole('button', { name: 'Confirm remove Old script' }),
+      ).toBeEnabled();
+
+      // A live row's revoke-confirm is untouched too.
+      await user.click(screen.getByRole('button', { name: 'Revoke Sonarr' }));
+      expect(
+        within(rowFor('Sonarr')).getByRole('button', { name: 'Confirm revoke Sonarr' }),
+      ).toBeEnabled();
+    });
+  });
+
   it('does not carry a failed remove message into the next attempt', async () => {
     // The capture-then-reset shape has to clear as well as capture. Without the
     // reset of the previous refusal, the operator reads a rejection the server has
@@ -983,7 +1083,7 @@ describe('ApiKeys', () => {
 
     api.set(`DELETE ${KEYS}/3/tombstone`, { status: 400, body: { error: refusal } });
     await user.click(screen.getByRole('button', { name: 'Remove Retired laptop' }));
-    await user.click(screen.getByRole('button', { name: 'Confirm remove' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm remove Retired laptop' }));
     expect(await screen.findByText(refusal)).toBeInTheDocument();
 
     // A second attempt, this time accepted. The confirm controls are still up --
@@ -991,8 +1091,147 @@ describe('ApiKeys', () => {
     // find the row again -- so this retries straight from the confirm.
     api.set(`DELETE ${KEYS}/3/tombstone`, { status: 204 });
     api.set(`GET ${KEYS}`, { body: keys.filter((key) => key.id !== 3) });
-    await user.click(screen.getByRole('button', { name: 'Confirm remove' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm remove Retired laptop' }));
 
     await vi.waitFor(() => expect(screen.queryByText(refusal)).not.toBeInTheDocument());
+  });
+
+  describe('two mutates in flight at once (arb-kytb follow-up)', () => {
+    it('opens and confirms a second row while an earlier revoke is still in flight', async () => {
+      // The invariant the per-row `pending` prop rests on: `confirmingId` is
+      // section-wide, so only one row's Confirm is ever RENDERED at a time.
+      // But `onAskConfirm`/`setConfirmingId` has no guard against moving it to
+      // a different row while an earlier revoke or remove is still
+      // outstanding — observed directly here, rather than assumed: after
+      // Sonarr's revoke is held open, Maintenance script's own confirm is
+      // reachable and clickable, proving a second mutate CAN start.
+      const user = userEvent.setup();
+      const api = mockKeysApi({ [`GET ${KEYS}`]: { body: keys } });
+      renderSurface(<ApiKeysSection />);
+
+      await screen.findByRole('cell', { name: 'Sonarr' });
+      await screen.findByRole('cell', { name: 'Maintenance script' });
+
+      // Sonarr's revoke never resolves within this test.
+      api.set(`DELETE ${KEYS}/1`, { pending: true });
+
+      await user.click(screen.getByRole('button', { name: 'Revoke Sonarr' }));
+      await user.click(screen.getByRole('button', { name: 'Confirm revoke Sonarr' }));
+
+      // POSITIVE CONTROL: Sonarr's own confirm really is disabled by its
+      // in-flight call.
+      await waitFor(() => {
+        expect(
+          within(rowFor('Sonarr')).getByRole('button', { name: 'Confirm revoke Sonarr' }),
+        ).toBeDisabled();
+      });
+
+      // Nothing stops moving confirmingId to Maintenance script while
+      // Sonarr's revoke is still outstanding, and its Confirm is enabled --
+      // this second mutate is reachable.
+      await user.click(screen.getByRole('button', { name: 'Revoke Maintenance script' }));
+      expect(
+        within(rowFor('Maintenance script')).getByRole('button', {
+          name: 'Confirm revoke Maintenance script',
+        }),
+      ).toBeEnabled();
+
+      api.set(`DELETE ${KEYS}/2`, { pending: true });
+      await user.click(
+        screen.getByRole('button', { name: 'Confirm revoke Maintenance script' }),
+      );
+
+      // Both revokes are now in flight at once.
+      await waitFor(() => {
+        expect(
+          within(rowFor('Maintenance script')).getByRole('button', {
+            name: 'Confirm revoke Maintenance script',
+          }),
+        ).toBeDisabled();
+      });
+    });
+
+    it('reads pending PER ROW with two revokes in flight at once, and clears independently on settle', async () => {
+      // pendingRevokeIds/pendingRemoveIds are Sets rather than
+      // `revoke.variables === entry.id`, because `variables` can only ever
+      // name the LATEST call. This proves the Set tracks BOTH concurrent
+      // calls, and that settling one leaves the other's row alone.
+      const user = userEvent.setup();
+      mockKeysApi({ [`GET ${KEYS}`]: { body: keys } });
+      renderSurface(<ApiKeysSection />);
+
+      await screen.findByRole('cell', { name: 'Sonarr' });
+      await screen.findByRole('cell', { name: 'Maintenance script' });
+
+      // POSITIVE CONTROL: before either revoke starts, neither row is pending.
+      expect(screen.getByRole('button', { name: 'Revoke Sonarr' })).not.toBeDisabled();
+
+      // Sonarr's revoke is held open indefinitely. Maintenance script's gets
+      // its own controllable promise so it can be settled independently.
+      let resolveMaintenance: (() => void) | undefined;
+      vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(input instanceof Request ? input.url : input, 'http://localhost');
+        if (init?.method === 'DELETE' && url.pathname === `${KEYS}/1`) {
+          return new Promise(() => {});
+        }
+        if (init?.method === 'DELETE' && url.pathname === `${KEYS}/2`) {
+          return new Promise((resolve) => {
+            resolveMaintenance = () => resolve(new Response(null, { status: 204 }));
+          });
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify(keys), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        );
+      });
+
+      await user.click(screen.getByRole('button', { name: 'Revoke Sonarr' }));
+      await user.click(screen.getByRole('button', { name: 'Confirm revoke Sonarr' }));
+
+      await waitFor(() => {
+        expect(
+          within(rowFor('Sonarr')).getByRole('button', { name: 'Confirm revoke Sonarr' }),
+        ).toBeDisabled();
+      });
+
+      await user.click(screen.getByRole('button', { name: 'Revoke Maintenance script' }));
+      await user.click(
+        screen.getByRole('button', { name: 'Confirm revoke Maintenance script' }),
+      );
+
+      // PER ROW, with both in flight at once: Maintenance script reads
+      // pending, and an untouched row does not.
+      await waitFor(() => {
+        expect(
+          within(rowFor('Maintenance script')).getByRole('button', {
+            name: 'Confirm revoke Maintenance script',
+          }),
+        ).toBeDisabled();
+      });
+      expect(screen.getByRole('button', { name: 'Remove Retired laptop' })).not.toBeDisabled();
+
+      // Read Sonarr's own state back: still disabled, because its revoke is
+      // still in flight -- proving the Set kept it even while
+      // Maintenance script's call was added and is running concurrently. A
+      // single `revoke.variables` check could not show this: by now
+      // `variables` names Maintenance script's call, not Sonarr's.
+      await user.click(screen.getByRole('button', { name: 'Revoke Sonarr' }));
+      expect(
+        within(rowFor('Sonarr')).getByRole('button', { name: 'Confirm revoke Sonarr' }),
+      ).toBeDisabled();
+
+      // Settle Maintenance script only. Its confirming state clears on
+      // success, while Sonarr's promise never resolved.
+      resolveMaintenance?.();
+      await waitFor(() => {
+        expect(
+          within(rowFor('Maintenance script')).getByRole('button', {
+            name: 'Revoke Maintenance script',
+          }),
+        ).toBeInTheDocument();
+      });
+    });
   });
 });
