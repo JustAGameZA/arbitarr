@@ -303,6 +303,67 @@ describe('Library tables', () => {
     expect(within(table).getByText('00:12:34')).toBeInTheDocument();
   });
 
+  it('renders an unrecognised tracked status as text, without inventing a severity for it', async () => {
+    // POSITIVE CONTROL FIRST: a status the mapping DOES know carries a severity class. Without
+    // this, "the unknown one has no severity class" would pass just as well if the component had
+    // stopped emitting severity classes entirely, or if the class names resolved to empty strings
+    // under the test's CSS handling -- an absence assertion that nothing could ever fail.
+    mockApi({
+      ...allOk,
+      [SONARR_QUEUE]: envelope('Ok', 'Read the Sonarr queue successfully.', [
+        { ...queueRow, trackedDownloadStatus: 'warning' },
+      ]),
+    });
+    const { unmount } = renderSurface(<LibraryPage />);
+    await screen.findByRole('table');
+
+    const known = screen.getByText('warning');
+    expect(known.className.split(/\s+/).length).toBeGreaterThan(1);
+    const severityClasses = known.className
+      .split(/\s+/)
+      .filter((name) => name !== '')
+      .slice(1);
+    expect(severityClasses.length).toBeGreaterThan(0);
+    unmount();
+
+    // The real case: upstream grows a status nobody here has seen. It renders its own text, so the
+    // operator still learns what their *arr said, and it takes the PLAIN badge -- colouring it
+    // would be a severity claim the data does not support.
+    mockApi({
+      ...allOk,
+      [SONARR_QUEUE]: envelope('Ok', 'Read the Sonarr queue successfully.', [
+        { ...queueRow, trackedDownloadStatus: 'quarantined' },
+      ]),
+    });
+    renderSurface(<LibraryPage />);
+    await screen.findByRole('table');
+
+    const unknown = await screen.findByText('quarantined');
+    for (const severity of severityClasses) {
+      expect(unknown.className.split(/\s+/)).not.toContain(severity);
+    }
+  });
+
+  it('renders two queue rows that share a title, because the id is what keys them', async () => {
+    // Two files of the same release is the ordinary case this guards, not a contrived one. A key
+    // synthesised from the title would collide here, and React would drop or merge a row -- which
+    // is the whole reason the projection carries upstream's id at all.
+    mockApi({
+      ...allOk,
+      [SONARR_QUEUE]: envelope('Ok', 'Read the Sonarr queue successfully.', [
+        { ...queueRow, id: 701, title: 'Example.Show.S01E01.1080p.WEB-DL' },
+        { ...queueRow, id: 702, title: 'Example.Show.S01E01.1080p.WEB-DL' },
+      ]),
+    });
+    renderSurface(<LibraryPage />);
+    const table = await screen.findByRole('table');
+
+    // BOTH, asserted by count rather than by "the title is present": one surviving row renders the
+    // same text as two and would satisfy a findByText just as happily.
+    expect(screen.getAllByText('Example.Show.S01E01.1080p.WEB-DL')).toHaveLength(2);
+    expect(within(table).getAllByRole('row')).toHaveLength(3);
+  });
+
   it('renders an absent size as the em-dash rather than a plausible zero', async () => {
     mockApi({
       ...allOk,
@@ -417,6 +478,113 @@ describe('Library paging', () => {
     expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
     expect(api.callsTo(SONARR_QUEUE).at(-1)?.url.searchParams.get('page')).toBe('2');
     expect(screen.getByRole('button', { name: 'Previous' })).toBeEnabled();
+  });
+
+  /**
+   * Holds the next reply open so a click can land mid-flight.
+   *
+   * `mockApi` answers synchronously, which is the right default everywhere else and useless here:
+   * the desync this guards is only reachable while a response is OUTSTANDING. So the stubbed fetch
+   * is wrapped rather than replaced -- the routing, the recorded calls and the admin key all stay
+   * `mockApi`'s -- and only the settling of the promise is taken over.
+   */
+  function deferNext() {
+    const real = globalThis.fetch as unknown as (
+      input: string,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let armed = true;
+
+    vi.stubGlobal('fetch', (input: string, init?: RequestInit) => {
+      const pending = real(input, init);
+      if (!armed) {
+        return pending;
+      }
+      armed = false;
+      return gate.then(() => pending);
+    });
+
+    return release;
+  }
+
+  it('does not swallow a second Next pressed while the first is still in flight', async () => {
+    const api = mockApi(pagedRoutes);
+    const user = userEvent.setup();
+    const control = renderSurface(<LibraryPage />);
+    await screen.findByRole('table');
+
+    // POSITIVE CONTROL: with nothing deferred, two consecutive clicks reach page 3. If the harness
+    // could not drive two clicks through at all, the assertion below would pass for that reason
+    // instead of for the one it names.
+    api.set(
+      SONARR_QUEUE,
+      envelope('Ok', 'Read the Sonarr queue successfully.', page1, {
+        page: 2,
+        pageSize: 25,
+        totalRecords: 60,
+      }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    await screen.findByText('Page 2 of 3');
+    api.set(
+      SONARR_QUEUE,
+      envelope('Ok', 'Read the Sonarr queue successfully.', page1, {
+        page: 3,
+        pageSize: 25,
+        totalRecords: 60,
+      }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    await screen.findByText('Page 3 of 3');
+    expect(api.callsTo(SONARR_QUEUE).at(-1)?.url.searchParams.get('page')).toBe('3');
+    control.unmount();
+
+    // The real case. Back to page 1, then hold the page-2 response open and click Next twice.
+    // Under the old pager both clicks computed their target from the SERVED page, which
+    // keepPreviousData still reported as 1, so the second click recomputed 2 and was swallowed.
+    const fresh = mockApi(pagedRoutes);
+    renderSurface(<LibraryPage />);
+    await screen.findByRole('table');
+
+    const release = deferNext();
+    fresh.set(
+      SONARR_QUEUE,
+      envelope('Ok', 'Read the Sonarr queue successfully.', page1, {
+        page: 2,
+        pageSize: 25,
+        totalRecords: 60,
+      }),
+    );
+
+    const next = screen.getByRole('button', { name: 'Next' });
+    await user.click(next);
+
+    // While the request is outstanding the control is frozen, so the second press cannot be
+    // aimed at a stale page in the first place. That is the fix stated as a user-visible fact:
+    // the operator is never offered a button whose target disagrees with the number beside it.
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Previous' })).toBeDisabled();
+
+    release();
+    expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
+
+    // And once it settles, Next advances to 3 rather than re-requesting 2 -- the click is routed
+    // from the requested page, so no press is spent re-asking for the page already on screen.
+    fresh.set(
+      SONARR_QUEUE,
+      envelope('Ok', 'Read the Sonarr queue successfully.', page1, {
+        page: 3,
+        pageSize: 25,
+        totalRecords: 60,
+      }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    expect(await screen.findByText('Page 3 of 3')).toBeInTheDocument();
+    expect(fresh.callsTo(SONARR_QUEUE).at(-1)?.url.searchParams.get('page')).toBe('3');
   });
 
   it('resets to page one when the tab changes', async () => {
@@ -608,6 +776,33 @@ describe('Library polling', () => {
     // Exactly one more, without the clock having advanced an interval: the point of the control is
     // that an operator need not wait out a five-minute cadence.
     expect(api.callsTo(SONARR_QUEUE)).toHaveLength(before + 1);
+  });
+
+  it('serves a manual Refresh while hidden without re-arming the automatic cadence', async () => {
+    const api = mockApi(allOk);
+    const user = userEvent.setup({ delay: null, advanceTimers: vi.advanceTimersByTime });
+    renderSurface(<LibraryPage />);
+    await screen.findByRole('table');
+
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+    document.dispatchEvent(new Event('visibilitychange'));
+
+    const before = api.callsTo(SONARR_QUEUE).length;
+    expect(before).toBeGreaterThan(0);
+
+    // The two facts are different and the gate only claims one of them. A Refresh is IMPERATIVE --
+    // an operator asking for data now -- so it fires while hidden and that is correct. What the
+    // visibility gate suppresses is the unattended timer, which nobody asked for.
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(api.callsTo(SONARR_QUEUE)).toHaveLength(before + 1);
+
+    const afterRefresh = api.callsTo(SONARR_QUEUE).length;
+    await vi.advanceTimersByTimeAsync(LIBRARY_POLL_INTERVAL_MS * 2);
+
+    // Two full intervals later the count is UNCHANGED from just after the refresh. Serving the
+    // manual read must not restart the cadence behind it: a refresh pressed before backgrounding
+    // the browser would otherwise leave a hidden tab polling someone else's server indefinitely.
+    expect(api.callsTo(SONARR_QUEUE)).toHaveLength(afterRefresh);
   });
 });
 

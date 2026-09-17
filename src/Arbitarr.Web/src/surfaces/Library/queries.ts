@@ -50,6 +50,13 @@ export const LIBRARY_POLL_INTERVAL_MS = 5 * 60 * 1000;
  * this screen open on a second monitor while working elsewhere should still get current rows.
  * Visibility is what actually distinguishes "nobody can see this" from "nobody is typing into it",
  * and it is the one that should silence a poll against someone else's server.
+ *
+ * <b>THE GATE COVERS THE AUTOMATIC CADENCE ONLY.</b> It sets `refetchInterval`, so what a hidden
+ * document suppresses is the unattended timer nobody asked for. A manual Refresh is imperative: it
+ * calls `refetch()` directly and fires whatever the visibility state, because it is an operator
+ * asking for data now and a request someone asked for is not the cost this gate exists to avoid.
+ * Any test asserting "hidden means no traffic" must therefore bound its claim to the interval;
+ * a Refresh issuing its own one request while hidden is correct behaviour, not a leak.
  */
 export function useDocumentVisible(): boolean {
   const [visible, setVisible] = useState(() => !document.hidden);

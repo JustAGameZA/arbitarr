@@ -122,9 +122,13 @@ function SectionBody<T>({
 /** The pager. Derived from the SERVER's own page/pageSize, never from what was requested. */
 function Pager({
   envelope,
+  requestedPage,
+  busy,
   onPage,
 }: {
   envelope: ArrSectionEnvelope<unknown>;
+  requestedPage: number;
+  busy: boolean;
   onPage: (next: number) => void;
 }) {
   // The served values, not the requested ones: these are what the server actually answered with
@@ -139,13 +143,30 @@ function Pager({
     return null;
   }
 
+  // <b>NAVIGATE FROM THE REQUESTED PAGE, DISPLAY THE SERVED ONE.</b> These are two different facts
+  // and conflating them is a real desync, not a nicety. `placeholderData: keepPreviousData` keeps
+  // the PREVIOUS response on screen while the next one is in flight, so between clicking Next and
+  // that response arriving, `envelope.page` still reads as the page being navigated away from.
+  // Computing the target from it made a second click recompute the SAME target, and `setPage` to
+  // the value already held is a no-op -- so the click was silently swallowed and the operator's
+  // second press did nothing. `requestedPage` is local state that already moved, so consecutive
+  // clicks advance one page each.
+  //
+  // The buttons are ALSO disabled while `busy`, and that is not redundant with the above. It is
+  // what keeps the two facts from disagreeing VISIBLY: the label reads the served page, so during
+  // a fetch it names a page the buttons would no longer navigate relative to. Freezing the control
+  // while it is mid-flight means the operator is never offered a button whose meaning does not
+  // match the number beside it, and the bounds below stay computed against a settled response.
+  const atFirst = requestedPage <= 1;
+  const atLast = requestedPage >= pageCount;
+
   return (
     <div className={styles.facts}>
       <button
         type="button"
         className={styles.buttonSecondary}
-        disabled={servedPage <= 1}
-        onClick={() => onPage(Math.max(1, servedPage - 1))}
+        disabled={busy || atFirst}
+        onClick={() => onPage(Math.max(1, requestedPage - 1))}
       >
         Previous
       </button>
@@ -155,8 +176,8 @@ function Pager({
       <button
         type="button"
         className={styles.buttonSecondary}
-        disabled={servedPage >= pageCount}
-        onClick={() => onPage(servedPage + 1)}
+        disabled={busy || atLast}
+        onClick={() => onPage(requestedPage + 1)}
       >
         Next
       </button>
@@ -347,7 +368,12 @@ function QueueTab({ kind }: { kind: ArrKind }) {
               {(records) => (
                 <>
                   <QueueTable records={records} />
-                  <Pager envelope={data} onPage={setPage} />
+                  <Pager
+                    envelope={data}
+                    requestedPage={page}
+                    busy={queue.isFetching}
+                    onPage={setPage}
+                  />
                 </>
               )}
             </SectionBody>
@@ -419,32 +445,34 @@ function LibraryTab<T>({
   // -- is debounced, so typing a word issues one admin round trip instead of one per character.
   const [filterInput, setFilterInput] = useState('');
 
-  // The filter the debounce has already pushed into `filter`. Seeded with the initial value so the
-  // effect's MOUNT run finds nothing to commit -- see its note below.
-  const committedFilter = useRef('');
+  // The filter the debounce has already pushed into `filter`. Seeded from `filter` ITSELF rather
+  // than from a repeated literal: the invariant this ref exists to hold is "it equals the committed
+  // filter", and seeding it structurally means that stays true by construction instead of by two
+  // initialisers happening to agree. Change `filter`'s initial value and this follows it.
+  const committedFilter = useRef(filter);
 
   const section = useSectionQuery(filter, page, visible);
 
   // ~250ms: long enough that a normal typing cadence produces one request per pause rather
   // than one per keystroke, short enough that the delay after the last character is not
   // itself noticeable. Debounces the VALUE, not the keystroke handler, so the input stays
-  // controlled and immediate -- only what reaches `filters` (and so the query key and the
+  // controlled and immediate -- only what reaches `filter` (and so the query key and the
   // page-1 reset) lags behind.
   //
-  // The timer commits ONLY when the debounced value actually differs from the message
+  // The timer commits ONLY when the debounced value actually differs from the value
   // already committed, and the page reset lives inside that guard (arb-6l13). The effect
-  // also runs on MOUNT, where messageInput still equals filters.message: without the guard
+  // also runs on MOUNT, where filterInput still equals filter: without the guard
   // that mount run would fire setPage(1) 250ms after the tab opened, silently throwing an
   // operator who clicked Next inside that window back to page 1. It is a real bug and not
   // merely a test artifact -- it surfaced as an order-dependent failure only because the
   // paging test usually finishes before the 250ms deadline and, under full-suite load,
   // does not. The guard compares the VALUE rather than counting runs, which is what makes
   // it hold: a first-run flag would close the mount run alone, while any later re-arm
-  // carrying an unchanged message would reset the page just the same.
+  // carrying an unchanged filter would reset the page just the same.
   useEffect(() => {
     const timer = setTimeout(() => {
-      // Read the committed message from a ref rather than from `filters`, so the guard
-      // does not put `filters` in this effect's dependency list -- doing that would
+      // Read the committed value from a ref rather than from `filter`, so the guard
+      // does not put `filter` in this effect's dependency list -- doing that would
       // re-arm the timer on every filter change and reintroduce the same late reset
       // from a different direction. The updater itself stays pure.
       if (committedFilter.current === filterInput) {
@@ -487,7 +515,12 @@ function LibraryTab<T>({
                 {(records) => (
                   <>
                     {children(records)}
-                    <Pager envelope={data} onPage={setPage} />
+                    <Pager
+                      envelope={data}
+                      requestedPage={page}
+                      busy={section.isFetching}
+                      onPage={setPage}
+                    />
                   </>
                 )}
               </SectionBody>
@@ -518,9 +551,16 @@ export default function LibraryPage() {
     <>
       <PageHeader title="Library" />
       <Tabs label="Library sections" items={TAB_ITEMS} tabs={tabs} />
-      {/* The `key` remounts the panel on every tab switch, which is what resets page and filter to
-          their defaults: page 3 of Sonarr's series is not a meaningful position in Radarr's movies,
-          and carrying it across would show an operator a page they never asked for. */}
+      {/* What resets page and filter on a tab switch is the CONDITIONAL UNMOUNT below, not the
+          `key`: each panel renders only while its tab is active, so leaving a tab destroys its
+          component and its state goes with it. That matters because page 3 of Sonarr's series is
+          not a meaningful position in Radarr's movies, and carrying it across would show an
+          operator a page they never asked for.
+
+          The keys are kept deliberately even though no two of these render as siblings at once.
+          They pin each branch to its own element identity, so if a later edit turns this into an
+          always-rendered set (a hidden class, an animated transition) React cannot reconcile one
+          tab's panel onto another's and silently hand over the state this unmount discards. */}
       <TabPanel id={tabs.activeId} tabs={tabs}>
         {tabs.activeId === 'sonarr-queue' && <QueueTab key="sonarr-queue" kind="sonarr" />}
         {tabs.activeId === 'radarr-queue' && <QueueTab key="radarr-queue" kind="radarr" />}
