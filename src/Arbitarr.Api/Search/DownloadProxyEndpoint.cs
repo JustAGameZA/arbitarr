@@ -1,4 +1,5 @@
 using Arbitarr.Core.Diagnostics;
+using Arbitarr.Core.Releases;
 using Arbitarr.Core.Security;
 using Arbitarr.Core.Sources;
 using Microsoft.AspNetCore.Http;
@@ -70,6 +71,46 @@ public static class DownloadProxyEndpoint
             return Results.NotFound();
         }
 
+        // arb-x7w8.15: the magnet arm. A magnet URI names content by info hash and carries no
+        // fetchable body, so there is nothing to proxy: the caller is redirected to it and Arbitarr
+        // issues no upstream request at all.
+        //
+        // THIS IS NOT THE ADR 0014 REDIRECT REFUSAL in the catch block below, and the two must never
+        // be unified. That one REFUSES a redirect an upstream sent Arbitarr, because following it
+        // would fetch from an unpinned target with the indexer key attached. This one EMITS a
+        // redirect downstream to the caller, for text the feed supplied as the release's own
+        // identity. Opposite direction, opposite subject, opposite answer.
+        //
+        // Detected on the LINK's scheme, never on release.Candidate.Protocol. TorznabFeedParser
+        // defaults a protocol-silent item to Usenet, so branching on the declared protocol would
+        // send a magnet down the proxy path and make Arbitarr attempt an HTTP request against a
+        // magnet: URI. The link is the stronger signal and decides alone.
+        //
+        // The branch sits AFTER source resolution deliberately: a release from a source the operator
+        // has since disabled still answers 404 above, exactly as an NZB does. The 404 is about what
+        // Arbitarr is configured to serve, not about whether a credential is needed — a magnet needing
+        // no key is not a reason to let it bypass that gate.
+        //
+        // NO grab hit and NO health item are recorded here, and both follow from where this sits.
+        // Nothing was fetched from the indexer, so ADR 0020's grab allowance is not consumed (the
+        // counter lives inside BudgetedUpstreamSource.FetchDownloadAsync, which is never reached),
+        // and the success path's own comment below gives the rule this obeys: the sticky refusal
+        // clears only when a payload actually came back from this source. None did.
+        //
+        // The magnet reaches the client REGARDLESS of the source's NzbAccessMode, because it cannot
+        // be proxied. An operator who chose Proxy mode to keep downloads server-side does not get
+        // that for magnets. That is a stated property, not a defect to fix — and no key is involved:
+        // a magnet carries an info hash and trackers, never an indexer credential, so unlike a
+        // redirect to an indexer URL this passthrough leaks nothing confidential.
+        //
+        // The magnet is upstream-supplied text, so it goes in exactly ONE place: this Location
+        // header. It must never reach an event summary, a health item, /api/activity or /api/status —
+        // the same rule the two comments below state for a Location header and a refusal reason.
+        if (release.Candidate.Link.Scheme.Equals("magnet", StringComparison.OrdinalIgnoreCase))
+        {
+            return Results.Redirect(release.Candidate.Link.OriginalString);
+        }
+
         try
         {
             var stream = await source.FetchDownloadAsync(release.Candidate, cancellationToken).ConfigureAwait(false);
@@ -86,7 +127,22 @@ public static class DownloadProxyEndpoint
             // write is swallowed inside the tracker (it logs at Warning and the item stays cleared in
             // memory), so this cannot turn a successful download into an error response.
             await refusalTracker.RecordSuccessfulGrabAsync(release.SourceName, CancellationToken.None).ConfigureAwait(false);
-            return Results.Bytes(buffer.ToArray(), "application/octet-stream");
+
+            // arb-ywcj: derived HERE, at the route, from the protocol the endpoint already holds —
+            // not by widening IUpstreamSource.FetchDownloadAsync into a result type. A result type
+            // carrying content-type/filename/redirect would need a redirect field that no proxy-mode
+            // call could ever populate, because the magnet and redirect decisions are both made
+            // above, BEFORE the adapter is invoked.
+            //
+            // A .torrent payload otherwise proxies identically to an NZB: same bounded stream, same
+            // buffering, same successful-grab clear. The content type is the ONLY difference, and it
+            // is advisory — Sonarr/Radarr sniff the payload — so Unknown is answered with the
+            // octet-stream default rather than guessed at.
+            var contentType = release.Candidate.Protocol == ProtocolKind.Torrent
+                ? "application/x-bittorrent"
+                : "application/octet-stream";
+
+            return Results.Bytes(buffer.ToArray(), contentType);
         }
         catch (RequestLimitReachedException)
         {
