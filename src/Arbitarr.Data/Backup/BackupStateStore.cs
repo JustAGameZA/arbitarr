@@ -13,8 +13,8 @@ public sealed record LastBackup(DateTimeOffset TakenAt, bool Automatic);
 /// </summary>
 /// <param name="AttemptedAt">When the failing pass ran.</param>
 /// <param name="Reason">
-/// The exception'''s type and message. A reason, never the exception object or its stack: this is
-/// rendered in the UI, and a backup failure'''s message can name paths inside the config directory.
+/// The exception's type and message. A reason, never the exception object or its stack: this is
+/// rendered in the UI, and a backup failure's message can name paths inside the config directory.
 /// </param>
 public sealed record LastBackupFailure(DateTimeOffset AttemptedAt, string Reason);
 

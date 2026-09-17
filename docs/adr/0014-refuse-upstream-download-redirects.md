@@ -50,7 +50,7 @@ A refused redirect is recorded as a `SourceFailed` activity event with the sourc
 
 ### No outbound credential leak
 
-The download request includes a query string carrying the NZBHydra2 API key. If the redirect were followed, the `Location` header would include that key, and following it would require a second outbound request — a second call to `ReadApiKeyForUpstreamRequestAsync`. The redaction and one-caller mechanisms this would put at risk are documented once, in [CLAUDE.md §1](../../CLAUDE.md#1-secrets-three-mechanisms-that-must-survive-refactoring); of the seven `AllowAutoRedirect = false` registrations, only the Ollama one is test-pinned (`ProgramOllamaHttpClientTests`).
+The download request includes a query string carrying the NZBHydra2 API key. If the redirect were followed, the `Location` header would include that key, and following it would require a second outbound request — a second call to `ReadApiKeyForUpstreamRequestAsync`. The redaction and one-caller mechanisms this would put at risk are documented once, in [CLAUDE.md §1](../../CLAUDE.md#1-secrets-three-mechanisms-that-must-survive-refactoring); of the `AllowAutoRedirect = false` registrations, only the Ollama one is test-pinned (`ProgramOllamaHttpClientTests`).
 
 ### The whole 3xx range is refused, including 304 Not Modified
 
