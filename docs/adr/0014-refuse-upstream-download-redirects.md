@@ -24,7 +24,9 @@ A misconfigured upstream can cause every download attempt to fail. On 2026-09-08
 
 **Arbitarr refuses the entire 3xx HTTP status range on download requests (including 304 Not Modified), with no allowance for following the redirect or retrying. The refusal is recorded as an unnamed `SourceFailed` activity event so operators can see it on the Activity feed, but it does not alter the source's health status. (Since #247/arb-apj it does trigger a notification — one on appear, one on clear — pushed from a decorator around the health-item tracker below, not from `NotificationDispatcher`/`FoldSourceFailure`; see the Consequences section.)**
 
-SEC-M1 is implemented as `AllowAutoRedirect = false` across seven typed client registrations in the composition root, combined with origin-pinning re-validation at fetch time. This ensures redirects reach the application code as response objects rather than being silently followed by the framework, and any redirect to a different host is rejected by the fetch-time guard. When a redirect is detected on the download path, it is refused with a typed `UpstreamRedirectRefusedException` and recorded as a `SourceFailed` activity event (with `sourceDisplayName: null`) carrying a human-readable summary.
+SEC-M1 is implemented as `AllowAutoRedirect = false` across the typed client registrations in the composition root (`src/Arbitarr.Host/Program.cs`), combined with origin-pinning re-validation at fetch time. This ensures redirects reach the application code as response objects rather than being silently followed by the framework, and any redirect to a different host is rejected by the fetch-time guard. When a redirect is detected on the download path, it is refused with a typed `UpstreamRedirectRefusedException` and recorded as a `SourceFailed` activity event (with `sourceDisplayName: null`) carrying a human-readable summary.
+
+**Amended 2026-09-17.** The registration count above was originally stated as a fixed number and has drifted twice as clients were added; it is deliberately no longer stated here. The property that matters — `AllowAutoRedirect = false` on every typed HTTP client in the composition root — is what SEC-M1 requires, not any particular count. `grep -c "AllowAutoRedirect = false" src/Arbitarr.Host/Program.cs` measures the current registration count directly; no test pins the property across all registrations (see the Consequences section).
 
 ## Alternatives rejected
 
@@ -48,7 +50,7 @@ A refused redirect is recorded as a `SourceFailed` activity event with the sourc
 
 ### No outbound credential leak
 
-The download request includes a query string carrying the NZBHydra2 API key. If the redirect were followed, the `Location` header would include that key, and following it would require a second outbound request — a second call to `ReadApiKeyForUpstreamRequestAsync`. The redaction and one-caller mechanisms this would put at risk are documented once, in [CLAUDE.md §1](../../CLAUDE.md#1-secrets-three-mechanisms-that-must-survive-refactoring); of the seven `AllowAutoRedirect = false` registrations, only the Ollama one is test-pinned (`ProgramOllamaHttpClientTests`).
+The download request includes a query string carrying the NZBHydra2 API key. If the redirect were followed, the `Location` header would include that key, and following it would require a second outbound request — a second call to `ReadApiKeyForUpstreamRequestAsync`. The redaction and one-caller mechanisms this would put at risk are documented once, in [CLAUDE.md §1](../../CLAUDE.md#1-secrets-three-mechanisms-that-must-survive-refactoring); of the `AllowAutoRedirect = false` registrations, only the Ollama one is test-pinned (`ProgramOllamaHttpClientTests`).
 
 ### The whole 3xx range is refused, including 304 Not Modified
 
