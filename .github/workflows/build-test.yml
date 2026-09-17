@@ -784,6 +784,51 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  # --------------------------------------------------------------------------
+  # playwright: a minimal, CI-only browser regression job for the mobile shell
+  # stacking fix (arb-qp5) that jsdom cannot exercise -- see
+  # e2e/shell-drawer.pw.spec.ts and AppShell.module.css's comment on the
+  # `.topbar{position:relative;z-index:25}` rule it guards.
+  #
+  # Deliberately NO `needs:` -- it has no dependency on prep/backend, and
+  # deliberately NOT added to the `gate` job's `needs:` list below: this is not
+  # yet one of the two required checks (CONTRIBUTING.md), so a flake or a slow
+  # Chromium download here cannot block a merge. Chromium only, one spec.
+  # --------------------------------------------------------------------------
+  playwright:
+    name: Playwright (mobile shell)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: src/Arbitarr.Web/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: src/Arbitarr.Web
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        working-directory: src/Arbitarr.Web
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright spec
+        working-directory: src/Arbitarr.Web
+        run: npm run test:e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
+        with:
+          name: playwright-report
+          path: src/Arbitarr.Web/playwright-report/
+          if-no-files-found: warn
+          retention-days: 14
 
   # --------------------------------------------------------------------------
   # guards: the tree-wide secret/topology sweep, on its own runner. It needs

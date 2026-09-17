@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "test": "vitest run --reporter=json --outputFile=vitest-report.json",
     "test:watch": "vitest",
+    "test:e2e": "playwright test",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit"
   },
@@ -24,6 +25,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
+    "@playwright/test": "^1.63.0",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.1.0",
     "@testing-library/user-event": "^14.5.2",
