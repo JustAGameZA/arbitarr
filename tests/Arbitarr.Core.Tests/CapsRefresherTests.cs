@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Arbitarr.Core.Releases;
 using Arbitarr.Core.Sources;
 
@@ -26,18 +27,47 @@ public class CapsRefresherTests
             _store[sourceName] = caps;
             return Task.CompletedTask;
         }
+
+        // Mirrors the real store: removes the several protocol keys the bare name expands into,
+        // never a prefix match, so a double is not kinder than the thing it stands in for.
+        public Task DeleteAsync(string sourceName, CancellationToken cancellationToken = default)
+        {
+            foreach (var protocol in CapsAggregator.AllProtocols)
+            {
+                _store.Remove(CapsAggregator.CacheKey(sourceName, protocol));
+            }
+
+            return Task.CompletedTask;
+        }
     }
 
-    private sealed class FakeUpstreamSource(string name, Func<SearchProtocol, Task<SourceCaps>> getCaps)
-        : IUpstreamSource
+    private sealed class FakeUpstreamSource : IUpstreamSource
     {
-        public string Name { get; } = name;
+        private readonly Func<SearchProtocol, CancellationToken, Task<SourceCaps>> _getCaps;
+
+        public FakeUpstreamSource(string name, Func<SearchProtocol, Task<SourceCaps>> getCaps)
+            : this(name, (protocol, _) => getCaps(protocol))
+        {
+        }
+
+        /// <summary>
+        /// The token-aware overload, for the ceiling tests. A fake that ignored the token could not
+        /// model an upstream that hangs until something cancels it — it would either return at once
+        /// or block forever — so the ceiling could not be observed doing anything.
+        /// </summary>
+        public FakeUpstreamSource(string name, Func<SearchProtocol, CancellationToken, Task<SourceCaps>> getCaps)
+        {
+            Name = name;
+            _getCaps = getCaps;
+        }
+
+        public string Name { get; }
 
         public Task<IReadOnlyList<ReleaseCandidate>> SearchAsync(SearchQuery query, CancellationToken cancellationToken = default)
             => throw new NotImplementedException();
 
         public Task<SourceCaps> GetCapsAsync(SearchProtocol protocol, CancellationToken cancellationToken = default)
-            => getCaps(protocol);
+            => _getCaps(protocol, cancellationToken);
 
         public Task<Stream> FetchDownloadAsync(ReleaseCandidate release, CancellationToken cancellationToken = default)
             => throw new NotImplementedException();
@@ -223,5 +253,123 @@ public class CapsRefresherTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => refresher.RefreshAsync(source, cts.Token));
+    }
+
+    // ---------- The per-source ceiling ----------
+
+    /// <summary>
+    /// THE GIVE-UP PATH. An upstream that accepts the call and never answers must not hold the
+    /// refresh open: the ceiling fires, both families report not-refreshed, and nothing is written.
+    ///
+    /// <para>This is the regression the ceiling exists for. Before it, the inline refresh on a
+    /// source create/update was bounded only by the per-row <c>HttpClient.Timeout</c> — an
+    /// operator-configurable value — so a source configured with a large timeout against an
+    /// unroutable address held the whole request open for it. In CI that overran the test client's
+    /// own 100s timeout and failed the run.</para>
+    ///
+    /// <para>The ceiling is injected in MILLISECONDS, which is the entire reason it is a constructor
+    /// parameter rather than a constant: the give-up behaviour is proven in the time it takes to hit
+    /// it, not in the ten real seconds the default would cost. The fake hangs until ITS OWN token is
+    /// cancelled — i.e. until the ceiling cancels it — so if the ceiling were never applied this test
+    /// would hang rather than fail, and the assertion below could not pass by accident.</para>
+    /// </summary>
+    [Fact]
+    public async Task RefreshAsync_WhenTheUpstreamNeverAnswers_GivesUpAtTheCeiling_AndWritesNothing()
+    {
+        var store = new InMemoryCapsCacheStore();
+        var refresher = new CapsRefresher(store, TimeSpan.FromMilliseconds(50));
+
+        var source = new FakeUpstreamSource("hangs", async (protocol, token) =>
+        {
+            await Task.Delay(Timeout.Infinite, token);
+            throw new UnreachableException("The delay above only ever ends by cancellation.");
+        });
+
+        var outcomes = await refresher.RefreshAsync(source);
+
+        // Both families attempted and both reported — a ceiling that abandoned the loop would return
+        // one entry, leaving the other family silently unreported rather than reported as failed.
+        Assert.Equal(2, outcomes.Count);
+        Assert.All(outcomes, o => Assert.False(o.Refreshed));
+
+        // The give-up wrote nothing, so a previously stored entry would have survived it.
+        Assert.Equal(0, store.SaveCount);
+    }
+
+    /// <summary>
+    /// POSITIVE CONTROL for the test above (CLAUDE.md §4). "Nothing was written" passes just as
+    /// happily when the refresher writes NOTHING EVER — a ceiling of zero, a broken store double, or
+    /// a fetch loop that never ran would all leave <c>SaveCount</c> at 0 and leave the give-up test
+    /// green while proving nothing about the ceiling.
+    ///
+    /// <para>So this drives the SAME refresher configuration with the same kind of source and the
+    /// only difference that matters — the fetch completes inside the ceiling instead of outside it —
+    /// and asserts the opposite outcome: both families refreshed, both entries present. Together the
+    /// pair establishes that the ceiling discriminates, rather than that this code path always
+    /// fails.</para>
+    ///
+    /// <para>The delay is real but an order of magnitude inside the ceiling, so the two tests differ
+    /// by which side of it they land on and by nothing else.</para>
+    /// </summary>
+    [Fact]
+    public async Task RefreshAsync_WhenTheUpstreamAnswersInsideTheCeiling_StillWritesBothFamilies()
+    {
+        var store = new InMemoryCapsCacheStore();
+        var refresher = new CapsRefresher(store, TimeSpan.FromSeconds(5));
+
+        var source = new FakeUpstreamSource("prompt", async (protocol, token) =>
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(20), token);
+            return protocol == SearchProtocol.Torznab
+                ? new SourceCaps(new[] { 5000 }, true, false, 100)
+                : new SourceCaps(new[] { 2000 }, false, true, 100);
+        });
+
+        var outcomes = await refresher.RefreshAsync(source);
+
+        Assert.Equal(2, outcomes.Count);
+        Assert.All(outcomes, o => Assert.True(o.Refreshed));
+        Assert.Equal(2, store.SaveCount);
+
+        Assert.NotNull(await store.GetLastKnownGoodAsync(
+            CapsAggregator.CacheKey("prompt", SearchProtocol.Torznab)));
+        Assert.NotNull(await store.GetLastKnownGoodAsync(
+            CapsAggregator.CacheKey("prompt", SearchProtocol.Newznab)));
+    }
+
+    /// <summary>
+    /// The ceiling must not be mistakable for CALLER cancellation. When the caller's own token is
+    /// still live, a ceiling hit is an ordinary not-refreshed outcome and never an exception — which
+    /// is what lets an operator's save succeed against a dead indexer.
+    ///
+    /// <para>The distinction is load-bearing and easy to break: the fetch runs on the LINKED token,
+    /// which the ceiling also cancels, so a catch filter written against that token instead of the
+    /// caller's would rethrow every ceiling hit as if the host were shutting down — turning the
+    /// bounded give-up back into a failed request. This asserts the sibling behaviour the existing
+    /// cancellation test asserts from the other side: there, a cancelled CALLER token propagates;
+    /// here, a cancelled CEILING token does not.</para>
+    /// </summary>
+    [Fact]
+    public async Task RefreshAsync_ACeilingHit_IsNotReportedAsCallerCancellation()
+    {
+        var store = new InMemoryCapsCacheStore();
+        var refresher = new CapsRefresher(store, TimeSpan.FromMilliseconds(50));
+
+        using var callerTokenSource = new CancellationTokenSource();
+
+        var source = new FakeUpstreamSource("hangs", async (protocol, token) =>
+        {
+            await Task.Delay(Timeout.Infinite, token);
+            throw new UnreachableException("The delay above only ever ends by cancellation.");
+        });
+
+        // No throw: the ceiling fired, the caller's token did not.
+        var outcomes = await refresher.RefreshAsync(source, callerTokenSource.Token);
+
+        Assert.All(outcomes, o => Assert.False(o.Refreshed));
+
+        // And the caller's token is untouched by our ceiling — a ceiling that cancelled the caller's
+        // own token would abort everything else that token governs, not just this refresh.
+        Assert.False(callerTokenSource.IsCancellationRequested);
     }
 }

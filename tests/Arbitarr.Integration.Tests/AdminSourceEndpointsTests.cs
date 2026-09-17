@@ -4,6 +4,7 @@ using System.Text;
 using Arbitarr.Api.Admin;
 using Arbitarr.Core.Settings;
 using Arbitarr.Core.Sources;
+using Arbitarr.Data;
 using Arbitarr.Data.Entities;
 using Arbitarr.Data.Sources;
 using Microsoft.AspNetCore.Hosting;
@@ -24,13 +25,41 @@ namespace Arbitarr.Integration.Tests;
 /// the templated routes (<c>{id}</c>) that the sweep deliberately skips, so no route in this file
 /// is gated only by assumption.</para>
 ///
-/// <para>All addresses are 192.0.2.x (RFC 5737 documentation range) and all key material is
-/// <c>placeholder-*</c>: no real host or secret ever enters committed content.</para>
+/// <para>Every address is either loopback or 192.0.2.x (RFC 5737 documentation range), and all key
+/// material is <c>placeholder-*</c>: no real host or secret ever enters committed content. Which of
+/// the two a test uses is a deliberate choice about how fast the upstream must fail — see
+/// <see cref="RefusedBaseUrl"/> and <see cref="UnroutableBaseUrl"/>.</para>
 /// </summary>
 public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplicationFactory>
 {
     private const string AdminKey = "the-real-admin-key";
     private const string SourcesRoute = "/api/admin/sources";
+
+    /// <summary>
+    /// The DEFAULT base URL for a source these tests create: the loopback discard port, which
+    /// refuses a connection immediately.
+    ///
+    /// <para><b>Why this is the default and an unroutable address is not.</b> Since arb-x7w8.5 the
+    /// create and update handlers refresh caps INLINE, so every source written here makes a real
+    /// upstream call before the handler answers. Against an unroutable address that call cannot fail
+    /// fast — there is nothing to refuse it, so it runs until something gives up — and with two
+    /// protocol families per write, the cost landed on every single test in this class. A connection
+    /// REFUSED comes back in microseconds and exercises the identical failure path: the fetch throws,
+    /// nothing is written, and the outcome is not-refreshed.</para>
+    ///
+    /// <para>Nothing here depends on how the upstream fails, only that it does — so the slow form is
+    /// reserved for the few tests below that genuinely need a slow or unreachable upstream, and named
+    /// <see cref="UnroutableBaseUrl"/> there so the choice reads as deliberate rather than copied.</para>
+    /// </summary>
+    private const string RefusedBaseUrl = "http://127.0.0.1:1/";
+
+    /// <summary>
+    /// RFC 5737 documentation space, unroutable by definition — a source that never answers rather
+    /// than one that refuses. Used ONLY where a test's subject is the unreachable case itself. Since
+    /// arb-x7w8.5 the wait is bounded by <c>CapsRefresher.DefaultPerSourceCeiling</c>, which is what
+    /// makes it affordable to keep at all.
+    /// </summary>
+    private const string UnroutableBaseUrl = "http://192.0.2.30:5076";
 
     /// <summary>
     /// The value the leak assertions hunt for. Distinctive on purpose: a substring search for it
@@ -97,7 +126,7 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
         {
             kind = "NzbHydra",
             displayName = "Leak probe " + Guid.NewGuid().ToString("N"),
-            baseUrl = "http://192.0.2.30:5076",
+            baseUrl = UnroutableBaseUrl,
             apiKey = SecretApiKey,
             enabled = true,
         });
@@ -230,7 +259,7 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
         {
             kind,
             displayName = $"{kind} indexer " + Guid.NewGuid().ToString("N"),
-            baseUrl = "http://192.0.2.33:9117",
+            baseUrl = "http://127.0.0.1:33",
             apiKey = SecretApiKey,
             enabled = true,
         });
@@ -267,7 +296,7 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
         {
             kind = wrongCasing,
             displayName = "Bad new casing " + Guid.NewGuid().ToString("N"),
-            baseUrl = "http://192.0.2.34:9117",
+            baseUrl = "http://127.0.0.1:34",
         });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -293,7 +322,7 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
         {
             kind = SourceRepository.NewznabKind,
             displayName = "Unlimited " + Guid.NewGuid().ToString("N"),
-            baseUrl = "http://192.0.2.35:9117",
+            baseUrl = "http://127.0.0.1:35",
             queryLimit = (int?)null,
             grabLimit = (int?)null,
         });
@@ -304,7 +333,7 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
         {
             kind = SourceRepository.NewznabKind,
             displayName = "Zero capped " + Guid.NewGuid().ToString("N"),
-            baseUrl = "http://192.0.2.36:9117",
+            baseUrl = "http://127.0.0.1:36",
             queryLimit = 0,
             grabLimit = 0,
         });
@@ -346,7 +375,7 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
         {
             ["kind"] = SourceRepository.NewznabKind,
             ["displayName"] = "Bad closed set " + Guid.NewGuid().ToString("N"),
-            ["baseUrl"] = "http://192.0.2.37:9117",
+            ["baseUrl"] = "http://127.0.0.1:37",
             [field] = value,
         };
 
@@ -370,7 +399,7 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
         {
             kind = SourceRepository.NewznabKind,
             displayName = "Redirect create " + Guid.NewGuid().ToString("N"),
-            baseUrl = "http://192.0.2.39:9117",
+            baseUrl = "http://127.0.0.1:39",
             nzbAccessMode = SourceRepository.RedirectAccessMode,
         });
         Assert.Equal(HttpStatusCode.BadRequest, createResponse.StatusCode);
@@ -414,7 +443,7 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
         {
             kind = SourceRepository.NewznabKind,
             displayName = name,
-            baseUrl = "http://192.0.2.40:9117",
+            baseUrl = "http://127.0.0.1:40",
             apiPath = "/api/v2.0/indexers/example/results/torznab",
             priority = 15,
             timeoutSeconds = 60,
@@ -473,7 +502,7 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
             {
                 kind = SourceRepository.NewznabKind,
                 displayName = $"{label} " + Guid.NewGuid().ToString("N"),
-                baseUrl = "http://192.0.2.42:9117",
+                baseUrl = "http://127.0.0.1:42",
                 queryLimit = 500,
             });
             Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -545,7 +574,7 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
         {
             kind = SourceRepository.NewznabKind,
             displayName = name,
-            baseUrl = "http://192.0.2.41:9117",
+            baseUrl = "http://127.0.0.1:41",
             timeoutSeconds = 30,
         });
         Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
@@ -579,7 +608,7 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
         {
             kind = SourceRepository.NewznabKind,
             displayName = "Key in path " + Guid.NewGuid().ToString("N"),
-            baseUrl = "http://192.0.2.38:9117",
+            baseUrl = "http://127.0.0.1:38",
             apiPath = $"/api?apikey={SecretApiKey}",
         });
 
@@ -636,7 +665,7 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
         {
             kind = created.Kind,
             displayName = renamed,
-            baseUrl = "http://192.0.2.31:5076",
+            baseUrl = "http://127.0.0.1:31",
             enabled = false,
         });
 
@@ -644,7 +673,7 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
         var updated = await response.Content.ReadFromJsonAsync<SourceResponse>();
 
         Assert.Equal(renamed, updated!.DisplayName);
-        Assert.Equal("http://192.0.2.31:5076", updated.BaseUrl);
+        Assert.Equal("http://127.0.0.1:31", updated.BaseUrl);
         Assert.False(updated.Enabled);
 
         // Omitting apiKey leaves the stored one in force — the write-only contract means the client
@@ -679,7 +708,7 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
         {
             kind = created.Kind,
             displayName = created.DisplayName,
-            baseUrl = "http://192.0.2.32:5076",
+            baseUrl = "http://127.0.0.1:32",
             // apiKey omitted on purpose — this is the "leave alone" contract under test.
         });
 
@@ -719,6 +748,165 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
         });
     }
 
+    /// <summary>
+    /// arb-x7w8.5 (architect M1, ADR 0016's set-membership rule): a deleted source's cached caps go
+    /// with it, BOTH protocol families, and no other source's entries are touched.
+    ///
+    /// <para><b>Why the entries cannot simply be left.</b> The cache key is the display name, so an
+    /// orphaned entry is not inert: the next source created or renamed to that freed name would find
+    /// it and adopt a deleted predecessor's categories as its own last-known-good, serving them from
+    /// its first upstream failure onward.</para>
+    ///
+    /// <para><b>Non-vacuity (CLAUDE.md §4).</b> "Both entries are gone" passes just as happily
+    /// against a delete that never ran, because entries that were never written are already absent —
+    /// so the entries are seeded and asserted PRESENT first, making the absence afterwards a change
+    /// this delete caused rather than a state it inherited. The surviving sibling is the other half:
+    /// it fails a delete that emptied the table, and its name is a PREFIX-related one on purpose, so
+    /// an implementation matching by name prefix instead of by built key fails here too.</para>
+    /// </summary>
+    [Fact]
+    public async Task Deleting_a_source_also_removes_its_cached_caps_for_both_protocols()
+    {
+        await SeedAdminKeyAsync();
+        using var client = CreateAdminClient();
+
+        var suffix = Guid.NewGuid().ToString("N");
+        var targetName = "Caps owner " + suffix;
+        var siblingName = targetName + " (backup)";
+
+        var created = await CreateSourceAsync(client, targetName, SecretApiKey);
+
+        // Seeded directly rather than fetched: the source points at an address that refuses, so a
+        // real refresh writes nothing and there would be no entry for the delete to remove — the
+        // test would then pass without ever exercising the removal.
+        await SeedCapsEntriesAsync(targetName, siblingName);
+
+        await _factory.SeedAsync(db =>
+        {
+            // Non-vacuity: all four rows exist before the delete.
+            Assert.Equal(4, CountCapsEntries(db, targetName) + CountCapsEntries(db, siblingName));
+            return Task.CompletedTask;
+        });
+
+        using var response = await client.DeleteAsync($"{SourcesRoute}/{created.Id}");
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+
+        await _factory.SeedAsync(db =>
+        {
+            // Asserted per key, not "fewer rows than before": a delete that removed one family would
+            // leave the other to be adopted, and the stale half is the one a fallback serves (#99).
+            Assert.Null(FindCapsEntry(db, targetName, SearchProtocol.Torznab));
+            Assert.Null(FindCapsEntry(db, targetName, SearchProtocol.Newznab));
+
+            // The sibling is untouched — the delete reached exactly its own source's keys.
+            Assert.NotNull(FindCapsEntry(db, siblingName, SearchProtocol.Torznab));
+            Assert.NotNull(FindCapsEntry(db, siblingName, SearchProtocol.Newznab));
+            return Task.CompletedTask;
+        });
+    }
+
+    /// <summary>
+    /// arb-x7w8.5 (architect M1): a RENAME is a delete of the old name as far as the caps store is
+    /// concerned. The old name's entries are removed before the update handler's refresh runs to
+    /// re-establish them under the new one.
+    ///
+    /// <para>The rename case is the one that bites hardest: unlike a delete, the source still exists,
+    /// so nothing else would ever clean up the entries keyed to the name it used to have — and that
+    /// name is now free for another source to take, along with the stale categories sitting under
+    /// it.</para>
+    ///
+    /// <para><b>Non-vacuity.</b> The old name's entries are seeded and asserted present before the
+    /// PUT, so their absence afterwards is the rename's doing rather than a state it inherited.</para>
+    ///
+    /// <para><b>The NEW name is seeded too, and asserted to SURVIVE.</b> Without that half, "the old
+    /// name's entries are gone" is satisfied equally by a handler that deleted every entry it could
+    /// reach — so this pins the delete to the name actually being vacated. Seeding it is also what
+    /// makes the assertion possible: this source points at an address that refuses, so the refresh
+    /// the handler runs after the rename writes nothing, and an entry expected to ARRIVE from that
+    /// refresh would never appear. That a successful refresh populates the new name is established
+    /// where it can be provoked — <c>CapsRefresherTests</c>, against a fake that answers.</para>
+    /// </summary>
+    [Fact]
+    public async Task Renaming_a_source_removes_the_old_names_cached_caps()
+    {
+        await SeedAdminKeyAsync();
+        using var client = CreateAdminClient();
+
+        var suffix = Guid.NewGuid().ToString("N");
+        var originalName = "Before rename " + suffix;
+        var renamedTo = "After rename " + suffix;
+
+        var created = await CreateSourceAsync(client, originalName, SecretApiKey);
+
+        await SeedCapsEntriesAsync(originalName, renamedTo);
+
+        await _factory.SeedAsync(db =>
+        {
+            // Non-vacuity: the old name's entries exist before the rename.
+            Assert.NotNull(FindCapsEntry(db, originalName, SearchProtocol.Torznab));
+            Assert.NotNull(FindCapsEntry(db, originalName, SearchProtocol.Newznab));
+            return Task.CompletedTask;
+        });
+
+        using var response = await client.PutAsJsonAsync($"{SourcesRoute}/{created.Id}", new
+        {
+            kind = created.Kind,
+            displayName = renamedTo,
+            baseUrl = created.BaseUrl,
+            enabled = true,
+        });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var updated = await response.Content.ReadFromJsonAsync<SourceResponse>();
+        Assert.Equal(renamedTo, updated!.DisplayName);
+
+        await _factory.SeedAsync(db =>
+        {
+            // Both of the OLD name's entries are gone, asserted per family.
+            Assert.Null(FindCapsEntry(db, originalName, SearchProtocol.Torznab));
+            Assert.Null(FindCapsEntry(db, originalName, SearchProtocol.Newznab));
+
+            // And the NEW name's entries survive: the delete was scoped to the vacated name, not a
+            // sweep of everything this source could be keyed under.
+            Assert.NotNull(FindCapsEntry(db, renamedTo, SearchProtocol.Torznab));
+            Assert.NotNull(FindCapsEntry(db, renamedTo, SearchProtocol.Newznab));
+            return Task.CompletedTask;
+        });
+    }
+
+    /// <summary>
+    /// Writes a last-known-good entry for each protocol family of each given source name, through
+    /// <see cref="CapsAggregator.CacheKey"/> — the only definition of the key convention, so a seeded
+    /// row is found by the same key the production writer would have used.
+    /// </summary>
+    private async Task SeedCapsEntriesAsync(params string[] sourceNames)
+    {
+        await _factory.SeedAsync(async db =>
+        {
+            foreach (var sourceName in sourceNames)
+            {
+                foreach (var protocol in CapsAggregator.AllProtocols)
+                {
+                    db.CapsCacheEntries.Add(new CapsCacheEntry
+                    {
+                        SourceName = CapsAggregator.CacheKey(sourceName, protocol),
+                        PayloadJson = """{"SupportedCategories":[5000],"SupportsTvSearch":true,"SupportsMovieSearch":false,"MaxPageSize":100}""",
+                        FetchedAt = DateTimeOffset.UtcNow,
+                        IsStale = false,
+                    });
+                }
+            }
+
+            await Task.CompletedTask;
+        });
+    }
+
+    private static CapsCacheEntry? FindCapsEntry(ArbitarrDbContext db, string sourceName, SearchProtocol protocol) =>
+        db.CapsCacheEntries.SingleOrDefault(e => e.SourceName == CapsAggregator.CacheKey(sourceName, protocol));
+
+    private static int CountCapsEntries(ArbitarrDbContext db, string sourceName) =>
+        CapsAggregator.AllProtocols.Count(p => FindCapsEntry(db, sourceName, p) is not null);
+
     [Fact]
     public async Task An_unknown_id_is_404_on_update_delete_and_test()
     {
@@ -731,7 +919,7 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
         {
             kind = "NzbHydra",
             displayName = "Nope",
-            baseUrl = "http://192.0.2.40:5076",
+            baseUrl = "http://127.0.0.1:40",
         });
         Assert.Equal(HttpStatusCode.NotFound, update.StatusCode);
 
@@ -782,7 +970,7 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
         {
             kind = wrongCasing,
             displayName = "Bad casing " + Guid.NewGuid().ToString("N"),
-            baseUrl = "http://192.0.2.32:5076",
+            baseUrl = "http://127.0.0.1:32",
         });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -862,7 +1050,10 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
         await SeedAdminKeyAsync();
         using var client = CreateAdminClient();
 
-        var created = await CreateSourceAsync(client, "Unreachable " + Guid.NewGuid().ToString("N"), SecretApiKey);
+        // Unroutable on purpose: this test's subject IS the unreachable outcome, so it must be
+        // provoked by an address that never answers rather than one that refuses.
+        var created = await CreateSourceAsync(
+            client, "Unreachable " + Guid.NewGuid().ToString("N"), SecretApiKey, UnroutableBaseUrl);
 
         using var response = await client.PostAsync($"{SourcesRoute}/{created.Id}/test", content: null);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -1094,8 +1285,10 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
         using var missing = await client.PostAsync($"{SourcesRoute}/999999/caps/refresh", content: null);
         Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
 
+        // Unroutable on purpose: "not refreshed" here must be the genuine fetch-failure path against
+        // an upstream that never answers, bounded by the refresher's per-source ceiling.
         var created = await CreateSourceAsync(
-            client, "Caps refresh probe " + Guid.NewGuid().ToString("N"), apiKey: null);
+            client, "Caps refresh probe " + Guid.NewGuid().ToString("N"), apiKey: null, UnroutableBaseUrl);
 
         using var response = await client.PostAsync($"{SourcesRoute}/{created.Id}/caps/refresh", content: null);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -1121,13 +1314,21 @@ public sealed class AdminSourceEndpointsTests : IClassFixture<ArbitarrWebApplica
         return client;
     }
 
-    private static async Task<SourceResponse> CreateSourceAsync(HttpClient client, string displayName, string? apiKey)
+    /// <param name="baseUrl">
+    /// Defaults to <see cref="RefusedBaseUrl"/>. Pass <see cref="UnroutableBaseUrl"/> only for a test
+    /// that genuinely needs a SLOW upstream — see those constants for why the default is the fast one.
+    /// </param>
+    private static async Task<SourceResponse> CreateSourceAsync(
+        HttpClient client,
+        string displayName,
+        string? apiKey,
+        string baseUrl = RefusedBaseUrl)
     {
         using var response = await client.PostAsJsonAsync(SourcesRoute, new
         {
             kind = "NzbHydra",
             displayName,
-            baseUrl = "http://192.0.2.30:5076",
+            baseUrl,
             apiKey,
             enabled = true,
         });

@@ -49,26 +49,59 @@ public sealed record CapsRefreshOutcome(string SourceName, SearchProtocol Protoc
 /// stored before in place. Throwing instead would make one unreachable indexer fail the operator's
 /// whole "add indexer" or background pass, which is the same failure mode the aggregator's
 /// last-known-good fallback exists to prevent — undone one layer up.</para>
+///
+/// <para><b>EVERY SOURCE IS BOUNDED BY <see cref="DefaultPerSourceCeiling"/>.</b> A refresh happens
+/// inline on the operator's create and update round trips, so an upstream that accepts a connection
+/// and then never answers would hold that HTTP request open for as long as the per-row
+/// <c>HttpClient.Timeout</c> allows — which is operator-configurable per source and therefore
+/// unbounded from here. The ceiling covers BOTH protocol fetches for one source together, so the
+/// cost of one source is bounded whatever its own timeout says, and a hit is reported as
+/// not-refreshed exactly like any other fetch failure. See <see cref="RefreshAsync"/> for why the
+/// ceiling is per source rather than per pass.</para>
 /// </summary>
 public sealed class CapsRefresher
 {
     /// <summary>
-    /// Every protocol family a refresh covers. See the type doc: refreshing one family only would
-    /// silently leave the other's stored entry stale behind a successful-looking refresh.
+    /// The default per-source ceiling: long enough for a healthy indexer on a slow LAN to answer
+    /// both its caps endpoints, short enough that an operator saving a form against a dead address
+    /// waits seconds rather than minutes. The same value and the same reasoning as
+    /// <see cref="SourceConnectivityProber.DefaultTimeout"/>, which bounds the other operator-facing
+    /// upstream call for the same reason.
     /// </summary>
-    private static readonly SearchProtocol[] AllProtocols =
-        [SearchProtocol.Torznab, SearchProtocol.Newznab];
+    public static readonly TimeSpan DefaultPerSourceCeiling = TimeSpan.FromSeconds(10);
 
     private readonly ICapsCacheStore _cacheStore;
+    private readonly TimeSpan _perSourceCeiling;
 
-    public CapsRefresher(ICapsCacheStore cacheStore)
+    /// <param name="perSourceCeiling">
+    /// Overrides <see cref="DefaultPerSourceCeiling"/>. A parameter rather than a constant so a test
+    /// can drive the give-up path in milliseconds instead of waiting out the real ceiling.
+    /// </param>
+    public CapsRefresher(ICapsCacheStore cacheStore, TimeSpan? perSourceCeiling = null)
     {
         _cacheStore = cacheStore ?? throw new ArgumentNullException(nameof(cacheStore));
+        _perSourceCeiling = perSourceCeiling ?? DefaultPerSourceCeiling;
     }
 
     /// <summary>
     /// Refreshes one source's stored caps for both protocol families, returning one outcome per
-    /// family in <see cref="AllProtocols"/> order.
+    /// family in <see cref="CapsAggregator.AllProtocols"/> order.
+    ///
+    /// <para><b>The ceiling is imposed here, once, spanning both fetches.</b> It is applied through a
+    /// cancellation token linked to the caller's — the precedent
+    /// <see cref="SourceConnectivityProber"/> sets, and for its reason: the adapter's
+    /// <c>HttpClient</c> is shared and per-source configured, so its <c>Timeout</c> is not this
+    /// type's to mutate. Per SOURCE rather than per protocol because the inline caller is waiting on
+    /// the whole call: two protocols each bounded separately would still let one source cost twice
+    /// the ceiling. Per source rather than per PASS because the background pass must still reach the
+    /// reachable indexers when an early one is down — a whole-pass budget would let one dead upstream
+    /// consume it and starve every source behind it.</para>
+    ///
+    /// <para>A ceiling hit is a not-refreshed outcome, never an exception, so the families it
+    /// pre-empts report false and their previously stored entries stand. Caller cancellation is
+    /// distinguished from the ceiling by the caller token's own state, exactly as the per-fetch catch
+    /// filter does — misreporting a stopping host as an unreachable indexer would show the operator
+    /// a failure that never happened.</para>
     /// </summary>
     public async Task<IReadOnlyList<CapsRefreshOutcome>> RefreshAsync(
         IUpstreamSource source,
@@ -76,11 +109,15 @@ public sealed class CapsRefresher
     {
         ArgumentNullException.ThrowIfNull(source);
 
-        var outcomes = new List<CapsRefreshOutcome>(AllProtocols.Length);
+        using var ceiling = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        ceiling.CancelAfter(_perSourceCeiling);
 
-        foreach (var protocol in AllProtocols)
+        var outcomes = new List<CapsRefreshOutcome>(CapsAggregator.AllProtocols.Count);
+
+        foreach (var protocol in CapsAggregator.AllProtocols)
         {
-            outcomes.Add(await RefreshOneAsync(source, protocol, cancellationToken).ConfigureAwait(false));
+            outcomes.Add(await RefreshOneAsync(source, protocol, ceiling.Token, cancellationToken)
+                .ConfigureAwait(false));
         }
 
         return outcomes;
@@ -89,7 +126,9 @@ public sealed class CapsRefresher
     /// <summary>
     /// Refreshes every given source's stored caps, for both protocol families. Sources are walked in
     /// order and one source's failure never stops the next — the background pass must still refresh
-    /// the reachable indexers when one is down, which is the case it exists for.
+    /// the reachable indexers when one is down, which is the case it exists for. Each source carries
+    /// its own ceiling (see <see cref="RefreshAsync"/>), so a pass over N sources is bounded even
+    /// when every one of them is a black hole.
     /// </summary>
     public async Task<IReadOnlyList<CapsRefreshOutcome>> RefreshAllAsync(
         IReadOnlyList<IUpstreamSource> sources,
@@ -97,7 +136,7 @@ public sealed class CapsRefresher
     {
         ArgumentNullException.ThrowIfNull(sources);
 
-        var outcomes = new List<CapsRefreshOutcome>(sources.Count * AllProtocols.Length);
+        var outcomes = new List<CapsRefreshOutcome>(sources.Count * CapsAggregator.AllProtocols.Count);
 
         foreach (var source in sources)
         {
@@ -114,24 +153,36 @@ public sealed class CapsRefresher
     /// The catch is broad because every adapter surfaces its failures as exceptions of its own
     /// choosing (an <c>HttpRequestException</c>, a timeout, a parse failure on a login page served
     /// where caps XML was expected), and this must treat all of them identically: do not write, say
-    /// the upstream did not answer. The one exception NOT swallowed is a cancellation of the
-    /// caller's own token — a stopping host or an aborted request is not an upstream failure, and
-    /// reporting it as one would show the operator a false "indexer unreachable".
+    /// the upstream did not answer. The ceiling firing arrives here as one more of those — an
+    /// <c>OperationCanceledException</c> on <paramref name="fetchToken"/> — and is deliberately
+    /// treated the same way, because from the store's point of view an upstream that answered too
+    /// late and one that did not answer are the same event: nothing to write.
+    ///
+    /// <para>The one exception NOT swallowed is a cancellation of the CALLER's own token, which is
+    /// why the two tokens are separate parameters. The filter tests
+    /// <paramref name="callerToken"/> and never <paramref name="fetchToken"/>: the latter is
+    /// cancelled by our own ceiling as well, so filtering on it would rethrow the ceiling as if the
+    /// host were stopping and turn a bounded give-up back into the unbounded failure this exists to
+    /// prevent. A stopping host or an aborted request is not an upstream failure, and reporting it
+    /// as one would show the operator a false "indexer unreachable".</para>
     /// </remarks>
+    /// <param name="fetchToken">The ceiling-linked token the upstream call and the store write run under.</param>
+    /// <param name="callerToken">The caller's own token — the sole basis for deciding a cancellation is theirs, not ours.</param>
     private async Task<CapsRefreshOutcome> RefreshOneAsync(
         IUpstreamSource source,
         SearchProtocol protocol,
-        CancellationToken cancellationToken)
+        CancellationToken fetchToken,
+        CancellationToken callerToken)
     {
         try
         {
-            var caps = await source.GetCapsAsync(protocol, cancellationToken).ConfigureAwait(false);
+            var caps = await source.GetCapsAsync(protocol, fetchToken).ConfigureAwait(false);
             await _cacheStore
-                .SaveAsync(CapsAggregator.CacheKey(source.Name, protocol), caps, cancellationToken)
+                .SaveAsync(CapsAggregator.CacheKey(source.Name, protocol), caps, fetchToken)
                 .ConfigureAwait(false);
             return new CapsRefreshOutcome(source.Name, protocol, Refreshed: true);
         }
-        catch (Exception) when (cancellationToken.IsCancellationRequested is false)
+        catch (Exception) when (callerToken.IsCancellationRequested is false)
         {
             return new CapsRefreshOutcome(source.Name, protocol, Refreshed: false);
         }

@@ -129,6 +129,21 @@ public sealed class MaintenanceHostedServiceTests : IDisposable
 
             return Task.CompletedTask;
         }
+
+        // Mirrors the real store: removes the several protocol keys the bare name expands into,
+        // never a prefix match, so a double is not kinder than the thing it stands in for.
+        public Task DeleteAsync(string sourceName, CancellationToken cancellationToken = default)
+        {
+            lock (_store)
+            {
+                foreach (var protocol in CapsAggregator.AllProtocols)
+                {
+                    _store.Remove(CapsAggregator.CacheKey(sourceName, protocol));
+                }
+            }
+
+            return Task.CompletedTask;
+        }
     }
 
     /// <summary>An upstream that answers caps and nothing else — the background pass calls no more.</summary>

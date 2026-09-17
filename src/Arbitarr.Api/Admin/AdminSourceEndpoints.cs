@@ -325,6 +325,7 @@ public static class AdminSourceEndpoints
         SourceRepository repository,
         ISourceRegistry registry,
         CapsRefresher refresher,
+        ICapsCacheStore capsCache,
         CancellationToken cancellationToken)
     {
         if (request is null)
@@ -372,6 +373,20 @@ public static class AdminSourceEndpoints
 
             var response = await ToResponseAsync(source, repository, cancellationToken);
 
+            // A RENAME ORPHANS THE OLD NAME'S CAPS ENTRIES (architect M1, ADR 0016). The cache key is
+            // the display name, so after a rename the old name's entries describe a source that no
+            // longer exists under it — and the next source created or renamed to that freed name
+            // would silently adopt them as its own last-known-good. Removed BEFORE the refresh
+            // below, so that refresh is what re-establishes the entries, under the new name.
+            //
+            // Ordinal, matching the key's own comparison: the store is keyed by the exact string, so
+            // a case-only rename really does move the entries to a different key and really does
+            // need the old ones removed.
+            if (!string.Equals(existing.DisplayName, source.DisplayName, StringComparison.Ordinal))
+            {
+                await capsCache.DeleteAsync(existing.DisplayName, cancellationToken);
+            }
+
             // arb-x7w8.5, same reasoning as the create path above, and needed for the same reason it
             // is there: an edit can change the base URL, the API path or the key, any of which makes
             // the stored caps describe an endpoint this row no longer points at. Discarded here for
@@ -386,12 +401,34 @@ public static class AdminSourceEndpoints
         }
     }
 
+    /// <summary>
+    /// Deletes the row and, with it, the stored caps entries that existed only to describe it
+    /// (architect M1, ADR 0016's set-membership rule).
+    ///
+    /// <para><b>The row is read BEFORE the delete, and only for its display name.</b> That name is
+    /// the cache key, so after the delete there is nothing left to derive it from — reading it
+    /// afterwards would find nothing and silently orphan both entries. The lookup is not a second
+    /// existence check: the repository's delete still answers that, and is still what decides
+    /// between 204 and 404.</para>
+    ///
+    /// <para>The caps delete runs only once the row is actually gone. Removing the entries first and
+    /// then failing to delete the row would leave a live source with no last-known-good to fall back
+    /// on — a working configuration made worse by a failed delete.</para>
+    /// </summary>
     private static async Task<IResult> DeleteSourceAsync(
         long id,
         SourceRepository repository,
+        ICapsCacheStore capsCache,
         CancellationToken cancellationToken)
     {
+        var existing = await repository.GetAsync(id, cancellationToken);
+
         var deleted = await repository.DeleteAsync(id, cancellationToken);
+
+        if (deleted && existing is not null)
+        {
+            await capsCache.DeleteAsync(existing.DisplayName, cancellationToken);
+        }
 
         return deleted
             ? Results.NoContent()
@@ -477,11 +514,30 @@ public static class AdminSourceEndpoints
     /// failure posture.
     ///
     /// <para><b>Matched out of the registry by <see cref="IUpstreamSource.Name"/>, which is the row's
-    /// display name</b> — the registry is the only thing that knows how to build an adapter from a
-    /// row (its kind mapping, its per-source HttpClient and its off-origin guard all live there), and
+    /// display name.</b> The registry is the only thing that knows how to build an adapter from a row
+    /// (its kind mapping, its per-source HttpClient and its off-origin guard all live there), and
     /// duplicating that construction here to get one adapter would mean a second place for those
-    /// guards to be forgotten. Display names are unique: <c>SourceRepository</c> rejects a colliding
-    /// one at both write paths, so this match cannot be ambiguous.</para>
+    /// guards to be forgotten.</para>
+    ///
+    /// <para><b>What makes the match SAFE is within-scope stability, not uniqueness.</b> Uniqueness
+    /// alone would be the wrong argument: it is a property of one instant, and the risk here is the
+    /// name changing between the row being read and the registry being resolved. It cannot. Both
+    /// happen inside a single request scope, the registry resolves once per scope, and the only
+    /// writers of a display name are these very handlers — so within one call there is no window in
+    /// which the row this refreshes could be renamed out from under the lookup.
+    ///
+    /// The failure mode if that ever stopped holding is closed, which is why a name match is
+    /// tolerable at all: a stale or missing match finds no adapter, refreshes nothing, and reports
+    /// <c>refreshed: false</c>. It cannot refresh the WRONG source's caps, because the name it
+    /// searches for is the one just written for this row. The same closure covers the deliberate
+    /// comparison mismatch with <c>EnsureDisplayNameIsUniqueAsync</c>, which rejects collisions
+    /// case-INSENSITIVELY while this matches Ordinal: the stricter comparison can only fail to find
+    /// an adapter that a looser one would have found, never find a different one.</para>
+    ///
+    /// <para>Re-keying this to the source id — which would remove the question rather than argue it —
+    /// is tracked as <b>arb-kfe9</b>. It is not done here because the id is not currently on
+    /// <see cref="IUpstreamSource"/>, so it would change the registry contract and every adapter with
+    /// it, well beyond this bead.</para>
     ///
     /// <para><b>A source that resolves to no adapter refreshes nothing and does not fail.</b> That
     /// covers a disabled row, an unknown kind, and a row the registry skipped for an off-origin API

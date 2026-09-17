@@ -210,5 +210,8 @@ public sealed class XmlDocumentRenderingTests : IDisposable
 
         public Task SaveAsync(string sourceName, SourceCaps caps, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
+
+        public Task DeleteAsync(string sourceName, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
     }
 }

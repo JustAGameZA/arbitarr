@@ -187,6 +187,20 @@ public sealed class CapsAggregator
     public static string CacheKey(string sourceName, SearchProtocol protocol) =>
         $"{sourceName}#{protocol}";
 
+    /// <summary>
+    /// Every protocol family a source's stored caps are keyed under — that is, exactly the set of
+    /// keys one source name expands into through <see cref="CacheKey"/>.
+    ///
+    /// <para>Lives beside <see cref="CacheKey"/> and is public for the same reason it is: the key
+    /// convention and the set of protocols it spans are one fact, and a caller that has to enumerate
+    /// a source's keys (<see cref="CapsRefresher"/> writing them, <see cref="ICapsCacheStore"/>'s
+    /// delete removing them) must not carry its own copy of the list. A copy that fell behind a
+    /// third protocol family would leave that family's entry written but never removed — the stale
+    /// row a later same-named source would silently adopt.</para>
+    /// </summary>
+    public static readonly IReadOnlyList<SearchProtocol> AllProtocols =
+        [SearchProtocol.Torznab, SearchProtocol.Newznab];
+
     private async Task<SourceCaps?> FetchWithFallbackAsync(
         IUpstreamSource source,
         SearchProtocol protocol,
