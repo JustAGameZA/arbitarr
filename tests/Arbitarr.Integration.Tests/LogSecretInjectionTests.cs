@@ -112,7 +112,7 @@ public sealed class LogSecretInjectionTests : IAsyncLifetime
         await client.GetAsync($"/torznab/api?t=notarealmode&apikey={Uri.EscapeDataString(ApiKey)}");
 
         var store = _factory.Services.GetRequiredService<LogStore>();
-        await FlushLogSinkAsync();
+        await _factory.Services.FlushLogSinkAsync();
 
         var page = await store.ReadAsync(level: null, logger: null, page: 1, pageSize: LogStore.MaxPageSize);
 
@@ -150,7 +150,7 @@ public sealed class LogSecretInjectionTests : IAsyncLifetime
             "upstream request failed: http://192.0.2.10:5076/api?t=search&apikey={0}",
             ApiKey);
 
-        await FlushLogSinkAsync();
+        await _factory.Services.FlushLogSinkAsync();
 
         var page = await store.ReadAsync(level: null, logger: null, page: 1, pageSize: LogStore.MaxPageSize);
         var leaky = page.Entries.Where(e => e.Logger.Contains("LeakySite", StringComparison.Ordinal)).ToList();
@@ -162,14 +162,4 @@ public sealed class LogSecretInjectionTests : IAsyncLifetime
             Assert.Contains(LogMessageCleanser.Replacement, entry.Message, StringComparison.Ordinal);
         }
     }
-
-    /// <summary>
-    /// Waits for the sink's background pump to drain. The provider batches on a 500 ms interval by
-    /// design (AC5 — it must never write on the caller's thread), so a read taken immediately after
-    /// a request can legitimately see nothing yet. Waiting slightly longer than the interval is what
-    /// makes the assertion above meaningful rather than vacuously passing on an empty table — which
-    /// is also why the tests assert the table is non-empty where they can.
-    /// </summary>
-    private static async Task FlushLogSinkAsync() =>
-        await Task.Delay(SqliteLoggerProvider.FlushInterval + TimeSpan.FromMilliseconds(750));
 }

@@ -4,6 +4,7 @@ using Arbitarr.Core.Settings;
 using Arbitarr.Data.Entities;
 using Arbitarr.Data.Logging;
 using Arbitarr.Data.Media;
+using Arbitarr.Integration.Tests.TestSupport;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -115,7 +116,7 @@ public sealed class ArrQueueKeyIsScrubbedFromLogsTests
         string clientCategory,
         string apiKey)
     {
-        await FlushLogSinkAsync();
+        await factory.Services.FlushLogSinkAsync();
 
         var store = factory.Services.GetRequiredService<LogStore>();
         var page = await store.ReadAsync(level: null, logger: null, page: 1, pageSize: LogStore.MaxPageSize);
@@ -178,13 +179,4 @@ public sealed class ArrQueueKeyIsScrubbedFromLogsTests
             }
         });
 
-    /// <summary>
-    /// Waits for the sink's background pump to drain. The provider batches on a 500 ms interval by
-    /// design (it must never write on the caller's thread), so a read taken immediately after a log
-    /// call can legitimately see nothing yet. Waiting slightly longer than the interval is what makes
-    /// the assertions above meaningful rather than vacuously passing on an empty table — which is
-    /// also why they assert non-emptiness explicitly.
-    /// </summary>
-    private static async Task FlushLogSinkAsync() =>
-        await Task.Delay(SqliteLoggerProvider.FlushInterval + TimeSpan.FromMilliseconds(750));
 }
