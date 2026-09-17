@@ -210,6 +210,56 @@ any one piece breaks the others silently:
 
 ---
 
+## Disclosure
+
+`src/Arbitarr.Web/src/components/Disclosure/Disclosure.tsx` — a collapsible region, wrapping a
+native `<details>`/`<summary>` pair (arb-h9gd). First caller: the Dashboard's *Effective
+configuration*.
+
+**Native, not hand-rolled, and that is the whole component.** `<details>` supplies the disclosure
+contract correctly and for free: open/closed state, the expanded state exposed to assistive
+technology, the summary-to-region association, `Enter`/`Space` activation, and removal of collapsed
+content from both the layout and the accessibility tree. A `useState` + `hidden` expander has to
+re-derive every one of those by hand — which is the retrofit #466 (arb-sggv) is doing for the
+expanders that predate this component. Do not reimplement it, and do not add
+`aria-expanded`/`aria-controls` beside the native semantics: a second, hand-maintained source of
+truth drifts from the first the moment someone changes one without the other.
+
+**A disclosure carries no heading, at any level.** `PageHeader` owns the single `<h1>` per route and
+`.panelHeading` owns the `<h2>` per panel. Promoting the summary to a heading is the obvious way to
+make a collapsed region "look like the panel it replaced", and it reinstates exactly the DOM weight
+that collapsing it removed — `Disclosure.test.tsx` asserts the component contributes none, the same
+guard `PageToolbar` carries for the same reason.
+
+**Collapsed by default.** `defaultOpen` exists, but the only reason to reach for this primitive is
+that the content is secondary to what surrounds it, and a disclosure that starts open demotes
+nothing.
+
+**Use it to demote, not to relocate.** When a panel's content is reference material rather than
+signal, collapsing it in place is preferred to moving it to another surface: the query feeding it
+usually cannot move with it. The Dashboard is the worked example — `SourcesTable`'s empty state
+reads `nzbHydraConfigured` from the effective-config query, so relocating that panel to System would
+have moved the rendering and left the fetch behind.
+
+**Keep the caller's `QueryState` inside the disclosure**, not above it. Hoisting it puts the pending
+and error branches on the always-visible summary row, which re-promotes the thing being demoted: a
+failing fetch would announce itself from the landing page about rows nobody asked to see.
+
+**The summary keeps its native marker.** `display: block` or `list-style: none` on a `<summary>`
+removes the browser's disclosure triangle, which here is the only cue that the row expands — the
+same rule the hidden-scrollbar note above states: remove an affordance only if you supply a
+replacement.
+
+**Testing it: do not assert visibility.** jsdom implements none of `<details>`'s hiding — no UA rule
+for the closed state, so collapsed content computes `display: block`, `toBeVisible()` answers true
+for it, and `getByRole` reaches controls inside a closed `<details>`. A "the content is hidden"
+assertion passes identically whether or not anything collapses, so it records a guarantee nothing is
+checking. Assert the `open` attribute and its toggling, which jsdom does model, and scope the
+content query to the `<details>` element so an empty disclosure beside an untouched panel cannot
+satisfy it.
+
+---
+
 ## State and storage
 
 **The admin key lives in a session-only Zustand store.** Never `localStorage`, never

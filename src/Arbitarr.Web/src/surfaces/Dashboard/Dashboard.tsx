@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 
+import { Disclosure } from '../../components/Disclosure';
 import { PageHeader } from '../../components/shell/PageHeader';
 import { QueryState } from '../QueryState';
 import type { EffectiveConfigResponse, StatusResponse } from '../../api/types';
@@ -125,8 +126,13 @@ function WorkerHealth({ status }: { status: StatusResponse }) {
  * "nothing configured" and "configured, but no search has run yet". Those are
  * different operator situations (one needs setup, the other just needs to
  * wait), so the empty state reads `nzbHydraConfigured` from the effective-config
- * query -- already fetched for the Effective configuration panel below -- to
- * tell them apart. `nzbHydraConfigured === undefined` while that query is
+ * query -- already fetched for the Effective configuration disclosure below --
+ * to tell them apart. That query is issued by this page unconditionally, and
+ * NOT by the disclosure: arb-h9gd collapsed those rows behind a `<details>`, so
+ * nothing about whether the operator opens it can reach this branch. If that
+ * ever becomes a lazy fetch, this empty state loses the fact it distinguishes
+ * on and silently falls back to the neutral wording below.
+ * `nzbHydraConfigured === undefined` while that query is
  * still pending falls back to the neutral wording rather than asserting either
  * state before the fact is known.
  *
@@ -309,6 +315,10 @@ function ConfigFacts({ config }: { config: EffectiveConfigResponse }) {
 /**
  * The Dashboard (AC7): status, recent searches and effective config, read-only.
  *
+ * Two top-level panels, not three (arb-h9gd): effective config is collapsed
+ * behind a disclosure. All THREE queries still run on mount regardless -- see
+ * `SourcesTable`'s doc for why the third one cannot become conditional.
+ *
  * Requires NO admin key -- all three endpoints are PublicRead and none sits
  * under /api/admin/, so apiFetch's path-prefix rule attaches no header. The
  * corresponding test asserts the header's ABSENCE, which is the inverse of the
@@ -383,14 +393,36 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <section className={styles.panel}>
-        <h2 className={styles.panelHeading}>Effective configuration</h2>
-        <div className={styles.panelBody}>
-          <QueryState isPending={config.isPending} error={config.error} data={config.data}>
-            {(data) => <ConfigFacts config={data} />}
-          </QueryState>
-        </div>
-      </section>
+      {/*
+        arb-h9gd. Collapsed, and a `<details>` rather than a third `.panel`.
+
+        The bead: three equally-weighted panels gave nine lines of static
+        configuration the same prominence as indexer health, so nothing on the
+        landing page said what to look at first. These rows change only when an
+        operator changes a setting — they are reference material consulted
+        deliberately, not a signal worth scanning — so they are demoted here
+        while Status and Recent searches keep their weight.
+
+        DEMOTED, NOT MOVED. Relocating this to System (beside its staleness
+        envelope, which derives from the same values) was the alternative and
+        was rejected: `SourcesTable`'s empty state reads `nzbHydraConfigured`
+        from this very query, so relocating the panel would move the rendering
+        and leave the query here regardless — two surfaces to reason about
+        instead of one, for no reduction in what the Dashboard fetches.
+
+        The QueryState stays INSIDE the disclosure, not outside it. Hoisting it
+        would put "Loading…" and the error branch on the always-visible row,
+        which would re-promote exactly the thing being demoted — a failing
+        config fetch would shout from the landing page about rows nobody had
+        asked to see. Collapsed, a failure is found by the operator who opens
+        it, and the empty state above still reports the same query's outcome in
+        the terms that actually matter to them.
+      */}
+      <Disclosure summary="Effective configuration">
+        <QueryState isPending={config.isPending} error={config.error} data={config.data}>
+          {(data) => <ConfigFacts config={data} />}
+        </QueryState>
+      </Disclosure>
     </>
   );
 }
