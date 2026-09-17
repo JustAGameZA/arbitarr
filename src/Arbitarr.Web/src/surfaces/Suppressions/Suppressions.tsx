@@ -51,10 +51,14 @@ function SuppressionsTable({ entries }: { entries: SuppressionViewEntry[] }) {
             <tr key={`${entry.occurredAt}:${entry.releaseIdentifier}:${index}`}>
               <td>{formatTimestamp(entry.occurredAt)}</td>
               {/* KNOWN BACKEND GAP: this is the raw upstream identifier the
-                  audit log stores (Candidate.Guid), never a release title,
-                  and the explanation lookup this surface used to offer here is
-                  keyed on ProxyGuid -- a different value this row does not
-                  carry (see queries.ts's history for the full chain). Every
+                  audit log stores (Candidate.Guid), never a release title, and
+                  no lookup can resolve it to one. The chain: (1) the
+                  explanation endpoint keys on ProxyGuid; (2) ProxyGuid is an
+                  HMAC over the release identity (source name plus candidate
+                  guid), computed with a per-instance secret that is never
+                  served (SEC-L2), so a client cannot compute it either; (3)
+                  the audit row keeps only the candidate guid and drops the
+                  source name, so even the HMAC's input is missing here. Every
                   such lookup would 404, so no "Show titles" control is
                   offered from this column; closing that gap needs a schema
                   change under src/Arbitarr.Api/ and src/Arbitarr.Data/ plus
