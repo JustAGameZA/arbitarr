@@ -1,9 +1,5 @@
 /* Rules-local layout. Colour comes from var(--token) only (AC3). */
 
-.writeError {
-  margin-bottom: 12px;
-}
-
 /* Patterns are regexes: monospace, and they must not reflow mid-token. */
 .pattern {
   font-family: ui-monospace, 'Cascadia Mono', 'Consolas', monospace;
@@ -13,8 +9,26 @@
 
 .rowActions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
-  white-space: nowrap;
+  align-items: center;
+}
+
+.confirm {
+  font-size: 12px;
+  color: var(--fg-primary);
+}
+
+/*
+ * A delete refusal, shown in the row of the rule it refused. Constrained so a
+ * long server message wraps inside the actions cell instead of stretching the
+ * column. Colour comes from surface.module.css's .error token, matching
+ * ApiKeys's .rowError.
+ */
+.rowError {
+  margin: 6px 0 0;
+  font-size: 12px;
+  max-width: 44ch;
 }
 
 .verdict {
