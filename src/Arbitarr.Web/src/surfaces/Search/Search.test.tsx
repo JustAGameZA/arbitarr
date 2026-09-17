@@ -143,23 +143,45 @@ describe('Search', () => {
   });
 
   describe('size rendering (arb-i3v7: binary units via the shared formatBytes)', () => {
-    it('renders a zero size as "0 B", not the absence dash', async () => {
-      const user = userEvent.setup();
-      mockApi({
-        '/api/admin/search': {
-          body: {
-            ...response,
-            releases: [{ ...response.releases[0], size: 0 }],
+    // TorznabFeedParser leaves `size` at its 0 default when neither the
+    // torznab `size` attribute nor the `<size>` element parses, so a 0 on this
+    // wire means "unknown", not "a zero-byte release" -- unlike Library's
+    // sizes, which are real measurements and render "0 B" as a real 0. A
+    // negative size is included alongside 0 since AdHocSearchEndpoint's
+    // non-nullable `size: number` cannot itself distinguish "unknown" from
+    // "impossible"; both must render as absent here.
+    it.each([0, -1])(
+      'renders a non-positive size (%d) as the absence dash, not "0 B"',
+      async (size) => {
+        const user = userEvent.setup();
+        mockApi({
+          '/api/admin/search': {
+            body: {
+              ...response,
+              releases: [
+                { ...response.releases[0], size, guid: 'g-unknown-size' },
+                // Positive control in the same render: a real positive size
+                // still gets its unit label, so the em dash above cannot pass
+                // merely because the table rendered nothing.
+                {
+                  ...response.releases[0],
+                  size: 2048,
+                  guid: 'g-known-size',
+                  title: 'Known.Size.Release',
+                },
+              ],
+            },
           },
-        },
-      });
-      renderSurface(<SearchPage />);
+        });
+        renderSurface(<SearchPage />);
 
-      await runSearch(user);
+        await runSearch(user);
 
-      expect(await screen.findByText('Some.Series.S01E02.1080p')).toBeInTheDocument();
-      expect(screen.getByText('0 B')).toBeInTheDocument();
-    });
+        expect(await screen.findByText('Some.Series.S01E02.1080p')).toBeInTheDocument();
+        expect(screen.getByText('—')).toBeInTheDocument();
+        expect(screen.getByText('2.0 KiB')).toBeInTheDocument();
+      },
+    );
 
     it('renders the em dash only for a genuinely absent size', async () => {
       const user = userEvent.setup();

@@ -418,7 +418,17 @@ function Results({
               <tr key={release.guid}>
                 <td>{release.title}</td>
                 <td>{release.sourceName}</td>
-                <td>{formatBytes(release.size)}</td>
+                {/*
+                 * TorznabFeedParser initialises `size` to 0 and leaves it there
+                 * when neither the torznab `size` attribute nor the `<size>`
+                 * element parses -- so on this wire 0 means "unknown", not "a
+                 * zero-byte release". AdHocSearchEndpoint projects that 0
+                 * straight through as a non-nullable number, so the mapping to
+                 * absence has to happen here rather than by widening the DTO
+                 * (tracked separately). formatBytes itself must stay untouched:
+                 * for Library a real 0 is a real 0.
+                 */}
+                <td>{formatBytes(release.size > 0 ? release.size : null)}</td>
                 <td>{release.category.join(', ')}</td>
                 <td>{new Date(release.pubDate).toLocaleString()}</td>
                 <td>
