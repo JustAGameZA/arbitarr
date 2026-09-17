@@ -90,7 +90,21 @@ export function formatCacheAge(value: string | null): string {
   return `${Math.floor(total / 3600)}h ${Math.floor((total % 3600) / 60)}m`;
 }
 
-function Provenance({ provenance }: { provenance: AdHocSearchProvenance }) {
+/**
+ * @param failuresNamedBelow Suppresses the two failure chips because the
+ * no-source-answered empty state directly beneath already names the SAME
+ * sources. Only the chips are suppressed, never the underlying lists and never
+ * the rate-limit chip, whose behaviour and copy are unchanged in every case.
+ * Without this the operator reads each name twice, one line apart, and a test
+ * asking which element names a source gets two answers.
+ */
+function Provenance({
+  provenance,
+  failuresNamedBelow = false,
+}: {
+  provenance: AdHocSearchProvenance;
+  failuresNamedBelow?: boolean;
+}) {
   // cacheBand arrives as a NUMBER (a plain C# enum under the Web defaults),
   // unlike aiVerdict, which the endpoint projects via ToString() and which
   // therefore arrives as a name. The asymmetry is the server's.
@@ -108,6 +122,22 @@ function Provenance({ provenance }: { provenance: AdHocSearchProvenance }) {
         <span className={styles.error}>
           Rate-limited: {provenance.rateLimitedSources.join(', ')}
         </span>
+      )}
+      {/*
+       * arb-cy1y: the two failure lists ride the same strip as the rate-limit
+       * chip, so a PARTIAL degradation -- some sources answered, some did not --
+       * is visible beside the releases that did arrive rather than only in the
+       * all-down empty state below. "Did not answer in time" rather than "down"
+       * because the whole-fan-out ceiling names healthy-but-slow sources here
+       * too; asserting they are down would be a claim this list cannot support.
+       */}
+      {!failuresNamedBelow && provenance.timedOutSources.length > 0 && (
+        <span className={styles.error}>
+          Did not answer in time: {provenance.timedOutSources.join(', ')}
+        </span>
+      )}
+      {!failuresNamedBelow && provenance.failedSources.length > 0 && (
+        <span className={styles.error}>Failed: {provenance.failedSources.join(', ')}</span>
       )}
     </p>
   );
@@ -168,6 +198,40 @@ function Explanation({
   );
 }
 
+/**
+ * arb-cy1y: the empty state for a search where nothing answered, as opposed to
+ * one that genuinely matched nothing.
+ *
+ * The distinction is not cosmetic. /torznab/api answers the IDENTICAL merge with
+ * a 900/5xx infrastructure element (arb-nus0), so before this the dashboard was
+ * the only surface telling the operator to broaden a query while every one of
+ * their indexers was silent -- advice that cannot work and hides the outage.
+ *
+ * The two lists are named separately rather than merged into one sentence
+ * because they answer different questions: a timeout says nothing about whether
+ * the source is healthy (the whole-fan-out ceiling names healthy-but-slow
+ * sources in it), while a failure is a fault worth chasing. Hence "did not
+ * answer in time", never "is down".
+ */
+function NoSourceAnswered({ provenance }: { provenance: AdHocSearchProvenance }) {
+  return (
+    <>
+      <p className={styles.empty}>
+        No source answered this search, so there is nothing to show. This is not an empty result:
+        broadening the query will not help until the sources below respond.
+      </p>
+      {provenance.timedOutSources.length > 0 && (
+        <p className={styles.empty}>
+          Did not answer in time: {provenance.timedOutSources.join(', ')}.
+        </p>
+      )}
+      {provenance.failedSources.length > 0 && (
+        <p className={styles.empty}>Failed: {provenance.failedSources.join(', ')}.</p>
+      )}
+    </>
+  );
+}
+
 function Results({
   response,
   selectedGuid,
@@ -182,10 +246,22 @@ function Results({
   const explanationId = useId();
 
   if (response.releases.length === 0) {
+    // The "nothing answered" test is zero releases AND a non-empty failure list,
+    // which is exactly the condition SearchEndpoint.cs escalates on: a merge
+    // where some sources failed but others returned releases is a PARTIAL
+    // degradation, and that case keeps the releases plus the provenance chips.
+    const noSourceAnswered =
+      response.provenance.timedOutSources.length > 0 ||
+      response.provenance.failedSources.length > 0;
+
     return (
       <>
-        <Provenance provenance={response.provenance} />
-        <p className={styles.empty}>No releases matched. Try a broader query or different search terms.</p>
+        <Provenance provenance={response.provenance} failuresNamedBelow={noSourceAnswered} />
+        {noSourceAnswered ? (
+          <NoSourceAnswered provenance={response.provenance} />
+        ) : (
+          <p className={styles.empty}>No releases matched. Try a broader query or different search terms.</p>
+        )}
       </>
     );
   }

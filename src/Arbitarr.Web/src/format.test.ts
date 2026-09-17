@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatDurationSeconds } from './format';
+import { formatBytes, formatDurationSeconds } from './format';
 
 describe('formatDurationSeconds', () => {
   it('formats whole seconds as hh:mm:ss, matching .NET TimeSpan.ToString()', () => {
@@ -44,5 +44,54 @@ describe('formatDurationSeconds', () => {
     // The character is U+2014 (em-dash), matching formatRate's convention -- a
     // hyphen or en-dash would read identically in review and fail here.
     expect(formatDurationSeconds(Number.NaN)).toBe('—');
+  });
+});
+
+describe('formatBytes', () => {
+  it('renders whole bytes below the KiB boundary', () => {
+    expect(formatBytes(0)).toBe('0 B');
+    expect(formatBytes(1023)).toBe('1023 B');
+  });
+
+  it('renders one decimal place at each binary unit boundary', () => {
+    expect(formatBytes(1024)).toBe('1.0 KiB');
+    expect(formatBytes(1536)).toBe('1.5 KiB');
+    expect(formatBytes(1024 ** 2)).toBe('1.0 MiB');
+    expect(formatBytes(1024 ** 3)).toBe('1.0 GiB');
+    expect(formatBytes(1024 ** 4)).toBe('1.0 TiB');
+  });
+
+  it('stays in TiB beyond the largest unit rather than inventing a bigger one', () => {
+    expect(formatBytes(1024 ** 4 * 5)).toBe('5.0 TiB');
+    // One unit short of the next multiple of the top unit: still rounds up
+    // within TiB rather than carrying to a unit that does not exist.
+    expect(formatBytes(1024 ** 5 - 1)).toBe('1024.0 TiB');
+  });
+
+  it('carries into the next unit when rounding reaches 1024', () => {
+    expect(formatBytes(1024 ** 2 - 1)).toBe('1.0 MiB');
+    expect(formatBytes(1024 ** 3 - 1)).toBe('1.0 GiB');
+    expect(formatBytes(1024 ** 4 - 1)).toBe('1.0 TiB');
+    expect(formatBytes(1023.6)).toBe('1.0 KiB');
+  });
+
+  // Same sentinel as formatRate and formatDurationSeconds above: a plausible
+  // "0 B" is worse than admitting the byte count is not actually known.
+  it('renders the em-dash for every absence case rather than a fabricated size', () => {
+    expect(formatBytes(null)).toBe('—');
+    expect(formatBytes(undefined)).toBe('—');
+    expect(formatBytes(Number.NaN)).toBe('—');
+    expect(formatBytes(-1)).toBe('—');
+
+    // The character is U+2014 (em-dash), matching the file's other absence
+    // sentinels -- a hyphen or en-dash would read identically in review.
+    // Checked by code point, not string equality, so a hyphen or en-dash
+    // that happened to satisfy toBe above would still fail here.
+    expect(formatBytes(null).codePointAt(0)).toBe(0x2014);
+  });
+
+  it('does not depend on locale-sensitive number formatting', () => {
+    // toFixed is locale-independent (always uses '.'), unlike toLocaleString.
+    expect(formatBytes(1536)).not.toContain(',');
   });
 });
