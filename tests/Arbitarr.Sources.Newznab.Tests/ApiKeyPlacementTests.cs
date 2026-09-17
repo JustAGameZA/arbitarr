@@ -8,8 +8,9 @@ namespace Arbitarr.Sources.Newznab.Tests;
 /// <summary>
 /// The api-key must reach upstream in the QUERY STRING and nowhere else — see
 /// <c>NewznabSource.AppendApiKey</c> for why (the framework's URI redaction collapses the query
-/// string but prints every path segment in full, and LogMessageCleanser scrubs query strings only,
-/// so a key in the path lands in the persistent log store verbatim).
+/// string but prints every path segment in full, and LogMessageCleanser scrubs credentials in
+/// query strings, so a key in the path is covered by neither the framework redaction nor the
+/// cleanser and lands in the persistent log store verbatim).
 ///
 /// <para><b>Every assertion here goes through <see cref="AssertKeyOnlyInQueryString"/>, and the
 /// positive controls below run that same helper against deliberately mis-built requests.</b> This
