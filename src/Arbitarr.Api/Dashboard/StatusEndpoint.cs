@@ -14,8 +14,14 @@ namespace Arbitarr.Api.Dashboard;
 /// <param name="SourceName">Name of the upstream source.</param>
 /// <param name="State">Circuit breaker state: "closed", "open", or "half-open".</param>
 /// <param name="ConsecutiveFailures">Consecutive failure count since the breaker last closed.</param>
-/// <param name="LastError">Most recent error message, if any.</param>
-public sealed record SourceStatus(string SourceName, string State, int ConsecutiveFailures, string? LastError);
+/// <param name="LastOutcome">
+/// arb-mhd2: WHY the most recent failure happened, as one of the closed kebab-case names
+/// <c>StatusEndpoint.ToOutcomeLabel</c> emits — "none", "upstream-error", "unreachable", "timeout",
+/// "auth-rejected", "internal-error", "unknown". REPLACES the free-text <c>LastError</c> this record
+/// used to carry; the detail moved to the admin-gated <c>GET /api/admin/status/diagnostics</c>. See
+/// <see cref="StatusEndpoint"/>'s remarks for why the text could not stay on this route.
+/// </param>
+public sealed record SourceStatus(string SourceName, string State, int ConsecutiveFailures, string LastOutcome);
 
 /// <summary>
 /// Proactive-refresh worker health, as reported by <c>/api/status</c> (M7-7, R20) — a direct
@@ -28,7 +34,12 @@ public sealed record SourceStatus(string SourceName, string State, int Consecuti
 /// <param name="LastCycleCandidates">How many refresh candidates the most recent cycle selected.</param>
 /// <param name="LastCycleRefreshed">How many of those candidates were successfully refreshed.</param>
 /// <param name="LastCycleFailed">How many of those candidates failed to refresh.</param>
-/// <param name="LastError">The most recent cycle-level failure's message, or null.</param>
+/// <param name="LastOutcome">
+/// arb-mhd2: WHY the most recent cycle faulted, as one of the same closed kebab-case names
+/// <see cref="SourceStatus.LastOutcome"/> uses. REPLACES the free-text <c>LastError</c> this record
+/// used to carry, for the same reason and in the same release; the message moved to the admin-gated
+/// <c>GET /api/admin/status/diagnostics</c>.
+/// </param>
 /// <param name="ConsecutiveFailedCycles">How many cycles have faulted in a row.</param>
 public sealed record WorkerHealthResponse(
     bool Enabled,
@@ -37,7 +48,7 @@ public sealed record WorkerHealthResponse(
     int LastCycleCandidates,
     int LastCycleRefreshed,
     int LastCycleFailed,
-    string? LastError,
+    string LastOutcome,
     int ConsecutiveFailedCycles);
 
 /// <summary>
@@ -58,6 +69,15 @@ public sealed record WorkerHealthResponse(
 /// Nothing secret-shaped belongs here: <c>/api/status</c> is <c>RouteClassification.PublicRead</c>
 /// and un-gated, so <see cref="Summary"/> is built from configured names and status codes only,
 /// never from upstream-supplied text.
+///
+/// <para><b>arb-mhd2: <c>LastError</c> HAS NOW CONVERGED ON THIS RULE, on both fields that carried
+/// it.</b> When this block was written, <c>SourceStatus.LastError</c> and the worker's own
+/// <c>LastError</c> were the standing exceptions to it: free text on this same un-gated body,
+/// sanitised but still built partly from upstream material (<c>OllamaRequestException.BodyExcerpt</c>,
+/// admitted by arb-1rr). Both now publish a closed <c>SourceStatusOutcome</c> name instead, and the
+/// text — excerpt included — moved to the admin-gated <c>GET /api/admin/status/diagnostics</c>. So
+/// the rule this paragraph states about health items is now true of EVERY field on this response,
+/// with no exception left to remember.</para>
 /// </summary>
 /// <param name="Key">Stable machine-readable identifier for the kind of condition, e.g. "download-refused-redirect".</param>
 /// <param name="Severity">How bad it is. "blocking" — the only value at present — means the affected function cannot work at all until an operator acts.</param>
@@ -144,8 +164,10 @@ public static class StatusEndpoint
     ///
     /// <para><b>The summary is built from the CONFIGURED SOURCE NAME and this fixed wording alone.</b>
     /// <c>/api/status</c> is un-gated (see <see cref="HealthItem"/>), so nothing upstream-supplied may
-    /// reach it. <c>LastOutcome</c>, the backoff level, <c>DisabledUntil</c> and the budget tallies
-    /// are all deliberately absent from this route and live only behind the admin gate. The NAME is
+    /// reach it. The BACKOFF row's <c>LastOutcome</c> (a <c>SourceCallOutcome</c>, and a different
+    /// field from <see cref="SourceStatus.LastOutcome"/> added by arb-mhd2), the backoff level,
+    /// <c>DisabledUntil</c> and the budget tallies are all deliberately absent from this route and
+    /// live only behind the admin gate. The NAME is
     /// carryable only because this response already publishes it as <c>SourceStatus.SourceName</c>,
     /// a premise <see cref="PermanentlyDisabledItemsAsync"/> enforces rather than assumes by keeping
     /// only states whose name is in that published set (sec-511).</para>
@@ -178,7 +200,10 @@ public static class StatusEndpoint
                 SourceName: kvp.Key,
                 State: ToStateLabel(kvp.Value.State),
                 ConsecutiveFailures: kvp.Value.ConsecutiveFailures,
-                LastError: kvp.Value.LastError))
+                // arb-mhd2: the closed outcome, never kvp.Value.LastError. The snapshot still
+                // CARRIES the text — it is what the admin diagnostics route serves — so this
+                // projection is the only thing keeping it off an un-gated body.
+                LastOutcome: ToOutcomeLabel(kvp.Value.LastOutcome)))
             .OrderBy(s => s.SourceName, StringComparer.Ordinal)
             .ToArray();
 
@@ -190,7 +215,8 @@ public static class StatusEndpoint
             LastCycleCandidates: health.LastCycleCandidates,
             LastCycleRefreshed: health.LastCycleRefreshed,
             LastCycleFailed: health.LastCycleFailed,
-            LastError: health.LastError,
+            // arb-mhd2: as above, the closed outcome rather than health.LastError.
+            LastOutcome: ToOutcomeLabel(health.LastOutcome),
             ConsecutiveFailedCycles: health.ConsecutiveFailedCycles);
 
         // arb-ln0: the tracker's snapshot is already ordered and already empty when nothing is
@@ -288,6 +314,33 @@ public static class StatusEndpoint
             .OrderBy(item => item.SourceName, StringComparer.Ordinal)
             .ToArray();
     }
+
+    /// <summary>
+    /// arb-mhd2: the closed kebab-case wire name for a <see cref="SourceStatusOutcome"/>, and the
+    /// ONLY thing this route says about why something failed.
+    ///
+    /// <para><b>Exhaustive by construction, like <see cref="ToStateLabel"/> beside it.</b> Every
+    /// member is listed explicitly and the default arm THROWS rather than falling back to a string.
+    /// A future member added to the enum and not to this table is then a loud failure on a route
+    /// with test coverage, not a silent new value appearing on the public wire. The mapping runs
+    /// one way only: nothing here ever parses a wire string back into the enum, so no wire input
+    /// can select a member.</para>
+    ///
+    /// <para>The C# names are not reused verbatim because the wire vocabulary is kebab-case
+    /// throughout this response ("half-open" above), and because the enum member names are an
+    /// implementation detail this route should be free to rename without breaking a client.</para>
+    /// </summary>
+    private static string ToOutcomeLabel(SourceStatusOutcome outcome) => outcome switch
+    {
+        SourceStatusOutcome.None => "none",
+        SourceStatusOutcome.UpstreamError => "upstream-error",
+        SourceStatusOutcome.Unreachable => "unreachable",
+        SourceStatusOutcome.Timeout => "timeout",
+        SourceStatusOutcome.AuthRejected => "auth-rejected",
+        SourceStatusOutcome.InternalError => "internal-error",
+        SourceStatusOutcome.Unknown => "unknown",
+        _ => throw new InvalidOperationException($"Unknown source status outcome: {outcome}"),
+    };
 
     private static string ToStateLabel(CircuitState state) => state switch
     {

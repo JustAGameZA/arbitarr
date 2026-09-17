@@ -183,7 +183,13 @@ public sealed class RefreshWorker : BackgroundService
                     // Per-item error handling (docs/standards/architecture.md). Log and retry on
                     // the next tick; the breaker already governs per-source upstream failures.
                     _logger.LogError(ex, "Search-result refresh cycle for source {SourceName} failed; will retry next cycle.", _sourceName);
-                    _health.CycleFaulted(_timeProvider.GetUtcNow(), SanitizedErrorDescription.Describe(ex));
+                    // arb-mhd2: the closed outcome and the sanitised text both come from this one
+                    // exception, here, while it is still in hand. /api/status publishes the
+                    // outcome; the text is admin-gated.
+                    _health.CycleFaulted(
+                        _timeProvider.GetUtcNow(),
+                        SanitizedErrorDescription.Describe(ex),
+                        SourceStatusOutcomeClassifier.Classify(ex));
                 }
             }
 

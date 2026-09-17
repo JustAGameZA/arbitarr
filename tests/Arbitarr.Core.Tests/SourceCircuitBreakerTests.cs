@@ -1,3 +1,6 @@
+using System.Net;
+using System.Net.Sockets;
+using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Sources.CircuitBreaker;
 using Microsoft.Extensions.Time.Testing;
 
@@ -286,15 +289,124 @@ public sealed class SourceCircuitBreakerTests
             LastFailureAt: Start,
             LastSuccessAt: null,
             LastError: "restored from persistence",
+            LastOutcome: SourceStatusOutcome.UpstreamError,
+            LastUpstreamStatusCode: 503,
             NextProbeAt: Start + TimeSpan.FromMinutes(5));
 
         breaker.Seed(Source, persisted);
 
         Assert.Equal(CircuitState.Open, breaker.GetSnapshot(Source).State);
         Assert.Equal(TimeSpan.FromSeconds(20), breaker.GetSnapshot(Source).BaseBackoff);
+        // arb-mhd2: the seeded outcome and status code survive Seed like every other field. A
+        // restart rehydrating the breaker must not report "nothing failed" for an Open breaker.
+        Assert.Equal(SourceStatusOutcome.UpstreamError, breaker.GetSnapshot(Source).LastOutcome);
+        Assert.Equal(503, breaker.GetSnapshot(Source).LastUpstreamStatusCode);
         Assert.False(breaker.CanCall(Source));
 
         clock.Advance(TimeSpan.FromMinutes(5) + TimeSpan.FromSeconds(1));
         Assert.True(breaker.CanCall(Source));
+    }
+
+    /// <summary>
+    /// arb-mhd2: one row per exception family the breaker can be handed, asserting the outcome the
+    /// writer records for it. This is the whole point of classifying AT THE WRITER — the exception
+    /// is in hand here and nowhere later, so a projection-time guess from the sanitized text is
+    /// never needed and is explicitly not how this works.
+    ///
+    /// <para>The upstream status code travels as a separate nullable int for the same reason: it is
+    /// read structurally off the exception, never parsed back out of the error string.</para>
+    /// </summary>
+    public static TheoryData<Exception, SourceStatusOutcome, int?> FailureFamilies() => new()
+    {
+        // An answer from upstream that carried an auth refusal. Auth is checked before the general
+        // status arm, so a 401/403 never degrades into the generic upstream-error bucket.
+        { new HttpRequestException("denied", null, HttpStatusCode.Unauthorized), SourceStatusOutcome.AuthRejected, 401 },
+        { new HttpRequestException("denied", null, HttpStatusCode.Forbidden), SourceStatusOutcome.AuthRejected, 403 },
+        // Any other status: we reached something and it answered badly.
+        { new HttpRequestException("bad gateway", null, HttpStatusCode.BadGateway), SourceStatusOutcome.UpstreamError, 502 },
+        { new HttpRequestException("unavailable", null, HttpStatusCode.ServiceUnavailable), SourceStatusOutcome.UpstreamError, 503 },
+        // No status at all: nothing answered, so this is a reachability failure, not an upstream one.
+        { new HttpRequestException("no such host"), SourceStatusOutcome.Unreachable, null },
+        { new SocketException(10061), SourceStatusOutcome.Unreachable, null },
+        // Timeouts, both shapes HttpClient produces.
+        { new TaskCanceledException("timed out"), SourceStatusOutcome.Timeout, null },
+        { new TimeoutException("timed out"), SourceStatusOutcome.Timeout, null },
+        // Anything else is ours, not theirs.
+        { new InvalidOperationException("no such table"), SourceStatusOutcome.InternalError, null },
+    };
+
+    [Theory]
+    [MemberData(nameof(FailureFamilies))]
+    public void RecordFailure_RecordsTheClosedOutcomeForEachExceptionFamily(
+        Exception ex,
+        SourceStatusOutcome expectedOutcome,
+        int? expectedStatusCode)
+    {
+        var (breaker, _) = Create();
+
+        breaker.RecordFailure(Source, ex);
+
+        var snapshot = breaker.GetSnapshot(Source);
+        Assert.Equal(expectedOutcome, snapshot.LastOutcome);
+        Assert.Equal(expectedStatusCode, snapshot.LastUpstreamStatusCode);
+
+        // The outcome and the text describe ONE failure and are written together. A path that set
+        // only one would publish an outcome contradicting the admin-gated detail.
+        Assert.NotNull(snapshot.LastError);
+
+        // Unknown is the projection's value for a stored name it cannot interpret. No live writer
+        // can produce it, which is what makes "unknown" mean "recorded before the column existed"
+        // rather than "some failure we decided not to name".
+        Assert.NotEqual(SourceStatusOutcome.Unknown, snapshot.LastOutcome);
+    }
+
+    /// <summary>
+    /// arb-mhd2: <c>Unknown</c> is unreachable from a live writer, asserted over the whole family
+    /// set at once rather than only inside the per-row theory — a theory row proves one input does
+    /// not produce it; this proves none of them does, which is the claim the enum's doc makes.
+    /// </summary>
+    [Fact]
+    public void RecordFailure_NeverRecordsUnknown_ForAnyExceptionFamily()
+    {
+        var families = FailureFamilies().ToList();
+        var recorded = new List<SourceStatusOutcome>();
+
+        foreach (var row in families)
+        {
+            var (breaker, _) = Create();
+            breaker.RecordFailure(Source, (Exception)row[0]!);
+            recorded.Add(breaker.GetSnapshot(Source).LastOutcome);
+        }
+
+        // Positive control: the sweep actually ran over every family, so the absence below is not
+        // an assertion over an empty list.
+        Assert.Equal(families.Count, recorded.Count);
+        Assert.NotEmpty(recorded);
+        Assert.DoesNotContain(SourceStatusOutcome.Unknown, recorded);
+
+        // And none of them left the field at its default either: every family names its failure.
+        Assert.DoesNotContain(SourceStatusOutcome.None, recorded);
+    }
+
+    /// <summary>
+    /// arb-mhd2: a success clears the outcome with the message. An Open breaker that recovers must
+    /// not keep publishing the reason it used to be failing for.
+    /// </summary>
+    [Fact]
+    public void RecordSuccess_ClearsTheOutcomeAndTheUpstreamStatusCode()
+    {
+        var (breaker, _) = Create();
+        breaker.RecordFailure(Source, new HttpRequestException("bad gateway", null, HttpStatusCode.BadGateway));
+
+        // Positive control: the outcome really was set, so its clearing below is a real transition.
+        Assert.Equal(SourceStatusOutcome.UpstreamError, breaker.GetSnapshot(Source).LastOutcome);
+        Assert.Equal(502, breaker.GetSnapshot(Source).LastUpstreamStatusCode);
+
+        breaker.RecordSuccess(Source);
+
+        var snapshot = breaker.GetSnapshot(Source);
+        Assert.Equal(SourceStatusOutcome.None, snapshot.LastOutcome);
+        Assert.Null(snapshot.LastUpstreamStatusCode);
+        Assert.Null(snapshot.LastError);
     }
 }

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 
 import { Disclosure } from '../../components/Disclosure';
@@ -14,7 +14,12 @@ import {
   formatTimestampTitle,
 } from '../../format';
 import { useAgreementQuery } from '../Suppressions/decisionQueries';
-import { useEffectiveConfigQuery, useRecentSearchesQuery, useStatusQuery } from './queries';
+import {
+  useEffectiveConfigQuery,
+  useRecentSearchesQuery,
+  useStatusDiagnosticsQuery,
+  useStatusQuery,
+} from './queries';
 
 /**
  * The one announcement scope all three Dashboard queries share (arb-xzvk).
@@ -49,6 +54,47 @@ const DASHBOARD_LOAD_SCOPE = 'dashboard';
  * through to the verbatim-unknown-state branch. A `Map` has no prototype entries to
  * collide with, so only a genuine own entry here ever matches.
  */
+/**
+ * The source/worker failure outcome, in operator language (arb-mhd2).
+ *
+ * Keyed against `StatusEndpoint.ToOutcomeLabel`, which emits exactly these kebab-case names and
+ * throws rather than inventing another. This is the one and only place they are given wording an
+ * operator reads.
+ *
+ * A `Map` for the same prototype-pollution reason `SOURCE_STATE_BADGES` below is one: `lastOutcome`
+ * is a server-supplied string, and a plain-object lookup would resolve inherited names
+ * (`constructor`, `toString`, ...) against `Object.prototype` rather than missing.
+ *
+ * `none` is deliberately absent. A source that has not failed renders nothing here, not the word
+ * "None"; `OUTCOME_NONE` is what the two renderers compare against.
+ */
+const SOURCE_OUTCOME_LABELS: Map<string, string> = new Map([
+  ['upstream-error', 'Upstream returned an error'],
+  ['unreachable', 'Could not be reached'],
+  ['timeout', 'Timed out'],
+  ['auth-rejected', 'Rejected our API key'],
+  ['internal-error', 'Internal error'],
+  // The server's own value for a stored outcome it could not interpret -- a row written before the
+  // column existed. Worded as missing knowledge rather than as a kind of failure, because that is
+  // what it means: the failure was real, its reason was never recorded.
+  ['unknown', 'Failed (reason not recorded)'],
+]);
+
+/** The wire value meaning "nothing has failed". Named once, compared in two places. */
+const OUTCOME_NONE = 'none';
+
+/**
+ * Operator wording for an outcome, or the server's own string when this table has not learned it.
+ *
+ * Falling back VERBATIM matches how an unknown `state` is handled below, and is the safe direction:
+ * the server emits only values from a closed C# enum, so an unrecognised one means this table is
+ * behind the server, not that a caller injected text. Showing it says something true instead of
+ * hiding a real failure behind a blank cell.
+ */
+function outcomeLabel(outcome: string): string {
+  return SOURCE_OUTCOME_LABELS.get(outcome) ?? outcome;
+}
+
 const SOURCE_STATE_BADGES: Map<string, { label: string; className: string }> = new Map([
   ['closed', { label: 'Healthy', className: styles.badgeOk }],
   ['open', { label: 'Paused after failures', className: styles.badgeDanger }],
@@ -128,7 +174,7 @@ function HealthBanners({ status }: { status: StatusResponse }) {
   );
 }
 
-function WorkerHealth({ status }: { status: StatusResponse }) {
+function WorkerHealth({ status, detail }: { status: StatusResponse; detail?: string | null }) {
   const { worker } = status;
   return (
     <dl className={styles.facts}>
@@ -155,8 +201,23 @@ function WorkerHealth({ status }: { status: StatusResponse }) {
         }
       />
       <FactRow label="Consecutive failed cycles" value={worker.consecutiveFailedCycles} />
-      {worker.lastError !== null && (
-        <FactRow label="Last error" value={<span className={styles.error}>{worker.lastError}</span>} />
+      {/*
+        arb-mhd2: the closed outcome always (when there is one), and the free-text detail only if
+        the admin-gated diagnostics read succeeded. Without a key `detail` is undefined and this
+        renders the label alone -- no banner, no empty row, no sign anything is missing.
+      */}
+      {worker.lastOutcome !== OUTCOME_NONE && (
+        <FactRow
+          label="Last failure"
+          value={
+            <span className={styles.error}>
+              {outcomeLabel(worker.lastOutcome)}
+              {detail != null && detail.length > 0 && (
+                <span className={styles.muted}> · {detail}</span>
+              )}
+            </span>
+          }
+        />
       )}
     </dl>
   );
@@ -201,9 +262,16 @@ function WorkerHealth({ status }: { status: StatusResponse }) {
 function SourcesTable({
   status,
   nzbHydraConfigured,
+  detailBySource,
 }: {
   status: StatusResponse;
   nzbHydraConfigured: boolean | undefined;
+  /**
+   * arb-mhd2: source name -> admin-gated error detail. EMPTY when the diagnostics read did not
+   * run or did not succeed, which is the ordinary state on a Dashboard opened without an admin
+   * key. A miss renders the outcome label alone rather than anything indicating absence.
+   */
+  detailBySource: Map<string, string>;
 }) {
   if (status.sources.length === 0) {
     if (nzbHydraConfigured === false) {
@@ -249,7 +317,8 @@ function SourcesTable({
             <th>Source</th>
             <th>State</th>
             <th>Failures</th>
-            <th>Last error</th>
+            {/* arb-mhd2: the closed outcome, plus the admin-gated detail when it is available. */}
+            <th>Last failure</th>
           </tr>
         </thead>
         <tbody>
@@ -260,7 +329,21 @@ function SourcesTable({
                 <SourceStateBadge state={source.state} />
               </td>
               <td>{source.consecutiveFailures}</td>
-              <td>{source.lastError ?? '—'}</td>
+              <td>
+                {source.lastOutcome === OUTCOME_NONE ? (
+                  '—'
+                ) : (
+                  <>
+                    {outcomeLabel(source.lastOutcome)}
+                    {detailBySource.get(source.sourceName) != null && (
+                      <span className={styles.muted}>
+                        {' '}
+                        · {detailBySource.get(source.sourceName)}
+                      </span>
+                    )}
+                  </>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -384,6 +467,20 @@ export default function DashboardPage() {
   const status = useStatusQuery();
   const searches = useRecentSearchesQuery();
   const config = useEffectiveConfigQuery();
+  // arb-mhd2: admin-gated, and deliberately consulted through `data` alone. Its `error`/`isError`
+  // are never read: on a page designed to work without a key, a failure here means "no detail
+  // available", not "something went wrong". See useStatusDiagnosticsQuery's own remarks.
+  const diagnostics = useStatusDiagnosticsQuery();
+
+  const detailBySource = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const entry of diagnostics.data?.sources ?? []) {
+      if (entry.lastError !== null && entry.lastError.length > 0) {
+        map.set(entry.sourceName, entry.lastError);
+      }
+    }
+    return map;
+  }, [diagnostics.data]);
 
   return (
     <>
@@ -404,8 +501,12 @@ export default function DashboardPage() {
             {(data) => (
               <>
                 <HealthBanners status={data} />
-                <WorkerHealth status={data} />
-                <SourcesTable status={data} nzbHydraConfigured={config.data?.nzbHydraConfigured} />
+                <WorkerHealth status={data} detail={diagnostics.data?.worker.lastError} />
+                <SourcesTable
+                  status={data}
+                  nzbHydraConfigured={config.data?.nzbHydraConfigured}
+                  detailBySource={detailBySource}
+                />
               </>
             )}
           </QueryState>

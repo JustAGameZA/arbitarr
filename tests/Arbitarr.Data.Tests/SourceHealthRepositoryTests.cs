@@ -1,5 +1,7 @@
+using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Sources.CircuitBreaker;
 using Arbitarr.Data.CircuitBreaker;
+using Arbitarr.Data.Entities;
 using Arbitarr.TestSupport;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Time.Testing;
@@ -50,6 +52,8 @@ public sealed class SourceHealthRepositoryTests : IDisposable
             LastFailureAt: Now,
             LastSuccessAt: null,
             LastError: "boom",
+            LastOutcome: SourceStatusOutcome.AuthRejected,
+            LastUpstreamStatusCode: 401,
             NextProbeAt: Now + TimeSpan.FromMinutes(5));
 
         using (var context = CreateContext())
@@ -64,6 +68,12 @@ public sealed class SourceHealthRepositoryTests : IDisposable
             var loaded = await repository.LoadAsync("nzbhydra2");
             Assert.Equal(snapshot, loaded);
             Assert.Equal(TimeSpan.FromSeconds(5), loaded.BaseBackoff);
+            // arb-mhd2: named explicitly as well as covered by the record equality above. The
+            // equality assertion would still pass if BOTH sides were the enum's default (None),
+            // so it alone does not prove the outcome survived the round trip; these two do,
+            // because AuthRejected and 401 are not defaults.
+            Assert.Equal(SourceStatusOutcome.AuthRejected, loaded.LastOutcome);
+            Assert.Equal(401, loaded.LastUpstreamStatusCode);
         }
     }
 
@@ -106,6 +116,101 @@ public sealed class SourceHealthRepositoryTests : IDisposable
 
             await persistent.RecordSuccessAsync(source);
             Assert.True(await persistent.CanCallAsync(source));
+        }
+    }
+
+    /// <summary>
+    /// arb-mhd2: the stored outcome is read back by EXPLICIT name matching, never
+    /// <c>Enum.TryParse</c> (CLAUDE.md §3 — TryParse accepts the numeric form, so a stored "3" would
+    /// mint a member through an input shape no writer is documented to produce, and neither
+    /// <c>Enum.IsDefined</c> nor trimming closes that).
+    ///
+    /// <para>Every row here must land on <c>Unknown</c>: a LEGACY row written before the column
+    /// existed (outcome null, error text present), a name a NEWER build wrote that this one does not
+    /// know, and the input shapes an unsafe parse would have accepted. None is ever inferred from
+    /// the error text, which is why each row carries text naming a DIFFERENT outcome and still
+    /// projects as Unknown rather than as Timeout.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("SomeFutureOutcome")]
+    [InlineData("")]
+    [InlineData("3")]
+    [InlineData("upstreamerror")]
+    public async Task An_unrecognised_or_absent_stored_outcome_reads_back_as_Unknown(string? stored)
+    {
+        var source = $"unknown-outcome-{stored ?? "null"}";
+        // Text that NAMES a different outcome, so a projection that peeked at the string instead of
+        // reading the column would land on Timeout and fail this.
+        const string TimeoutFlavouredText = "TaskCanceledException (timed out)";
+
+        using (var context = CreateContext())
+        {
+            context.SourceHealthRecords.Add(new SourceHealthRecord
+            {
+                SourceName = source,
+                State = CircuitBreakerState.Open,
+                ConsecutiveFailures = 3,
+                LastError = TimeoutFlavouredText,
+                LastOutcome = stored,
+            });
+            await context.SaveChangesAsync();
+        }
+
+        using (var context = CreateContext())
+        {
+            var repository = new SourceHealthRepository(context);
+            var snapshot = await repository.LoadAsync(source);
+
+            // Positive control: the row really is there and really did round-trip, so the outcome
+            // assertion below is about the projection rather than about a row that never loaded.
+            Assert.Equal(TimeoutFlavouredText, snapshot.LastError);
+            Assert.Equal(3, snapshot.ConsecutiveFailures);
+
+            Assert.Equal(SourceStatusOutcome.Unknown, snapshot.LastOutcome);
+        }
+    }
+
+    /// <summary>
+    /// arb-mhd2: the round trip for every name a live writer CAN store. Stored by name, matched by
+    /// name, with no member left behind — a member added to the enum without a matching arm in the
+    /// reader would silently read back as Unknown, and this is what says so.
+    /// </summary>
+    [Theory]
+    [InlineData(SourceStatusOutcome.None)]
+    [InlineData(SourceStatusOutcome.UpstreamError)]
+    [InlineData(SourceStatusOutcome.Unreachable)]
+    [InlineData(SourceStatusOutcome.Timeout)]
+    [InlineData(SourceStatusOutcome.AuthRejected)]
+    [InlineData(SourceStatusOutcome.InternalError)]
+    public async Task Every_writable_outcome_round_trips_by_name(SourceStatusOutcome outcome)
+    {
+        var source = $"round-trip-{outcome}";
+
+        using (var context = CreateContext())
+        {
+            context.SourceHealthRecords.Add(new SourceHealthRecord
+            {
+                SourceName = source,
+                State = CircuitBreakerState.Open,
+                ConsecutiveFailures = 1,
+                LastError = "irrelevant",
+                // Stored as the NAME, the SourceCallOutcome precedent — never the numeric value,
+                // which would renumber silently if a member were ever inserted mid-enum.
+                LastOutcome = outcome.ToString(),
+            });
+            await context.SaveChangesAsync();
+        }
+
+        using (var context = CreateContext())
+        {
+            var repository = new SourceHealthRepository(context);
+            var snapshot = await repository.LoadAsync(source);
+
+            Assert.Equal(outcome, snapshot.LastOutcome);
+            // Specifically NOT Unknown: that is the value a missing reader arm would produce, so
+            // naming it here is what makes a forgotten arm fail loudly rather than degrade quietly.
+            Assert.NotEqual(SourceStatusOutcome.Unknown, snapshot.LastOutcome);
         }
     }
 }

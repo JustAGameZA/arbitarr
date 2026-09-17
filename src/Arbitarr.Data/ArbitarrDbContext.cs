@@ -142,6 +142,13 @@ public sealed class ArbitarrDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.SourceName).IsUnique();
             entity.Property(e => e.SourceName).IsRequired();
+            // arb-mhd2: LastOutcome stores a SourceStatusOutcome NAME, never upstream text, so 64
+            // is ample — the same bound SourceBackoffState.LastOutcome uses for the same reason.
+            // Deliberately no HasDefaultValue: null here is a distinct state (a row written before
+            // this column existed), which SourceHealthRepository projects as Unknown rather than
+            // as None. A default would rewrite every legacy row into "nothing ever failed", which
+            // for a row that already carries a LastError is a false statement.
+            entity.Property(e => e.LastOutcome).HasMaxLength(64);
         });
 
         modelBuilder.Entity<SuppressionAuditLogEntry>(entity =>

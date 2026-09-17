@@ -1,3 +1,5 @@
+using Arbitarr.Core.Diagnostics;
+
 namespace Arbitarr.Core.Caching;
 
 /// <summary>
@@ -12,6 +14,18 @@ namespace Arbitarr.Core.Caching;
 /// <param name="LastCycleRefreshed">How many of those candidates were successfully refreshed in the most recent cycle.</param>
 /// <param name="LastCycleFailed">How many of those candidates failed to refresh in the most recent cycle.</param>
 /// <param name="LastError">The most recent cycle-level failure's message, or null if the last cycle did not fault.</param>
+/// <param name="LastOutcome">
+/// arb-mhd2: WHY the most recent cycle faulted, as a closed <see cref="SourceStatusOutcome"/>. The
+/// companion to <paramref name="LastError"/>, set in the same call from the same exception, but
+/// safe on the unauthenticated <c>/api/status</c> where the message is not — an enum cannot be
+/// minted from upstream text. That route publishes this; the message moved behind the admin key.
+/// <see cref="SourceStatusOutcome.None"/> whenever <paramref name="LastError"/> is null, including
+/// after a clean cycle clears a previous fault.
+///
+/// <para>Unlike the circuit breaker's equivalent this is NOT persisted: worker health has always
+/// been in-memory and starts over at <c>NotStarted</c> on every boot, so there is no stored row for
+/// an outcome to go stale in and no <see cref="SourceStatusOutcome.Unknown"/> case here.</para>
+/// </param>
 /// <param name="ConsecutiveFailedCycles">How many cycles have faulted in a row (0 once a cycle completes without faulting).</param>
 public sealed record RefreshWorkerHealth(
     bool Enabled,
@@ -21,11 +35,12 @@ public sealed record RefreshWorkerHealth(
     int LastCycleRefreshed,
     int LastCycleFailed,
     string? LastError,
+    SourceStatusOutcome LastOutcome,
     int ConsecutiveFailedCycles)
 {
     /// <summary>The snapshot before any cycle has ever run.</summary>
     public static RefreshWorkerHealth NotStarted(bool enabled) =>
-        new(enabled, null, null, 0, 0, 0, null, 0);
+        new(enabled, null, null, 0, 0, 0, null, SourceStatusOutcome.None, 0);
 }
 
 /// <summary>
@@ -44,8 +59,16 @@ public interface IRefreshWorkerHealth
     /// <summary>Records that the current cycle completed, with per-entry outcome counts.</summary>
     void CycleCompleted(DateTimeOffset completedUtc, int refreshed, int failed);
 
-    /// <summary>Records that the current cycle faulted before completing (e.g. the store threw).</summary>
-    void CycleFaulted(DateTimeOffset completedUtc, string errorMessage);
+    /// <summary>
+    /// Records that the current cycle faulted before completing (e.g. the store threw).
+    ///
+    /// <para>arb-mhd2: <paramref name="outcome"/> is a required parameter rather than something
+    /// derived here, so the closed value and the message are supplied together from the one
+    /// exception at the call site that caught it. Deriving it inside from
+    /// <paramref name="errorMessage"/> would be the projection-time classification of sanitised text
+    /// this design exists to forbid.</para>
+    /// </summary>
+    void CycleFaulted(DateTimeOffset completedUtc, string errorMessage, SourceStatusOutcome outcome);
 }
 
 /// <summary>
@@ -97,12 +120,15 @@ public sealed class RefreshWorkerHealthTracker : IRefreshWorkerHealth
                 LastCycleRefreshed = refreshed,
                 LastCycleFailed = failed,
                 LastError = null,
+                // arb-mhd2: cleared with the message, not left behind. A stale outcome beside a
+                // null message would publish a failure reason for a cycle that succeeded.
+                LastOutcome = SourceStatusOutcome.None,
                 ConsecutiveFailedCycles = 0,
             };
         }
     }
 
-    public void CycleFaulted(DateTimeOffset completedUtc, string errorMessage)
+    public void CycleFaulted(DateTimeOffset completedUtc, string errorMessage, SourceStatusOutcome outcome)
     {
         lock (_gate)
         {
@@ -110,6 +136,7 @@ public sealed class RefreshWorkerHealthTracker : IRefreshWorkerHealth
             {
                 LastCycleCompletedUtc = completedUtc,
                 LastError = errorMessage,
+                LastOutcome = outcome,
                 ConsecutiveFailedCycles = _snapshot.ConsecutiveFailedCycles + 1,
             };
         }
@@ -131,7 +158,7 @@ public sealed class NullRefreshWorkerHealth : IRefreshWorkerHealth
     {
     }
 
-    public void CycleFaulted(DateTimeOffset completedUtc, string errorMessage)
+    public void CycleFaulted(DateTimeOffset completedUtc, string errorMessage, SourceStatusOutcome outcome)
     {
     }
 }

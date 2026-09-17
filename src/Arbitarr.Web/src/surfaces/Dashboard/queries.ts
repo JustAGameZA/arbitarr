@@ -4,8 +4,10 @@ import { apiFetch } from '../../api/client';
 import type {
   EffectiveConfigResponse,
   RecentSearchEntry,
+  StatusDiagnosticsResponse,
   StatusResponse,
 } from '../../api/types';
+import { useAdminKeyStore } from '../../state/adminKeyStore';
 
 /**
  * The three read-only dashboard endpoints.
@@ -40,5 +42,31 @@ export function useEffectiveConfigQuery() {
   return useQuery({
     queryKey: ['config', 'effective'],
     queryFn: () => apiFetch<EffectiveConfigResponse>('/api/config/effective'),
+  });
+}
+
+/**
+ * arb-mhd2: the admin-gated error detail `/api/status` no longer publishes.
+ *
+ * Unlike the three queries above this one IS under `/api/admin/`, so `apiFetch` attaches the
+ * `X-Admin-Api-Key` header from `adminKeyStore`.
+ *
+ * **This query is allowed to fail, and its failure is not an error the operator should see.** The
+ * Dashboard is a page an operator reaches WITHOUT entering a key — that is the whole point of
+ * `/api/status` being `PublicRead` — so a missing or rejected key here is the ORDINARY case, not a
+ * fault. `enabled` keeps it from being issued at all with no key in the tab (no pointless 401,
+ * nothing logged server-side), and `retry: false` stops react-query re-attempting a request that
+ * will fail identically every time. The caller reads only `data`, never `error` or `isError`: with
+ * no key `data` is simply `undefined` and every detail is absent, which is exactly the designed
+ * degraded state.
+ */
+export function useStatusDiagnosticsQuery() {
+  const adminKey = useAdminKeyStore((state) => state.key);
+
+  return useQuery({
+    queryKey: ['status', 'diagnostics'],
+    queryFn: () => apiFetch<StatusDiagnosticsResponse>('/api/admin/status/diagnostics'),
+    enabled: adminKey !== null,
+    retry: false,
   });
 }

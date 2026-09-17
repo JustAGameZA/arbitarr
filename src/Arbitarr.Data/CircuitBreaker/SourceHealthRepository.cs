@@ -1,3 +1,4 @@
+using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Sources.CircuitBreaker;
 using Arbitarr.Data.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -65,6 +66,8 @@ public sealed class SourceHealthRepository
         LastFailureAt: record.LastFailureAt,
         LastSuccessAt: record.LastSuccessAt,
         LastError: record.LastError,
+        LastOutcome: ToOutcome(record.LastOutcome),
+        LastUpstreamStatusCode: record.LastUpstreamStatusCode,
         NextProbeAt: record.NextProbeAt);
 
     private static void ApplySnapshot(SourceHealthRecord record, CircuitBreakerSnapshot snapshot)
@@ -76,8 +79,39 @@ public sealed class SourceHealthRepository
         record.LastFailureAt = snapshot.LastFailureAt;
         record.LastSuccessAt = snapshot.LastSuccessAt;
         record.LastError = snapshot.LastError;
+        record.LastOutcome = snapshot.LastOutcome.ToString();
+        record.LastUpstreamStatusCode = snapshot.LastUpstreamStatusCode;
         record.NextProbeAt = snapshot.NextProbeAt;
     }
+
+    /// <summary>
+    /// arb-mhd2: reads a persisted <see cref="SourceHealthRecord.LastOutcome"/> NAME back into the
+    /// enum by matching the names EXPLICITLY.
+    ///
+    /// <para><b><c>Enum.TryParse</c> is deliberately not used here, and this is not a style
+    /// preference</b> (CLAUDE.md section 3). It also accepts the NUMERIC form, so a stored "4" would
+    /// select <see cref="SourceStatusOutcome.AuthRejected"/> through an input shape no writer in this
+    /// repository produces — <see cref="ApplySnapshot"/> always writes
+    /// <see cref="System.Enum.ToString()"/>. <c>Enum.IsDefined</c> would not close it either, since
+    /// <c>4</c> IS defined. Matching the names by hand makes the stored format closed by
+    /// construction: a value that is not one of these exact strings cannot mint a member.</para>
+    ///
+    /// <para>Anything unrecognised — a null from a row written before the column existed, an empty
+    /// string, a name from a future version, a hand-edited value — becomes
+    /// <see cref="SourceStatusOutcome.Unknown"/>. Never a guess inferred from
+    /// <see cref="SourceHealthRecord.LastError"/>'s text, which would resurrect the projection-time
+    /// classification of sanitised prose that arb-mhd2 exists to remove.</para>
+    /// </summary>
+    private static SourceStatusOutcome ToOutcome(string? stored) => stored switch
+    {
+        nameof(SourceStatusOutcome.None) => SourceStatusOutcome.None,
+        nameof(SourceStatusOutcome.UpstreamError) => SourceStatusOutcome.UpstreamError,
+        nameof(SourceStatusOutcome.Unreachable) => SourceStatusOutcome.Unreachable,
+        nameof(SourceStatusOutcome.Timeout) => SourceStatusOutcome.Timeout,
+        nameof(SourceStatusOutcome.AuthRejected) => SourceStatusOutcome.AuthRejected,
+        nameof(SourceStatusOutcome.InternalError) => SourceStatusOutcome.InternalError,
+        _ => SourceStatusOutcome.Unknown,
+    };
 
     private static CircuitState ToCoreState(CircuitBreakerState state) => state switch
     {
