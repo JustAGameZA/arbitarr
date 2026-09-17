@@ -523,17 +523,21 @@ export function ApiKeysSection() {
   // The plaintext's ONLY home. Not a ref, not storage, not the cache.
   const [created, setCreated] = useState<CreatedApiKeyResponse | null>(null);
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
-  const [revokeFailedId, setRevokeFailedId] = useState<number | null>(null);
-  // #98's refusal, held as the id it belongs to plus a CAPTURED copy of the
-  // error: `onRemove` resets the mutation once it settles (for fresh state on
-  // the next attempt, not for secret eviction — remove's variables are a bare
-  // id, so this mutation never goes through `useSecretEvictingMutation`), so
-  // `remove.error` is undefined by the time the row renders and a branch that
-  // consulted it would show nothing. Two pieces of state rather than one
-  // because the id is what routes the message to a row, and the message is
-  // what the row shows.
-  const [removeFailedId, setRemoveFailedId] = useState<number | null>(null);
-  const [removeFailure, setRemoveFailure] = useState<unknown>(null);
+  // Revoke's refusal, held per id in a Map rather than one shared scalar plus
+  // `revoke.error`: `revoke.error` names only the LATEST call, so a second
+  // revoke in flight would overwrite the first row's message with the second's
+  // (or clear it early on the second's success) -- arb-39g3. A row's own entry
+  // is cleared when THAT row starts a new attempt and when THAT row succeeds;
+  // another row's activity never touches it.
+  const [revokeFailures, setRevokeFailures] = useState<ReadonlyMap<number, unknown>>(new Map());
+  // #98's refusal, held per id in a Map for the identical reason: `onRemove`
+  // resets the mutation once it settles (for fresh state on the next attempt,
+  // not for secret eviction — remove's variables are a bare id, so this
+  // mutation never goes through `useSecretEvictingMutation`), so `remove.error`
+  // is undefined by the time the row renders and a branch that consulted it
+  // would show nothing. Keyed by id for the same reason as revokeFailures: two
+  // removes in flight must not let the second overwrite the first row's text.
+  const [removeFailures, setRemoveFailures] = useState<ReadonlyMap<number, unknown>>(new Map());
   // The real invariant the per-row `pending` prop rests on: `confirmingId`
   // being section-wide means only one row's Confirm is ever RENDERED at a
   // time, but nothing stops the operator moving it to a different row while
@@ -598,13 +602,28 @@ export function ApiKeysSection() {
   };
 
   const onRevoke = (id: number) => {
-    setRevokeFailedId(null);
+    // The previous refusal for THIS row must not outlive its attempt; another
+    // row's, still unresolved, must survive this call untouched.
+    setRevokeFailures((failures) => {
+      const next = new Map(failures);
+      next.delete(id);
+      return next;
+    });
     // Same reason as create: the previous refusal must not outlive its attempt.
     revoke.reset();
     setPendingRevokeIds((ids) => new Set(ids).add(id));
     revoke.mutate(id, {
-      onSuccess: () => setConfirmingId(null),
-      onError: () => setRevokeFailedId(id),
+      onSuccess: () => {
+        setConfirmingId(null);
+        setRevokeFailures((failures) => {
+          const next = new Map(failures);
+          next.delete(id);
+          return next;
+        });
+      },
+      onError: (error) => {
+        setRevokeFailures((failures) => new Map(failures).set(id, error));
+      },
       onSettled: () => {
         setPendingRevokeIds((ids) => {
           const next = new Set(ids);
@@ -632,10 +651,15 @@ export function ApiKeysSection() {
    * pre-checks nothing.
    */
   const onRemove = (id: number) => {
-    // The previous refusal must not outlive its attempt, or the operator reads a
-    // rejection the server has not issued for the row now under the cursor.
-    setRemoveFailedId(null);
-    setRemoveFailure(null);
+    // The previous refusal for THIS row must not outlive its attempt, or the
+    // operator reads a rejection the server has not issued for the row now
+    // under the cursor. Another row's, still unresolved, must survive this
+    // call untouched.
+    setRemoveFailures((failures) => {
+      const next = new Map(failures);
+      next.delete(id);
+      return next;
+    });
     remove.reset();
     setPendingRemoveIds((ids) => new Set(ids).add(id));
     remove.mutate(id, {
@@ -643,11 +667,15 @@ export function ApiKeysSection() {
         // The row is gone from the refetched list, so the confirm it was showing
         // has nothing left to confirm.
         setConfirmingId(null);
+        setRemoveFailures((failures) => {
+          const next = new Map(failures);
+          next.delete(id);
+          return next;
+        });
         remove.reset();
       },
       onError: (error) => {
-        setRemoveFailedId(id);
-        setRemoveFailure(error);
+        setRemoveFailures((failures) => new Map(failures).set(id, error));
         remove.reset();
       },
       onSettled: () => {
@@ -753,25 +781,21 @@ export function ApiKeysSection() {
                           // under the table, where it would read as a statement
                           // about the list.
                           // The `entry.id !== null` guard keeps the legacy row out of
-                          // this comparison entirely: its id is null and so is
-                          // revokeFailedId's initial value, so null === null would
-                          // hand an unrevokable row somebody else's refusal the
-                          // moment either of those invariants shifted.
+                          // this comparison entirely: its id is null, and a null key
+                          // is never inserted into either Map, so a legacy row can
+                          // never collide with another row's refusal.
                           // #98 adds the remove refusal to the same slot. The two
                           // cannot collide: a row is either live (revoke can fail on
                           // it) or revoked (remove can), never both, so this reads
                           // as "whichever refusal this row has" rather than as a
-                          // precedence rule that would need one. The remove side
-                          // uses the CAPTURED copy — `remove.error` is gone by now,
-                          // reset the moment the call settled.
+                          // precedence rule that would need one. Both sides read the
+                          // CAPTURED copy from their own Map, keyed by id, so a
+                          // second row's refusal in flight can never overwrite this
+                          // row's (arb-39g3).
                           failure={
                             entry.id === null
                               ? null
-                              : removeFailedId === entry.id
-                                ? removeFailure
-                                : revokeFailedId === entry.id
-                                  ? revoke.error
-                                  : null
+                              : (removeFailures.get(entry.id) ?? revokeFailures.get(entry.id) ?? null)
                           }
                         />
                       ))}
