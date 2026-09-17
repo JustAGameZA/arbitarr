@@ -158,25 +158,26 @@ at a time, and record their last use. Existing `ARBITARR__APIKEY` and
 `ARBITARR__CLIENTAPIKEYS__...` values continue to work unchanged after an upgrade, but are not
 stored in the database or individually revocable.
 
-#### After upgrading: adding direct indexers alongside NZBHydra2
+#### After upgrading: adding indexers directly to Arbitarr alongside NZBHydra2
 
-Admitting directly configured Newznab/Torznab indexers is strictly additive. An existing
-NZBHydra2-only deployment keeps working untouched after upgrading — 'NzbHydra' remains a valid
-source kind, the seeded NZBHydra2 row is unaffected, and nothing about the seed-once-then-database-is-authoritative
-rule (above) changes. You do not have to migrate: NZBHydra2 and Prowlarr both remain usable as
-ordinary Torznab/Newznab sources in their own right, so replacing NZBHydra2 outright, adding direct
-indexers beside it, or changing nothing are all supported, and you can migrate indexer by indexer at
-your own pace.
+Admitting indexers configured directly in Arbitarr's Settings > Sources — Newznab/Torznab
+indexers Arbitarr talks to directly, rather than through NZBHydra2 — is strictly additive. An
+existing NZBHydra2-only deployment keeps working untouched after upgrading — 'NzbHydra' remains a
+valid source kind, the seeded NZBHydra2 row is unaffected, and nothing about the
+seed-once-then-database-is-authoritative rule (above) changes. You do not have to migrate:
+NZBHydra2 and Prowlarr both remain usable as ordinary Torznab/Newznab sources in their own right,
+so replacing NZBHydra2 outright, adding indexers directly to Arbitarr beside it, or changing
+nothing are all supported, and you can migrate indexer by indexer at your own pace.
 
-**Once you add a direct indexer alongside NZBHydra2 (or Prowlarr), the same release can arrive from
-both.** This is expected, not a bug: NZBHydra2 dedupes only within itself, so a release both it and a
-directly configured indexer carry is genuinely reported twice at that layer. Arbitarr's dedup stage
-collapses copies of one release arriving from more than one source before they reach Sonarr/Radarr,
-and it landed deliberately before this document described running both together — documenting the
-combination first would have left a window where an operator's setup guide described a
-now-visible-duplicate as normal. Two copies of one release therefore should not appear as separate
-search results; if they do, it is a dedup defect worth reporting, not an accepted rough edge of
-running a mixed deployment.
+**Once you add an indexer configured directly in Arbitarr alongside NZBHydra2 (or Prowlarr), the
+same release can arrive from both.** This is expected, not a bug: NZBHydra2 dedupes only within
+itself, so a release both it and an indexer Arbitarr talks to directly carry is genuinely reported
+twice at that layer. Arbitarr's dedup stage collapses copies of one release arriving from more than
+one source before they reach Sonarr/Radarr, and it landed deliberately before this document
+described running both together — documenting the combination first would have left a window where
+an operator's setup guide described a now-visible-duplicate as normal. Two copies of one release
+therefore should not appear as separate search results; if they do, it is a dedup defect worth
+reporting, not an accepted rough edge of running a mixed deployment.
 
 ### Admin key setup
 

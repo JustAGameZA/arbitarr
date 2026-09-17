@@ -23,6 +23,11 @@ namespace Arbitarr.Integration.Tests;
 /// extending <see cref="SecondFakeUpstreamSource"/> itself or sharing a registry with another
 /// in-flight file, per the collision note on arb-x7w8.17's brief (three branches were touching that
 /// fake concurrently; a fourth touching it is the one thing to avoid).</para>
+///
+/// <para>"Hydra" vs. "direct indexer" below is naming only: both legs are backed by the same
+/// <see cref="SecondFakeUpstreamSource"/> type, one instance per role. Which concrete adapter
+/// (<c>NzbHydraSource</c> vs. <c>NewznabSource</c>) gets selected for a given source kind is
+/// covered elsewhere (ADR 0022 / arb-x7w8.2), not by this fixture.</para>
 /// </summary>
 public sealed class DirectIndexerCoexistenceTests
 {
