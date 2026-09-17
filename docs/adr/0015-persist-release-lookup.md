@@ -53,6 +53,11 @@ Encode the source and upstream link into the GUID itself, signed so it cannot be
 
 Rejected on the secrets rule. The upstream link contains the NZBHydra2 API key, so a self-describing GUID puts that key in the **path** of the `/download` route. `IHttpClientFactory`'s logging handler logs every request URI with each path segment in full and collapses only the query string, and `LogMessageCleanser` scrubs credentials in query strings — so a secret in a path segment is covered by neither (CLAUDE.md §1). The opaque GUID plus a lookup keeps the key on the server side, which is the entire reason the proxy exists.
 
+**Amended 2026-09-17.** "`LogMessageCleanser` scrubs credentials in query strings" understates its
+actual scope, corrected in [docs/standards/architecture.md](../standards/architecture.md#logging)
+(arb-cia3, arb-pi70). The conclusion above is unaffected: a bare path segment still carries no
+credential-shaped name or scheme, so it still matches none of the cleanser's arms.
+
 ### Raise the in-memory TTL only
 
 Keep one tier and lengthen `EntryTtl` past the delay-profile window.
