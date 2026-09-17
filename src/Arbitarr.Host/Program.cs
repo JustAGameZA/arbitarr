@@ -210,18 +210,27 @@ builder.Services.AddSingleton(nzbHydraEnvironment);
 var resolvedSourceConfiguration = new ResolvedSourceConfiguration();
 builder.Services.AddSingleton(resolvedSourceConfiguration);
 
-// "Configured" still means AT LEAST ONE ENABLED NZBHYDRA SOURCE WITH A KEY — deliberately NOT "at
-// least one enabled source of any kind". The answer is produced by SourceSeeder's resolve pass,
-// whose query filters Kind == NzbHydraKind && Enabled (SourceSeeder:184), so a deployment whose only
-// sources are direct Newznab/Torznab rows searches them through SourceRegistry while still reporting
-// unconfigured here. Restating this predicate for N sources is arb-72mf's, not arb-x7w8.4's: it is a
-// dashboard-contract change rather than a comment fix, so the behaviour was left alone.
+// arb-72mf: "configured" now means AT LEAST ONE ENABLED SOURCE OF ANY KIND WITH A KEY. It used to
+// mean at least one enabled NZBHYDRA source with a key, because the answer came off
+// ResolvedSourceConfiguration.IsConfigured, whose ApiKey is only ever populated by SourceSeeder's
+// Kind == NzbHydraKind && Enabled query — so a deployment whose only sources are direct
+// Newznab/Torznab rows (possible since #344) searched them correctly through SourceRegistry while
+// the dashboard showed the #50 not-configured empty state. AnySourceConfigured is computed over
+// every enabled row in the same SourceSeeder resolve pass, and IsConfigured is deliberately left
+// alone as the NZBHydra leg's own answer beside BaseUrl and SourceName. Do not re-point this back
+// at IsConfigured.
+//
+// The TYPE and the wire field are still named for NZBHydra, and that is intentional rather than an
+// oversight: nzbHydraConfigured on /api/config/effective is public API the web client already
+// reads, so the meaning widened while the name stayed put. Renaming it is a separate, breaking
+// change.
+//
 // Registered as a factory rather than an instance because the resolution has not happened yet at
 // this point in startup; the singleton is first resolved on a request, long after SourceSeeder has
 // run. The dashboard's effective-config view (M2 §2, D1 surface 3) reports this without ever
 // exposing a key itself.
 builder.Services.AddSingleton(sp => new NzbHydraConfigurationStatus(
-    IsConfigured: sp.GetRequiredService<ResolvedSourceConfiguration>().IsConfigured));
+    IsConfigured: sp.GetRequiredService<ResolvedSourceConfiguration>().AnySourceConfigured));
 
 // SEC-M1 (SSRF): the source adapter validates <link> origins itself, but disabling automatic
 // redirect-following here is defense in depth — an upstream response could otherwise 30x us to an
