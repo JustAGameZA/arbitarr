@@ -798,6 +798,7 @@ jobs:
   playwright:
     name: Playwright (mobile shell)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -826,7 +827,12 @@ jobs:
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
         with:
           name: playwright-report
-          path: src/Arbitarr.Web/playwright-report/
+          # The `list` reporter above writes nothing to disk, so the real
+          # failure artifact is `test-results/` -- where
+          # `trace: 'retain-on-failure'` (playwright.config.ts) actually
+          # writes a trace on a failed test. Uploading `playwright-report/`
+          # here produced an artifact that was always empty.
+          path: src/Arbitarr.Web/test-results/
           if-no-files-found: warn
           retention-days: 14
 

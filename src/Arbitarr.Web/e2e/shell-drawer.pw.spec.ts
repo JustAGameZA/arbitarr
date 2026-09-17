@@ -62,6 +62,11 @@ test.describe('mobile shell stacking at 390x844 (arb-qp5)', () => {
     await expect(toggle).not.toBeVisible();
   });
 
+  // This is THE assertion that fails when the `.topbar` stacking rule
+  // (AppShell.module.css's `.topbar{position:relative;z-index:25}` inside the
+  // 768px query) is removed: without it, the drawer's close button sits under
+  // the top bar and the click below never reaches it. The other two tests in
+  // this file are supporting cover, not the regression's primary signal.
   test('drawer open: the close button is actionable and closes the sidebar', async ({ page }) => {
     await page.getByRole('button', { name: 'Open navigation' }).click();
 
