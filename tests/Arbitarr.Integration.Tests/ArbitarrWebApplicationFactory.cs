@@ -1,10 +1,12 @@
 using Arbitarr.Data;
 using Arbitarr.Data.Logging;
+using Arbitarr.Host.Maintenance;
 using Arbitarr.Integration.Tests.TestSupport;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace Arbitarr.Integration.Tests;
@@ -273,6 +275,72 @@ public sealed class ArbitarrWebApplicationFactory : WebApplicationFactory<Progra
             DeleteConfigDirectory(drainCompletions);
         }
     }
+
+    /// <summary>
+    /// arb-km0a: waits until this host's <see cref="MaintenanceHostedService"/> has FINISHED its
+    /// first maintenance pass. A test calls this before reading any state that pass writes.
+    ///
+    /// <para><b>What it is for.</b> <c>BackgroundService.StartAsync</c> returns at
+    /// <c>ExecuteAsync</c>'s first await, so starting the host does NOT mean the first pass has run.
+    /// That pass takes an automatic configuration backup immediately (before the first
+    /// <c>Task.Delay</c>, deliberately), and a failure it records lands in <c>BackupStateStore</c>
+    /// whenever it happens to finish — which for three observed runs was in the middle of an
+    /// unrelated assertion. Awaiting the service's own published completion is the only thing that
+    /// establishes the pass is DONE rather than merely started; a delay would only move the race.</para>
+    ///
+    /// <para><b>Reached through <c>GetServices&lt;IHostedService&gt;()</c> rather than by resolving
+    /// the type.</b> <c>AddHostedService</c> registers the concrete type only as an
+    /// <c>IHostedService</c>, so <c>GetRequiredService&lt;MaintenanceHostedService&gt;()</c> does not
+    /// resolve it. Same shape as <c>ThrottledRecorderHostedCompositionTests</c>.</para>
+    ///
+    /// <para><b>BOUNDED, and it FAILS rather than continuing.</b> Modelled on
+    /// <c>ConfigDirectoryTeardown.DrainCompletionWait</c>: an unbounded await would turn a
+    /// regression in the seam into a hung test run with no attribution, and a silent give-up would
+    /// restore the very race this exists to remove while reporting green. So the bound elapsing
+    /// throws and names the service, which is a legible failure pointing at the one place that can
+    /// have broken. It is not a sleep: the normal path returns as soon as the pass publishes,
+    /// typically in milliseconds, and the bound is never reached.</para>
+    /// </summary>
+    public async Task WaitForFirstMaintenancePassAsync()
+    {
+        // Force host startup, so the service exists to be found. Calling this before any client has
+        // been created would otherwise resolve Services and start the host as a side effect anyway;
+        // doing it explicitly makes the dependency visible rather than incidental.
+        using var client = CreateClient();
+
+        var service = Services.GetServices<IHostedService>()
+            .OfType<MaintenanceHostedService>()
+            .SingleOrDefault();
+
+        if (service is null)
+        {
+            throw new InvalidOperationException(
+                "This host registered no MaintenanceHostedService, so its first maintenance pass " +
+                "cannot be awaited. Program.cs registers it unconditionally, so a null here means " +
+                "the registration was removed or made conditional -- not that the wait is optional.");
+        }
+
+        var completed = await Task.WhenAny(
+            service.FirstPassCompleted,
+            Task.Delay(FirstMaintenancePassWait)).ConfigureAwait(false);
+
+        if (completed != service.FirstPassCompleted)
+        {
+            throw new TimeoutException(
+                $"MaintenanceHostedService did not publish FirstPassCompleted within {FirstMaintenancePassWait}. " +
+                "That task is completed from a finally covering every exit of the first pass, " +
+                "including cancellation and an unexpected throw, so failing to see it means the " +
+                "publication was removed or the pass is wedged on a step that never returns.");
+        }
+    }
+
+    /// <summary>
+    /// The bound on <see cref="WaitForFirstMaintenancePassAsync"/>. Generous on purpose: the first
+    /// pass takes a real SQLite backup, which on a loaded parallel runner is not instant, and this
+    /// number exists to convert a HANG into a named failure rather than to police how long a
+    /// healthy pass may take. Matches <c>ConfigDirectoryTeardown.DrainCompletionWait</c>.
+    /// </summary>
+    private static readonly TimeSpan FirstMaintenancePassWait = TimeSpan.FromSeconds(30);
 
     /// <summary>
     /// The <c>DrainCompleted</c> task of every <see cref="SqliteLoggerProvider"/> this host
