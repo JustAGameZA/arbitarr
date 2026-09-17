@@ -221,4 +221,159 @@ public class UpstreamMergeStageIntegrationTests
         Assert.Equal(new[] { "source-transport" }, result.FailedSources);
         Assert.Empty(result.TimedOutSources);
     }
+
+    // ---- arb-4cso: the whole-fan-out ceiling ------------------------------------------------
+    //
+    // The first two are a MATCHED PAIR and must be read together. The fixture is identical in both —
+    // same source, same page count, same per-page delay — and the ONLY thing that differs is the
+    // ceiling passed to the stage. That is what makes the first a statement about the ceiling rather
+    // than about the fixture: the second proves the very same leg completes and returns its releases
+    // when the ceiling is generous, so a first-test pass cannot be explained by the source being
+    // broken, slow past all bounds, or never having had results to give.
+    //
+    // Both use PagingFakeUpstreamSource, which has no budget of its own — see that type for why
+    // SecondFakeUpstreamSource (which throws on its OWN budget) would make the first test vacuous.
+
+    /// <summary>
+    /// A source whose leg outruns the fan-out ceiling is NAMED in
+    /// <see cref="MergeResult.TimedOutSources"/>, and the merge still returns the fast sibling's
+    /// releases.
+    ///
+    /// <para>The slow source pages 40 × 250ms ≈ 10s behind a 300ms ceiling. No single page is long
+    /// enough to trip anything a per-request timeout would catch, and the source never gives up on
+    /// its own — so the leg ends only because the stage ended it. It sits FIRST in the resolved
+    /// order, so a stage that serialised on its leg would fail the elapsed-time assertion too.</para>
+    ///
+    /// <para>Asserting <c>PagesWalked</c> is what distinguishes "the ceiling cut the loop short"
+    /// from "the loop had already finished": a source that walked all 40 pages and then returned
+    /// nothing would satisfy every other assertion here.</para>
+    /// </summary>
+    [Fact]
+    public async Task MergeAsync_names_a_source_whose_leg_outruns_the_fan_out_ceiling_and_keeps_the_survivors()
+    {
+        var slow = new PagingFakeUpstreamSource(
+            "source-paging",
+            searchResults: new[] { MakeRelease("source-paging-1", "Never Delivered") },
+            pageCount: 40,
+            perPageDelay: TimeSpan.FromMilliseconds(250));
+        var fast = new PagingFakeUpstreamSource(
+            "source-fast",
+            searchResults: new[] { MakeRelease("source-fast-1", "Release From Fast Source") });
+
+        var mergeStage = new UpstreamMergeStage(
+            new StaticSourceRegistry(new IUpstreamSource[] { slow, fast }),
+            fanOutCeiling: TimeSpan.FromMilliseconds(300));
+
+        var started = Stopwatch.StartNew();
+        var result = await mergeStage.MergeAsync(
+            new SearchQuery(null, Array.Empty<int>(), 50, SearchProtocol.Torznab),
+            CancellationToken.None);
+        started.Stop();
+
+        Assert.True(
+            started.Elapsed < TimeSpan.FromSeconds(5),
+            $"merge took {started.Elapsed} — it waited out the paging source's ~10s leg instead of its 300ms ceiling");
+
+        // The ceiling stopped the page loop rather than the loop finishing: had it run to completion
+        // every other assertion below would still hold.
+        Assert.True(
+            slow.PagesWalked < 40,
+            $"the paging source walked all {slow.PagesWalked} pages — the ceiling did not cut its leg short");
+
+        Assert.Equal(new[] { "source-paging" }, result.TimedOutSources);
+        Assert.Single(result.Releases);
+        Assert.Equal("source-fast-1", result.Releases[0].Candidate.Guid);
+        Assert.Empty(result.FailedSources);
+        Assert.Empty(result.RateLimitedSources);
+    }
+
+    /// <summary>
+    /// POSITIVE CONTROL for the test above, and the reason it is not vacuous: the SAME paging source,
+    /// with the same 40 × 250ms leg, given a generous ceiling returns its releases and is named in no
+    /// list at all.
+    ///
+    /// <para>Without this, "the source was in TimedOutSources" would pass just as happily against a
+    /// stage that named every source, against one whose ceiling was accidentally zero, and against a
+    /// fixture that could never have produced a release in the first place. This is the assertion
+    /// that proves the leg was capable of succeeding — so the first test's outcome is attributable to
+    /// the ceiling and to nothing else.</para>
+    /// </summary>
+    [Fact]
+    public async Task MergeAsync_returns_the_same_paging_source_releases_when_the_ceiling_is_generous()
+    {
+        var paging = new PagingFakeUpstreamSource(
+            "source-paging",
+            searchResults: new[] { MakeRelease("source-paging-1", "Release From Paging Source") },
+            pageCount: 40,
+            perPageDelay: TimeSpan.FromMilliseconds(250));
+        var fast = new PagingFakeUpstreamSource(
+            "source-fast",
+            searchResults: new[] { MakeRelease("source-fast-1", "Release From Fast Source") });
+
+        var mergeStage = new UpstreamMergeStage(
+            new StaticSourceRegistry(new IUpstreamSource[] { paging, fast }),
+            fanOutCeiling: TimeSpan.FromSeconds(60));
+
+        var result = await mergeStage.MergeAsync(
+            new SearchQuery(null, Array.Empty<int>(), 50, SearchProtocol.Torznab),
+            CancellationToken.None);
+
+        Assert.Equal(40, paging.PagesWalked);
+        Assert.Empty(result.TimedOutSources);
+        Assert.Empty(result.FailedSources);
+        Assert.Empty(result.RateLimitedSources);
+        Assert.Equal(2, result.Releases.Count);
+        Assert.Contains(result.Releases, r => r.Candidate.Guid == "source-paging-1");
+        Assert.Contains(result.Releases, r => r.Candidate.Guid == "source-fast-1");
+    }
+
+    /// <summary>
+    /// The ceiling must not swallow the CALLER's cancellation. A caller who abandons the request
+    /// while a paging leg is in flight still gets an <see cref="OperationCanceledException"/> out of
+    /// <see cref="UpstreamMergeStage.MergeAsync"/> rather than a merge result naming the source as
+    /// timed out.
+    ///
+    /// <para>This is the case the ceiling most easily breaks, because the ceiling's token is LINKED
+    /// to the caller's: cancelling the caller cancels the ceiling token too, so the exception the
+    /// leg throws carries the ceiling's token either way and is never reference-equal to the
+    /// caller's. An implementation that classified by token identity alone would read a genuine
+    /// caller cancellation as a ceiling hit, swallow it, and return a result for a request nobody is
+    /// waiting on. The generous ceiling here rules out the ceiling itself being what fired.</para>
+    ///
+    /// <para>Non-vacuity: a healthy source runs alongside, so the merge HAD a result it could have
+    /// returned instead of throwing.</para>
+    ///
+    /// <para><b>"In flight" is made true by a sync point, not an assumption.</b> The test awaits
+    /// <see cref="PagingFakeUpstreamSource.FirstPageEntered"/> before cancelling, so the paging leg is
+    /// provably inside its wait when <c>Cancel()</c> runs. Without that sync point the claim rested on
+    /// <c>StaticSourceRegistry.ResolveAsync</c> happening to be synchronous — true today, but not
+    /// something this test should depend on silently.</para>
+    /// </summary>
+    [Fact]
+    public async Task MergeAsync_propagates_caller_cancellation_rather_than_reporting_a_ceiling_hit()
+    {
+        using var cts = new CancellationTokenSource();
+
+        var paging = new PagingFakeUpstreamSource(
+            "source-paging",
+            searchResults: new[] { MakeRelease("source-paging-1", "Never Delivered") },
+            pageCount: 40,
+            perPageDelay: TimeSpan.FromMilliseconds(250));
+        var healthy = new PagingFakeUpstreamSource(
+            "source-healthy",
+            searchResults: new[] { MakeRelease("source-healthy-1", "Release From Healthy Source") });
+
+        var mergeStage = new UpstreamMergeStage(
+            new StaticSourceRegistry(new IUpstreamSource[] { paging, healthy }),
+            fanOutCeiling: TimeSpan.FromSeconds(60));
+
+        var merging = mergeStage.MergeAsync(
+            new SearchQuery(null, Array.Empty<int>(), 50, SearchProtocol.Torznab),
+            cts.Token);
+
+        await paging.FirstPageEntered;
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => merging);
+    }
 }

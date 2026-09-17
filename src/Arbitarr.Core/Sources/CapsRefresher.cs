@@ -95,7 +95,10 @@ public sealed class CapsRefresher
     /// the whole call: two protocols each bounded separately would still let one source cost twice
     /// the ceiling. Per source rather than per PASS because the background pass must still reach the
     /// reachable indexers when an early one is down — a whole-pass budget would let one dead upstream
-    /// consume it and starve every source behind it.</para>
+    /// consume it and starve every source behind it. This is the deliberate opposite of
+    /// <c>UpstreamMergeStage.DefaultFanOutCeiling</c>, which IS per PASS: that stage's legs run
+    /// concurrently rather than sequentially, and a single caller is waiting on the whole fan-out
+    /// rather than a background job working through sources one at a time.</para>
     ///
     /// <para>A ceiling hit is a not-refreshed outcome, never an exception, so the families it
     /// pre-empts report false and their previously stored entries stand. Caller cancellation is

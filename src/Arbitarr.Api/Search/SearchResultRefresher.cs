@@ -52,13 +52,24 @@ public sealed class SearchResultRefresher
         }
 
         var merged = await _mergeStage.MergeAsync(payload.Query, cancellationToken).ConfigureAwait(false);
-        if (merged.Releases.Count == 0 && merged.RateLimitedSources.Count > 0)
+
+        // arb-apm8: all THREE failure lists, for the reason PaginationSnapshotService's Degraded flag
+        // now reads all three. This guard is the refresh worker's half of "a degraded, empty fetch
+        // never overwrites stored data" (M3-10), and it is the half with the sharper consequence: the
+        // inline path merely declines to CREATE a row, while this one overwrites a row that already
+        // holds good releases. Withholding only on a rate limit meant an all-timed-out refresh
+        // replaced a healthy cached set with an empty one, and the entry was then re-stamped fresh —
+        // turning a transient upstream outage into a durably empty answer.
+        if (merged.Releases.Count == 0
+            && (merged.RateLimitedSources.Count > 0
+                || merged.TimedOutSources.Count > 0
+                || merged.FailedSources.Count > 0))
         {
             return null;
         }
 
         // Dedup here, at the same point the inline path does it (after the merge, before the
-        // payload is built), so both writers of this row produce the same shape. The rate-limit
+        // payload is built), so both writers of this row produce the same shape. The degraded-fetch
         // guard above deliberately stays on merged.Releases: whether upstream returned anything at
         // all is a question about the FETCH, and grouping could only ever shrink that count, so
         // asking it after dedup would let a fully-duplicated-but-healthy result look degraded.

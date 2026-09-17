@@ -1,4 +1,5 @@
 using Arbitarr.Api.Search;
+using Arbitarr.Core.Caching;
 using Arbitarr.Core.Releases;
 using Arbitarr.Core.Sources;
 using Xunit;
@@ -352,4 +353,146 @@ public class PaginationSnapshotTests
             time,
             ttl: null,
             sourceSetFingerprintSource: new StaticSourceSetFingerprintSource(fingerprint));
+
+    /// <summary>
+    /// arb-apm8: a source whose own budget fired. <see cref="UpstreamMergeStage"/> classifies an
+    /// <see cref="OperationCanceledException"/> as a TIMEOUT only when the caller's token is not
+    /// cancelled AND the exception's token is not the caller's, so the token here is a foreign one
+    /// that is never handed to the merge — which is exactly the shape a linked HttpClient.Timeout
+    /// produces. A plain <c>new OperationCanceledException()</c> would carry <c>CancellationToken.None</c>
+    /// and be classified as a generic failure instead, quietly testing the wrong list.
+    /// </summary>
+    private static IUpstreamSource MakeTimedOutSource(string name) =>
+        new FakeUpstreamSource(name, searchException: new OperationCanceledException(new CancellationTokenSource().Token));
+
+    private static IUpstreamSource MakeFailedSource(string name) =>
+        new FakeUpstreamSource(name, searchException: new HttpRequestException("connection refused"));
+
+    /// <summary>
+    /// <b>NON-VACUITY GUARD for the tests below</b> (CLAUDE.md §4). Each of them asserts that
+    /// nothing was written, and an assertion of that shape passes just as happily against a merge
+    /// that never reached the classifier at all — a source that threw the wrong exception type, or
+    /// a fake whose exception never escaped, would land in the WRONG list (or in none) and still
+    /// produce "no rows written". This proves the source really is in the list the test is about
+    /// before any absence is asserted.
+    /// </summary>
+    [Fact]
+    public async Task The_timeout_and_failure_fakes_really_do_land_in_their_own_merge_result_lists()
+    {
+        var mergeStage = new UpstreamMergeStage(new StaticSourceRegistry(
+            new[] { MakeTimedOutSource("eztv"), MakeFailedSource("nzbgeek") }));
+
+        var merged = await mergeStage.MergeAsync(new SearchQuery("x", Array.Empty<int>(), 5, SearchProtocol.Torznab, 0));
+
+        Assert.Equal(new[] { "eztv" }, merged.TimedOutSources);
+        Assert.Equal(new[] { "nzbgeek" }, merged.FailedSources);
+        Assert.Empty(merged.RateLimitedSources);
+        Assert.Empty(merged.Releases);
+    }
+
+    /// <summary>
+    /// <b>POSITIVE CONTROL.</b> A clean merge DOES write a snapshot and DOES populate the two-age
+    /// cache as fresh. Without this, the tests below would hold just as well against a service
+    /// that had stopped writing anything at all.
+    /// </summary>
+    [Fact]
+    public async Task A_clean_merge_writes_a_snapshot_and_populates_the_two_age_cache_as_fresh()
+    {
+        var mergeStage = new UpstreamMergeStage(new StaticSourceRegistry(new[] { MakeSourceWithReleases("eztv", 3) }));
+        var store = new FakeQuerySnapshotStore();
+        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
+        var (cacheStage, cacheStore) = TestCacheStage.CreateWithStore(time);
+        var service = new PaginationSnapshotService(mergeStage, cacheStage, store, time);
+        var query = new SearchQuery("x", Array.Empty<int>(), 5, SearchProtocol.Torznab, 0);
+
+        var result = await service.GetPageAsync("search", query);
+
+        Assert.Equal(3, result.Releases.Count);
+        Assert.Equal(CacheBand.Fresh, result.CacheBand);
+        Assert.Equal(1, store.SaveCallCount);
+        Assert.NotNull(await cacheStore.GetAsync(SearchResultCacheStage.BuildQueryKey(query)));
+    }
+
+    /// <summary>
+    /// <b>THE POINT OF arb-apm8.</b> A merge in which the only failure is a TIMEOUT writes neither a
+    /// snapshot nor a two-age cache row. Before this bead the Degraded flag was computed from
+    /// RateLimitedSources alone, so this merge reported Degraded=false and its empty set was stored
+    /// as a legitimate fresh answer for the whole FreshUntil/ServeUntil band.
+    ///
+    /// <para>The cache row is asserted directly rather than via the returned band: an implementation
+    /// that stored the empty set and merely LABELLED the response Expired would pass a band-only
+    /// assertion while leaving exactly the row this bead exists to prevent.</para>
+    ///
+    /// <para>TimedOutSources is populated by more than one mechanism, and this test covers all of
+    /// them because it asserts on the LIST rather than on what filled it. Today it is a source
+    /// exceeding its own budget; since arb-4cso it is also a source that was healthy but slower than
+    /// the whole-fan-out pass ceiling. Both mean the same thing here — that source contributed
+    /// nothing and said nothing — so both must keep the empty set out of the cache.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_fully_timed_out_merge_writes_no_snapshot_and_does_not_populate_the_cache_as_fresh()
+    {
+        var mergeStage = new UpstreamMergeStage(new StaticSourceRegistry(new[] { MakeTimedOutSource("eztv") }));
+        var store = new FakeQuerySnapshotStore();
+        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
+        var (cacheStage, cacheStore) = TestCacheStage.CreateWithStore(time);
+        var service = new PaginationSnapshotService(mergeStage, cacheStage, store, time);
+        var query = new SearchQuery("x", Array.Empty<int>(), 5, SearchProtocol.Torznab, 0);
+
+        var result = await service.GetPageAsync("search", query);
+
+        // The source really did time out on THIS run, so the absences below are about a merge that
+        // reached the classifier rather than one that silently did nothing.
+        Assert.Equal(new[] { "eztv" }, result.TimedOutSources);
+        Assert.Empty(result.Releases);
+
+        Assert.Equal(0, store.SaveCallCount);
+        Assert.Null(await cacheStore.GetAsync(SearchResultCacheStage.BuildQueryKey(query)));
+        Assert.Equal(CacheBand.Expired, result.CacheBand);
+    }
+
+    /// <summary>The same for a transport/protocol/parse failure, which is the other list arb-apm8 adds.</summary>
+    [Fact]
+    public async Task A_fully_failed_merge_writes_no_snapshot_and_does_not_populate_the_cache_as_fresh()
+    {
+        var mergeStage = new UpstreamMergeStage(new StaticSourceRegistry(new[] { MakeFailedSource("eztv") }));
+        var store = new FakeQuerySnapshotStore();
+        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
+        var (cacheStage, cacheStore) = TestCacheStage.CreateWithStore(time);
+        var service = new PaginationSnapshotService(mergeStage, cacheStage, store, time);
+        var query = new SearchQuery("x", Array.Empty<int>(), 5, SearchProtocol.Torznab, 0);
+
+        var result = await service.GetPageAsync("search", query);
+
+        Assert.Equal(new[] { "eztv" }, result.FailedSources);
+        Assert.Empty(result.Releases);
+
+        Assert.Equal(0, store.SaveCallCount);
+        Assert.Null(await cacheStore.GetAsync(SearchResultCacheStage.BuildQueryKey(query)));
+        Assert.Equal(CacheBand.Expired, result.CacheBand);
+    }
+
+    /// <summary>
+    /// A PARTIAL degradation is unchanged: one source timed out, another returned releases, so the
+    /// set is trustworthy and is both snapshotted and cached. This is what keeps the fix from
+    /// over-reaching into "any failure anywhere suppresses caching".
+    /// </summary>
+    [Fact]
+    public async Task A_merge_with_one_timed_out_source_and_one_healthy_source_is_still_snapshotted_and_cached()
+    {
+        var mergeStage = new UpstreamMergeStage(new StaticSourceRegistry(
+            new[] { MakeTimedOutSource("eztv"), MakeSourceWithReleases("nzbgeek", 2) }));
+        var store = new FakeQuerySnapshotStore();
+        var time = new ManualTimeProvider(DateTimeOffset.UtcNow);
+        var (cacheStage, cacheStore) = TestCacheStage.CreateWithStore(time);
+        var service = new PaginationSnapshotService(mergeStage, cacheStage, store, time);
+        var query = new SearchQuery("x", Array.Empty<int>(), 5, SearchProtocol.Torznab, 0);
+
+        var result = await service.GetPageAsync("search", query);
+
+        Assert.Equal(new[] { "eztv" }, result.TimedOutSources);
+        Assert.Equal(2, result.Releases.Count);
+        Assert.Equal(1, store.SaveCallCount);
+        Assert.NotNull(await cacheStore.GetAsync(SearchResultCacheStage.BuildQueryKey(query)));
+    }
 }
