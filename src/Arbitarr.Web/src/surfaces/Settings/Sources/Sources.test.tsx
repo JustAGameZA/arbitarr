@@ -24,6 +24,14 @@ const sources = [
     // The default. The second fixture is Redirect, so the edit form's seeding is
     // exercised for BOTH modes rather than for whichever happens to come first.
     nzbAccessMode: 'Proxy',
+    runtimeState: 'Healthy',
+    disabledUntil: null,
+    disabledLevel: 0,
+    lastOutcome: 'Success',
+    queriesUsed: 4,
+    grabsUsed: 1,
+    queryLimit: 50,
+    grabLimit: 10,
     createdAt: '2026-09-01T10:00:00Z',
     updatedAt: '2026-09-02T11:00:00Z',
   },
@@ -35,6 +43,16 @@ const sources = [
     enabled: false,
     hasApiKey: false,
     nzbAccessMode: 'Redirect',
+    runtimeState: 'Healthy',
+    disabledUntil: null,
+    disabledLevel: 0,
+    lastOutcome: null,
+    // Null limits, so the unlimited rendering is exercised by the baseline
+    // fixture and not only by the test that is about it.
+    queriesUsed: 0,
+    grabsUsed: 0,
+    queryLimit: null,
+    grabLimit: null,
     createdAt: '2026-09-03T10:00:00Z',
     updatedAt: '2026-09-04T11:00:00Z',
   },
@@ -90,6 +108,129 @@ describe('Sources section', () => {
     const spare = await rowFor('Spare hydra');
     expect(within(spare).getByText('Disabled')).toBeInTheDocument();
     expect(within(spare).getByText('Not configured')).toBeInTheDocument();
+  }, TEST_TIMEOUT_MS);
+
+  /**
+   * arb-x7w8.11 — the three non-healthy states render DISTINCTLY, in ONE table.
+   *
+   * FOUR SOURCES IN ONE RENDER, not four tests with one source each. The defect
+   * this is built to catch is a projection that renders every row identically —
+   * a single-source test passes against exactly that, because with one row
+   * "renders the right state" and "renders one state for everything" are
+   * indistinguishable. Each state is asserted within its own row, so a
+   * constant-returning implementation fails on the other three.
+   */
+  it('renders healthy, budgeted, backing off and permanently disabled as four distinct states', async () => {
+    const at = (state: string, extra: Record<string, unknown> = {}) => ({
+      ...sources[0],
+      runtimeState: state,
+      ...extra,
+    });
+
+    mockApi({
+      [SOURCES]: {
+        body: [
+          { ...at('Healthy'), id: 11, displayName: 'Healthy hydra' },
+          { ...at('Budgeted', { queriesUsed: 50, queryLimit: 50 }), id: 12, displayName: 'Budgeted hydra' },
+          {
+            ...at('BackingOff', { disabledUntil: '2099-01-01T10:05:00Z', disabledLevel: 2 }),
+            id: 13,
+            displayName: 'Backing hydra',
+          },
+          {
+            ...at('PermanentlyDisabled', { lastOutcome: 'AuthenticationFailure' }),
+            id: 14,
+            displayName: 'Rejected hydra',
+          },
+        ],
+      },
+    });
+    renderSurface(<SourcesSection />);
+
+    const healthy = await rowFor('Healthy hydra');
+    expect(within(healthy).getByText('Healthy')).toBeInTheDocument();
+
+    const budgeted = await rowFor('Budgeted hydra');
+    expect(within(budgeted).getByText('Budgeted')).toBeInTheDocument();
+    expect(within(budgeted).getByText('50 of 50')).toBeInTheDocument();
+
+    const backing = await rowFor('Backing hydra');
+    expect(within(backing).getByText('Backing off')).toBeInTheDocument();
+    expect(within(backing).getByText(/level 2/)).toBeInTheDocument();
+
+    const rejected = await rowFor('Rejected hydra');
+    expect(within(rejected).getByText('Permanently disabled')).toBeInTheDocument();
+    expect(within(rejected).getByText(/AuthenticationFailure/)).toBeInTheDocument();
+
+    // The four labels are genuinely different strings, which is the property the
+    // bead is about. A `within(row)` assertion would still pass if the labels
+    // collided, so the distinctness is checked directly rather than implied.
+    const labels = ['Healthy', 'Budgeted', 'Backing off', 'Permanently disabled'];
+    expect(new Set(labels).size).toBe(labels.length);
+
+    // "Permanently disabled" must not be readable as the configured Enabled flag:
+    // every one of these four rows is enabled, so a surface that conflated the
+    // two would show a contradiction here.
+    expect(within(rejected).getByText('Enabled')).toBeInTheDocument();
+  }, TEST_TIMEOUT_MS);
+
+  /**
+   * NULL LIMIT IS UNLIMITED AND IS NOT ZERO, per row.
+   *
+   * Both cases in one render for the same reason as above: asserting only the
+   * null case passes against an implementation that renders "unlimited" for
+   * every source, and asserting only the numeric case passes against one that
+   * coalesces null to zero and reports "0 of 0" — the exact collapse the
+   * server column's doc warns about in both directions.
+   */
+  it('renders an unconfigured query limit as unlimited and a configured one as a cap', async () => {
+    mockApi({
+      [SOURCES]: {
+        body: [
+          { ...sources[0], id: 21, displayName: 'Uncapped hydra', queriesUsed: 3, queryLimit: null },
+          { ...sources[0], id: 22, displayName: 'Capped hydra', queriesUsed: 3, queryLimit: 50 },
+        ],
+      },
+    });
+    renderSurface(<SourcesSection />);
+
+    const uncapped = await rowFor('Uncapped hydra');
+    expect(within(uncapped).getByText('3 used, unlimited')).toBeInTheDocument();
+    expect(within(uncapped).queryByText('3 of 0')).not.toBeInTheDocument();
+
+    const capped = await rowFor('Capped hydra');
+    expect(within(capped).getByText('3 of 50')).toBeInTheDocument();
+  }, TEST_TIMEOUT_MS);
+
+  /**
+   * A `disabledUntil` IN THE PAST is not a backoff.
+   *
+   * The row keeps the instant after the hold-off elapses, because the level it
+   * was reached at is still live information. A surface keyed off the field
+   * being non-null rather than off `runtimeState` would show every recovered
+   * source as still waiting, indefinitely.
+   */
+  it('does not render a hold-off countdown for a healthy source whose disabledUntil has passed', async () => {
+    mockApi({
+      [SOURCES]: {
+        body: [
+          {
+            ...sources[0],
+            id: 31,
+            displayName: 'Recovered hydra',
+            runtimeState: 'Healthy',
+            disabledUntil: '2020-01-01T10:00:00Z',
+            disabledLevel: 3,
+          },
+        ],
+      },
+    });
+    renderSurface(<SourcesSection />);
+
+    const recovered = await rowFor('Recovered hydra');
+    expect(within(recovered).getByText('Healthy')).toBeInTheDocument();
+    expect(within(recovered).queryByText(/level 3/)).not.toBeInTheDocument();
+    expect(within(recovered).queryByText(/until /)).not.toBeInTheDocument();
   }, TEST_TIMEOUT_MS);
 
   it('names what would fill the list when there are no sources', async () => {

@@ -76,6 +76,53 @@ const OUTCOME_LABELS: Record<string, string> = {
  */
 const outcomeLabel = (outcome: string): string => OUTCOME_LABELS[outcome] ?? outcome;
 
+/**
+ * arb-x7w8.11 — the operator-facing label for each runtime state, keyed by the
+ * server's closed `SourceRuntimeState` enum.
+ *
+ * FOUR DISTINCT LABELS, NOT ONE "UNAVAILABLE", for exactly the reason
+ * `OUTCOME_LABELS` above gives for the five probe outcomes — this is that same
+ * argument applied to a different closed enum, and the server entity states it
+ * directly: collapsing these "reports a broken key as a temporary pause and
+ * removes the signal to go and fix it". Each wants a different response:
+ *
+ * - Budgeted — the allowance for this window is spent. Raise the limit, or wait.
+ * - Backing off — a transient fault. IT CLEARS ITSELF and needs no action at
+ *   all, which is precisely why it is not a `/api/status` health item.
+ * - Permanently disabled — the key was rejected. Nothing clears this but a human
+ *   replacing the credential, which is why this one IS a blocking health item.
+ *
+ * "Permanently disabled" is also a DIFFERENT CONCEPT from the `enabled` column
+ * beside it: that is configuration an operator chose, this is a credential
+ * failure they did not. They are rendered in separate cells with separate
+ * wording so a surface showing both cannot conflate them.
+ */
+const RUNTIME_STATE_LABELS: Record<string, string> = {
+  Healthy: 'Healthy',
+  Budgeted: 'Budgeted',
+  BackingOff: 'Backing off',
+  PermanentlyDisabled: 'Permanently disabled',
+};
+
+/**
+ * Falls back to the raw enum name rather than to a generic "unavailable", on the
+ * same reasoning as `outcomeLabel`: a fifth server state's own name tells an
+ * operator more than a collapsed verdict, and it is safe to render because it is
+ * a closed enum name and never free text.
+ */
+const runtimeStateLabel = (state: string): string => RUNTIME_STATE_LABELS[state] ?? state;
+
+/**
+ * "N used" against a cap, or against no cap at all.
+ *
+ * NULL IS UNLIMITED AND IS NOT ZERO. Rendering an unconfigured limit as "3 of 0"
+ * or as a percentage is the exact collapse the server column's doc warns about,
+ * and it would read as a source permanently over an allowance nobody set. There
+ * is deliberately no `?? 0` anywhere in this function.
+ */
+const formatUsage = (used: number, limit: number | null): string =>
+  limit === null ? `${used} used, unlimited` : `${used} of ${limit}`;
+
 /** The editor's own state. Every field is a string while it is being typed. */
 interface SourceDraft {
   kind: string;
@@ -465,6 +512,18 @@ export function SourcesSection() {
           the next restart; environment variables are read only to seed this list on a first run.
         </p>
 
+        {/* arb-x7w8.11. The "Restart required" badge on the heading describes the
+            CONFIGURATION columns, and a reader who carried that reading across
+            would take Status and Queries for two more values awaiting a restart —
+            they are the opposite, changing continuously while the process runs.
+            Saying so once here is cheaper than a second badge per row, and it
+            also states what clears the one state nothing clears by itself. */}
+        <p className={styles.muted}>
+          Status and Queries are live and refresh when this page is loaded, unlike the settings
+          above them. A source that is backing off recovers on its own; one that is permanently
+          disabled had its API key rejected and stays disabled until a corrected key succeeds.
+        </p>
+
         {writeError !== null && (
           <p className={`${styles.error} ${local.writeError}`} role="alert">
             {writeError}
@@ -493,6 +552,17 @@ export function SourcesSection() {
                       <th>Name</th>
                       <th>Base URL</th>
                       <th>Enabled</th>
+                      {/* arb-x7w8.11. Status is a SEPARATE column from Enabled rather
+                          than merged into it, because the two answer different
+                          questions: Enabled is configuration the operator chose,
+                          Status is what the source is actually doing. An operator
+                          seeing "Disabled" and "Permanently disabled" in one cell
+                          could not tell which they had caused. Two new columns
+                          rather than an expander: every value here is a short
+                          badge or a count, so a row that has to be opened to read
+                          one word costs more than the width it saves. */}
+                      <th>Status</th>
+                      <th>Queries</th>
                       <th>API key</th>
                       <th>Created</th>
                       <th>Updated</th>
@@ -511,6 +581,46 @@ export function SourcesSection() {
                           <span className={`${styles.badge} ${source.enabled ? styles.badgeOk : ''}`}>
                             {source.enabled ? 'Enabled' : 'Disabled'}
                           </span>
+                        </td>
+                        <td>
+                          {/* arb-x7w8.11 — the derived runtime state, per row.
+                              Healthy is the only affirmative badge; the three that
+                              mean "not being searched right now" share the warning
+                              treatment because the LABEL is what distinguishes them
+                              and a third and fourth hue would compete with it.
+
+                              This is LIVE state inside a panel captioned "Restart
+                              required", which is why it carries its own caption
+                              below the table saying so: the badge above that one
+                              describes pending CONFIGURATION, and a reader who
+                              carried that reading down here would take a backoff
+                              for another value awaiting a restart. */}
+                          <span
+                            className={`${styles.badge} ${
+                              source.runtimeState === 'Healthy' ? styles.badgeOk : styles.badgeWarn
+                            }`}
+                          >
+                            {runtimeStateLabel(source.runtimeState)}
+                          </span>
+                          {/* Shown only while a hold-off is genuinely in force —
+                              keyed off runtimeState and NEVER off `disabledUntil`
+                              being non-null, which stays populated after the
+                              hold-off has elapsed and would otherwise render every
+                              recovered source as still waiting. */}
+                          {source.runtimeState === 'BackingOff' && source.disabledUntil !== null && (
+                            <span className={local.stateDetail}>
+                              until {new Date(source.disabledUntil).toLocaleTimeString()} (level{' '}
+                              {source.disabledLevel})
+                            </span>
+                          )}
+                          {source.lastOutcome !== null && (
+                            <span className={local.stateDetail}>Last: {source.lastOutcome}</span>
+                          )}
+                        </td>
+                        {/* Usage against the cap. `formatUsage` holds the
+                            null-is-unlimited rule; do not inline a `?? 0` here. */}
+                        <td className={styles.muted}>
+                          {formatUsage(source.queriesUsed, source.queryLimit)}
                         </td>
                         <td>
                           {/* The entire read surface for the secret: a boolean the
