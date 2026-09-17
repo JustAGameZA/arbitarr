@@ -6,7 +6,13 @@ import { PageHeader } from '../../components/shell/PageHeader';
 import { QueryState } from '../QueryState';
 import type { EffectiveConfigResponse, StatusResponse } from '../../api/types';
 import styles from '../surface.module.css';
-import { agreementRate, formatDurationSeconds, formatRate } from '../../format';
+import {
+  agreementRate,
+  formatDurationSeconds,
+  formatRate,
+  formatTimestamp,
+  formatTimestampTitle,
+} from '../../format';
 import { useAgreementQuery } from '../Suppressions/decisionQueries';
 import { useEffectiveConfigQuery, useRecentSearchesQuery, useStatusQuery } from './queries';
 
@@ -22,11 +28,6 @@ import { useEffectiveConfigQuery, useRecentSearchesQuery, useStatusQuery } from 
  * silently become its own scope again.
  */
 const DASHBOARD_LOAD_SCOPE = 'dashboard';
-
-/** ISO-8601 timestamps render in the operator's own locale, as the legacy page did. */
-function formatTimestamp(value: string): string {
-  return new Date(value).toLocaleString();
-}
 
 /**
  * The source circuit-breaker state, in operator language (UX candidates 8+9).
@@ -139,17 +140,10 @@ function WorkerHealth({ status }: { status: StatusResponse }) {
           </span>
         }
       />
-      <FactRow
-        label="Last cycle started"
-        value={worker.lastCycleStartedUtc === null ? '—' : formatTimestamp(worker.lastCycleStartedUtc)}
-      />
+      <FactRow label="Last cycle started" value={formatTimestamp(worker.lastCycleStartedUtc)} />
       <FactRow
         label="Last cycle completed"
-        value={
-          worker.lastCycleCompletedUtc === null
-            ? '—'
-            : formatTimestamp(worker.lastCycleCompletedUtc)
-        }
+        value={formatTimestamp(worker.lastCycleCompletedUtc)}
       />
       <FactRow
         label="Last cycle"
@@ -448,7 +442,9 @@ export default function DashboardPage() {
                     <tbody>
                       {entries.map((entry, index) => (
                         <tr key={`${entry.receivedAt}-${index}`}>
-                          <td>{formatTimestamp(entry.receivedAt)}</td>
+                          <td title={formatTimestampTitle(entry.receivedAt)}>
+                            {formatTimestamp(entry.receivedAt)}
+                          </td>
                           <td>{entry.query}</td>
                           <td>{entry.resolvedIdentity ?? '—'}</td>
                           <td>{entry.resultCount}</td>

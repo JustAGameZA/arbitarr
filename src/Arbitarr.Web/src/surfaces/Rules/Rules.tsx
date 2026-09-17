@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { PageHeader } from '../../components/shell/PageHeader';
 import { QueryState, errorMessage } from '../QueryState';
@@ -186,6 +186,40 @@ export default function RulesPage() {
   // in this Set stays fully operable no matter how many other deletes are
   // running.
   const [pendingDeleteIds, setPendingDeleteIds] = useState<ReadonlySet<number>>(new Set());
+
+  // Prune `deleteFailures` entries whose row has left the list -- a refusal for
+  // an id no longer present renders nowhere, but stays keyed to that id
+  // forever otherwise, and if the SAME id is later reused (a new rule created
+  // after the server recycles ids) it would surface with the earlier row's
+  // stale refusal. Runs off `rules.data` rather than the delete callbacks
+  // themselves, since a row can also vanish through another operator's
+  // action -- a concurrent delete from a second admin session -- with no
+  // local callback of this component's own to hook.
+  //
+  // Guarded by a functional update that returns the SAME Map reference when
+  // nothing needs pruning, so a fetch that changes row order or unrelated
+  // fields (not row membership) does not produce a new Map identity and does
+  // not re-trigger this effect's own setState -- no render loop. A row that
+  // is still present is left untouched: this only ever deletes, it never
+  // clears or rewrites a surviving entry.
+  useEffect(() => {
+    const data = rules.data;
+    if (data === undefined) {
+      return;
+    }
+    const liveIds = new Set(data.map((rule) => rule.id));
+    setDeleteFailures((failures) => {
+      let changed = false;
+      const next = new Map(failures);
+      for (const id of failures.keys()) {
+        if (!liveIds.has(id)) {
+          next.delete(id);
+          changed = true;
+        }
+      }
+      return changed ? next : failures;
+    });
+  }, [rules.data]);
 
   const startEditing = (rule: FilterRule) => {
     // A rejected save from a PREVIOUS edit target must not outlive it: without

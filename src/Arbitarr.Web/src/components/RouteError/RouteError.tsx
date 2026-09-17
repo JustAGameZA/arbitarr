@@ -1,5 +1,6 @@
-import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { Component, type ContextType, type ErrorInfo, type ReactNode } from 'react';
 import styles from './RouteError.module.css';
+import { RouteErrorContext } from './RouteErrorContext';
 
 interface RouteErrorProps {
   children: ReactNode;
@@ -43,17 +44,59 @@ interface RouteErrorState {
 export class RouteError extends Component<RouteErrorProps, RouteErrorState> {
   state: RouteErrorState = { hasError: false };
 
+  static contextType = RouteErrorContext;
+  declare context: ContextType<typeof RouteErrorContext>;
+
   static getDerivedStateFromError(): RouteErrorState {
     return { hasError: true };
   }
 
   // Required by React to actually invoke the boundary; intentionally does not
   // log, inspect, or forward the error/errorInfo anywhere (see class comment).
+  //
+  // Also where AppShell is told the panel is up. This boundary used to write
+  // `document.title` directly here, but a class component's `componentDidCatch`
+  // runs during React's commit phase, while AppShell's pathname-keyed title
+  // effect is a passive effect that runs AFTER commit completes for the whole
+  // tree -- and since this boundary is nested INSIDE AppShell at the common
+  // placement (routes.tsx's "Placement 2"), AppShell's effect always ran
+  // after and silently overwrote whatever title this set. Signaling through
+  // context instead removes the race by construction: AppShell is the only
+  // thing that ever assigns `document.title`, keyed on `[pathname,
+  // routeErrored]`, so it is free to fold this state in without anything
+  // downstream racing it.
   componentDidCatch(_error: Error, _errorInfo: ErrorInfo): void {
-    // no-op: no logging, no telemetry -- React's own default console.error
-    // for a caught render error is the only trace of this left behind.
+    // no-op besides the signal: no logging, no telemetry -- React's own
+    // default console.error for a caught render error is the only trace of
+    // this left behind.
+    this.context(true);
   }
 
+  /**
+   * Tells AppShell the panel is gone, so its title effect stops substituting
+   * the error title.
+   *
+   * Only fires when `hasError` is true -- a boundary that never caught
+   * anything never signaled AppShell and must not un-signal something it
+   * never set. Ordering versus AppShell's own effect does not matter here,
+   * unlike the old direct-title-write design: `RouteErrorOutlet` keys this
+   * component on `pathname`, so on navigation this unmount (and this call)
+   * lands in the same commit as the pathname change that reruns AppShell's
+   * effect. AppShell reads `routeErrored` as plain state, not a value this
+   * component hands it moment-to-moment, so whichever order the unmount and
+   * AppShell's effect run in, AppShell ends up rendering the destination
+   * route's own title with `routeErrored` correctly back at `false`.
+   */
+  componentWillUnmount(): void {
+    if (this.state.hasError) {
+      this.context(false);
+    }
+  }
+
+  // Reload is a full `window.location.reload()`, not an in-place state reset:
+  // the whole page (and this component) is torn down and rebuilt from
+  // scratch, so there is no code path here that could leave AppShell's
+  // `routeErrored` stuck at `true` after the operator reloads.
   private handleReload = (): void => {
     window.location.reload();
   };

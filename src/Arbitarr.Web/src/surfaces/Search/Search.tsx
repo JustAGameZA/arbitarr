@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 
 import { PageHeader } from '../../components/shell/PageHeader';
 import { ApiError } from '../../api/client';
+import { formatBytes } from '../../format';
 import { QueryState, errorMessage } from '../QueryState';
 import { CACHE_BAND_LABELS } from '../../api/types';
 import type { AdHocRelease, AdHocSearchProvenance, AdHocSearchResponse } from '../../api/types';
@@ -11,6 +12,7 @@ import local from './Search.module.css';
 import { useEffectiveConfigQuery } from '../Dashboard/queries';
 import { EMPTY_CRITERIA, useAdHocSearchMutation, useExplanationQuery } from './queries';
 import type { SearchCriteria } from './queries';
+import { formatTimestamp, formatTimestampTitle } from '../../format';
 
 /**
  * The "no sources configured" hint (audit F-020b), reusing the Dashboard's
@@ -40,21 +42,6 @@ function NoSourcesHint() {
       <Link to="/settings">Settings &gt; Sources</Link>.
     </p>
   );
-}
-
-/** Bytes to a human size. The server sends the byte count untouched (passthrough). */
-function formatSize(bytes: number): string {
-  if (bytes <= 0) {
-    return '—';
-  }
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let value = bytes;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
 /**
@@ -301,7 +288,7 @@ function ariaSortFor(current: SortState, column: SortColumn): 'ascending' | 'des
  * 3): `.slice()` first, since `.sort()` is in place. `null` sorts by the
  * server's own order, i.e. does nothing.
  *
- * Size sorts on the raw byte count, never `formatSize`'s string. Published
+ * Size sorts on the raw byte count, never `formatBytes`'s string. Published
  * sorts on the raw date. Both treat "absent or unparseable" as sorting LAST in
  * BOTH directions, so a comparator returning a fixed +1/-1 for that case would
  * be wrong for desc; the direction is applied only to definite comparisons and
@@ -432,9 +419,21 @@ function Results({
               <tr key={release.guid}>
                 <td>{release.title}</td>
                 <td>{release.sourceName}</td>
-                <td>{formatSize(release.size)}</td>
+                {/*
+                 * TorznabFeedParser initialises `size` to 0 and leaves it there
+                 * when neither the torznab `size` attribute nor the `<size>`
+                 * element parses -- so on this wire 0 means "unknown", not "a
+                 * zero-byte release". AdHocSearchEndpoint projects that 0
+                 * straight through as a non-nullable number, so the mapping to
+                 * absence has to happen here rather than by widening the DTO
+                 * (tracked separately). formatBytes itself must stay untouched:
+                 * for Library a real 0 is a real 0.
+                 */}
+                <td>{formatBytes(release.size > 0 ? release.size : null)}</td>
                 <td>{release.category.join(', ')}</td>
-                <td>{new Date(release.pubDate).toLocaleString()}</td>
+                <td title={formatTimestampTitle(release.pubDate)}>
+                  {formatTimestamp(release.pubDate)}
+                </td>
                 <td>
                   {/* A name, not a number — see the note in Provenance. */}
                   {release.aiVerdict === null ? (

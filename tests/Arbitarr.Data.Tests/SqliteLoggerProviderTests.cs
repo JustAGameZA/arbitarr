@@ -423,6 +423,311 @@ public sealed class SqliteLoggerProviderTests : IDisposable
         holder.Dispose();
     }
 
+    /// <summary>
+    /// arb-fjid / arb-mczu: THE POSITIVE CONTROL for the ordering tests below. Same harness, same
+    /// store, nothing held: a plain <c>FlushAsync</c> makes the row readable on a SEPARATE
+    /// connection.
+    ///
+    /// <para>Without this, "the row is visible after the flush returns" could pass against a store
+    /// that was never written to for some unrelated reason, and the ordering test would be asserting
+    /// nothing. It demonstrates the assertion CAN fail before the real one relies on it.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_plain_flush_makes_rows_readable_on_another_connection()
+    {
+        var store = NewStore();
+        using var provider = new SqliteLoggerProvider(store);
+
+        provider.CreateLogger("Arbitarr.Api.Search").LogInformation("readable after a plain flush");
+        await provider.FlushAsync();
+
+        // A second LogStore over the same file: its OWN connection, so it can only see COMMITTED
+        // rows. That is exactly the visibility FlushAsync promises.
+        Assert.Contains(
+            (await new LogStore(store.DatabasePath).ReadAsync(null, null, 1, LogStore.MaxPageSize)).Entries,
+            e => e.Message == "readable after a plain flush");
+    }
+
+    /// <summary>
+    /// arb-fjid / arb-mczu, THE PROPERTY: <c>FlushAsync</c> cannot return while another drain still
+    /// holds an uncommitted batch.
+    ///
+    /// <para><b>The defect's exact shape.</b> <c>FlushAsync</c> was a bare alias of
+    /// <c>DrainAsync</c>, which the pump also called every flush interval. One drain dequeues the
+    /// entries and starts writing; the other finds an EMPTY queue, returns early on
+    /// <c>batch.Count == 0</c> and reports success while nothing is committed. So the test leaves
+    /// exactly ONE entry and does not replace it: the holding drain takes it, and the concurrent
+    /// flush meets the empty queue. Giving the second flush its own entry would prove nothing —
+    /// SQLite serialises the two WRITES by itself, which masks the missing gate (measured; both
+    /// gated and ungated block in that arrangement).</para>
+    ///
+    /// <para><b>MUTANT KILLED:</b> the provider without <c>_drainGate</c>, run in a throwaway project
+    /// outside the repository per CLAUDE.md §4, with the cleanse seam present in BOTH copies so the
+    /// gate is the only difference. Gated: the flush did not return while the drain was held, and the
+    /// row committed after release. Ungated: the flush RETURNED mid-hold and its entry was NOT
+    /// visible at that moment — the contract broken, this test red.</para>
+    ///
+    /// <para><b>The hold is a blocking cleanse, not a file lock.</b> A held SQLite write lock cannot
+    /// do this: <c>LogStore.WriteAsync</c> opens its connection synchronously, so a blocked drain
+    /// blocks its CALLER inline rather than yielding a pending task, and the write then fails instead
+    /// of waiting. The cleanse delegate runs inside the drain, under the caller's own await.</para>
+    /// </summary>
+    [Fact]
+    public async Task FlushAsync_does_not_return_while_another_drain_holds_an_uncommitted_batch()
+    {
+        var release = new TaskCompletionSource();
+        var entered = new TaskCompletionSource();
+
+        var store = NewStore();
+        using var provider = NewProviderHoldingOn("HOLD-ME", entered, release, store);
+        var logger = provider.CreateLogger("Arbitarr.Api.Search");
+
+        // The ONLY entry: the holding drain takes it and the queue is then empty, which is the
+        // window the defect lives in.
+        logger.LogInformation("HOLD-ME the only entry");
+
+        // On a background thread so the drain's synchronous connection open blocks there, not here.
+        var holdingDrain = Task.Run(() => provider.FlushAsync());
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(30));
+
+        try
+        {
+            var flush = Task.Run(() => provider.FlushAsync());
+
+            // THE ASSERTION THE UNGATED PROVIDER FAILS: its drain finds the empty queue and returns
+            // while the holding drain's batch is still uncommitted.
+            var settled = await Task.WhenAny(flush, Task.Delay(TimeSpan.FromSeconds(1)));
+            Assert.True(
+                settled != flush,
+                "FlushAsync returned while another drain still held an uncommitted batch. Its " +
+                "contract is that every entry enqueued before the call is committed and visible to " +
+                "another connection by the time it returns.");
+
+            release.SetResult();
+            await flush.WaitAsync(TimeSpan.FromSeconds(30));
+        }
+        finally
+        {
+            release.TrySetResult();
+            await holdingDrain.WaitAsync(TimeSpan.FromSeconds(30));
+        }
+
+        // And once it returns the row IS visible on a separate connection. The positive control above
+        // proves this assertion can fail.
+        Assert.Contains(
+            (await new LogStore(store.DatabasePath).ReadAsync(null, null, 1, LogStore.MaxPageSize)).Entries,
+            e => e.Message.Contains("HOLD-ME", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// arb-fjid: cancelling while waiting for the gate ends <c>FlushAsync</c> with the token's
+    /// cancellation — not a timeout fall-through, which would return a flush that had committed
+    /// nothing and so reopen the hole the gate closes — and leaves the gate USABLE afterwards.
+    /// </summary>
+    [Fact]
+    public async Task A_cancelled_flush_ends_in_cancellation_and_leaves_the_gate_usable()
+    {
+        var release = new TaskCompletionSource();
+        var entered = new TaskCompletionSource();
+
+        var store = NewStore();
+        using var provider = NewProviderHoldingOn("HOLD-ME", entered, release, store);
+        var logger = provider.CreateLogger("Arbitarr.Api.Search");
+
+        logger.LogInformation("HOLD-ME the only entry");
+        var holdingDrain = Task.Run(() => provider.FlushAsync());
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(30));
+
+        try
+        {
+            using var cancellation = new CancellationTokenSource();
+            var flush = Task.Run(() => provider.FlushAsync(cancellation.Token));
+
+            var settled = await Task.WhenAny(flush, Task.Delay(TimeSpan.FromSeconds(1)));
+            Assert.True(settled != flush, "the second flush did not wait for the held gate");
+
+            cancellation.Cancel();
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => flush.WaitAsync(TimeSpan.FromSeconds(30)));
+        }
+        finally
+        {
+            release.TrySetResult();
+            await holdingDrain.WaitAsync(TimeSpan.FromSeconds(30));
+        }
+
+        // The cancelled waiter did not leave the gate taken: a later flush still commits.
+        logger.LogInformation("after the cancelled flush");
+        await provider.FlushAsync().WaitAsync(TimeSpan.FromSeconds(30));
+
+        Assert.Contains(
+            (await new LogStore(store.DatabasePath).ReadAsync(null, null, 1, LogStore.MaxPageSize)).Entries,
+            e => e.Message == "after the cancelled flush");
+    }
+
+    /// <summary>
+    /// arb-fjid: the gate must not change what <c>Dispose</c> does. Its wait stays bounded, so a
+    /// Dispose landing while a drain is held still returns inside that bound and does not throw.
+    /// </summary>
+    [Fact]
+    public async Task Dispose_during_a_held_drain_returns_within_its_bound_and_does_not_throw()
+    {
+        var release = new TaskCompletionSource();
+        var entered = new TaskCompletionSource();
+
+        var store = NewStore();
+        var provider = NewProviderHoldingOn(
+            "HOLD-ME", entered, release, store, shutdownWait: TimeSpan.FromMilliseconds(200));
+
+        provider.CreateLogger("Arbitarr.Api.Search").LogInformation("HOLD-ME the only entry");
+        var holdingDrain = Task.Run(() => provider.FlushAsync());
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(30));
+
+        try
+        {
+            var stopwatch = Stopwatch.StartNew();
+            Assert.Null(Record.Exception(provider.Dispose));
+            stopwatch.Stop();
+
+            // Generous against a loaded CI box, but far below what waiting the hold out would cost:
+            // the point is that Dispose GIVES UP rather than waiting for a drain it cannot bound.
+            Assert.True(
+                stopwatch.Elapsed < TimeSpan.FromSeconds(10),
+                $"Dispose took {stopwatch.ElapsedMilliseconds}ms while a drain was held. Its wait is " +
+                "bounded on purpose so a wedged writer cannot stop a container from stopping.");
+        }
+        finally
+        {
+            release.TrySetResult();
+            await holdingDrain.WaitAsync(TimeSpan.FromSeconds(30));
+        }
+
+        // The abandoned drain still finishes and publishes, as arb-s3ky requires.
+        await provider.DrainCompleted.WaitAsync(TimeSpan.FromSeconds(30));
+    }
+
+    /// <summary>
+    /// arb-fjid: covers the decision to dispose the gate in <c>PumpAsync</c>'s <c>finally</c> rather
+    /// than in <c>Dispose</c>. A <c>FlushAsync</c> issued after teardown must neither throw nor hang:
+    /// it meets a disposed gate and returns, because by then the pump has published
+    /// <see cref="SqliteLoggerProvider.DrainCompleted"/> and there is nothing left to commit.
+    ///
+    /// <para>Disposing the gate inside <c>Dispose</c> instead would pull it out from under a drain
+    /// that Dispose had just abandoned — its wait is bounded, so that drain can still be running.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_flush_after_teardown_neither_throws_nor_hangs()
+    {
+        var store = NewStore();
+        var provider = new SqliteLoggerProvider(store);
+        provider.CreateLogger("Arbitarr.Api.Search").LogInformation("a line to drain");
+
+        provider.Dispose();
+        await provider.DrainCompleted.WaitAsync(TimeSpan.FromSeconds(30));
+
+        // The gate is disposed by now. This must return quietly rather than throwing
+        // ObjectDisposedException at a caller that is already shutting down.
+        var afterTeardown = provider.FlushAsync();
+        await afterTeardown.WaitAsync(TimeSpan.FromSeconds(30));
+
+        Assert.Null(afterTeardown.Exception);
+    }
+
+    /// <summary>
+    /// arb-fjid review: a flush ADMITTED by the pump's final release must not throw when it goes to
+    /// release a gate the pump has since disposed.
+    ///
+    /// <para><b>The interleaving.</b> The pump's final drain holds the gate; a <c>FlushAsync</c>
+    /// queues on <c>WaitAsync</c> behind it; the pump releases — and that release is exactly what
+    /// ADMITS the queued flush — then completes its <c>finally</c>, publishing
+    /// <see cref="SqliteLoggerProvider.DrainCompleted"/> and disposing the gate, while the admitted
+    /// flush is still running and still owes a <c>Release</c>. That release lands on a disposed
+    /// <c>SemaphoreSlim</c>, which really does throw on .NET 10 (verified, not assumed).</para>
+    ///
+    /// <para><b>MUTANT KILLED:</b> the same provider with the release UNGUARDED, as first pushed.
+    /// Run in a throwaway project outside the repository: guarded, the flush completes without
+    /// throwing; unguarded, it throws <c>ObjectDisposedException</c> straight out of
+    /// <c>FlushAsync</c>. Both runs confirmed the flush really was queued on the gate first, so the
+    /// test cannot pass by never reaching the race.</para>
+    ///
+    /// <para>Deterministic throughout: the hold is the cleanse seam, and each step waits on a
+    /// <c>TaskCompletionSource</c> rather than on elapsed time.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_flush_admitted_by_the_pumps_final_release_does_not_throw_on_the_disposed_gate()
+    {
+        var release = new TaskCompletionSource();
+        var entered = new TaskCompletionSource();
+
+        var store = NewStore();
+
+        // A LONG shutdown wait, so Dispose genuinely waits for the final drain rather than giving up
+        // and finishing teardown before the race can be set up.
+        var provider = NewProviderHoldingOn(
+            "HOLD-ME", entered, release, store, shutdownWait: TimeSpan.FromSeconds(30));
+
+        provider.CreateLogger("Arbitarr.Api.Search").LogInformation("HOLD-ME the final drain");
+
+        // Dispose on a background thread: it cancels, the pump runs its FINAL drain, and that drain
+        // takes the gate and blocks in the cleanse.
+        var disposing = Task.Run(provider.Dispose);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(30));
+
+        // Queue a flush behind the held gate. It cannot be admitted until the pump releases.
+        var flush = Task.Run(() => provider.FlushAsync());
+        var settled = await Task.WhenAny(flush, Task.Delay(TimeSpan.FromMilliseconds(500)));
+        Assert.True(
+            settled != flush,
+            "the flush was not waiting on the gate, so this test never reached the race it exists for");
+
+        // Let the pump finish: release (which admits the flush), publish, dispose the gate.
+        release.SetResult();
+
+        // THE ASSERTION THE UNGUARDED RELEASE FAILS.
+        var exception = await Record.ExceptionAsync(() => flush.WaitAsync(TimeSpan.FromSeconds(30)));
+        Assert.Null(exception);
+
+        await disposing.WaitAsync(TimeSpan.FromSeconds(30));
+        await provider.DrainCompleted.WaitAsync(TimeSpan.FromSeconds(30));
+    }
+
+    /// <summary>
+    /// A provider whose drain BLOCKS while writing any row whose message contains
+    /// <paramref name="marker"/>, signalling <paramref name="entered"/> when it gets there and
+    /// waiting for <paramref name="release"/>.
+    ///
+    /// <para>This is the arb-fjid test seam on the provider's constructor, which forwards to
+    /// <c>LogStore.WriteAsync</c>'s own arb-qafw <c>cleanse</c> seam. It holds a drain open INSIDE
+    /// the gate, which is what the ordering tests need and what a held file lock cannot give (see
+    /// the ordering test's remarks). Rows without the marker are cleansed normally, so nothing else
+    /// the test writes is affected — and the real
+    /// <see cref="LogMessageCleanser.Cleanse(string?)"/> still runs on every row, so these tests do
+    /// not quietly disable scrubbing.</para>
+    /// </summary>
+    private SqliteLoggerProvider NewProviderHoldingOn(
+        string marker,
+        TaskCompletionSource entered,
+        TaskCompletionSource release,
+        LogStore store,
+        TimeSpan? shutdownWait = null) =>
+        new(
+            store,
+            LogLevel.Information,
+            timeProvider: null,
+            onError: null,
+            shutdownWait ?? SqliteLoggerProvider.DefaultShutdownWait,
+            cleanse: text =>
+            {
+                if (text is not null && text.Contains(marker, StringComparison.Ordinal))
+                {
+                    entered.TrySetResult();
+                    release.Task.GetAwaiter().GetResult();
+                }
+
+                return LogMessageCleanser.Cleanse(text);
+            });
+
     [Fact]
     public async Task Messages_are_cleansed_before_they_are_stored()
     {
