@@ -373,7 +373,7 @@ public sealed class AdminBackupEndpointsTests : IAsyncLifetime
 
     /// <summary>
     /// A recorded automatic-backup failure reaches the status response, and a later success clears
-    /// it. This is the degraded path'''s provenance (docs/standards/data.md): without it a broken
+    /// it. This is the degraded path's provenance (docs/standards/data.md): without it a broken
     /// scheduled backup is indistinguishable from a healthy one that has not run again yet, because
     /// the last-backup timestamp merely stops advancing.
     ///

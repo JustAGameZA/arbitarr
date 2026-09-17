@@ -210,7 +210,7 @@ public sealed class ProxyDownloadIndexerKeyNeverLeavesTheProcessTests : IAsyncLi
         // SURFACE 3: the persistent log store, PER ROW. "Some row is clean" would pass against an
         // implementation that redacted one row and leaked on every other one.
         await host.Services.FlushLogSinkAsync();
-        var entries = await ReadLogEntriesAsync(host);
+        var entries = await LogStorePaging.ReadAllAsync(host);
         Assert.NotEmpty(entries);
         foreach (var entry in entries)
         {
@@ -281,7 +281,7 @@ public sealed class ProxyDownloadIndexerKeyNeverLeavesTheProcessTests : IAsyncLi
             $"{IndexerBaseUrl}getnzb/proxy-probe-1?apikey={IndexerKey}");
 
         await host.Services.FlushLogSinkAsync();
-        var probed = (await ReadLogEntriesAsync(host))
+        var probed = (await LogStorePaging.ReadAllAsync(host))
             .Where(entry => entry.Logger.Contains("ProxyIndexerKeyLeakProbe", StringComparison.Ordinal))
             .ToList();
 
@@ -353,40 +353,14 @@ public sealed class ProxyDownloadIndexerKeyNeverLeavesTheProcessTests : IAsyncLi
             .ToList();
     }
 
-    /// <summary>
-    /// EVERY row, not the first page of them (arb-j4hq). This read used to take page 1 at
-    /// <see cref="LogStore.MaxPageSize"/>, which silently bounded every absence assertion in this
-    /// file at 200 rows: a leaked row landing past that boundary would be invisible to a scan that
-    /// never asked for it, and the test would stay green while covering less than it claims. The
-    /// loop is bounded by <see cref="LogPage.Total"/>, which the store computes in the same
-    /// transaction as the page, so it terminates even while the sink is still appending. Kept
-    /// identical to the copy in <see cref="RedirectAccessModeKeyNeverReachesLogsTests"/> so the two
-    /// sibling files cannot drift in what they scan.
-    /// </summary>
-    private static async Task<IReadOnlyList<LogEntry>> ReadLogEntriesAsync(WebApplicationFactory<Program> host)
-    {
-        var store = host.Services.GetRequiredService<LogStore>();
-        var entries = new List<LogEntry>();
-
-        for (var page = 1; ; page++)
-        {
-            var read = await store.ReadAsync(level: null, logger: null, page: page, pageSize: LogStore.MaxPageSize);
-            entries.AddRange(read.Entries);
-
-            if (read.Entries.Count == 0 || entries.Count >= read.Total)
-            {
-                return entries;
-            }
-        }
-    }
-
     private static async Task<string> SearchAndExtractProxyGuidAsync(HttpClient client)
     {
         using var response = await client.GetAsync(
             $"/newznab/api?t=search&q=proxy+probe&apikey={Uri.EscapeDataString(ClientKey)}");
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-
         var body = await response.Content.ReadAsStringAsync();
+        // arb-wmbp: reports the status code and body on failure via the shared helper (see
+        // SearchResponseAssertion for why printing the body is safe on this route).
+        SearchResponseAssertion.AssertOk(response, body);
         var item = Assert.Single(XDocument.Parse(body).Descendants("item"));
         var enclosureUrl = item.Elements("enclosure").Single().Attribute("url")!.Value;
 
