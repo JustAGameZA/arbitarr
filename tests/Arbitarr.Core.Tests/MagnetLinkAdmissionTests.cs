@@ -29,7 +29,7 @@ public sealed class MagnetLinkAdmissionTests
     [Fact]
     public void A_magnet_carrying_a_btih_exact_topic_is_admitted()
     {
-        var admitted = TorznabFeedParser.TryValidateMagnetLink(Magnet(), out var validated);
+        var admitted = TorznabFeedParser.TryValidateMagnetLink(Magnet(), out var validated, out var infoHash);
 
         Assert.True(admitted);
         Assert.Equal("magnet", validated.Scheme);
@@ -37,6 +37,10 @@ public sealed class MagnetLinkAdmissionTests
         // The info hash survives verbatim: the route redirects to the link the FEED gave, and does
         // not synthesise one from ReleaseCandidate.InfoHash (which would drop the trackers).
         Assert.Contains(InfoHash, validated.OriginalString, StringComparison.Ordinal);
+
+        // arb-4ysc: and the admission hands the btih back rather than discarding it, which is what
+        // lets the parser populate ReleaseCandidate.InfoHash without parsing the link a second time.
+        Assert.Equal(InfoHash, infoHash);
     }
 
     /// <summary>
@@ -49,23 +53,95 @@ public sealed class MagnetLinkAdmissionTests
     [InlineData("MaGnEt:?xt=URN:BTIH:332afa1fd16fc0a5fd8d54e18d62e57f60a06764")]
     public void The_magnet_scheme_and_exact_topic_are_matched_case_insensitively(string link)
     {
-        Assert.True(TorznabFeedParser.TryValidateMagnetLink(link, out _));
+        Assert.True(TorznabFeedParser.TryValidateMagnetLink(link, out _, out _));
     }
 
     /// <summary>
     /// A magnet with NO BitTorrent exact topic is refused. Admission is "magnet AND btih", so an
     /// implementation that dropped the info-hash requirement and admitted the scheme alone fails
     /// here.
+    ///
+    /// <para>codereview-492: the last three cases are an EMPTY btih. <c>magnet:?xt=urn:btih:</c>
+    /// satisfied the old prefix test while naming no torrent at all, so it was admitted and would
+    /// now yield an empty info hash to render. The third of them pins that an empty btih does not
+    /// mask a later one only when there IS no later one — the positive direction is
+    /// <see cref="A_btih_in_a_second_xt_parameter_is_admitted_and_its_hash_returned"/>.</para>
     /// </summary>
     [Theory]
     [InlineData("magnet:")]
     [InlineData("magnet:?dn=Some.Release.1080p")]
     [InlineData("magnet:?xt=urn:sha1:332afa1fd16fc0a5fd8d54e18d62e57f60a06764")]
     [InlineData("magnet:?xtra=urn:btih:332afa1fd16fc0a5fd8d54e18d62e57f60a06764")]
+    [InlineData("magnet:?xt=urn:btih:")]
+    [InlineData("magnet:?xt=urn:btih:&dn=Some.Release.1080p")]
+    [InlineData("magnet:?xt=urn:btih:&xt=urn:sha1:332afa1fd16fc0a5fd8d54e18d62e57f60a06764")]
     public void A_magnet_without_a_btih_exact_topic_is_refused(string link)
     {
-        Assert.False(TorznabFeedParser.TryValidateMagnetLink(link, out var validated));
+        Assert.False(TorznabFeedParser.TryValidateMagnetLink(link, out var validated, out var infoHash));
         Assert.Null(validated);
+        Assert.Null(infoHash);
+    }
+
+    /// <summary>
+    /// codereview-492: a btih in a SECOND <c>xt</c> parameter is admitted, and its hash is the one
+    /// returned. A magnet may legitimately carry several exact topics in any order, so this is
+    /// correct behaviour — but it was unpinned, and a rewrite that looked only at the first <c>xt</c>
+    /// (the shape a <c>FirstOrDefault(p =&gt; p.StartsWith("xt="))</c> naturally produces) would have
+    /// passed every other test in this file while silently dropping these releases.
+    /// </summary>
+    [Theory]
+    [InlineData($"magnet:?xt=urn:sha1:0000000000000000000000000000000000000000&xt=urn:btih:{InfoHash}")]
+    [InlineData($"magnet:?dn=Some.Release.1080p&xt=urn:btmh:1220abcd&xt=urn:btih:{InfoHash}")]
+    [InlineData($"magnet:?xt=urn:btih:&xt=urn:btih:{InfoHash}")]
+    public void A_btih_in_a_second_xt_parameter_is_admitted_and_its_hash_returned(string link)
+    {
+        Assert.True(TorznabFeedParser.TryValidateMagnetLink(link, out var validated, out var infoHash));
+        Assert.Equal("magnet", validated.Scheme);
+        Assert.Equal(InfoHash, infoHash);
+    }
+
+    /// <summary>
+    /// sec-492: a RAW control character anywhere in the link is refused at admission. Without this,
+    /// <c>DownloadProxyEndpoint</c>'s magnet arm hands <see cref="Uri.OriginalString"/> — which
+    /// preserves a raw CR/LF verbatim, unlike <see cref="Uri.Query"/> — to <c>Results.Redirect</c>,
+    /// and Kestrel throws on a control character in the <c>Location</c> header. So a malicious feed
+    /// could turn any magnet item into a guaranteed 500 on download. The refusal closes it by
+    /// construction one layer earlier, and this asserts the guard is ours rather than Kestrel's.
+    ///
+    /// <para>The last case is a NON-newline control character, so the rule pinned here is
+    /// <c>char.IsControl</c> and not a CR/LF special case — an implementation narrowed to the two
+    /// newline characters passes every other case and fails that one.</para>
+    ///
+    /// <para>Its positive control is the separate
+    /// <see cref="A_magnet_whose_control_characters_are_percent_encoded_is_still_admitted"/>: the
+    /// same CR/LF percent-ENCODED is still admitted, because that form stays encoded all the way
+    /// into the header where it is inert text. Without it, a blanket "refuse anything mentioning
+    /// 0D0A" would be over-broad and pass here unnoticed.</para>
+    /// </summary>
+    [Theory]
+    [InlineData($"magnet:?xt=urn:btih:{InfoHash}&dn=Bad\r\nInjected: header")]
+    [InlineData($"magnet:?xt=urn:btih:{InfoHash}&dn=Bad\nInjected: header")]
+    [InlineData($"magnet:?xt=urn:btih:{InfoHash}&dn=Bad\rInjected: header")]
+    [InlineData($"magnet:?xt=urn:btih:{InfoHash}\r\n&dn=Some.Release.1080p")]
+    [InlineData($"magnet:?xt=urn:btih:{InfoHash}&dn=Bad\u0001Null")]
+    public void A_magnet_carrying_a_raw_control_character_is_refused(string link)
+    {
+        Assert.False(TorznabFeedParser.TryValidateMagnetLink(link, out var validated, out var infoHash));
+        Assert.Null(validated);
+        Assert.Null(infoHash);
+    }
+
+    /// <inheritdoc cref="A_magnet_carrying_a_raw_control_character_is_refused"/>
+    [Fact]
+    public void A_magnet_whose_control_characters_are_percent_encoded_is_still_admitted()
+    {
+        // The encoded twin of the first refusal case above. It survives into the Location header as
+        // the literal text "%0D%0A", which is not a control character and cannot split a response.
+        var link = $"magnet:?xt=urn:btih:{InfoHash}&dn=Bad%0D%0AInjected:%20header";
+
+        Assert.True(TorznabFeedParser.TryValidateMagnetLink(link, out var validated, out var infoHash));
+        Assert.Equal(InfoHash, infoHash);
+        Assert.DoesNotContain(validated.OriginalString, c => char.IsControl(c));
     }
 
     /// <summary>
@@ -82,8 +158,9 @@ public sealed class MagnetLinkAdmissionTests
     [InlineData("data:text/html,<script>alert(1)</script>")]
     public void Every_other_non_http_scheme_stays_refused(string link)
     {
-        Assert.False(TorznabFeedParser.TryValidateMagnetLink(link, out var validated));
+        Assert.False(TorznabFeedParser.TryValidateMagnetLink(link, out var validated, out var infoHash));
         Assert.Null(validated);
+        Assert.Null(infoHash);
     }
 
     /// <summary>
@@ -97,7 +174,7 @@ public sealed class MagnetLinkAdmissionTests
     {
         const string Link = "https://evil.example/x#magnet:?xt=urn:btih:332afa1fd16fc0a5fd8d54e18d62e57f60a06764";
 
-        Assert.False(TorznabFeedParser.TryValidateMagnetLink(Link, out _));
+        Assert.False(TorznabFeedParser.TryValidateMagnetLink(Link, out _, out _));
 
         // ...and being http(s), it is judged by the origin pin, which refuses it against a different
         // origin exactly as it always did. The admission changed nothing for http(s) links.
@@ -185,7 +262,109 @@ public sealed class MagnetLinkAdmissionTests
         Assert.Equal(ProtocolKind.Usenet, Assert.Single(results).Protocol);
     }
 
-    private static string BuildFeed(params (string Title, string Link, string? Protocol)[] items)
+    /// <summary>
+    /// arb-4ysc: the whole point of parsing the btih — the parser carries it into
+    /// <see cref="ReleaseCandidate.InfoHash"/>, which <c>IndexerXmlWriter</c> re-emits as
+    /// <c>torznab:attr name="infohash"</c>. Until this, no production path set that field, so the
+    /// writer's branch was dead and no *arr client ever saw a hash from a real feed.
+    ///
+    /// <para>Asserted PER ITEM over one feed carrying both kinds (CLAUDE.md §4): the magnet item
+    /// carries its own hash AND the NZB item beside it carries none. An implementation that wrote
+    /// one value to every row — the shape a misplaced assignment outside the loop produces — passes
+    /// the first assertion and fails the second, which is why they are in one test rather than two.
+    /// The second magnet pins that each item gets ITS OWN hash rather than the first one's.</para>
+    /// </summary>
+    [Fact]
+    public void Each_magnet_item_carries_its_own_info_hash_while_an_nzb_item_beside_it_carries_none()
+    {
+        const string OtherHash = "0123456789abcdef0123456789abcdef01234567";
+
+        var feed = BuildFeed(
+            ("Magnet Release", Magnet(), null),
+            ("Other Magnet Release", Magnet(OtherHash), null),
+            ("Nzb Release", "https://indexer.example:9117/dl?id=1", null));
+
+        var results = TorznabFeedParser.ParseFeedResponse(feed, new Uri("https://indexer.example:9117"));
+
+        Assert.Equal(InfoHash, Assert.Single(results, r => r.Title == "Magnet Release").InfoHash);
+        Assert.Equal(OtherHash, Assert.Single(results, r => r.Title == "Other Magnet Release").InfoHash);
+
+        // The NZB item has neither a magnet nor an infohash attr, so it must stay null — a hash on a
+        // Usenet release is a claim the wire never made, and the writer would then advertise it.
+        Assert.Null(Assert.Single(results, r => r.Title == "Nzb Release").InfoHash);
+    }
+
+    /// <summary>
+    /// The btih is carried VERBATIM: neither case-folded nor converted between hex and base32. The
+    /// value is rendered straight back out to the *arr client, so a hash we reshaped is no longer the
+    /// one the indexer published — and base32 is upper-case by convention, so a defensive
+    /// <c>ToLowerInvariant</c> would corrupt exactly the encoding it looks like it is normalising.
+    /// </summary>
+    [Theory]
+    [InlineData("332afa1fd16fc0a5fd8d54e18d62e57f60a06764")]
+    [InlineData("332AFA1FD16FC0A5FD8D54E18D62E57F60A06764")]
+    [InlineData("GMVPUH6RN7AKL7MNKTQY2YXFP5QKA22E")]
+    public void The_btih_reaches_the_candidate_exactly_as_the_feed_wrote_it(string hash)
+    {
+        var feed = BuildFeed(("Magnet Release", Magnet(hash), null));
+
+        var results = TorznabFeedParser.ParseFeedResponse(feed, new Uri("https://indexer.example:9117"));
+
+        Assert.Equal(hash, Assert.Single(results).InfoHash);
+    }
+
+    /// <summary>
+    /// Precedence when both sources are present and DISAGREE: the declared
+    /// <c>torznab:attr name="infohash"</c> wins, the magnet's btih is the fallback. The attr is what
+    /// the indexer chose to publish as the release's identity; the btih is inferred from a link that
+    /// also carries trackers and a display name. Asserted with two DIFFERENT hashes, because equal
+    /// ones would pass under either precedence and prove nothing.
+    ///
+    /// <para>The three items are one feed so the fallback direction is pinned beside the winner: an
+    /// implementation that took the magnet unconditionally fails the first, one that took the attr
+    /// unconditionally fails the second, and one that required both fails the third.</para>
+    /// </summary>
+    [Fact]
+    public void A_declared_infohash_attr_wins_over_the_magnets_btih_which_remains_the_fallback()
+    {
+        const string DeclaredHash = "0123456789abcdef0123456789abcdef01234567";
+
+        var feed = BuildFeedWithInfoHashAttr(
+            ("Both Disagree", Magnet(), DeclaredHash),
+            ("Magnet Only", Magnet(), null),
+            ("Attr Only", "https://indexer.example:9117/dl?id=1", DeclaredHash));
+
+        var results = TorznabFeedParser.ParseFeedResponse(feed, new Uri("https://indexer.example:9117"));
+
+        Assert.Equal(DeclaredHash, Assert.Single(results, r => r.Title == "Both Disagree").InfoHash);
+        Assert.Equal(InfoHash, Assert.Single(results, r => r.Title == "Magnet Only").InfoHash);
+        Assert.Equal(DeclaredHash, Assert.Single(results, r => r.Title == "Attr Only").InfoHash);
+    }
+
+    /// <summary>
+    /// A blank <c>infohash</c> attr does not beat a real btih. An indexer that emits the attribute
+    /// unconditionally and leaves it empty would otherwise blank out a hash the magnet did supply —
+    /// "the attr wins" is about what the indexer SAID, and an empty attr said nothing.
+    /// </summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void A_blank_infohash_attr_falls_back_to_the_magnets_btih(string declared)
+    {
+        var feed = BuildFeedWithInfoHashAttr(("Magnet Release", Magnet(), declared));
+
+        var results = TorznabFeedParser.ParseFeedResponse(feed, new Uri("https://indexer.example:9117"));
+
+        Assert.Equal(InfoHash, Assert.Single(results).InfoHash);
+    }
+
+    private static string BuildFeed(params (string Title, string Link, string? Protocol)[] items) =>
+        BuildFeed(items.Select(item => (item.Title, item.Link, item.Protocol, (string?)null)).ToArray());
+
+    private static string BuildFeedWithInfoHashAttr(params (string Title, string Link, string? InfoHashAttr)[] items) =>
+        BuildFeed(items.Select(item => (item.Title, item.Link, (string?)null, item.InfoHashAttr)).ToArray());
+
+    private static string BuildFeed((string Title, string Link, string? Protocol, string? InfoHashAttr)[] items)
     {
         XNamespace torznab = "http://torznab.com/schemas/2015/feed";
 
@@ -201,7 +380,12 @@ public sealed class MagnetLinkAdmissionTests
                         ? null
                         : new XElement(torznab + "attr",
                             new XAttribute("name", "protocol"),
-                            new XAttribute("value", item.Protocol))))));
+                            new XAttribute("value", item.Protocol)),
+                    item.InfoHashAttr is null
+                        ? null
+                        : new XElement(torznab + "attr",
+                            new XAttribute("name", "infohash"),
+                            new XAttribute("value", item.InfoHashAttr))))));
 
         return new XDocument(rss).ToString();
     }
