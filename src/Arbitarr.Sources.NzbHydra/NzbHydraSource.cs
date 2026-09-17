@@ -404,8 +404,9 @@ public sealed class NzbHydraSource : IUpstreamSource
         //
         // LOAD-BEARING (CLAUDE.md §1): IHttpClientFactory attaches its own logging handler to every
         // named client and logs the full absolute URI at Information, which since #65 lands in the
-        // persistent log store. LogMessageCleanser scrubs credentials in QUERY STRINGS only — a
-        // secret moved into the URL path would not be covered. So the apikey must stay here.
+        // persistent log store. LogMessageCleanser's shared arms scrub credential-shaped values by
+        // pattern but carry no arm for an arbitrary key in the URL path — a secret moved there would
+        // not be covered. So the apikey must stay here.
         queryParams.Add("apikey=" + Uri.EscapeDataString(_options.ApiKey));
 
         builder.Query = string.Join("&", queryParams);

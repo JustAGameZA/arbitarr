@@ -309,9 +309,9 @@ public sealed class SourceRepository
     ///
     /// <para><b>Never the value, never the host, never the username.</b> This line lands in the
     /// persistent SQLite log store served at <c>/api/admin/logs</c> (CLAUDE.md §1), and
-    /// <c>LogMessageCleanser</c> scrubs QUERY STRINGS — a credential in the userinfo component of a
-    /// URL would survive it verbatim. Logging the value in order to complain about it would perform
-    /// exactly the leak being complained about. Same constraint as
+    /// <c>LogMessageCleanser</c>'s arms scrub credential-shaped values by pattern but carry none for
+    /// URL userinfo — a credential there would survive it verbatim. Logging the value in order to
+    /// complain about it would perform exactly the leak being complained about. Same constraint as
     /// <c>security-properties-x7w8.md</c>'s P7 (the unknown-Kind warning names the row id and
     /// nothing else, explicitly because the BaseUrl "may carry userinfo until the H1 bead lands" —
     /// this is that bead).</para>

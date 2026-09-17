@@ -287,8 +287,8 @@ describe('Dashboard', () => {
     const banner = await screen.findByRole('alert');
     expect(banner).toHaveTextContent('nzbhydra2');
     expect(banner).toHaveTextContent('NZB access type');
-    // "observed since" is the process-lifetime hedge: the server loses these on restart, so the
-    // wording must not read as "the problem started at this time".
+    // "observed since" names when the condition began: arb-v3w persisted health items, so this
+    // timestamp survives a restart rather than resetting with it.
     expect(banner).toHaveTextContent(/observed since/i);
     expect(banner.classList).toContain(surfaceStyles.banner);
   });

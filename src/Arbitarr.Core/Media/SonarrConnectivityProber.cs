@@ -28,8 +28,9 @@ namespace Arbitarr.Core.Media;
 /// login page — produces <see cref="SourceProbeOutcome.UnexpectedResponse"/>, a different fix.</para>
 ///
 /// <para><b>THE SECRET NEVER COMES BACK OUT.</b> The key is written into the outbound query string
-/// — the same placement <c>ArrApiProvider</c> uses, and the placement <c>LogMessageCleanser</c>
-/// scrubs (it covers credentials in QUERY STRINGS, not in URL paths; CLAUDE.md §1). This type
+/// — the same placement <c>ArrApiProvider</c> uses, and the placement <c>LogMessageCleanser</c>'s
+/// shared arms scrub by pattern (they carry no arm for an arbitrary key in a URL path; CLAUDE.md
+/// §1). This type
 /// returns a bare enum, so there is no field on the result that could carry the key, and no
 /// exception message, response body, or upstream URL is ever propagated to the caller. Cancellation
 /// the CALLER requested is rethrown rather than classified, so an aborted request is not

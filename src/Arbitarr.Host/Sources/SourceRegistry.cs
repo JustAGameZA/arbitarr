@@ -280,8 +280,9 @@ public sealed class SourceRegistry : ISourceRegistry
                 // base URL — which may still carry userinfo (SourceRepository.ValidateBaseUrl accepts
                 // it today, unlike its *arr siblings; that is its own bead). Naming the id is enough
                 // for an operator to find the row, and it is the one field here that cannot carry a
-                // credential into the log store. LogMessageCleanser would not save this: it scrubs
-                // credentials in query strings, not a bare value or a URL's userinfo (CLAUDE.md §1).
+                // credential into the log store. LogMessageCleanser would not save this: its arms
+                // scrub credential-shaped values by pattern, but carry none for a bare value or a
+                // URL's userinfo (CLAUDE.md §1).
                 _logger.LogWarning(
                     "Sources: source {SourceId} has a kind this version cannot resolve into a " +
                     "search source, and was skipped. The other sources are unaffected. The kind is " +
@@ -317,9 +318,10 @@ public sealed class SourceRegistry : ISourceRegistry
     /// to the same scheme, host and port as its base URL, so the three comparisons below all pass and
     /// the row would be admitted; the composed URI nonetheless carries credentials this deployment
     /// never configured, and they are sent on every request and logged in the URI's authority (neither
-    /// the framework's query-string redaction nor <c>LogMessageCleanser</c> touches that part — see
-    /// CLAUDE.md §1). The adapter's own guard refuses it, so without this clause the row would pass
-    /// here, reach the constructor and throw out of <c>ResolveAsync</c> — failing the WHOLE scope
+    /// the framework's query-string redaction nor any of <c>LogMessageCleanser</c>'s pattern-based
+    /// arms touches that part — see CLAUDE.md §1). The adapter's own guard refuses it, so without
+    /// this clause the row would pass here, reach the constructor and throw out of
+    /// <c>ResolveAsync</c> — failing the WHOLE scope
     /// rather than skipping one row, which is the opposite of what this guard exists to do.</para>
     /// </remarks>
     private static bool IsOnOrigin(Uri baseUrl, string apiPath)

@@ -551,8 +551,9 @@ public static class SettingsValidator
     /// one: the value is served back on <c>GET /api/admin/ai/ollama</c> and, because
     /// <c>IHttpClientFactory</c>'s logging handler writes the full absolute request URI at
     /// Information into the persistent log store (CLAUDE.md §1), a credential embedded here would
-    /// become a durable leak that <c>LogMessageCleanser</c> — which scrubs query strings, not
-    /// userinfo — would not catch. Rejecting it keeps "this setting is not a secret" TRUE by
+    /// become a durable leak that <c>LogMessageCleanser</c> — whose arms scrub credential-shaped
+    /// values by pattern but carry none for URL userinfo — would not catch. Rejecting it keeps
+    /// "this setting is not a secret" TRUE by
     /// construction rather than by convention.</item>
     /// <item><b>A <c>.invalid</c> host</b> — RFC 2606 reserves it as permanently unresolvable, so
     /// it is what the test fixtures use (<c>http://ollama.example.invalid</c>) precisely because
