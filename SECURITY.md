@@ -32,4 +32,4 @@ If you ran a source in redirect access mode and ship container console output to
 - Check your log aggregator, file, or forwarder for the old key and remove or expire those entries per its retention tooling.
 - Check the persistent log store's retention (`/api/admin/logs`) as well, even though this specific line should not have reached it.
 
-No released version is affected, since there are no released versions yet; the fix is on `master`. There is no GitHub Security Advisory for this — Arbitarr's [Scope notes](#scope-notes) already treats this class of leak as in-scope, and this note plus the fix is judged sufficient for a pre-release project.
+The `V0.1` pre-release predates redirect access mode and is not affected. Only `master` builds taken between that feature landing and the fix are. There is no GitHub Security Advisory for this — Arbitarr's [Scope notes](#scope-notes) already treats this class of leak as in-scope, and this note plus the fix is judged sufficient.
