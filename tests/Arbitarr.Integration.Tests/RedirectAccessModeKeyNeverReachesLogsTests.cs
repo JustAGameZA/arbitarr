@@ -803,20 +803,19 @@ public sealed class RedirectAccessModeKeyNeverReachesLogsTests : IAsyncLifetime
         using var response = await client.GetAsync(
             $"/newznab/api?t=search&q=redirect+probe&apikey={Uri.EscapeDataString(ClientKey)}");
 
-        // arb-krtr: on a non-OK status, name the status and the server's body rather than just
-        // "Expected OK, Actual X" — that is all CI's failure gave the last time this flaked
-        // (InternalServerError under full-shard load; see arb-krtr's diagnosis). Printing the body
-        // here is safe: SearchEndpoint.InfrastructureErrorResult and NoSourceAnsweredResult are the
-        // ONLY ways this route answers non-OK, and both render the FIXED string
+        // arb-krtr / arb-wmbp: on a non-OK status, name the status and the server's body rather
+        // than just "Expected OK, Actual X" — that is all CI's failure gave the last time this
+        // flaked (InternalServerError under full-shard load; see arb-krtr's diagnosis). Printing
+        // the body here is safe: SearchEndpoint.InfrastructureErrorResult and NoSourceAnsweredResult
+        // are the ONLY ways this route answers non-OK, and both render the FIXED string
         // SearchEndpoint.InfrastructureErrorDescription ("The indexer encountered an internal
         // error") — the endpoint's own doc guarantees the underlying exception's message never
         // reaches this body (CLAUDE.md §1). So there is no server-side detail, upstream URL or the
         // planted IndexerKey to leak here; a cleanser pass or length cap would just be theatre. No
-        // truncation is applied for the same reason.
+        // truncation is applied for the same reason. See SearchResponseAssertion for why this is
+        // now shared rather than copied.
         var body = await response.Content.ReadAsStringAsync();
-        Assert.True(
-            response.StatusCode == HttpStatusCode.OK,
-            $"Search returned {(int)response.StatusCode} {response.StatusCode}, body: {body}");
+        SearchResponseAssertion.AssertOk(response, body);
         var item = Assert.Single(XDocument.Parse(body).Descendants("item"));
         var enclosureUrl = item.Elements("enclosure").Single().Attribute("url")!.Value;
 

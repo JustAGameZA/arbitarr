@@ -1,4 +1,3 @@
-using System.Net;
 using System.Xml.Linq;
 using Arbitarr.Core.Releases;
 using Arbitarr.Core.Sources;
@@ -305,9 +304,10 @@ public sealed class ReleaseLookupPayloadSecretTests : IAsyncLifetime
     {
         using var response = await client.GetAsync(
             $"/newznab/api?t=search&q=some+release&apikey={Uri.EscapeDataString(ClientKey)}");
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-
         var body = await response.Content.ReadAsStringAsync();
+        // arb-wmbp: reports the status code and body on failure via the shared helper (see
+        // SearchResponseAssertion for why printing the body is safe on this route).
+        SearchResponseAssertion.AssertOk(response, body);
         var item = Assert.Single(XDocument.Parse(body).Descendants("item"));
         var enclosureUrl = item.Elements("enclosure").Single().Attribute("url")!.Value;
 

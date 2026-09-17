@@ -54,7 +54,7 @@ namespace Arbitarr.Data.Maintenance;
 /// <para>Backup provenance — including a FAILED pass, which is the case a caller actually needs —
 /// lives in <c>BackupStateStore</c> and is served by <c>GET /api/admin/backup/status</c>. Adding
 /// backup fields here instead was tried and removed: this record is built at
-/// <c>MaintenanceJob.RunAsync</c>'''s single return, where the backup result is not in scope, so the
+/// <c>MaintenanceJob.RunAsync</c>'s single return, where the backup result is not in scope, so the
 /// fields could only ever have carried their defaults. Anything spanning the stores belongs in the
 /// hosted service or the state store, and should grep for <c>DatabaseFileName</c> rather than for
 /// "arbitarr.db".</para>
