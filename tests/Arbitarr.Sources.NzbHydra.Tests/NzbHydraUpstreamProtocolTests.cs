@@ -570,8 +570,9 @@ public class NzbHydraUpstreamProtocolTests
     /// <summary>
     /// CLAUDE.md §1: <c>IHttpClientFactory</c> attaches its own logging handler to every named
     /// client and logs the full absolute URI at Information, and <c>LogMessageCleanser</c> scrubs
-    /// credentials in QUERY STRINGS only. A key moved into the URL path would therefore be logged
-    /// verbatim and never redacted. This pins the key to the query string on BOTH endpoints, so the
+    /// credentials in query strings. A key moved into the URL path is covered by neither the
+    /// framework redaction nor the cleanser and would therefore be logged verbatim. This pins the
+    /// key to the query string on BOTH endpoints, so the
     /// #99 path change cannot be the edit that quietly relocates it.
     /// </summary>
     [Theory]

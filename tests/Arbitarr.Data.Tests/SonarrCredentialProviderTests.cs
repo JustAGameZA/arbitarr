@@ -82,8 +82,9 @@ public sealed class SonarrCredentialProviderTests : IDisposable
     /// The direct call. A positional record's synthesised <c>ToString</c> renders every member, so
     /// without the override this type would print its own key — and it is handed to code about to
     /// make a network request, which is the code most likely to reach a log line. Neither existing
-    /// layer covers that shape: both the <c>IHttpClientFactory</c> URI redaction and
-    /// <c>LogMessageCleanser</c> are scoped to query strings, while a bare <c>ApiKey = value</c>
+    /// layer covers that shape: the <c>IHttpClientFactory</c> URI redaction is scoped to query
+    /// strings, and <c>LogMessageCleanser</c> scrubs credentials in query strings, covering
+    /// neither a bare value nor a URL path, while a bare <c>ApiKey = value</c>
     /// inside a record's string form is not a URI at all (CLAUDE.md §1).
     /// </summary>
     [Fact]
