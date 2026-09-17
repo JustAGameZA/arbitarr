@@ -179,6 +179,42 @@ public static class SourceSeeder
         // Resolution reads only the database. The environment is not consulted here at all — that is
         // the whole point of the ruling, and it is what makes a container recreated with no
         // environment variables a non-event.
+        // arb-72mf: the dashboard's "is anything configured" answer, computed in the same pass and
+        // deliberately NOT the NZBHydra leg below. Since #344 an install may have only direct
+        // Newznab/Torznab rows, which SourceRegistry resolves and searches; the old answer came off
+        // the NzbHydraKind-filtered query below, so such an install reported not-configured while
+        // searching correctly (#50's failure mode).
+        //
+        // Enabled AND keyed must hold on the SAME row, which is why the ids are materialised first
+        // and the key names built from them through SourceRepository.ApiKeySettingName. Never
+        // rewrite this as "any enabled source" AND "any key row": those are independent
+        // existentials and would report configured for an enabled keyless row sitting beside a
+        // disabled keyed one, which is neither. The name is built by the shared helper rather than
+        // inlined as a "source:" + Id + ":api_key" concatenation so EF could translate it: the
+        // helper is the single definition of that row name, and a hand-copied format here would
+        // drift silently the day it changes. The id list is bounded by the source count (single
+        // digits on any real install), so the extra round trip costs nothing at a once-per-startup
+        // call site.
+        //
+        // EXISTENCE only, never a value: ReadApiKeyForUpstreamRequestAsync has exactly one caller
+        // per secret family (CLAUDE.md section 1, pinned by SecretReaderSingleCallerTests), and
+        // deciding "configured" is not a reason to become another one. This mirrors
+        // SourceRepository.HasApiKeyAsync's predicate rather than reading a key.
+        var enabledSourceIds = await dbContext.Sources
+            .AsNoTracking()
+            .Where(s => s.Enabled)
+            .Select(s => s.Id)
+            .ToListAsync(cancellationToken);
+
+        var enabledSourceKeyNames = enabledSourceIds
+            .Select(SourceRepository.ApiKeySettingName)
+            .ToList();
+
+        var anySourceConfigured = enabledSourceKeyNames.Count > 0
+            && await dbContext.Settings
+                .AsNoTracking()
+                .AnyAsync(e => enabledSourceKeyNames.Contains(e.Name), cancellationToken);
+
         var source = await dbContext.Sources
             .AsNoTracking()
             .Where(s => s.Kind == NzbHydraKind && s.Enabled)
@@ -187,8 +223,11 @@ public static class SourceSeeder
 
         if (source is null)
         {
-            resolved.Apply(baseUrl: null, apiKey: null, sourceName: null);
-            logger.LogInformation("Sources: no enabled NZBHydra2 source is configured in the database.");
+            resolved.Apply(baseUrl: null, apiKey: null, sourceName: null, anySourceConfigured);
+            logger.LogInformation(
+                "Sources: no enabled NZBHydra2 source is configured in the database. At least one " +
+                "enabled source of another kind carries an API key: {AnySourceConfigured}.",
+                anySourceConfigured);
             return;
         }
 
@@ -198,7 +237,7 @@ public static class SourceSeeder
             .Select(e => e.Value)
             .FirstOrDefaultAsync(cancellationToken);
 
-        resolved.Apply(source.BaseUrl, apiKey, source.DisplayName);
+        resolved.Apply(source.BaseUrl, apiKey, source.DisplayName, anySourceConfigured);
 
         // AC5: name, per source, where its configuration came from.
         logger.LogInformation(

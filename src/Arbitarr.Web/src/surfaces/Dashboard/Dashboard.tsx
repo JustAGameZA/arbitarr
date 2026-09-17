@@ -160,6 +160,15 @@ function WorkerHealth({ status }: { status: StatusResponse }) {
  * configured-vs-reporting distinction this surface exists to keep honest.
  * Resolution happens once at startup, so a source disabled from Settings
  * changes this only after a restart.
+ *
+ * arb-72mf widened that predicate to ANY KIND: at least one enabled source of
+ * any kind with a key, not only an NZBHydra one. An install whose only sources
+ * are direct Newznab/Torznab rows (possible since #344) searched them correctly
+ * while this empty state told the operator nothing was configured. The FIELD is
+ * still named `nzbHydraConfigured` because that name is public API on
+ * /api/config/effective; only its meaning moved. The copy below therefore names
+ * sources generally and must not name NZBHydra again — doing so would send an
+ * operator with a working Torznab setup looking for a product they do not use.
  */
 function SourcesTable({
   status,
@@ -172,7 +181,7 @@ function SourcesTable({
     if (nzbHydraConfigured === false) {
       return (
         <p className={styles.empty}>
-          No sources configured. Add an NZBHydra2 URL and API key to start searching.{' '}
+          No sources configured. Add a source URL and API key to start searching.{' '}
           {/*
             arb-mn12. ONLY this branch is a link. The other two are not calls to
             action — one says the setup is already working and the other is the
@@ -197,7 +206,7 @@ function SourcesTable({
     if (nzbHydraConfigured === true) {
       return (
         <p className={styles.empty}>
-          NZBHydra2 is configured. Sources appear here after the first search runs.
+          A source is configured. Sources appear here after the first search runs.
         </p>
       );
     }
@@ -299,7 +308,12 @@ function AgreementSummary() {
 function ConfigFacts({ config }: { config: EffectiveConfigResponse }) {
   return (
     <dl className={styles.facts}>
-      <FactRow label="NZBHydra configured" value={config.nzbHydraConfigured ? 'Yes' : 'No'} />
+      {/* arb-72mf: the LABEL, not the field. `nzbHydraConfigured` keeps its
+          wire name (public API on /api/config/effective) while its meaning is
+          now "at least one enabled source of any kind has a key", so a row
+          reading "NZBHydra configured: Yes" on a Torznab-only install would be
+          a plain falsehood in the one place built to state facts. */}
+      <FactRow label="Source configured" value={config.nzbHydraConfigured ? 'Yes' : 'No'} />
       <FactRow label="Fresh until" value={formatDurationSeconds(config.freshUntilSeconds)} />
       <FactRow label="Serve until" value={formatDurationSeconds(config.serveUntilSeconds)} />
       <FactRow label="Active window" value={formatDurationSeconds(config.activeWindowSeconds)} />
