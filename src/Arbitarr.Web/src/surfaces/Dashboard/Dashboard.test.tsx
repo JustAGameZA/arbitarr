@@ -1,4 +1,5 @@
 import { screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import DashboardPage from './Dashboard';
@@ -84,14 +85,150 @@ describe('Dashboard', () => {
     vi.unstubAllGlobals();
   });
 
-  it('renders its title and the three panels', async () => {
+  it('renders its title and its two top-level panels', async () => {
     mockApi(allOk);
     renderSurface(<DashboardPage />);
 
     expect(screen.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeInTheDocument();
     expect(await screen.findByRole('heading', { name: 'Status' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Recent searches' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Effective configuration' })).toBeInTheDocument();
+    // arb-h9gd: Effective configuration is deliberately NOT a third heading --
+    // see the hierarchy block below for the assertions that pin why.
+  });
+
+  /**
+   * arb-h9gd — the visual hierarchy of this surface.
+   *
+   * The bead: three equally-weighted top-level panels gave nine lines of static
+   * configuration the same prominence as indexer health, so the surface told an
+   * operator nothing about what to look at first. Effective configuration is
+   * collapsed behind a disclosure; Status and Recent searches keep their weight.
+   *
+   * These assertions are on STRUCTURE, not text presence, and each excludes a
+   * specific way the change could be made without making it:
+   *
+   *  - "not a heading" alone would pass against a <details open> that changed
+   *    nothing, so the content's INITIAL INVISIBILITY is asserted too, and the
+   *    same query is then shown to succeed after the summary is activated. That
+   *    pairing is the positive control: it proves the absence assertion can
+   *    detect the content, rather than passing because the rows never render at
+   *    all (a deletion would also make them invisible).
+   *  - Status and Recent searches are asserted to still be top-level <section>
+   *    panels with their <h2>, because a "hierarchy change" that quietly
+   *    demoted health as well would otherwise satisfy every other assertion
+   *    here. The bead names the health banners as the one thing already
+   *    correctly privileged.
+   */
+  describe('visual hierarchy (arb-h9gd)', () => {
+    it('does not render Effective configuration as a heading-weight top-level panel', async () => {
+      mockApi(allOk);
+      renderSurface(<DashboardPage />);
+
+      await screen.findByRole('heading', { name: 'Status' });
+
+      expect(
+        screen.queryByRole('heading', { name: 'Effective configuration' }),
+      ).not.toBeInTheDocument();
+
+      // Not merely "no heading": no top-level `.panel` section carries it
+      // either. A <section class=panel> whose label was demoted to a <p> would
+      // keep every bit of the DOM weight this bead is removing.
+      for (const panel of document.querySelectorAll(`.${surfaceStyles.panel}`)) {
+        expect(panel.textContent).not.toContain('Effective configuration');
+      }
+    });
+
+    /**
+     * DO NOT REWRITE THIS AS `expect(...).not.toBeVisible()`. It is the obvious
+     * form and it is VACUOUS HERE, which was measured, not assumed: jsdom
+     * implements none of `<details>`'s hiding. It ships no UA rule for the
+     * closed state, so the collapsed rows compute `display: block`; `toBeVisible`
+     * answers true for them, and `getByRole` finds controls inside a closed
+     * `<details>` just as readily as inside an open one. A visibility assertion
+     * would therefore pass both before and after this bead's change — it would
+     * assert nothing at all.
+     *
+     * What jsdom DOES model faithfully is the `open` attribute and its toggling,
+     * so that is what is asserted: closed on mount, open after the summary is
+     * activated. The consequence for a real browser — that closed content is out
+     * of the layout and out of the accessibility tree — is the platform's
+     * guarantee for `<details>`, and choosing the native element instead of a
+     * hand-rolled expander is precisely how this surface buys it. Pinning the
+     * element and its state is the strongest claim this environment supports.
+     */
+    it('keeps the disclosure closed on mount and opens it when the summary is activated', async () => {
+      mockApi(allOk);
+      renderSurface(<DashboardPage />);
+
+      // Wait for the config query to have RESOLVED first: the summary renders
+      // synchronously, so querying the rows before the data arrives would fail
+      // for the wrong reason entirely.
+      await screen.findByText('1.00:00:00');
+
+      const summary = screen.getByText('Effective configuration');
+      const details = summary.closest('details');
+      expect(details).not.toBeNull();
+      expect(details).not.toHaveAttribute('open');
+
+      // The rows are inside THAT element, not merely somewhere on the page --
+      // without this the assertions above would hold for an empty <details>
+      // rendered beside an untouched always-visible panel.
+      expect(within(details as HTMLElement).getByText('Query snapshot TTL')).toBeInTheDocument();
+      expect(within(details as HTMLElement).getByText('1.00:00:00')).toBeInTheDocument();
+
+      await userEvent.click(summary);
+
+      expect(details).toHaveAttribute('open');
+    });
+
+    it('keeps Status and Recent searches as top-level panels with their headings', async () => {
+      mockApi(allOk);
+      renderSurface(<DashboardPage />);
+
+      for (const name of ['Status', 'Recent searches']) {
+        const heading = await screen.findByRole('heading', { name });
+        expect(heading.classList).toContain(surfaceStyles.panelHeading);
+        expect(heading.closest('section')?.classList).toContain(surfaceStyles.panel);
+        // Not inside a disclosure: a `<details>` ancestor would make these
+        // collapsible too, which is the exact demotion this bead must not make.
+        expect(heading.closest('details')).toBeNull();
+      }
+    });
+
+    it('keeps the health banners inside the Status panel, alerting and visible', async () => {
+      mockApi({
+        ...allOk,
+        '/api/status': { body: { ...status, health: [blockingHealthItem] } },
+      });
+      renderSurface(<DashboardPage />);
+
+      const banner = await screen.findByRole('alert');
+      expect(banner).toBeVisible();
+      expect(banner.closest('details')).toBeNull();
+
+      const statusPanel = screen
+        .getByRole('heading', { name: 'Status' })
+        .closest(`.${surfaceStyles.panel}`);
+      expect(statusPanel).not.toBeNull();
+      expect(statusPanel?.contains(banner)).toBe(true);
+    });
+
+    it('still resolves the not-configured empty state from the effective-config query', async () => {
+      // The regression a hierarchy change most plausibly causes: SourcesTable
+      // reads `nzbHydraConfigured` from the query fetched for the collapsed
+      // panel. Collapsing the RENDERING must not stop the QUERY, and this
+      // branch is the only place an operator would notice that it had.
+      mockApi({
+        ...allOk,
+        '/api/status': { body: { ...status, sources: [] } },
+        '/api/config/effective': { body: { ...config, nzbHydraConfigured: false } },
+      });
+      renderSurface(<DashboardPage />);
+
+      const empty = await screen.findByText(/No sources configured/);
+      expect(empty).toBeVisible();
+      expect(empty.closest('details')).toBeNull();
+    });
   });
 
   it('renders its fact rows through the shared surface fact grid', async () => {

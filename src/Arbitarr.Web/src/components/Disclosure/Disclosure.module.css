@@ -1,0 +1,61 @@
+/*
+ * Disclosure primitive (arb-h9gd). A native <details>/<summary>, styled to read
+ * as the panel chrome surface.module.css already establishes.
+ *
+ * Colours come only from the theme.css custom properties (AC3): no #hex, rgb()
+ * or hsl() literal appears here, and the tree-wide guard in
+ * .github/workflows/build-test.yml rejects one in any *.module.css.
+ *
+ * Spacing stays as px literals, per the standing decision recorded in
+ * PageToolbar.module.css's header: only the three shell constants are tokenised
+ * in theme.css, and a token nothing asserts is a pinned constant with no
+ * mechanism behind it.
+ */
+
+/* Deliberately mirrors `.panel` rather than nesting inside one. A collapsed
+   disclosure IS the demoted panel, so it carries the same border, ground and
+   bottom margin — the operator reads one less panel, not a panel inside a
+   panel. */
+.disclosure {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-bottom: 16px;
+}
+
+/* The metrics of `.panelHeading`, so the collapsed row sits at exactly the
+   height the panel it replaced had — the page's rhythm does not jump when this
+   is opened or closed. It is NOT a heading element: see Disclosure.tsx. */
+.summary {
+  padding: 11px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+  cursor: pointer;
+  /* list-item is the default display for <summary>; keeping it is what keeps
+     the browser's native disclosure triangle. Do not set `display: block` or
+     `list-style: none` to "clean it up" — the triangle is the only visual cue
+     that this row expands, and there is no replacement affordance here. */
+  user-select: none;
+}
+
+.summary:hover {
+  color: var(--fg-primary);
+}
+
+/* The open state's border only exists once there is content beneath it to
+   separate, which is why it is on [open] rather than on .summary itself: a
+   permanent bottom border would draw a line under a collapsed row with nothing
+   below it. */
+.disclosure[open] .summary {
+  border-bottom: 1px solid var(--border);
+}
+
+/* `.panelBody`'s padding, for the same reason the summary takes
+   `.panelHeading`'s: expanding this reveals content laid out exactly as the
+   always-visible panel laid it out. */
+.content {
+  padding: 16px;
+}
