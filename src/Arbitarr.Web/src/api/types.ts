@@ -163,7 +163,16 @@ export interface AdHocSearchProvenance {
   cacheAge: string | null;
   /** Numeric — see CACHE_BAND_LABELS. */
   cacheBand: number;
+  /** Sources that answered with a rate limit. Always present, empty when none did. */
   rateLimitedSources: string[];
+  /**
+   * Sources that did not answer in time. A name here does not mean the source is
+   * down: the whole-fan-out ceiling puts a healthy-but-slow source in this list
+   * too, so copy built on it says "did not answer in time", never "is down".
+   */
+  timedOutSources: string[];
+  /** Sources that failed some other way (transport, protocol, parse). */
+  failedSources: string[];
 }
 
 /** AdHocSearchEndpoint.cs — AdHocSearchResponse. */

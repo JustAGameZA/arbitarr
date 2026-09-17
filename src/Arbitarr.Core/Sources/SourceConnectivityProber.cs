@@ -214,7 +214,16 @@ public sealed class SourceConnectivityProber
     /// Builds the caps URI, preserving any base path the source is mounted under (a source behind a
     /// reverse proxy at <c>/hydra</c> must be probed at <c>/hydra/api</c>, not <c>/api</c>). The key
     /// travels as a query parameter because that is what the Newznab/Torznab API takes — the same
-    /// choice <c>NzbHydraSource</c> makes — and this URI is never logged or returned.
+    /// choice <c>NzbHydraSource</c> makes — and this method itself never logs or returns it.
+    ///
+    /// What protects it once the URI reaches the registered <c>SourceConnectivityProber</c>
+    /// <c>IHttpClientFactory</c> client (Program.cs) is NOT <c>LogMessageCleanser</c> — the framework's
+    /// own HttpClient logging handler collapses the entire query string to <c>?*</c> before the
+    /// request-URI message is ever formatted, so the key never reaches the cleanser through that path
+    /// at all (CLAUDE.md §1). That collapse is gated by the <c>System.Net.Http.DisableUriRedaction</c>
+    /// switch (env var <c>DOTNET_SYSTEM_NET_HTTP_DISABLEURIREDACTION</c>), which this repository never
+    /// sets, so the default (redaction ON) is what the claim rests on — pinned by
+    /// <c>SourceProberKeyIsScrubbedFromLogsTests</c> and <c>DisableUriRedactionSwitchTests</c>.
     ///
     /// The <c>/api</c> suffix is the Newznab endpoint; see the type doc for why probing that one
     /// alone establishes everything the five outcomes can distinguish (#99).

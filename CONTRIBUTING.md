@@ -143,6 +143,15 @@ Every PR must pass two required checks before merge:
   **14 days** — the routine `trx-*` artifacts expire after 1, and a rerun overwrites the job log
   that held the stack trace, which is how arb-agh's evidence was lost. Download that artifact
   rather than reaching for `gh run view --log-failed` on a run that has since been rerun.
+
+A separate `playwright` job (arb-qp5) runs one Chromium-only Playwright spec guarding the mobile
+shell's drawer/top-bar stacking at 390px. It is optional, not one of the two required checks
+above, and it is not in the `gate` job's `needs:` list. CI installs its browser with
+`npx playwright install --with-deps chromium` (the `--with-deps` pulls OS-level libraries the
+runner image doesn't already have); locally you only need the browser itself, so
+`npx playwright install chromium` once is enough, then `npm run test:e2e` from
+`src/Arbitarr.Web`.
+
 - **`Deploy review environment`** — builds the container image from `Dockerfile` and smoke-checks
   that the running container answers `GET /health`. **A green tick here means the image builds
   and `/health` answers — nothing more.** It does not mean anything was deployed anywhere; no
