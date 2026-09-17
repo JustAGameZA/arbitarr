@@ -1,0 +1,38 @@
+.panel {
+  max-width: var(--content-max-width);
+  margin: 40px auto;
+  padding: 24px;
+}
+
+.title {
+  margin: 0 0 8px;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--fg-primary);
+}
+
+.description {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.button {
+  font: inherit;
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-sidebar);
+  color: var(--fg-primary);
+  cursor: pointer;
+}
+
+.link {
+  color: var(--fg-primary);
+}

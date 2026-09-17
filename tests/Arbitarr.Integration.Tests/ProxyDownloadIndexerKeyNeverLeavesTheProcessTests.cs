@@ -64,6 +64,11 @@ public sealed class ProxyDownloadIndexerKeyNeverLeavesTheProcessTests : IAsyncLi
 
     private const string PayloadText = "<nzb>proxy-served-bytes</nzb>";
 
+    /// <summary>
+    /// The per-CLASS root. Every host gets its OWN subdirectory under it (see
+    /// <see cref="PerHostConfigDirectory"/>); this level exists so teardown has a single path to
+    /// delete.
+    /// </summary>
     private readonly string _configDirectory = Path.Combine(
         Path.GetTempPath(), "arbitarr-proxy-indexer-key-tests", Guid.NewGuid().ToString("N"));
 
@@ -125,7 +130,10 @@ public sealed class ProxyDownloadIndexerKeyNeverLeavesTheProcessTests : IAsyncLi
 
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
-            builder.UseSetting("Arbitarr:ConfigDir", _configDirectory);
+            // arb-j4hq: this host's OWN database, not one shared with the other hosts this class
+            // builds. See PerHostConfigDirectory for why separate directories rather than disposing
+            // the previous factory here.
+            builder.UseSetting("Arbitarr:ConfigDir", PerHostConfigDirectory.Create(_configDirectory));
             builder.UseSetting("Arbitarr:ApiKey", ClientKey);
             builder.ConfigureServices(services =>
             {
@@ -345,11 +353,31 @@ public sealed class ProxyDownloadIndexerKeyNeverLeavesTheProcessTests : IAsyncLi
             .ToList();
     }
 
+    /// <summary>
+    /// EVERY row, not the first page of them (arb-j4hq). This read used to take page 1 at
+    /// <see cref="LogStore.MaxPageSize"/>, which silently bounded every absence assertion in this
+    /// file at 200 rows: a leaked row landing past that boundary would be invisible to a scan that
+    /// never asked for it, and the test would stay green while covering less than it claims. The
+    /// loop is bounded by <see cref="LogPage.Total"/>, which the store computes in the same
+    /// transaction as the page, so it terminates even while the sink is still appending. Kept
+    /// identical to the copy in <see cref="RedirectAccessModeKeyNeverReachesLogsTests"/> so the two
+    /// sibling files cannot drift in what they scan.
+    /// </summary>
     private static async Task<IReadOnlyList<LogEntry>> ReadLogEntriesAsync(WebApplicationFactory<Program> host)
     {
-        var page = await host.Services.GetRequiredService<LogStore>()
-            .ReadAsync(level: null, logger: null, page: 1, pageSize: LogStore.MaxPageSize);
-        return page.Entries;
+        var store = host.Services.GetRequiredService<LogStore>();
+        var entries = new List<LogEntry>();
+
+        for (var page = 1; ; page++)
+        {
+            var read = await store.ReadAsync(level: null, logger: null, page: page, pageSize: LogStore.MaxPageSize);
+            entries.AddRange(read.Entries);
+
+            if (read.Entries.Count == 0 || entries.Count >= read.Total)
+            {
+                return entries;
+            }
+        }
     }
 
     private static async Task<string> SearchAndExtractProxyGuidAsync(HttpClient client)
