@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using Arbitarr.Data;
 using Arbitarr.Data.Backup;
 using Arbitarr.Data.Entities;
+using Arbitarr.Core.Sources;
 using Arbitarr.Data.Settings;
 using Arbitarr.Host.Maintenance;
 using Arbitarr.TestSupport;
@@ -48,6 +49,118 @@ public sealed class MaintenanceHostedServiceTests : IDisposable
         services.AddScoped(sp => new SettingsRepository(sp.GetRequiredService<ArbitarrDbContext>(), TimeSpan.FromMinutes(15)));
         services.AddSingleton(timeProvider);
         return services.BuildServiceProvider();
+    }
+
+    /// <summary>
+    /// arb-x7w8.5. The background caps refresh rides this timer, so a cycle must actually ask every
+    /// resolved source for its caps and write what it gets.
+    ///
+    /// <para>The assertion is on the STORE, not on the source having been called: "GetCapsAsync ran"
+    /// would pass for a pass that fetched and then dropped the result, which is exactly the shape
+    /// that leaves the served caps permanently stale while the job reports healthy. Both protocol
+    /// families are asserted present because a fetch of only one leaves the other's entry to go
+    /// stale unnoticed (#99).</para>
+    /// </summary>
+    [Fact]
+    public async Task ExecuteAsync_RefreshesEverySourcesCapsIntoTheStore_OnEachCycle()
+    {
+        var clock = new FakeTimeProvider(Now);
+
+        var store = new RecordingCapsCacheStore();
+        var source = new StubUpstreamSource("indexer-1");
+
+        var services = new ServiceCollection();
+        services.AddScoped(_ => CreateContext());
+        services.AddScoped(sp => new SettingsRepository(sp.GetRequiredService<ArbitarrDbContext>(), TimeSpan.FromMinutes(15)));
+        services.AddSingleton<TimeProvider>(clock);
+        services.AddSingleton<ICapsCacheStore>(store);
+        services.AddScoped<CapsRefresher>();
+        services.AddScoped<ISourceRegistry>(_ => new StaticSourceRegistry([source]));
+
+        using var provider = services.BuildServiceProvider();
+        var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
+
+        var service = new MaintenanceHostedService(scopeFactory, clock);
+        await service.StartAsync(CancellationToken.None);
+
+        var torznabKey = CapsAggregator.CacheKey("indexer-1", SearchProtocol.Torznab);
+        var newznabKey = CapsAggregator.CacheKey("indexer-1", SearchProtocol.Newznab);
+
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (await store.GetLastKnownGoodAsync(newznabKey) is null && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(10);
+        }
+
+        await service.StopAsync(CancellationToken.None);
+
+        Assert.NotNull(await store.GetLastKnownGoodAsync(torznabKey));
+        Assert.NotNull(await store.GetLastKnownGoodAsync(newznabKey));
+
+        // The stored payload is the one the source answered with, not a default — which is what
+        // distinguishes a real fetch-and-write from a row created empty.
+        Assert.Equal(new[] { 5000 }, (await store.GetLastKnownGoodAsync(torznabKey))!.SupportedCategories);
+
+        Assert.Null(service.ExecuteTask?.Exception);
+    }
+
+    /// <summary>
+    /// A caps cache store that keeps its rows in memory, so a test can assert on what the background
+    /// pass wrote without a second database.
+    /// </summary>
+    private sealed class RecordingCapsCacheStore : ICapsCacheStore
+    {
+        private readonly Dictionary<string, SourceCaps> _store = new(StringComparer.Ordinal);
+
+        public Task<SourceCaps?> GetLastKnownGoodAsync(string sourceName, CancellationToken cancellationToken = default)
+        {
+            lock (_store)
+            {
+                return Task.FromResult(_store.TryGetValue(sourceName, out var caps) ? caps : null);
+            }
+        }
+
+        public Task SaveAsync(string sourceName, SourceCaps caps, CancellationToken cancellationToken = default)
+        {
+            lock (_store)
+            {
+                _store[sourceName] = caps;
+            }
+
+            return Task.CompletedTask;
+        }
+
+        // Mirrors the real store: removes the several protocol keys the bare name expands into,
+        // never a prefix match, so a double is not kinder than the thing it stands in for.
+        public Task DeleteAsync(string sourceName, CancellationToken cancellationToken = default)
+        {
+            lock (_store)
+            {
+                foreach (var protocol in CapsAggregator.AllProtocols)
+                {
+                    _store.Remove(CapsAggregator.CacheKey(sourceName, protocol));
+                }
+            }
+
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>An upstream that answers caps and nothing else — the background pass calls no more.</summary>
+    private sealed class StubUpstreamSource(string name) : IUpstreamSource
+    {
+        public string Name { get; } = name;
+
+        public Task<IReadOnlyList<Arbitarr.Core.Releases.ReleaseCandidate>> SearchAsync(
+            SearchQuery query, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
+
+        public Task<SourceCaps> GetCapsAsync(SearchProtocol protocol, CancellationToken cancellationToken = default)
+            => Task.FromResult(new SourceCaps(new[] { 5000 }, true, false, 100));
+
+        public Task<Stream> FetchDownloadAsync(
+            Arbitarr.Core.Releases.ReleaseCandidate release, CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
     }
 
     [Fact]
