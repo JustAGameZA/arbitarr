@@ -10,7 +10,13 @@ namespace Arbitarr.Api.Dashboard;
 /// masked placeholder for those would still reveal that an upstream is configured at a specific
 /// address, so this projection omits them entirely rather than trying to redact them field-by-field.
 /// </summary>
-/// <param name="NzbHydraConfigured">Whether an NZBHydra2 source is configured, with no address or key disclosed.</param>
+/// <param name="NzbHydraConfigured">
+/// Whether AT LEAST ONE ENABLED SOURCE OF ANY KIND carries an API key, with no address or key
+/// disclosed. arb-72mf widened this from "an NZBHydra2 source is configured", which reported false
+/// for an install whose only sources are direct Newznab/Torznab rows (#344) even though it searched
+/// them correctly. The FIELD NAME is deliberately unchanged: it is public API on
+/// <c>/api/config/effective</c>, so renaming it is a separate, breaking change.
+/// </param>
 /// <param name="FreshUntilSeconds">Search-result cache "served directly" age, in seconds.</param>
 /// <param name="ServeUntilSeconds">Search-result cache outer availability-fallback age, in seconds.</param>
 /// <param name="ActiveWindowSeconds">Worker "actively being requested" trailing window, in seconds.</param>

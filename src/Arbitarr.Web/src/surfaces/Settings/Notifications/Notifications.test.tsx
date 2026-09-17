@@ -593,7 +593,12 @@ describe('Notifications section', () => {
         body: [
           {
             key: 'Cache.FreshUntil',
-            group: 'Caching',
+            // Identifier and heading deliberately differ (arb-tk0r): the
+            // 'Caching' heading this test locates the catalog panel by is the
+            // groupDisplayName, so it would not be found at all if the surface
+            // regressed to rendering the identifier.
+            group: 'CacheWindow',
+            groupDisplayName: 'Caching',
             displayName: 'Fresh until',
             rationale: 'How long a cached snapshot is served without revalidation.',
             requiresRestart: false,
