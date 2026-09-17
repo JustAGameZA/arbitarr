@@ -46,12 +46,15 @@ function levelBadgeClass(level: string): string {
 /**
  * Renders a log row's instant unambiguously (AC9).
  *
- * Deliberately identical in behaviour to Activity's Timestamp: local time for the
- * viewer's own clock, the zone name alongside it so the string is not ambiguous between
- * two readers, and the server's exact ISO instant kept in `title` for comparison against
- * a `docker logs` line. Not shared with that copy because the two surfaces are otherwise
- * independent and a shared helper would be a component-library seam this codebase has
- * not chosen to open; if a third caller appears, that is the time to lift it.
+ * `format.ts`'s `formatTimestamp`/`formatTimestampTitle` (arb-p94u) now hold this
+ * exact string/local-time/zone-name reasoning for Activity, Dashboard, Suppressions,
+ * Search and ApiKeys. This component keeps its own copy rather than delegating to
+ * them because it returns MARKUP -- a `<time>` element with `dateTime`/`title`
+ * attributes and no wrapping class, plus a `<span title>` fallback for a malformed
+ * value -- not a plain string those callers render into a `<td>`. `formatTimestamp`
+ * is a string formatter and is not a drop-in for a component with its own element
+ * shape and fallback rendering; lifting this one too would mean inventing a second,
+ * JSX-returning helper that no other caller needs yet.
  */
 function LogTimestamp({ value }: { value: string }) {
   const parsed = new Date(value);

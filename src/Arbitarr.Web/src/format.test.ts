@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatBytes, formatDurationSeconds } from './format';
+import { formatBytes, formatDurationSeconds, formatTimestamp, formatTimestampTitle } from './format';
 
 describe('formatDurationSeconds', () => {
   it('formats whole seconds as hh:mm:ss, matching .NET TimeSpan.ToString()', () => {
@@ -93,5 +93,61 @@ describe('formatBytes', () => {
   it('does not depend on locale-sensitive number formatting', () => {
     // toFixed is locale-independent (always uses '.'), unlike toLocaleString.
     expect(formatBytes(1536)).not.toContain(',');
+  });
+});
+
+describe('formatTimestamp', () => {
+  /**
+   * arb-p94u review fixup: a `/[A-Za-z]/` "has letters" shape check is vacuous
+   * under an en-US-ish runner, because a BARE `toLocaleString()` there already
+   * renders "AM"/"PM" -- letters with no zone information at all. The check
+   * only bit on this machine's en-ZA 24-hour locale, which has no AM/PM. So
+   * this asserts the EXACT string `formatTimestamp` must produce
+   * (`toLocaleString(undefined, { timeZoneName: 'short' })`), and then proves
+   * that string is not what the OLD bare rendering would have produced --
+   * the positive control that makes the assertion non-tautological, run
+   * against whatever locale/timezone the CURRENT runner actually has, not a
+   * hard-coded one.
+   */
+  it('renders a valid ISO instant the way toLocaleString with timeZoneName renders it', () => {
+    const iso = '2026-09-07T12:30:00+00:00';
+    const parsed = new Date(iso);
+    const expected = parsed.toLocaleString(undefined, { timeZoneName: 'short' });
+    const bare = parsed.toLocaleString(undefined);
+
+    // Positive control: if the zone-bearing and bare renderings were identical
+    // on this runner, the exact-match assertion below could pass against the
+    // old, ambiguous rendering too, and would prove nothing.
+    expect(expected).not.toBe(bare);
+
+    expect(formatTimestamp(iso)).toBe(expected);
+  });
+
+  it('renders the em-dash for an absent value, matching the file\'s other sentinels', () => {
+    expect(formatTimestamp(null)).toBe('—');
+    expect(formatTimestamp(undefined)).toBe('—');
+    expect(formatTimestamp('')).toBe('—');
+  });
+
+  // arb-p94u: an invalid date string must not render "Invalid Date" -- that
+  // asserts nothing about what the server actually sent -- nor collapse to the
+  // em-dash, which would make a server-side format change indistinguishable
+  // from a genuinely missing timestamp. Showing the raw value is what
+  // Activity's own Timestamp already did before this helper existed.
+  it('renders an unparseable value verbatim rather than "Invalid Date" or the em-dash', () => {
+    expect(formatTimestamp('not-a-date')).toBe('not-a-date');
+    expect(formatTimestamp('not-a-date')).not.toBe('Invalid Date');
+    expect(formatTimestamp('not-a-date')).not.toBe('—');
+  });
+});
+
+describe('formatTimestampTitle', () => {
+  it('carries the raw ISO instant unchanged, for comparison against a log line', () => {
+    expect(formatTimestampTitle('2026-09-07T12:30:00+00:00')).toBe('2026-09-07T12:30:00+00:00');
+  });
+
+  it('falls back to the empty string for an absent value, so the attribute is omitted', () => {
+    expect(formatTimestampTitle(null)).toBe('');
+    expect(formatTimestampTitle(undefined)).toBe('');
   });
 });
