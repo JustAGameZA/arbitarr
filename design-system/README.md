@@ -298,15 +298,30 @@ surfaces.
 `AppShell`, always mounted, the same reasoning `state/tableDensityStore.ts` gives for living
 shell-wide rather than per-surface: a per-page region is what this replaces, and a component that
 unmounts on navigation would drop whatever announcement was in flight when a route change lands.
-Announcements come from two sources only — `QueryState`'s pending branch (the `false`→`true` edge
-only, not every re-render while already pending) and a surface's routed `.success` message; errors
-are excluded because they already announce via `role="alert"` (25+ existing call sites), and an
-assertive alert queued behind a polite announcement would only delay it. A surface announces
-through `state/liveStatusStore.ts`, never by adding a second live region of its own. Identical
-consecutive messages (two "Saved." in a row, from the same surface saved twice or two different
-surfaces) are still both announced: the store keeps a `seq` nonce alongside `message`, so a repeat
-of the same text is guaranteed to force a DOM mutation rather than silently no-op on the second
-one.
+Announcements come from three sources only — `QueryState`'s pending branch (the `false`→`true` edge
+only, not every re-render while already pending), a surface's routed `.success` message, and the
+success of a **copy-to-clipboard affordance**; errors are excluded because they already announce
+via `role="alert"` (25+ existing call sites), and an assertive alert queued behind a polite
+announcement would only delay it. A surface announces through `state/liveStatusStore.ts`, never by
+adding a second live region of its own. Identical consecutive messages (two "Saved." in a row, from
+the same surface saved twice or two different surfaces) are still both announced: the store keeps a
+`seq` nonce alongside `message`, so a repeat of the same text is guaranteed to force a DOM mutation
+rather than silently no-op on the second one.
+
+**Copy-success is a permitted source, on the success branch only (arb-zxwo).** A copy button whose
+only feedback is a visible "Copied." span tells a screen-reader operator nothing, and the cost is
+worst exactly where it matters most — the API-key reveal panel, where an unnoticed failed copy
+loses the only copy of a credential that can never be shown again. Such a button announces through
+the shared region alongside keeping its visible span, which clears itself after a short timeout
+rather than persisting until unmount. Two constraints come with it, and neither is optional:
+
+- **Announce on the clipboard write's success, never on the click.** A context with no clipboard
+  API (any non-secure origin, and jsdom) must announce nothing at all, or the region reports a copy
+  that did not happen.
+- **The announcement names what happened, never the value.** The region is rendered into
+  `AppShell`'s markup, which outlives the surface that announced, so interpolating a copied secret
+  there would put a live credential in the shell — see `Settings/ApiKeys`, where the plaintext key's
+  only home is the reveal panel's own component state.
 
 **`QueryState` owns the pending/error/loaded triad; a surface owns only what it loads.** Every
 surface that renders one query goes through it rather than hand-rolling the three branches, so the
@@ -319,6 +334,15 @@ consequences worth stating, because both have been got wrong:
   a real bug on the Suppressions surface until arb-z505.
 - **An empty result is a *loaded* state**, so its sentence belongs inside `children(data)`, not
   alongside the pending and error branches.
+- **A surface whose several queries are one arrival passes them all one `announceScope`**
+  (arb-xzvk). Each `QueryState` announces on its own pending edge, so Dashboard's three — Status,
+  Recent searches and Effective configuration — said "Loading…" three times for a single
+  navigation. Within one scope the store announces a message once per consecutive run of it, so the
+  group speaks once; the prop is optional and omitting it is unchanged per-instance behaviour,
+  which is correct for a surface with one query. It scopes the *announcement* only — each panel
+  keeps its own visible "Loading…", because the queries resolve independently and a shared spinner
+  would misreport the ones still in flight. Never reach for it to quieten genuinely separate events:
+  two surfaces saving are two events, and that is what the `seq` nonce protects.
 
 **Surface-specific error text goes through `renderError`, never through a private error branch.**
 `QueryState` takes an optional `renderError?: (error: unknown) => ReactNode`, defaulted to

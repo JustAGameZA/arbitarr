@@ -30,11 +30,59 @@ interface LiveStatusState {
    * changes, keyed into the DOM so React is forced to touch the text node.
    */
   seq: number;
-  announce: (message: string) => void;
+  /**
+   * The message each named scope last announced, so a second announcer in the
+   * same scope carrying the same message is coalesced away (arb-xzvk).
+   *
+   * Dashboard mounts three queries, and each one's QueryState announces
+   * "Loading…" on its own pending edge, so one navigation put the identical
+   * announcement into the polite queue three times. That is NOT the situation
+   * `seq` exists for: `seq` covers two announcements that are genuinely two
+   * EVENTS (Account saved, then Notifications saved), which must both be
+   * heard. Dashboard's three are one event reported thrice. The difference is
+   * not derivable from the message — only the caller knows it — which is why
+   * coalescing is opt-in via a scope key rather than a blanket "drop repeats"
+   * rule that would silently undo `seq` for every existing call site.
+   *
+   * Keyed by scope rather than one last-message field: two different scopes
+   * announcing the same text are two events and must not silence each other.
+   * A scope's entry is overwritten once that scope announces something
+   * different, so a later re-entry into the earlier message (a refetch putting
+   * the group back into pending after it resolved) announces again — an
+   * announcement records an event, and a group that becomes pending a second
+   * time has had a second event.
+   */
+  scopeMessages: Record<string, string>;
+  /**
+   * Announces `message`. With a `scope`, at most one announcement is produced
+   * per consecutive run of that message within that scope; without one, every
+   * call announces (the `seq` nonce guarantees it), which is the behaviour all
+   * pre-arb-xzvk call sites were written against and which they keep.
+   */
+  announce: (message: string, scope?: string) => void;
 }
 
 export const useLiveStatusStore = create<LiveStatusState>((set) => ({
   message: '',
   seq: 0,
-  announce: (message) => set((state) => ({ message, seq: state.seq + 1 })),
+  scopeMessages: {},
+  announce: (message, scope) =>
+    set((state) => {
+      if (scope === undefined) {
+        return { message, seq: state.seq + 1 };
+      }
+      if (state.scopeMessages[scope] === message) {
+        // Already announced by a sibling in this scope and not yet superseded.
+        // Returning `state` itself, not a fresh object: zustand notifies on
+        // every `set` regardless of value equality, and AppShell keys the
+        // region on `seq`, so any new object here would mutate the DOM for an
+        // announcement that was deliberately suppressed.
+        return state;
+      }
+      return {
+        message,
+        seq: state.seq + 1,
+        scopeMessages: { ...state.scopeMessages, [scope]: message },
+      };
+    }),
 }));
