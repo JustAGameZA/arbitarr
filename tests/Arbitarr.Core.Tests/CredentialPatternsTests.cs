@@ -231,6 +231,94 @@ public class CredentialPatternsTests
     /// to 0 of 4 failing — confirming the assertion is about ARM coverage, not merely corpus size. No
     /// code from that throwaway project is present in this repository.</para>
     /// </summary>
+    /// <summary>
+    /// arb-ofz6: the <c>NamedCredential</c> arm must run on the non-backtracking engine, which is
+    /// what closes its quadratic scan against a long separator-less run seeded with near-keyword
+    /// text. Structural, not timing-based: asserts the flag on the compiled arm's
+    /// <see cref="Regex.Options"/> rather than measuring how long anything takes.
+    /// </summary>
+    [Fact]
+    public void NamedCredential_arm_runs_on_the_nonbacktracking_engine()
+    {
+        var method = typeof(CredentialPatterns).GetMethod(
+            "NamedCredential",
+            BindingFlags.NonPublic | BindingFlags.Static,
+            binder: null,
+            types: Type.EmptyTypes,
+            modifiers: null);
+
+        Assert.NotNull(method);
+        var regex = (Regex)method!.Invoke(null, null)!;
+
+        Assert.True(
+            regex.Options.HasFlag(RegexOptions.NonBacktracking),
+            "NamedCredential must run on RegexOptions.NonBacktracking so a long separator-less run " +
+            "seeded with near-keyword text cannot make its prefix scan quadratic.");
+    }
+
+    /// <summary>
+    /// arb-ofz6: the adversarial input that reaches <c>NamedCredential</c>'s match timeout on the
+    /// backtracking engine — a run of <c>apikey</c> repeated to roughly 16000 characters with no
+    /// separator, seeded with near-keyword text rather than a plain <c>a</c> run (a plain
+    /// separator-less run of one repeated non-keyword character does NOT trigger the blowup; only a
+    /// run built from the keyword itself does). Measured in a throwaway project outside this repo
+    /// (deleted after, never committed): run through a copy of the unmodified (backtracking)
+    /// NamedCredential pattern, this exact input throws <see cref="RegexMatchTimeoutException"/>
+    /// within the arm's match timeout. Through the real, non-backtracking arm exercised here, it
+    /// must return unchanged without throwing.
+    ///
+    /// <para><b>Positive control.</b> The same run followed by a real credential assignment
+    /// (<c>=PLACEHOLDERVALUE1234</c>) IS redacted, so "the adversarial run comes back unchanged"
+    /// cannot pass merely because the arm never executed on this input at all — the positive control
+    /// proves the arm does run over text with this shape and does find a credential when one is
+    /// present.</para>
+    /// </summary>
+    [Fact]
+    public void A_long_separator_less_keyword_seeded_run_is_left_intact_without_timing_out()
+    {
+        var adversarialRun = string.Concat(Enumerable.Repeat("apikey", 16000 / "apikey".Length));
+
+        var redacted = CredentialPatterns.RedactCredentials(adversarialRun);
+
+        Assert.Equal(adversarialRun, redacted);
+
+        // POSITIVE CONTROL: the same run, now followed by a real assignment, IS redacted — proving
+        // the arm actually ran over input of this shape rather than the case above passing vacuously.
+        const string plantedSecret = "PLACEHOLDERVALUE1234";
+        var withCredential = adversarialRun + "=" + plantedSecret;
+
+        var redactedWithCredential = CredentialPatterns.RedactCredentials(withCredential);
+
+        Assert.Contains(CredentialPatterns.Replacement, redactedWithCredential, StringComparison.Ordinal);
+        Assert.DoesNotContain(plantedSecret, redactedWithCredential, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// arb-ofz6: the three prefix-semantics rows an atomic-group or bounded-prefix "optimisation"
+    /// would break, per the rejected-alternatives note on the <c>NamedCredential</c> arm.
+    /// Each plants a credential-shaped name that has MORE name characters after the keyword before
+    /// the separator: an atomic group commits to the greedy match of <c>[\w-]*</c> as soon as it
+    /// finds one and cannot backtrack to let the keyword alternation match later in the run, and a
+    /// length-bounded prefix can run out of budget before reaching the keyword at all. The
+    /// non-backtracking engine explores the same set of prefixes as the original backtracking
+    /// pattern (it has no lookaround/backreference/atomic construct to diverge on), so it still finds
+    /// these.
+    /// </summary>
+    [Theory]
+    [InlineData("apikey_v2: PLACEHOLDERV2VALUE1", "PLACEHOLDERV2VALUE1")]
+    [InlineData("x-secret-header-name: PLACEHOLDERHEADERVAL2", "PLACEHOLDERHEADERVAL2")]
+    [InlineData("a-token-b-apikey-c: PLACEHOLDERCHAINVAL3", "PLACEHOLDERCHAINVAL3")]
+    public void Prefix_semantics_survive_for_names_with_trailing_characters(string input, string secret)
+    {
+        // POSITIVE CONTROL: the planted value really is present before redaction.
+        Assert.Contains(secret, input, StringComparison.Ordinal);
+
+        var redacted = CredentialPatterns.RedactCredentials(input);
+
+        Assert.Contains(CredentialPatterns.Replacement, redacted, StringComparison.Ordinal);
+        Assert.DoesNotContain(secret, redacted, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Every_arm_is_matched_by_at_least_one_corpus_row()
     {

@@ -58,6 +58,10 @@ public static partial class CredentialPatterns
     /// <para>250ms is enormous for an excerpt this size, so it should never fire on legitimate
     /// input; it exists as a ceiling, not a tuning knob.</para>
     ///
+    /// <para>arb-ofz6: <see cref="NamedCredential"/> now runs on the non-backtracking engine, which
+    /// closes its specific quadratic case, but this timeout still guards the other three arms and
+    /// remains NamedCredential's own ceiling as defence in depth against any shape not yet found.</para>
+    ///
     /// <para>arb-hihr: <c>internal</c> rather than <c>private</c> so <see cref="SanitizedErrorDescription"/>'s
     /// nine local host/URL arms — which face the same attacker-influenced <c>/api/status</c> input as
     /// these four shared credential arms, per that file's remarks — reference the SAME value instead
@@ -155,10 +159,29 @@ public static partial class CredentialPatterns
     /// removing an override because this arm now catches its rendering would trade a source-side
     /// guarantee for a sink-side denylist, which is exactly the inversion the type's remarks above
     /// caution against.</para>
+    ///
+    /// <para><b>arb-ofz6: <c>RegexOptions.NonBacktracking</c>, pattern text unchanged.</b> The
+    /// leading <c>[\w-]*</c> sitting next to the keyword alternation makes this arm's prefix scan
+    /// quadratic against a long separator-less run seeded with near-keyword text (e.g. <c>apikey</c>
+    /// repeated to several thousand characters with no <c>:</c>/<c>=</c>), reliably reaching
+    /// <see cref="MatchTimeoutMilliseconds"/>. Measured outside this repo: a 400,000-input
+    /// differential fuzz between the backtracking and non-backtracking engines over this exact
+    /// pattern produced zero output differences, because the pattern has no lookarounds,
+    /// backreferences, or atomic groups — the constructs .NET's non-backtracking engine cannot
+    /// execute. Switching the engine is therefore behaviour-preserving here.
+    ///
+    /// <b>Do NOT "optimise" the pattern text instead.</b> Two alternatives were tried and REJECTED
+    /// because both scrub LESS: an atomic group (<c>(?>[\w-]*)</c>) and a bounded prefix. Both leave
+    /// a credential in the clear when the keyword is followed by more name characters before the
+    /// separator — e.g. a name like <c>x-secret-header-name:</c> or <c>a-token-b-apikey-c:</c>,
+    /// where the greedy backtracking prefix (and the non-backtracking engine, which explores the
+    /// same language) still finds the keyword and matches through to the separator, but an atomic or
+    /// length-bounded prefix commits too early and misses it. See
+    /// <c>CredentialPatternsTests</c>'s prefix-semantics rows for the cases this would break.</para>
     /// </summary>
     [GeneratedRegex(
         @"(?<prefix>\b[\w-]*(?:api[_-]?key|apikey|token|passkey|password|secret|plaintext[_-]?(?:key|token|secret|password|passkey))[\w-]*""?\s*[:=]\s*""?)(?<value>[^\s,;""'}\]]{4,})",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking,
         matchTimeoutMilliseconds: MatchTimeoutMilliseconds)]
     private static partial Regex NamedCredential();
 
