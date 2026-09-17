@@ -6,11 +6,11 @@ using Xunit;
 namespace Arbitarr.Integration.Tests;
 
 /// <summary>
-/// M7-4 (AC21/R6): a fresh install must come up and serve even with zero network access - no
+/// M7-4 (AC21/R6): a fresh install must come up and serve even with zero network access — no
 /// upstream indexer reachable, no dataset ever fetched. This drives the real Host composition root
 /// (<c>Program.cs</c>, unmodified) against a brand-new config directory, so nothing is cached on
 /// disk, and asserts that startup itself never touches the network
-/// (<c>DatasetProvisioner.EnsureProvisioned</c> only scaffolds directories - AC21's other half,
+/// (<c>DatasetProvisioner.EnsureProvisioned</c> only scaffolds directories — AC21's other half,
 /// that no dataset is ever baked into the image, is covered separately at the image-content level)
 /// and that a lite read-only route (<c>/health</c>) still answers 200.
 ///
@@ -18,17 +18,17 @@ namespace Arbitarr.Integration.Tests;
 /// superseded one of them.</b> They differ in whether a source was ever CONFIGURED, which is what
 /// decides whether an empty answer is the truth or a cover-up:</para>
 ///
-/// <para><b>Scenario 1 - nothing configured.</b> No source resolves, so no source failed either:
+/// <para><b>Scenario 1 — nothing configured.</b> No source resolves, so no source failed either:
 /// all three of <see cref="Arbitarr.Api.Search.MergeResult"/>'s failure lists are empty and the
 /// search honestly has nothing to report. This answers <b>200 with an empty, well-formed rss</b>.
-/// This is AC21/R6's load-bearing half - "a fresh install must never look broken before any source
-/// has ever been configured" - and it is pinned by
+/// This is AC21/R6's load-bearing half — "a fresh install must never look broken before any source
+/// has ever been configured" — and it is pinned by
 /// <see cref="A_fresh_install_with_no_sources_configured_at_all_still_answers_200_with_an_empty_feed"/>.
 /// </para>
 ///
-/// <para><b>Scenario 2 - a source IS configured and is unreachable.</b> That is an indexer outage,
+/// <para><b>Scenario 2 — a source IS configured and is unreachable.</b> That is an indexer outage,
 /// not an empty result set, and it now answers <b>code 900 at HTTP 5xx</b>. CONTEXT.md: "An empty
-/// result set is not an error at all - just a results element with no items. An infrastructure
+/// result set is not an error at all — just a results element with no items. An infrastructure
 /// error means the pipeline failed to produce an answer at all: code 900, HTTP 5xx." The pipeline
 /// did not produce an answer here; it failed to reach the only thing that could have given one.
 /// </para>
@@ -36,7 +36,7 @@ namespace Arbitarr.Integration.Tests;
 /// <para><b>Why the old assertion is superseded rather than the AC.</b> This class previously
 /// asserted 200-with-empty-rss for scenario 2 while its stated intent described scenario 1. The 200
 /// is what an *arr records as "0 results", so a wholly unreachable indexer was indistinguishable
-/// from one that genuinely had nothing - the silent miss that
+/// from one that genuinely had nothing — the silent miss that
 /// <c>SearchEndpoint.InfrastructureErrorResult</c>'s remarks exist to prevent, and the reason a 5xx
 /// is the useful signal: it tells the client to retry and surface the outage. AC21's intent is
 /// preserved by scenario 1's test above; only the assertion that had been written against the wrong

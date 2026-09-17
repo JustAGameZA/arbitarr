@@ -310,6 +310,11 @@ public sealed class SearchEndpointNoSourceAnsweredTests : IDisposable
 
         var warning = Assert.Single(logger.Warnings);
         Assert.Contains(nameof(SearchProtocol.Torznab), warning.Message, StringComparison.Ordinal);
+        // COUNTS, NOT NAMES: one source timed out and one failed, and the message says so — the
+        // remark's own reasoning is that counts answer the operator's question without widening
+        // what the persistent store holds, so the counts must be present even as the names are not.
+        Assert.Contains("1 timed out", warning.Message, StringComparison.Ordinal);
+        Assert.Contains("1 failed", warning.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("caller-api-key", warning.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("eztv", warning.Message, StringComparison.Ordinal);
         Assert.DoesNotContain("nzbgeek", warning.Message, StringComparison.Ordinal);

@@ -108,7 +108,7 @@ public static class SearchEndpoint
 
             if (outcome == SearchOutcome.NoSourceAnswered)
             {
-                return NoSourceAnsweredResult(SearchProtocol.Torznab, logger);
+                return NoSourceAnsweredResult(SearchProtocol.Torznab, result!.TimedOutSources.Count, result.FailedSources.Count, logger);
             }
 
             var xml = TorznabXmlWriter.WriteSearchResults(result!.Releases, r => DownloadLink(request, r, callerApiKey), result.CacheAge, result.CacheBand);
@@ -165,7 +165,7 @@ public static class SearchEndpoint
 
             if (outcome == SearchOutcome.NoSourceAnswered)
             {
-                return NoSourceAnsweredResult(SearchProtocol.Newznab, logger);
+                return NoSourceAnsweredResult(SearchProtocol.Newznab, result!.TimedOutSources.Count, result.FailedSources.Count, logger);
             }
 
             var xml = NewznabXmlWriter.WriteSearchResults(result!.Releases, r => DownloadLink(request, r, callerApiKey), result.CacheAge, result.CacheBand);
@@ -266,11 +266,17 @@ public static class SearchEndpoint
     /// exception this is a diagnosed, expected condition with a known remediation (the sources are
     /// down), and every in-flight search during an upstream outage would otherwise log at Error.</para>
     /// </remarks>
-    private static IResult NoSourceAnsweredResult(SearchProtocol protocol, ILogger? logger)
+    private static IResult NoSourceAnsweredResult(
+        SearchProtocol protocol,
+        int timedOutCount,
+        int failedCount,
+        ILogger? logger)
     {
         logger?.LogWarning(
-            "The {Protocol} search returned no releases because no source answered; the request was answered with the protocol's infrastructure-error element rather than an empty result set.",
-            protocol);
+            "The {Protocol} search returned no releases because no source answered ({TimedOutCount} timed out, {FailedCount} failed); the request was answered with the protocol's infrastructure-error element rather than an empty result set.",
+            protocol,
+            timedOutCount,
+            failedCount);
 
         var errorXml = protocol == SearchProtocol.Torznab
             ? TorznabXmlWriter.WriteError(InfrastructureErrorCode, InfrastructureErrorDescription)
@@ -360,8 +366,13 @@ public static class SearchEndpoint
         // the sources ANSWERED and had nothing; when nothing came back because nothing answered,
         // "the pipeline failed to produce an answer at all: code 900, HTTP 5xx" is the case that
         // applies. A source that timed out under its own budget, or failed transport/protocol/parse,
-        // produced no answer — so a merge with zero releases in which every non-contributing source
-        // is in one of those two lists is a failure to answer, not an answer of "nothing".
+        // produced no answer — so a merge with zero releases and AT LEAST ONE source timed out or
+        // failed is a failure to answer, not an answer of "nothing". A budget-skipped source (one the
+        // registry resolved but the budget/backoff gate skipped, arb-9ael, UpstreamMergeStage.cs
+        // ~182-190) is likewise a non-answer even though MergeResult's three lists are deliberately
+        // not total over the resolved set and carry no fourth list for it today — this test must not
+        // be read as requiring a timeout or failure specifically, and arb-9ael's future SkippedSources
+        // list must not narrow this arm when it lands.
         //
         // WHY THIS IS THE ENDPOINT'S CALL AND NOT THE MERGE STAGE'S. UpstreamMergeStage's header is
         // explicit that its non-escalation is the STAGE's invariant: MergeAsync never throws on a
@@ -382,7 +393,9 @@ public static class SearchEndpoint
         if (result.Releases.Count == 0
             && (result.TimedOutSources.Count > 0 || result.FailedSources.Count > 0))
         {
-            return (null, SearchOutcome.NoSourceAnswered);
+            // Kept (not null) so the caller can read TimedOutSources/FailedSources for the log line;
+            // both handlers branch on Outcome before ever touching Result.Releases.
+            return (result, SearchOutcome.NoSourceAnswered);
         }
 
         // Filter before anything downstream sees the set (M4-7): the recorded result count, the
