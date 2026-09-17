@@ -221,14 +221,27 @@ export interface TestFilterRuleResponse {
 /**
  * AdminSettingsEndpoints.cs — SettingCatalogEntryResponse.
  *
- * All thirteen fields, including the four the legacy admin-settings.js never
+ * All fourteen fields, including the four the legacy admin-settings.js never
  * rendered (noMaximumReason, restartReason, governedTable, governedTableRows).
  * AC10 requires the rationale for each bound and a stated reason where a value
  * has no maximum, which is exactly what those fields carry.
  */
 export interface SettingCatalogEntry {
   key: string;
+  /**
+   * The server's group IDENTIFIER ("SearchResultCache"). Keys and orders the
+   * sections and is what anchor ids are slugified from, so it stays stable when
+   * the heading is reworded. Deliberately not rendered.
+   */
   group: string;
+  /**
+   * arb-tk0r: the heading to RENDER for `group` ("Search result cache"). The
+   * server owns the wording, because a client-side rename map would silently
+   * omit any group added to the catalog later, which is the property
+   * SectionNav's slugifyGroup comment records arb-5oe forbidding. Displayed
+   * verbatim and never turned into an id.
+   */
+  groupDisplayName: string;
   displayName: string;
   rationale: string;
   requiresRestart: boolean;

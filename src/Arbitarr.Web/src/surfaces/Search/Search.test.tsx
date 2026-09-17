@@ -96,7 +96,10 @@ describe('Search', () => {
       renderSurface(<SearchPage />);
 
       expect(
-        await screen.findByText(/No sources configured\. Add an NZBHydra2 URL and API key/),
+        // Names sources generally, matching the Dashboard's hint word for word
+        // (arb-72mf): the flag behind both is now true for an enabled source of
+        // any kind, so neither surface may name one product.
+        await screen.findByText(/No sources configured\. Add a source URL and API key/),
       ).toBeInTheDocument();
       expect(screen.getByRole('link', { name: 'Settings > Sources' })).toHaveAttribute(
         'href',

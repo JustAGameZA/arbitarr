@@ -9,10 +9,21 @@ import { SERVER_KEY_UNSET_MESSAGE } from '../QueryState';
 import { mockApi } from '../../test/mockApi';
 import { renderSurface } from '../../test/renderSurface';
 
+/*
+ * arb-tk0r: every fixture group's `groupDisplayName` is DELIBERATELY different
+ * from its `group` identifier, and that difference is the positive control for
+ * the heading and nav-label assertions below. With a fixture whose two names
+ * matched, a page that rendered the raw identifier -- the exact defect arb-tk0r
+ * fixes -- would satisfy every "the heading is X" assertion here while being
+ * completely wrong, so the test would prove nothing. Keep them distinct, and
+ * keep the identifiers in the code-identifier shape the real catalog serves
+ * (CacheWindow, not "Caching"), so the slug assertions exercise the real input.
+ */
 const settings = [
   {
     key: 'Cache.FreshUntil',
-    group: 'Caching',
+    group: 'CacheWindow',
+    groupDisplayName: 'Caching',
     displayName: 'Fresh until',
     rationale: 'How long a cached snapshot is served without revalidation.',
     requiresRestart: false,
@@ -27,7 +38,8 @@ const settings = [
   },
   {
     key: 'Search.RecentLogSize',
-    group: 'Observability',
+    group: 'SearchObservability',
+    groupDisplayName: 'Observability',
     displayName: 'Recent search log size',
     rationale: 'How many recent searches are retained for the dashboard.',
     requiresRestart: true,
@@ -58,6 +70,59 @@ describe('Settings', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
     expect(await screen.findByRole('heading', { name: 'Caching' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Observability' })).toBeInTheDocument();
+  });
+
+  /*
+   * arb-tk0r. The two assertions are a pair and neither is sufficient alone:
+   * the first says the display name IS rendered, the second says the identifier
+   * is NOT. Without the second, a page rendering both (a heading plus a stray
+   * identifier caption) would pass; without the first, a page rendering neither
+   * would. Asserted PER GROUP over both fixture groups rather than "some
+   * heading is a display name", because a single group left on the identifier
+   * is exactly the defect, and it is what a one-group check would miss.
+   */
+  it('renders the server display name as each group heading, never the identifier', async () => {
+    mockApi({ '/api/admin/settings': { body: settings } });
+    renderSurface(<SettingsPage />);
+
+    await screen.findByRole('heading', { name: 'Caching' });
+
+    for (const group of settings) {
+      expect(
+        screen.getByRole('heading', { name: group.groupDisplayName }),
+        `no heading for display name ${group.groupDisplayName}`,
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole('heading', { name: group.group }),
+        `identifier ${group.group} is rendered as a heading`,
+      ).toBeNull();
+    }
+  });
+
+  /*
+   * The identifier keeps driving the anchor (arb-tk0r), so rewording a heading
+   * cannot move a bookmarked `#section` link. Asserted against the identifier's
+   * slug specifically, and paired with the display name's slug being absent:
+   * the fixture names differ, so "cachewindow" and "caching" are distinct ids
+   * and a switch to slugifying the display name fails this rather than passing
+   * by coincidence.
+   *
+   * Note the identifier slugs have no hyphen. slugifyGroup splits on
+   * NON-ALPHANUMERICS, and a camel-case identifier contains none, so
+   * "CacheWindow" lowercases whole to "cachewindow". That is the real behaviour
+   * against the real input shape (the server sends enum member names), which is
+   * exactly why the fixtures use that shape rather than prose.
+   */
+  it('derives each section anchor from the group identifier, not the display name', async () => {
+    mockApi({ '/api/admin/settings': { body: settings } });
+    renderSurface(<SettingsPage />);
+
+    await screen.findByRole('heading', { name: 'Caching' });
+
+    expect(document.getElementById('cachewindow')).not.toBeNull();
+    expect(document.getElementById('searchobservability')).not.toBeNull();
+    expect(document.getElementById('caching')).toBeNull();
+    expect(document.getElementById('observability')).toBeNull();
   });
 
   /*
@@ -130,7 +195,8 @@ describe('Settings', () => {
             {
               ...settings[0],
               key: 'Ingest.BatchSize',
-              group: 'Ingest pipeline',
+              group: 'IngestPipeline',
+              groupDisplayName: 'Ingest pipeline',
               displayName: 'Batch size',
             },
           ],
@@ -143,10 +209,13 @@ describe('Settings', () => {
       const nav = screen.getByRole('navigation', { name: 'Settings sections' });
       const link = within(nav).getByRole('link', { name: 'Ingest pipeline' });
 
-      // The slug is derived, so the space becomes a hyphen and the anchor still
-      // resolves -- the case a known-names map would not have covered.
-      expect(link).toHaveAttribute('href', '#ingest-pipeline');
-      expect(document.getElementById('ingest-pipeline')).not.toBeNull();
+      // The slug is derived from the IDENTIFIER, so it is the identifier's
+      // casing that collapses ("IngestPipeline" -> "ingestpipeline") and the
+      // display name's space plays no part -- the anchor is stable against a
+      // reworded heading, which is the arb-tk0r property. A derived slug is
+      // also the case a known-names map would not have covered.
+      expect(link).toHaveAttribute('href', '#ingestpipeline');
+      expect(document.getElementById('ingestpipeline')).not.toBeNull();
     });
 
     it('still renders exactly one h1', async () => {

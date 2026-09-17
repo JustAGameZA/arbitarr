@@ -14,11 +14,18 @@ import type { SearchCriteria } from './queries';
 
 /**
  * The "no sources configured" hint (audit F-020b), reusing the Dashboard's
- * empty-state wording and its `nzbHydraConfigured` source (#53 stage 53d):
- * true only when an ENABLED source carries an API key. See Dashboard.tsx's
- * `SourcesTable` doc comment for the full configured-vs-reporting reasoning
- * this shares. `undefined` -- still loading, or the query failed -- renders
- * nothing rather than asserting a state before it is known.
+ * empty-state wording and its `nzbHydraConfigured` source (#53 stage 53d,
+ * widened by arb-72mf): true only when an ENABLED source OF ANY KIND carries an
+ * API key. See Dashboard.tsx's `SourcesTable` doc comment for the full
+ * configured-vs-reporting reasoning this shares, and for why the field keeps a
+ * name that no longer describes its predicate. `undefined` -- still loading, or
+ * the query failed -- renders nothing rather than asserting a state before it
+ * is known.
+ *
+ * The wording is deliberately kept in step with the Dashboard's, including
+ * naming sources generally rather than NZBHydra: the two hints answer the same
+ * question about one install, and an operator who sees both should not read two
+ * different diagnoses of it.
  */
 function NoSourcesHint() {
   const config = useEffectiveConfigQuery();
@@ -29,7 +36,7 @@ function NoSourcesHint() {
 
   return (
     <p className={styles.empty}>
-      No sources configured. Add an NZBHydra2 URL and API key to start searching in{' '}
+      No sources configured. Add a source URL and API key to start searching in{' '}
       <Link to="/settings">Settings &gt; Sources</Link>.
     </p>
   );
