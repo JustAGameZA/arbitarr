@@ -76,6 +76,53 @@ public sealed class AdminSettingsEndpointsTests : IClassFixture<ArbitarrWebAppli
         Assert.Equal(TimeSpan.FromMinutes(15).ToString(), freshUntil.Value);
     }
 
+    /// <summary>
+    /// arb-tk0r: the wire carries BOTH names for every entry, and they are the right way round.
+    ///
+    /// <para>Each half fails on a different regression and neither covers the other. The identifier
+    /// assertion catches a "fix" that replaced <c>Group</c> with the heading, which would silently
+    /// move every <c>#section</c> anchor the settings page publishes; the heading assertion catches
+    /// the field being added but left as the identifier, which renders the same "SearchResultCache"
+    /// the bead was filed about. Presence is asserted PER ENTRY, then the three code-shaped groups
+    /// by name, because a single group left on its identifier is the defect and an "at least one
+    /// entry differs" check would pass with eight of nine still wrong.</para>
+    /// </summary>
+    [Fact]
+    public async Task GET_settings_carries_the_group_identifier_and_its_display_name_separately()
+    {
+        await SeedAdminKeyAsync();
+
+        using var client = AuthorizedClient();
+        var response = await client.GetAsync(SettingsRoute);
+        response.EnsureSuccessStatusCode();
+
+        var entries = await response.Content.ReadFromJsonAsync<List<SettingCatalogEntryResponse>>();
+        Assert.NotNull(entries);
+        Assert.NotEmpty(entries!);
+
+        foreach (var entry in entries!)
+        {
+            Assert.False(string.IsNullOrWhiteSpace(entry.Group), $"{entry.Key}: no group identifier.");
+            Assert.False(
+                string.IsNullOrWhiteSpace(entry.GroupDisplayName),
+                $"{entry.Key}: no group display name.");
+        }
+
+        // The identifier is unchanged: still the enum member name, so the slug it
+        // drives, and every anchor already published, is untouched.
+        var freshUntil = entries.Single(e => e.Key == nameof(SettingKey.FreshUntil));
+        Assert.Equal(nameof(SettingGroup.SearchResultCache), freshUntil.Group);
+        Assert.Equal("Search result cache", freshUntil.GroupDisplayName);
+
+        var auditRetention = entries.Single(e => e.Key == nameof(SettingKey.SuppressionAuditRetention));
+        Assert.Equal(nameof(SettingGroup.SuppressionAudit), auditRetention.Group);
+        Assert.Equal("Suppression audit", auditRetention.GroupDisplayName);
+
+        var killSwitch = entries.Single(e => e.Key == nameof(SettingKey.AiKillSwitch));
+        Assert.Equal(nameof(SettingGroup.Ai), killSwitch.Group);
+        Assert.Equal("AI", killSwitch.GroupDisplayName);
+    }
+
     [Fact]
     public async Task GET_settings_reports_bounds_and_the_maintenance_interval_requires_restart()
     {

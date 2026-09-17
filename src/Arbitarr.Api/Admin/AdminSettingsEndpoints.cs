@@ -16,6 +16,17 @@ namespace Arbitarr.Api.Admin;
 /// own <c>ToString()</c>) — the same wire shape <see cref="AdminSettingsEndpoints"/>'s PUT accepts,
 /// so a GET response can be edited and PUT back unchanged.
 /// </summary>
+/// <param name="Group">
+/// The <see cref="SettingGroup"/> IDENTIFIER, unchanged. This is what the settings surface keys and
+/// orders its sections by and what it derives anchor ids from, so it must stay stable even when the
+/// heading is reworded — an existing <c>#search-result-cache</c> link would otherwise move.
+/// </param>
+/// <param name="GroupDisplayName">
+/// arb-tk0r: the operator-facing heading for <paramref name="Group"/>, from
+/// <see cref="SettingGroupDisplay.DisplayNameOf"/>. Served alongside the identifier rather than
+/// replacing it so the client renders a human heading without ever renaming a server-owned group
+/// itself (arb-5oe), and without any anchor moving.
+/// </param>
 /// <param name="Min">
 /// The current floor for this setting (same string form as <see cref="Value"/>), from
 /// <see cref="SettingsValidator.GetBounds"/>, or null for an unbounded/boolean setting (AC24/M7-8) —
@@ -35,6 +46,7 @@ namespace Arbitarr.Api.Admin;
 public sealed record SettingCatalogEntryResponse(
     string Key,
     string Group,
+    string GroupDisplayName,
     string DisplayName,
     string Rationale,
     bool RequiresRestart,
@@ -93,6 +105,7 @@ public static class AdminSettingsEndpoints
             return new SettingCatalogEntryResponse(
                 Key: entry.Key.ToString(),
                 Group: entry.Group.ToString(),
+                GroupDisplayName: SettingGroupDisplay.DisplayNameOf(entry.Group),
                 DisplayName: entry.DisplayName,
                 Rationale: entry.Rationale,
                 RequiresRestart: entry.RequiresRestart,

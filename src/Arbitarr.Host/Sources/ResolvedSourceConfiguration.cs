@@ -60,17 +60,64 @@ public sealed class ResolvedSourceConfiguration
     ///
     /// <para>Pinned by <c>SourceSeederTests.A_disabled_source_with_a_key_is_not_reported_as_configured</c>.
     /// Do not narrow this predicate to a bare key check without moving the enabled filter with it.</para>
+    ///
+    /// <para><b>arb-72mf: this is no longer what the dashboard reports.</b> Everything above still
+    /// holds and is still the meaning of THIS property, which remains NZBHydra-only on purpose — it
+    /// is the legacy single-source leg, read alongside <see cref="BaseUrl"/> and
+    /// <see cref="SourceName"/>, which describe that one row and nothing else. What moved is the
+    /// dashboard's question: <c>nzbHydraConfigured</c> is now fed by
+    /// <see cref="AnySourceConfigured"/> below. Do not re-point that field at this property.</para>
     /// </summary>
     public bool IsConfigured => !string.IsNullOrWhiteSpace(ApiKey);
+
+    /// <summary>
+    /// arb-72mf: whether AT LEAST ONE ENABLED SOURCE OF ANY KIND carries an API key. This is what
+    /// <c>nzbHydraConfigured</c> on <c>/api/config/effective</c> reports, and what the Dashboard's
+    /// not-configured empty state reads.
+    ///
+    /// <para><b>Why a second flag rather than widening <see cref="IsConfigured"/>.</b> Since #344 an
+    /// install may have only direct Newznab/Torznab rows, which <c>SourceRegistry</c> resolves and
+    /// searches perfectly well. <see cref="IsConfigured"/> is derived from <see cref="ApiKey"/>,
+    /// which <c>SourceSeeder.ResolveFromDatabaseAsync</c> only ever populates from a
+    /// <c>Kind == NzbHydraKind &amp;&amp; Enabled</c> row, so such an install reported
+    /// <c>nzbHydraConfigured:false</c> and the Dashboard showed the #50 not-configured empty state
+    /// while searching correctly. Widening <see cref="IsConfigured"/> in place was rejected because
+    /// it is read as the NZBHydra leg's own answer beside <see cref="BaseUrl"/> and
+    /// <see cref="SourceName"/> (which stay NZBHydra-only and would then disagree with it), and
+    /// because the enabled-with-key reasoning recorded above is specifically about that one row.</para>
+    ///
+    /// <para><b>Enabled-with-key, for the same reason 53d settled it for one source.</b> #50 exists
+    /// to distinguish "configured" from "reporting". A disabled row will not be searched, and a row
+    /// with no key cannot be queried, so neither can make an install configured — reporting
+    /// otherwise would tell the operator the setup is fine while nothing can be queried, which is
+    /// precisely the misleading state #50 was written to prevent.</para>
+    ///
+    /// <para><b>Presence, never the value.</b> This is computed from the EXISTENCE of the
+    /// write-only <c>source:{id}:api_key</c> row, through the same presence path
+    /// <c>SourceRepository.HasApiKeyAsync</c> uses. It does not read a key, and must never be
+    /// changed to: <c>ReadApiKeyForUpstreamRequestAsync</c> has exactly one caller per secret family
+    /// (CLAUDE.md section 1, pinned by <c>SecretReaderSingleCallerTests</c>), and a "configured"
+    /// check is not a credential consumer.</para>
+    ///
+    /// <para>Resolved once at startup, exactly like the rest of this type, so enabling a source in
+    /// the UI changes this only after a restart — the existing 53b design, unchanged here.</para>
+    /// </summary>
+    public bool AnySourceConfigured { get; private set; }
 
     /// <summary>
     /// Publishes the resolved configuration. Called exactly once, from Host startup, before the
     /// application begins serving.
     /// </summary>
-    public void Apply(string? baseUrl, string? apiKey, string? sourceName)
+    /// <param name="anySourceConfigured">
+    /// arb-72mf: whether any enabled source of any kind has a key. Independent of the other three
+    /// arguments, which describe the NZBHydra row alone — an install with only Newznab rows passes
+    /// true here with a null <paramref name="baseUrl"/>.
+    /// </param>
+    public void Apply(string? baseUrl, string? apiKey, string? sourceName, bool anySourceConfigured)
     {
         BaseUrl = baseUrl;
         ApiKey = apiKey;
         SourceName = sourceName;
+        AnySourceConfigured = anySourceConfigured;
     }
 }
