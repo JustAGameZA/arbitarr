@@ -553,7 +553,7 @@ public sealed class RedirectAccessModeKeyNeverReachesLogsTests : IAsyncLifetime
         // AND THE BLIND SPOT, DEMONSTRATED RATHER THAN ASSERTED IN PROSE: that same Trace line, which
         // the capture just proved exists and carries both values, reaches NO log row. This is why
         // this test had to be added alongside the store scans instead of trusting them.
-        await FlushLogSinkAsync();
+        await host.Services.FlushLogSinkAsync();
         var rows = await ReadLogEntriesAsync(host);
         Assert.DoesNotContain(rows, entry => entry.Logger.Contains("RedirectTraceLevelLeakProbe", StringComparison.Ordinal));
     }
