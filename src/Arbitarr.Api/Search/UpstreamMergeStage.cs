@@ -57,6 +57,11 @@ public sealed class UpstreamMergeStage : IMergeStage
     /// — it would have to make up a second number, and two competing bounds on one call is worse
     /// than one correct one. The whole-response budget is the one quantity that is genuinely this
     /// stage's to own: it is what the CALLER is waiting on.</para>
+    ///
+    /// <para>The ceiling bounds the fan-out at the whole-response target, so a ceiling hit spends
+    /// the target on the fan-out alone and the post-merge stages (dedup, cache write, render —
+    /// <c>docs/step0-measurements.md</c>'s "negligible", sub-100ms) push the response marginally
+    /// past it; that is deliberate, and well inside the same table's 20s hard ceiling.</para>
     /// </summary>
     public static readonly TimeSpan DefaultFanOutCeiling = TimeSpan.FromSeconds(12);
 

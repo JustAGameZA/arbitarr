@@ -32,6 +32,8 @@ internal sealed class PagingFakeUpstreamSource : IUpstreamSource
     private readonly IReadOnlyList<ReleaseCandidate> _searchResults;
     private readonly int _pageCount;
     private readonly TimeSpan _perPageDelay;
+    private readonly TaskCompletionSource _firstPageEntered =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     /// <param name="pageCount">
     /// How many pages the loop walks. With <paramref name="perPageDelay"/> this sets the leg's total
@@ -64,10 +66,22 @@ internal sealed class PagingFakeUpstreamSource : IUpstreamSource
     /// </summary>
     public int PagesWalked { get; private set; }
 
+    /// <summary>
+    /// Completes once <see cref="SearchAsync"/> has entered its first page's wait. A test that needs
+    /// a leg genuinely IN FLIGHT before acting (e.g. cancelling the caller) should await this rather
+    /// than assume scheduling order, since nothing else here guarantees the loop has started.
+    /// </summary>
+    public Task FirstPageEntered => _firstPageEntered.Task;
+
     public async Task<IReadOnlyList<ReleaseCandidate>> SearchAsync(SearchQuery query, CancellationToken cancellationToken = default)
     {
         for (var page = 0; page < _pageCount; page++)
         {
+            if (page == 0)
+            {
+                _firstPageEntered.TrySetResult();
+            }
+
             // The token is honoured per page, which is what a real adapter does between sequential
             // requests. Task.Delay throws OperationCanceledException carrying the token that
             // cancelled it — the stage's ceiling token here — so the leg surfaces the cancellation

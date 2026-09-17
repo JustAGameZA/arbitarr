@@ -342,6 +342,12 @@ public class UpstreamMergeStageIntegrationTests
     ///
     /// <para>Non-vacuity: a healthy source runs alongside, so the merge HAD a result it could have
     /// returned instead of throwing.</para>
+    ///
+    /// <para><b>"In flight" is made true by a sync point, not an assumption.</b> The test awaits
+    /// <see cref="PagingFakeUpstreamSource.FirstPageEntered"/> before cancelling, so the paging leg is
+    /// provably inside its wait when <c>Cancel()</c> runs. Without that sync point the claim rested on
+    /// <c>StaticSourceRegistry.ResolveAsync</c> happening to be synchronous — true today, but not
+    /// something this test should depend on silently.</para>
     /// </summary>
     [Fact]
     public async Task MergeAsync_propagates_caller_cancellation_rather_than_reporting_a_ceiling_hit()
@@ -365,9 +371,9 @@ public class UpstreamMergeStageIntegrationTests
             new SearchQuery(null, Array.Empty<int>(), 50, SearchProtocol.Torznab),
             cts.Token);
 
+        await paging.FirstPageEntered;
         cts.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => merging);
-        Assert.True(cts.Token.IsCancellationRequested);
     }
 }

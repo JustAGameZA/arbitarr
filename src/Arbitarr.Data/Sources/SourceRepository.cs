@@ -664,8 +664,10 @@ public sealed class SourceRepository
     /// per-request timeout is the point past which nobody is still listening: the same document
     /// records Sonarr/Radarr's documented 30s indexer timeout default, so a request configured to
     /// run longer than that waits for an answer its own caller has already abandoned. 30s also
-    /// matches <c>SettingsValidator.ValidateSyncArbitrationBudget</c>'s ceiling, so the codebase
-    /// carries one such number rather than two.</para>
+    /// matches <c>SettingsValidator.ValidateSyncArbitrationBudget</c>'s ceiling, but that number is
+    /// derived from admin-UI responsiveness (<c>SettingsValidator.cs</c>'s comment there, AC14b), not
+    /// from the *arr abandon point — the two coincide numerically from independent derivations, and
+    /// neither should follow if the other moves.</para>
     /// </summary>
     private static void ValidateTimeoutSeconds(int timeoutSeconds)
     {
