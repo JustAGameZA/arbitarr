@@ -3,6 +3,7 @@ using Arbitarr.Core.Caching;
 using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Sources.CircuitBreaker;
 using Arbitarr.Data.CircuitBreaker;
+using Arbitarr.Data.Sources;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -103,10 +104,71 @@ public static class StatusEndpoint
     /// </summary>
     public const string DownloadRefusedRedirectKey = "download-refused-redirect";
 
+    /// <summary>
+    /// arb-x7w8.11: the <see cref="HealthItem.Key"/> a PERMANENTLY DISABLED indexer reports under.
+    /// Public for the same reason <see cref="DownloadRefusedRedirectKey"/> is: the value already
+    /// crosses the wire, and an <c>internal</c> one could not back the stable-contract claim from a
+    /// test assembly <c>Arbitarr.Api</c> has no <c>InternalsVisibleTo</c> for.
+    ///
+    /// <para><b>Only the PERMANENT disable is a health item, and that is the bead's whole point.</b>
+    /// A health item names a condition the OPERATOR must fix (CONTEXT.md "Health item"); "blocking"
+    /// means the affected function cannot work at all until someone acts. An authentication failure
+    /// qualifies exactly — no amount of waiting fixes a rejected key, and
+    /// <c>SourceBackoffState.IsPermanentlyDisabled</c>'s doc states that clearing it "is an operator
+    /// action, never an automatic one". A TRANSIENT BACKOFF DOES NOT QUALIFY and must never be
+    /// raised here: it clears itself within minutes, so an item for it would be noise an operator
+    /// learns to ignore — which is how a real one stops being read. A BUDGETED source likewise
+    /// clears itself when the rolling window moves. Both of those are per-source display state on
+    /// the admin-gated sources surface, and neither belongs on this route.</para>
+    ///
+    /// <para><b>What clears it is the proving event, never elapsed time.</b> The item is a PROJECTION
+    /// of the row rather than a separately tracked condition, so it is present for exactly as long as
+    /// <c>IsPermanentlyDisabled</c> is set — and the only thing that resets that flag is
+    /// <c>SourceBackoffStore.RecordOutcomeAsync</c> observing a genuine
+    /// <c>SourceCallOutcome.Success</c> from that source. Nothing decays it, no worker cycle touches
+    /// it, and a successful search against a different source does not. Deriving it from the row
+    /// rather than mirroring it into a second tracker is what makes that true by CONSTRUCTION: there
+    /// is no clock anywhere in this path that could be made to expire it, which is the defect
+    /// ADR 0016 and <c>IDownloadRefusalTracker</c> exist to prevent.</para>
+    ///
+    /// <para><b>The operator action that clears it is re-entering the credential.</b> Saving a
+    /// corrected API key through <c>PUT /api/admin/sources/{id}</c> does not itself clear the flag —
+    /// deliberately, because an edit is a claim and not yet evidence. It clears on the next call that
+    /// actually succeeds with the new key, which is the proving event in exactly the
+    /// <c>IDownloadRefusalTracker</c> sense. NO re-enable endpoint is added for it: a button that
+    /// cleared the flag directly would assert the condition was over without demonstrating it,
+    /// re-enabling a source whose key is still rejected and re-presenting a bad credential to the
+    /// indexer — the precise cost <c>SourceBackoffState.IsPermanentlyDisabled</c>'s doc gives for not
+    /// escalating auth failures. The existing per-source Test button already lets an operator confirm
+    /// a replacement key before anything else touches the indexer.</para>
+    ///
+    /// <para><b>The summary is built from the CONFIGURED SOURCE NAME and this fixed wording alone.</b>
+    /// <c>/api/status</c> is un-gated (see <see cref="HealthItem"/>), so nothing upstream-supplied may
+    /// reach it. <c>LastOutcome</c>, the backoff level, <c>DisabledUntil</c> and the budget tallies
+    /// are all deliberately absent from this route and live only behind the admin gate. The NAME is
+    /// carryable only because this response already publishes it as <c>SourceStatus.SourceName</c>,
+    /// a premise <see cref="PermanentlyDisabledItemsAsync"/> enforces rather than assumes by keeping
+    /// only states whose name is in that published set (sec-511).</para>
+    ///
+    /// <para><b>THIS ITEM DOES NOT NOTIFY, and that is a KNOWN EXCEPTION to the rule that health
+    /// items do.</b> CONTEXT.md's "Health item" entry records that items notify since arb-apj
+    /// (#247), pushed from a decorator around the tracker that owns them. This one has no such
+    /// decorator to hang off because it has no tracker and no edge: it is PROJECTED at read time
+    /// from the backoff row, so nothing in this path observes the transition from absent to present
+    /// and there is no moment at which a notification could be raised. That is the cost of the
+    /// projection design, accepted knowingly rather than overlooked, because the projection is what
+    /// makes the item impossible to expire by elapsed time (see the paragraph above). Giving it an
+    /// edge is bead arb-rx1f; until that lands, do NOT add a second tracker mirroring the row here
+    /// to obtain one, which would reintroduce exactly the drift the projection removes.</para>
+    /// </summary>
+    public const string SourcePermanentlyDisabledKey = "source-permanently-disabled";
+
     private static async Task<StatusResponse> HandleAsync(
         SourceHealthRepository healthRepository,
         IRefreshWorkerHealth workerHealth,
         IDownloadRefusalTracker refusalTracker,
+        SourceRepository sourceRepository,
+        SourceBackoffStore backoffStore,
         CancellationToken cancellationToken)
     {
         var snapshots = await healthRepository.LoadAllAsync(cancellationToken);
@@ -143,9 +205,88 @@ public static class StatusEndpoint
                 Summary: refusal.Reason,
                 ObservedSinceUtc: refusal.ObservedSinceUtc,
                 LastObservedUtc: refusal.LastObservedUtc))
+            .Concat(await PermanentlyDisabledItemsAsync(
+                sourceRepository,
+                backoffStore,
+                sources.Select(s => s.SourceName).ToHashSet(StringComparer.Ordinal),
+                cancellationToken))
             .ToArray();
 
         return new StatusResponse(Status: "ok", Sources: sources, Worker: worker, Health: healthItems);
+    }
+
+    /// <summary>
+    /// arb-x7w8.11: one blocking health item per CONFIGURED source whose backoff row is permanently
+    /// disabled. See <see cref="SourcePermanentlyDisabledKey"/> for why only this state qualifies and
+    /// what clears it.
+    ///
+    /// <para><b>Joined against the configured sources rather than projected from the rows alone.</b>
+    /// A row survives the source being deleted or renamed — the table is keyed by display name and
+    /// has no foreign key to <c>Source</c> and deliberately no time-based prune — so projecting rows
+    /// directly would raise a blocking item naming an indexer the operator no longer has, with no
+    /// affordance anywhere to clear it. Only a source that still exists can be acted on, so only one
+    /// of those is reported.</para>
+    ///
+    /// <para><b>Disabled sources are reported too, and that is deliberate.</b> An operator who turned
+    /// an indexer off has not fixed its credential, and re-enabling it would put the same rejected
+    /// key straight back on the wire. Suppressing the item would hide the condition behind an
+    /// unrelated toggle.</para>
+    ///
+    /// <para>Both timestamps come from <c>UpdatedAt</c>, the one instant the row records. The flag
+    /// bypasses escalation entirely, so it is set once by the auth failure and not re-stamped while
+    /// it persists: "since" and "last observed" are genuinely the same moment here, unlike a refusal
+    /// which is re-observed on every attempted download. Fabricating a later "last observed" from the
+    /// clock would be the elapsed-time coupling this whole item is built to avoid.</para>
+    ///
+    /// <para><b>An item may name only a source ALREADY NAMED on this route</b> (sec-511), which is
+    /// what <paramref name="publishedSourceNames"/> enforces. Being configured is not sufficient:
+    /// the backoff table is keyed by display name with no foreign key, so after a source is renamed
+    /// and a NEW source takes the freed name, the join on display name matches the new source
+    /// against the old one's row. That would publish the new source's name on this un-gated route
+    /// for the first time, and blame it for a credential failure that was never its own. Filtering
+    /// to the names <c>SourceStatus</c> already carries makes the item incapable of disclosing a
+    /// name the response did not already contain, whatever the join does.</para>
+    /// </summary>
+    /// <param name="publishedSourceNames">
+    /// The source names this response already publishes, from the <c>SourceStatus</c> list. Ordinal,
+    /// matching how the backoff store and the caps store compare the same key: a case-only rename is
+    /// genuinely a different source here.
+    /// </param>
+    private static async Task<IEnumerable<HealthItem>> PermanentlyDisabledItemsAsync(
+        SourceRepository sourceRepository,
+        SourceBackoffStore backoffStore,
+        IReadOnlySet<string> publishedSourceNames,
+        CancellationToken cancellationToken)
+    {
+        var states = await backoffStore.GetAllAsync(cancellationToken);
+
+        if (states.Count == 0)
+        {
+            // No source has ever recorded an outcome, so none can be permanently disabled and the
+            // configured sources need not be read. The overwhelmingly common case on a route the
+            // dashboard polls.
+            return Array.Empty<HealthItem>();
+        }
+
+        var sources = await sourceRepository.GetAllAsync(cancellationToken);
+
+        return sources
+            .Select(source => states.TryGetValue(source.DisplayName, out var state) ? state : null)
+            .Where(state => state is { IsPermanentlyDisabled: true })
+            // sec-511: and only if this response already names it. See the filter's rationale above.
+            .Where(state => publishedSourceNames.Contains(state!.SourceName))
+            .Select(state => new HealthItem(
+                Key: SourcePermanentlyDisabledKey,
+                Severity: "blocking",
+                SourceName: state!.SourceName,
+                // FIXED WORDING plus the configured name, and nothing else. No LastOutcome, no
+                // level, no upstream text — this route is un-gated (see HealthItem's doc), and the
+                // detail lives behind the admin gate on GET /api/admin/sources.
+                Summary: $"{state.SourceName} is disabled: it rejected Arbitarr's API key. Searches skip it until the key is corrected.",
+                ObservedSinceUtc: state.UpdatedAt,
+                LastObservedUtc: state.UpdatedAt))
+            .OrderBy(item => item.SourceName, StringComparer.Ordinal)
+            .ToArray();
     }
 
     private static string ToStateLabel(CircuitState state) => state switch
