@@ -172,6 +172,57 @@ public sealed class SourceHealthRepositoryTests : IDisposable
     }
 
     /// <summary>
+    /// arb-mhd2: the two shapes a legacy row (no LastOutcome column value) can have, asserted PER
+    /// ROW rather than as "some legacy row reads back sensibly".
+    ///
+    /// <para>Immediately after the upgrade EVERY row has a null outcome, so the null alone carries
+    /// no information. The row that never failed must read back <c>None</c>: if it read back
+    /// <c>Unknown</c>, every healthy source on the dashboard would announce a failure whose reason
+    /// was not recorded the first time an operator opened it. The row that DID fail keeps
+    /// <c>Unknown</c>, because its reason genuinely was never stored.</para>
+    ///
+    /// <para>The distinction is whether an error is PRESENT, never what it SAYS — the failing row's
+    /// error below names a specific outcome, so a reader that peeked at the text would land on
+    /// Timeout and fail.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(null, SourceStatusOutcome.None)]
+    [InlineData("TaskCanceledException (timed out)", SourceStatusOutcome.Unknown)]
+    public async Task A_legacy_row_with_no_stored_outcome_reads_back_from_whether_it_kept_an_error(
+        string? storedError,
+        SourceStatusOutcome expected)
+    {
+        var source = $"legacy-row-{(storedError is null ? "no-error" : "with-error")}";
+
+        using (var context = CreateContext())
+        {
+            context.SourceHealthRecords.Add(new SourceHealthRecord
+            {
+                SourceName = source,
+                State = CircuitBreakerState.Closed,
+                ConsecutiveFailures = 0,
+                LastError = storedError,
+                // A row written before the column existed.
+                LastOutcome = null,
+            });
+            await context.SaveChangesAsync();
+        }
+
+        using (var context = CreateContext())
+        {
+            var repository = new SourceHealthRepository(context);
+            var snapshot = await repository.LoadAsync(source);
+
+            // Positive control: the row loaded and its error round-tripped exactly, so the outcome
+            // assertion below is about the projection and not about a row that was never found.
+            Assert.Equal(storedError, snapshot.LastError);
+            Assert.Equal(CircuitState.Closed, snapshot.State);
+
+            Assert.Equal(expected, snapshot.LastOutcome);
+        }
+    }
+
+    /// <summary>
     /// arb-mhd2: the round trip for every name a live writer CAN store. Stored by name, matched by
     /// name, with no member left behind — a member added to the enum without a matching arm in the
     /// reader would silently read back as Unknown, and this is what says so.

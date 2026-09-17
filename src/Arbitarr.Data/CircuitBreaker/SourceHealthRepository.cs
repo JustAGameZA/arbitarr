@@ -66,7 +66,7 @@ public sealed class SourceHealthRepository
         LastFailureAt: record.LastFailureAt,
         LastSuccessAt: record.LastSuccessAt,
         LastError: record.LastError,
-        LastOutcome: ToOutcome(record.LastOutcome),
+        LastOutcome: ToOutcome(record.LastOutcome, record.LastError),
         LastUpstreamStatusCode: record.LastUpstreamStatusCode,
         NextProbeAt: record.NextProbeAt);
 
@@ -96,13 +96,29 @@ public sealed class SourceHealthRepository
     /// <c>4</c> IS defined. Matching the names by hand makes the stored format closed by
     /// construction: a value that is not one of these exact strings cannot mint a member.</para>
     ///
-    /// <para>Anything unrecognised — a null from a row written before the column existed, an empty
-    /// string, a name from a future version, a hand-edited value — becomes
-    /// <see cref="SourceStatusOutcome.Unknown"/>. Never a guess inferred from
-    /// <see cref="SourceHealthRecord.LastError"/>'s text, which would resurrect the projection-time
-    /// classification of sanitised prose that arb-mhd2 exists to remove.</para>
+    /// <para>Anything unrecognised — an empty string, a name from a future version, a hand-edited
+    /// value — becomes <see cref="SourceStatusOutcome.Unknown"/>.</para>
+    ///
+    /// <para><b>A null stored outcome splits on whether the row records a failure at all</b>, which
+    /// is why <paramref name="storedError"/> is a parameter. Every row predates the column after an
+    /// upgrade, so a null outcome alone says nothing: a source that has never failed and a source
+    /// that failed before the column existed both have one. The two are told apart by
+    /// <see cref="SourceHealthRecord.LastError"/> being null or not, and the healthy one reads back
+    /// as <see cref="SourceStatusOutcome.None"/> rather than claiming a failure whose reason was not
+    /// recorded. Without this split, every never-failed source in an upgraded database would report
+    /// "failed, reason not recorded" on the dashboard the first time it was opened.</para>
+    ///
+    /// <para>This reads whether the error is PRESENT, never what it SAYS. That distinction is the
+    /// whole point: inferring an outcome from the text of sanitised prose is the projection-time
+    /// classification arb-mhd2 exists to remove, and nothing here parses, matches or inspects
+    /// <see cref="SourceHealthRecord.LastError"/>'s contents.</para>
     /// </summary>
-    private static SourceStatusOutcome ToOutcome(string? stored) => stored switch
+    /// <param name="stored">The persisted enum NAME, or null on a row written before the column existed.</param>
+    /// <param name="storedError">
+    /// The persisted error text. Consulted ONLY for null-versus-non-null, to tell a legacy failure
+    /// apart from a source that has simply never failed. Its contents are never examined.
+    /// </param>
+    private static SourceStatusOutcome ToOutcome(string? stored, string? storedError) => stored switch
     {
         nameof(SourceStatusOutcome.None) => SourceStatusOutcome.None,
         nameof(SourceStatusOutcome.UpstreamError) => SourceStatusOutcome.UpstreamError,
@@ -110,6 +126,8 @@ public sealed class SourceHealthRepository
         nameof(SourceStatusOutcome.Timeout) => SourceStatusOutcome.Timeout,
         nameof(SourceStatusOutcome.AuthRejected) => SourceStatusOutcome.AuthRejected,
         nameof(SourceStatusOutcome.InternalError) => SourceStatusOutcome.InternalError,
+        // A legacy row: no outcome was ever stored. It recorded a failure only if it kept an error.
+        null => storedError is null ? SourceStatusOutcome.None : SourceStatusOutcome.Unknown,
         _ => SourceStatusOutcome.Unknown,
     };
 

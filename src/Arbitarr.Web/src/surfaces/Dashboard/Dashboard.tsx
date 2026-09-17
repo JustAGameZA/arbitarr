@@ -322,30 +322,33 @@ function SourcesTable({
           </tr>
         </thead>
         <tbody>
-          {status.sources.map((source) => (
-            <tr key={source.sourceName}>
-              <td>{source.sourceName}</td>
-              <td>
-                <SourceStateBadge state={source.state} />
-              </td>
-              <td>{source.consecutiveFailures}</td>
-              <td>
-                {source.lastOutcome === OUTCOME_NONE ? (
-                  '—'
-                ) : (
-                  <>
-                    {outcomeLabel(source.lastOutcome)}
-                    {detailBySource.get(source.sourceName) != null && (
-                      <span className={styles.muted}>
-                        {' '}
-                        · {detailBySource.get(source.sourceName)}
-                      </span>
-                    )}
-                  </>
-                )}
-              </td>
-            </tr>
-          ))}
+          {status.sources.map((source) => {
+            const detail = detailBySource.get(source.sourceName);
+            return (
+              <tr key={source.sourceName}>
+                <td>{source.sourceName}</td>
+                <td>
+                  <SourceStateBadge state={source.state} />
+                </td>
+                <td>{source.consecutiveFailures}</td>
+                <td>
+                  {source.lastOutcome === OUTCOME_NONE ? (
+                    '—'
+                  ) : (
+                    <>
+                      {outcomeLabel(source.lastOutcome)}
+                      {detail != null && (
+                        <span className={styles.muted}>
+                          {' '}
+                          · {detail}
+                        </span>
+                      )}
+                    </>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

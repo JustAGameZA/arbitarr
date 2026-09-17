@@ -90,7 +90,10 @@ public enum SourceStatusOutcome
 
     /// <summary>
     /// The stored outcome could not be interpreted: a legacy row written before this column existed
-    /// (an error recorded with no outcome), or a stored name no member here matches.
+    /// that HAS a recorded error but no outcome to explain it, or a stored name no member here
+    /// matches. A legacy row with no error is NOT this — never having failed reads back as
+    /// <see cref="None"/>, so an upgrade does not turn every healthy source into an unexplained
+    /// failure.
     ///
     /// <para><b>Unreachable from any live writer, and that is asserted by a test.</b> No
     /// classification path produces this value — it is exclusively what the persistence adapter

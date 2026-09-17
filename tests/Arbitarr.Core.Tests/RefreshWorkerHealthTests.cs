@@ -291,6 +291,9 @@ public sealed class RefreshWorkerHealthTests
         { new TaskCanceledException("timed out"), SourceStatusOutcome.Timeout },
         { new TimeoutException("timed out"), SourceStatusOutcome.Timeout },
         { new InvalidOperationException("no such table"), SourceStatusOutcome.InternalError },
+        // An exception of no particular family at all: the classifier's default arm must still name
+        // a real outcome rather than falling through to Unknown, which no live writer may produce.
+        { new Exception("arbitrary"), SourceStatusOutcome.InternalError },
     };
 
     [Theory]

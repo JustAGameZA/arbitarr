@@ -25,6 +25,12 @@ public sealed record SourceDiagnostics(string SourceName, string? LastError, int
 
 /// <summary>
 /// arb-mhd2: the refresh worker's error detail, the counterpart to <see cref="SourceDiagnostics"/>.
+///
+/// <para><b>The worker carries no upstream status code, by design</b>, which is the one asymmetry
+/// with <see cref="SourceDiagnostics"/>. A source failure is one call to one upstream, so a status
+/// it answered with is a fact about that call; a refresh cycle spans every candidate source, so
+/// there is no single upstream whose status could be reported and any one of them would be
+/// misleading. The absence is deliberate, not an omission to be filled in later.</para>
 /// </summary>
 /// <param name="LastError">The most recent cycle-level failure's sanitised message, or null if the last cycle did not fault.</param>
 public sealed record WorkerDiagnostics(string? LastError);

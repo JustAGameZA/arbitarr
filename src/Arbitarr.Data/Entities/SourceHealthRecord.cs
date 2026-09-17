@@ -56,10 +56,13 @@ public sealed class SourceHealthRecord
     /// <c>AuthRejected</c> through a shape no writer here produces. The matching lives in
     /// <c>SourceHealthRepository.ToOutcome</c>.</para>
     ///
-    /// <para><b>Null means a legacy row</b> — written before this column existed, possibly with a
-    /// <see cref="LastError"/> already set. Those project as <c>Unknown</c>, never as an outcome
-    /// inferred from the error TEXT: see the enum member's own remarks for why inferring would
-    /// reintroduce exactly the projection-time classification this design forbids.</para>
+    /// <para><b>Null means a legacy row</b> — written before this column existed. Alone that says
+    /// nothing about health, since EVERY row has a null here immediately after the upgrade, so the
+    /// read splits on whether <see cref="LastError"/> is set: a null error projects as <c>None</c>
+    /// (the source has simply never failed), a non-null error projects as <c>Unknown</c> (it failed,
+    /// and the reason was not recorded). That split reads whether the error is PRESENT and never
+    /// what it SAYS — an outcome inferred from the error TEXT would reintroduce exactly the
+    /// projection-time classification this design forbids; see the enum member's own remarks.</para>
     /// </summary>
     public string? LastOutcome { get; set; }
 
