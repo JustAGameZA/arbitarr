@@ -201,7 +201,7 @@ public sealed class SourceRegistryTests : IDisposable
     /// <remarks>
     /// <para>The kind and the base URL are both operator-supplied, and the base URL may still carry
     /// userinfo (<c>SourceRepository.ValidateBaseUrl</c> accepts it today, unlike its *arr siblings).
-    /// Neither belongs in a log row: <c>LogMessageCleanser</c> scrubs credentials in QUERY STRINGS,
+    /// Neither belongs in a log row: <c>LogMessageCleanser</c> scrubs credentials in query strings,
     /// so a credential in a bare value or a URL's userinfo reaches the log store verbatim
     /// (CLAUDE.md §1).</para>
     ///

@@ -37,3 +37,9 @@ Two databases: `arbitarr.db` for configuration and cached metadata, `arbitarr-lo
 - `LogMessageCleanser` scrubs credentials in query strings only. A secret in a URL **path** (a
   webhook token, say) is not covered, so such registrations need `.RemoveAllLoggers()` — care taken
   inside a typed client cannot defend against a handler the container wraps around it.
+
+**Amended 2026-09-17.** The line above understated the cleanser's actual scope: it scrubs by
+shape anywhere in the line, not only within a query string. See the corrected statement in
+[docs/standards/architecture.md](../standards/architecture.md#logging) (arb-cia3, arb-pi70). The
+path-segment gap it goes on to describe is unaffected — a bare path segment still matches none of
+the cleanser's arms.
