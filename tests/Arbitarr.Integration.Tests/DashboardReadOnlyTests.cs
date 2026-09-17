@@ -138,7 +138,10 @@ public sealed class DashboardReadOnlyTests : IClassFixture<ArbitarrWebApplicatio
         Assert.NotNull(response);
         var worker = response!.Worker;
         Assert.NotNull(worker);
-        Assert.Null(worker.LastError);
+        // arb-mhd2: the public body no longer carries the worker's free-text lastError at all, so
+        // the equivalent "no cycle-level fault occurred" assertion is the closed outcome reading
+        // "none". The message itself moved to GET /api/admin/status/diagnostics.
+        Assert.Equal("none", worker.LastOutcome);
         Assert.Equal(0, worker.ConsecutiveFailedCycles);
         Assert.True(worker.LastCycleCandidates >= 0);
         Assert.True(worker.LastCycleRefreshed >= 0);

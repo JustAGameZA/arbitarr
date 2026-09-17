@@ -1487,6 +1487,8 @@ ActivityEndpoint.Map(app);
 DecisionReviewEndpoints.Map(app);
 Arbitarr.Api.SystemInfo.BuildInfoEndpoint.Map(app);
 AdminPingEndpoint.Map(app);
+// arb-mhd2: the admin-gated error detail that GET /api/status no longer publishes.
+AdminStatusDiagnosticsEndpoint.Map(app);
 ObservabilityEndpoint.Map(app);
 LogsEndpoint.Map(app);
 AdminSettingsEndpoints.Map(app);

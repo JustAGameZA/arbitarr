@@ -595,8 +595,15 @@ namespace Arbitarr.Data.Migrations
                     b.Property<DateTimeOffset?>("LastFailureAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("LastOutcome")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTimeOffset?>("LastSuccessAt")
                         .HasColumnType("TEXT");
+
+                    b.Property<int?>("LastUpstreamStatusCode")
+                        .HasColumnType("INTEGER");
 
                     b.Property<DateTimeOffset?>("NextProbeAt")
                         .HasColumnType("TEXT");

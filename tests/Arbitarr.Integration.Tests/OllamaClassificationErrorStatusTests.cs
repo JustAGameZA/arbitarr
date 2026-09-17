@@ -78,21 +78,55 @@ public sealed partial class OllamaClassificationErrorStatusTests
                 () => client.ClassifyAsync(Candidate()));
         }
 
-        using var httpClient = configured.CreateClient();
-        var body = await httpClient.GetStringAsync("/api/status");
+        // arb-mhd2: the detail moved behind the admin key, so the non-vacuity controls read it off
+        // the admin route. Seeded on THIS factory, which is constructed locally rather than shared.
+        const string adminKey = "the-real-admin-key";
+        await factory.SeedAsync(db =>
+        {
+            db.Settings.Add(new Arbitarr.Data.Entities.SettingEntry
+            {
+                Name = Arbitarr.Core.Settings.SettingKey.AdminApiKey.ToString(),
+                Value = adminKey,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            });
+            return Task.CompletedTask;
+        });
 
-        // NON-VACUITY: the failure really did travel to the dashboard, and it carried the detail
-        // that makes this bead worth shipping — without it every 400 still reads alike.
-        Assert.Contains("400", body, StringComparison.Ordinal);
-        Assert.Contains("not found, try pulling it first", body, StringComparison.Ordinal);
+        using var httpClient = configured.CreateClient();
+
+        string adminBody;
+        using (var diagnosticsRequest =
+            new HttpRequestMessage(HttpMethod.Get, "/api/admin/status/diagnostics"))
+        {
+            diagnosticsRequest.Headers.Add(
+                Arbitarr.Api.Admin.AdminApiKeyFilter.HeaderName, adminKey);
+            using var diagnosticsResponse = await httpClient.SendAsync(diagnosticsRequest);
+            Assert.Equal(HttpStatusCode.OK, diagnosticsResponse.StatusCode);
+            adminBody = await diagnosticsResponse.Content.ReadAsStringAsync();
+        }
+
+        // NON-VACUITY: the failure really did travel, and it carried the detail that makes this bead
+        // worth shipping — without it every 400 still reads alike.
+        Assert.Contains("400", adminBody, StringComparison.Ordinal);
+        Assert.Contains("not found, try pulling it first", adminBody, StringComparison.Ordinal);
 
         // SCRUBBING CONTROL (CLAUDE.md §4): the redaction token is PRESENT, proving the planted
         // values reached the scrubber and were replaced there — not that they never arrived. An
         // absence assertion alone would pass just as happily on a body the excerpt never reached.
+        // Gating did not replace scrubbing: the admin body is sanitized too.
         Assert.Contains(
             Arbitarr.Core.Diagnostics.SanitizedErrorDescription.Replacement,
-            body,
+            adminBody,
             StringComparison.Ordinal);
+        Assert.DoesNotContain(PlantedHost, adminBody, StringComparison.Ordinal);
+        Assert.DoesNotContain(PlantedKey, adminBody, StringComparison.Ordinal);
+
+        var body = await httpClient.GetStringAsync("/api/status");
+
+        // The public body reports the failure as a closed outcome and carries none of the text.
+        Assert.Contains("upstream-error", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("not found, try pulling it first", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("lastError", body, StringComparison.OrdinalIgnoreCase);
 
         // THE PROPERTY: the topology and the credential did not come with it.
         Assert.DoesNotContain(PlantedHost, body, StringComparison.Ordinal);
