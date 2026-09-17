@@ -3,6 +3,14 @@
 - **Status:** Accepted
 - **Date:** 2026-09-11
 
+> **This ADR is about a redirect Arbitarr *receives*. [ADR 0023](0023-nzb-access-mode-redirect.md) is about a redirect Arbitarr *emits*.**
+>
+> They concern opposite directions and **neither supersedes the other**. This one refuses a 3xx an upstream sends *to Arbitarr* on the download path, because following it would fetch from an unpinned target with the indexer key attached. ADR 0023 describes Arbitarr *answering* a download with a 302 at the indexer's own URL, for a source an operator explicitly opted in, per indexer.
+>
+> The two read alike, and deliberately so here: the Context below uses the words "Proxy mode" and "Redirect mode" for *NZBHydra2's* setting, which is the same pair of words ADR 0023 uses for *Arbitarr's* own per-source `NzbAccessMode` — in the opposite direction. A tidy-up that unified them would either start following upstream redirects with a credential attached, or stop honouring an operator's setting. Both arms in `DownloadProxyEndpoint.cs` carry a comment saying so at the site.
+>
+> A source in ADR 0023's Redirect mode never reaches this ADR's refusal at all: nothing is fetched, so no upstream 3xx can arrive to be refused.
+
 ## Context
 
 When Arbitarr fetches a download (NZB or torrent) from an upstream source, the upstream — in this case NZBHydra2 — is configured with two options for how it delivers content:

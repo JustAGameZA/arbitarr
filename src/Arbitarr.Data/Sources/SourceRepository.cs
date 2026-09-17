@@ -149,7 +149,12 @@ public sealed class SourceRepository
 
     /// <summary>
     /// The <see cref="Entities.Source.NzbAccessMode"/> value for serving a download through Arbitarr,
-    /// so the indexer key never leaves the server. The default, and currently the only accepted value.
+    /// so the indexer key never leaves the server.
+    ///
+    /// <para><b>Still the DEFAULT, and still the mode that does not expose the key</b> — both on a
+    /// new row (<see cref="Entities.Source.NzbAccessMode"/>'s initialiser) and on a migrated one
+    /// (the column's <c>HasDefaultValue("Proxy")</c>). arb-x7w8.14 admitted a second accepted value;
+    /// it did not change which one an operator gets by doing nothing.</para>
     /// </summary>
     public const string ProxyAccessMode = "Proxy";
 
@@ -157,8 +162,17 @@ public sealed class SourceRepository
     /// The <see cref="Entities.Source.NzbAccessMode"/> value for answering with a <c>Location</c>
     /// header pointing at the upstream URL — which carries the indexer key to the client.
     ///
-    /// <para>Named here, but deliberately ABSENT from <see cref="KnownNzbAccessModes"/>, so a write
-    /// of it is a 400 by construction. See that field for why.</para>
+    /// <para><b>Accepted since arb-x7w8.14, as a per-indexer opt-in that is OFF by default.</b> It
+    /// was deliberately absent from <see cref="KnownNzbAccessModes"/> until the Settings UI could
+    /// state the consequence at the point of choosing; that warning shipped in the same commit that
+    /// added it here, so the opt-in has never existed without it. See that field.</para>
+    ///
+    /// <para><b>The security statement is unchanged and still governs: this mode hands the INDEXER's
+    /// API key to the client.</b> The key is already in the link because the indexer put it there
+    /// when it generated the search result, so redirecting to that link necessarily discloses it to
+    /// Sonarr/Radarr and to anything that can read that response. That is the point of the mode — it
+    /// saves Arbitarr the bandwidth — and it is the operator's call to make, not a defect. ADR 0023
+    /// carries the trade-off in full.</para>
     /// </summary>
     public const string RedirectAccessMode = "Redirect";
 
@@ -166,22 +180,27 @@ public sealed class SourceRepository
     /// The accepted <see cref="Entities.Source.NzbAccessMode"/> values. Matched exactly and ordinally
     /// by <see cref="ValidateNzbAccessMode"/>.
     ///
-    /// <para><b><see cref="RedirectAccessMode"/> is deliberately omitted.</b> The owner's ruling is
-    /// that Redirect ships OFF and per-indexer opt-in, and that the Settings UI must warn the key is
-    /// exposed to the client in that mode. Until that warning exists there is nothing to opt in
-    /// through — so this makes the ruling a MECHANISM rather than a note somebody has to remember:
-    /// with the value outside this set, storing it is rejected with a 400 at the repository boundary
-    /// and no code path can produce a source that exposes its key. Same posture
-    /// <see cref="ValidateBaseUrl"/> takes toward the reserved <c>.invalid</c> placeholder — refuse
-    /// the value that would quietly do the wrong thing rather than storing it and relying on every
-    /// later reader to notice.</para>
+    /// <para><b>arb-x7w8.14 added <see cref="RedirectAccessMode"/>, and what made that safe to do is
+    /// what shipped ALONGSIDE it in the same commit.</b> Before it, the omission was the mechanism
+    /// enforcing the owner's ship-OFF ruling: with the value outside this set a write was rejected
+    /// with a 400 at the repository boundary, so no code path could produce a source that exposed its
+    /// key, and nobody had to remember the rule. That guard was retired only once the three things it
+    /// was waiting for existed together — the Settings UI warning that makes the opt-in INFORMED, the
+    /// download route's redirect arm, and the positive-control test proving the <c>Location</c> header
+    /// (and the key inside it) reaches no log row, event or health item. Re-splitting those apart is
+    /// what the omission existed to prevent; they are one change on purpose.</para>
     ///
-    /// <para><b>arb-x7w8.14 is the bead that adds <see cref="RedirectAccessMode"/> to this array</b>,
-    /// in the same change as the Settings UI exposure warning and the positive-control test proving
-    /// the <c>Location</c> header (and the key inside it) never reaches logs or events. Adding it
-    /// here on its own, ahead of that, re-opens exactly the hole this omission closes.</para>
+    /// <para><b><see cref="ProxyAccessMode"/> REMAINS THE DEFAULT and is still listed first.</b>
+    /// Redirect is opt-in per indexer: an operator who adds a source and says nothing about the mode
+    /// gets Proxy, and an existing row migrated from an older schema does too. Widening what may be
+    /// STORED did not change what is stored by default.</para>
+    ///
+    /// <para>Ordinal exact matching still does the work, and matters MORE now rather than less: with
+    /// two accepted values a leniently-parsed variant could mint the key-exposing one. See
+    /// <see cref="ValidateNzbAccessMode"/>.</para>
     /// </summary>
-    public static readonly IReadOnlyCollection<string> KnownNzbAccessModes = new[] { ProxyAccessMode };
+    public static readonly IReadOnlyCollection<string> KnownNzbAccessModes =
+        new[] { ProxyAccessMode, RedirectAccessMode };
 
     /// <summary>
     /// Validates and inserts a new source. Rejects a non-absolute/non-http(s) <paramref name="baseUrl"/>
@@ -570,6 +589,17 @@ public sealed class SourceRepository
     /// else in this type: this value selects whether the indexer key is exposed to the client, so a
     /// leniently-parsed variant that failed to match <c>"Redirect"</c> — or worse, matched it by
     /// accident — changes a security posture rather than a preference.
+    ///
+    /// <para><b>arb-x7w8.14 raised the stakes here rather than lowering them.</b> Now that
+    /// <see cref="RedirectAccessMode"/> is an accepted value, a lenient parse can actually REACH the
+    /// key-exposing mode — before, the worst a numeric or mis-cased form could do was be rejected by
+    /// a set that contained only one entry. So the posture is unchanged and deliberately so:
+    /// <c>"redirect"</c>, <c>"REDIRECT"</c>, <c>"1"</c>, <c>" 1 "</c> and <c>"+1"</c> are all still
+    /// 400s. CLAUDE.md §3 is the rule in situ — never <c>Enum.TryParse</c> on a wire value that
+    /// selects an authority level, because it accepts the numeric form, and neither
+    /// <c>Enum.IsDefined</c> nor trimming closes that. <b>DO NOT convert
+    /// <see cref="Entities.Source.NzbAccessMode"/> to an enum</b>: matching the names explicitly is
+    /// what closes the wire format by construction, and it is exactly the tidy-up §3 forbids.</para>
     /// </summary>
     private static void ValidateNzbAccessMode(string nzbAccessMode)
     {

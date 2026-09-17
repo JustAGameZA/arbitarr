@@ -2,6 +2,7 @@ using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Releases;
 using Arbitarr.Core.Security;
 using Arbitarr.Core.Sources;
+using Arbitarr.Data.Sources;
 using Microsoft.AspNetCore.Http;
 
 namespace Arbitarr.Api.Search;
@@ -31,6 +32,28 @@ namespace Arbitarr.Api.Search;
 /// #97: since the resolver became DB-backed, "the client apikey" means an environment key OR a key
 /// minted in Settings > API keys, of either scope — this route is PublicRead and requires no admin
 /// scope. A revoked minted key is refused here on the next request, with the same bare 401.
+///
+/// <para><b>THREE WAYS THIS ROUTE ANSWERS, AND THE CLIENT-KEY CHECK IS COMMON TO ALL THREE.</b>
+/// Sonarr/Radarr always call with ARBITARR's client key and it is always re-validated first; only
+/// the response differs. In order of the branches below:
+/// <list type="number">
+/// <item><b>Magnet</b> (arb-x7w8.15) — a 302 at the magnet URI, under EITHER access mode, because a
+/// magnet carries no fetchable body. No indexer credential is involved.</item>
+/// <item><b>Redirect access mode</b> (arb-x7w8.14) — a 302 at the indexer's own URL for a source the
+/// operator opted in. That URL carries the INDEXER's API key to the caller; that is the mode's whole
+/// purpose and its documented cost. OFF by default. See ADR 0023.</item>
+/// <item><b>Proxy access mode</b> — the default: the payload is fetched with the indexer key and the
+/// bytes are served, so the key never leaves the process (arb-x7w8.13).</item>
+/// </list>
+/// The mode is read from the source ROW via <c>ISourceRegistry.ResolveNzbAccessModeAsync</c>, from
+/// the same resolution that produced the adapter — not from <see cref="IUpstreamSource"/>, which
+/// exposes only a name, and not from a second repository read keyed on that editable name.</para>
+///
+/// <para><b>The redirect Arbitarr EMITS in mode 2 is the opposite of the redirect it REFUSES in the
+/// <see cref="UpstreamRedirectRefusedException"/> catch below (ADR 0014).</b> Both live in this file
+/// and both say "redirect"; a tidy-up that unified them would either start following upstream 3xx
+/// with the indexer key attached, or stop honouring an operator's explicit setting. Neither ADR
+/// supersedes the other — they are about opposite directions.</para>
 /// </summary>
 public static class DownloadProxyEndpoint
 {
@@ -107,6 +130,75 @@ public static class DownloadProxyEndpoint
         // header. It must never reach an event summary, a health item, /api/activity or /api/status —
         // the same rule the two comments below state for a Location header and a refusal reason.
         if (release.Candidate.Link.Scheme.Equals("magnet", StringComparison.OrdinalIgnoreCase))
+        {
+            return Results.Redirect(release.Candidate.Link.OriginalString);
+        }
+
+        // arb-x7w8.14: the REDIRECT access mode. The operator has opted this source into answering
+        // downloads with a 302 at the indexer's own URL instead of Arbitarr fetching the payload —
+        // which saves Arbitarr the bandwidth and NECESSARILY hands the indexer's API key to the
+        // caller, because the indexer put that key in the link when it generated the search result.
+        // That trade-off is the operator's to make, it is OFF by default (the column defaults to
+        // Proxy and SourceRepository only accepts the exact ordinal string "Redirect"), and the
+        // Settings UI states the consequence at the point of choosing. ADR 0023 carries the full
+        // security reasoning.
+        //
+        // THIS IS NOT THE ADR 0014 REDIRECT REFUSAL in the catch block below, and the two must never
+        // be unified — they are one file apart, both say "redirect", and they mean opposite things.
+        // ADR 0014 REFUSES a 3xx an upstream sent ARBITARR, because following it would fetch from an
+        // unpinned target with the indexer key attached. This EMITS a 302 DOWNSTREAM to the caller,
+        // at the operator's explicit instruction. Opposite direction, opposite subject, opposite
+        // answer, and ADR 0023 says so in its Context for the same reason this comment does. A
+        // source in Redirect mode never reaches that catch at all: nothing is fetched, so no upstream
+        // 3xx can arrive to be refused.
+        //
+        // It sits AFTER the magnet arm above because a magnet is answered by redirect under EITHER
+        // mode — it carries no fetchable body, so Proxy has nothing to proxy — and that arm needs no
+        // mode lookup to decide. It sits BEFORE the adapter call below because arb-ywcj's ruling is
+        // that redirect mode branches AT THE ROUTE: IUpstreamSource.FetchDownloadAsync returns
+        // Task<Stream> and has no affordance for a URL, and widening it into a result type would add
+        // a redirect field no proxy-mode call could ever populate. The adapter is simply never asked.
+        //
+        // NO LOG LINE IS WRITTEN HERE, AND THAT ABSENCE IS THE SECURITY MECHANISM — not an omission
+        // to be helpfully filled in later. NZBHydra2's FileHandler logs "Redirecting to {}", i.e. it
+        // logs the key; this deliberately does not. A READER CHECKING TODAY'S PIPELINE WILL FIND
+        // NOTHING THAT WOULD LOG A Location HEADER and may conclude the guarding test is pointless:
+        // it is not, and neither existing layer makes it so. DisableUriRedaction collapses the query
+        // of an OUTBOUND IHttpClientFactory request URI, and in redirect mode there is no outbound
+        // request at all. LogMessageCleanser's shared arms scrub credential-shaped values by pattern
+        // wherever they appear — so they DO catch an apikey= parameter inside a logged Location, but
+        // they carry no arm for the rest of that URL, and none at all for a credential in some other
+        // shape. Relying on them here would be relying on the leak happening to wear a shape the
+        // denylist already knows. RedirectAccessModeKeyNeverReachesLogsTests is the ratchet, and it
+        // asserts on the link's PATH for exactly that reason (mutation proved the key-only form of
+        // the assertion passed while the Location was being logged). It fails if anyone writes an
+        // ILogger line on this arm. (app.UseHttpLogging() with ResponseHeaders would log under
+        // Microsoft.AspNetCore.HttpLogging.HttpLoggingMiddleware, which LoggingSetup.cs's
+        // NoisyFrameworkCategories "Microsoft" prefix demotes to Warning for SqliteLoggerProvider —
+        // so at the registered Information level that line would never reach the store this test
+        // reads, and could not trip this ratchet.)
+        //
+        // NO SUCCESSFUL-GRAB CLEAR AND NO HEALTH ITEM, for the reason the success path's own comment
+        // below gives: the sticky refusal clears only when a payload actually came back from this
+        // source. Arbitarr observed no payload here — emitting a 302 proves nothing about whether the
+        // indexer will serve the file, which is WEAKER evidence than the truncated fetch that comment
+        // already declines to count. ADR 0020's grab allowance is untouched for the same reason the
+        // magnet arm leaves it alone: the counter lives inside BudgetedUpstreamSource.FetchDownloadAsync,
+        // which is never reached.
+        //
+        // The link is upstream-supplied text carrying a credential, so it goes in exactly ONE place:
+        // this Location header. It must never reach an event summary, a health item, /api/activity or
+        // /api/status — the same rule the magnet comment above and the two comments below state, and
+        // the reason the catch block below builds its message from the configured source name and an
+        // int status code and never from upstream text such as the Location header.
+        var accessMode = await registry
+            .ResolveNzbAccessModeAsync(release.SourceName, cancellationToken)
+            .ConfigureAwait(false);
+
+        // Ordinal exact match, per CLAUDE.md §3 — the same posture SourceRepository.ValidateNzbAccessMode
+        // takes at the write boundary. Anything that is not exactly "Redirect" proxies, so the
+        // fail-closed answer is the one a malformed, empty or unrecognised value lands on.
+        if (string.Equals(accessMode, SourceRepository.RedirectAccessMode, StringComparison.Ordinal))
         {
             return Results.Redirect(release.Candidate.Link.OriginalString);
         }

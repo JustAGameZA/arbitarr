@@ -127,13 +127,18 @@ public sealed class Source
     /// <c>"Redirect"</c> (Arbitarr answers with a <c>Location</c> pointing at the upstream URL,
     /// which carries the key to the client).
     ///
-    /// <para><b>Today the only writable value is <c>"Proxy"</c>.</b> <c>"Redirect"</c> is described
-    /// here because it is the mode this column exists to eventually carry, but it is NOT accepted
-    /// yet: <c>SourceRepository.KnownNzbAccessModes</c> deliberately omits it, so a write of
-    /// <c>"Redirect"</c> is rejected with a 400 by construction rather than by an operator
-    /// remembering not to. arb-x7w8.14 is the bead that admits it, together with the Settings UI
-    /// warning that the key is exposed to the client in that mode — the warning and the capability
-    /// ship in the same change, so neither can arrive without the other.</para>
+    /// <para><b>Both values are writable since arb-x7w8.14.</b> It admitted <c>"Redirect"</c> to
+    /// <c>SourceRepository.KnownNzbAccessModes</c> together with the Settings UI warning that the key
+    /// is exposed to the client in that mode — the warning and the capability shipped in the SAME
+    /// change, so the opt-in has never existed without the statement of its cost. Until then the
+    /// omission was itself the mechanism: a write of <c>"Redirect"</c> was a 400 by construction
+    /// rather than by an operator remembering not to. ADR 0023 carries the trade-off in full.</para>
+    ///
+    /// <para><b>Matched by exact ordinal name at the repository boundary — do not convert this to an
+    /// enum.</b> The same rule <c>LimitsUnit</c> above states, for a sharper reason: this value
+    /// selects whether a credential is disclosed, and CLAUDE.md §3 records that an
+    /// <c>Enum.TryParse</c>-style reader accepts <c>"1"</c> and would thereby mint the second member
+    /// of this two-value set — the key-exposing one.</para>
     ///
     /// <para>Defaults to <c>"Proxy"</c> so a newly added source never silently exposes its key. A
     /// default of <c>"Redirect"</c> would leak a key on the first download after an operator did

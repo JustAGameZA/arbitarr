@@ -26,9 +26,40 @@ export interface SourceSummary {
   baseUrl: string;
   enabled: boolean;
   hasApiKey: boolean;
+  /**
+   * `'Proxy'` or `'Redirect'` — how a download from this source is served.
+   *
+   * A STRING, NOT A UNION, AND DELIBERATELY SO. The server matches this value by
+   * exact ordinal name at the repository boundary and refuses everything else. A
+   * TypeScript union here would be a second, weaker copy of that rule — enforced
+   * only over code the compiler can see, while the value actually arrives over
+   * the wire — and it would make an unrecognised value from an older or newer
+   * server a type error at the boundary rather than something the UI can render.
+   * `ACCESS_MODES` in `Sources.tsx` is the list the form offers; this is what the
+   * server said.
+   */
+  nzbAccessMode: string;
   createdAt: string;
   updatedAt: string;
 }
+
+/**
+ * The mode that makes Arbitarr answer a download with a 302 at the indexer's own
+ * URL — which carries the INDEXER's API key to whoever called.
+ *
+ * Exported as a constant rather than inlined because three places must agree on
+ * the exact spelling (the option, the warning's condition, and the request
+ * builders), and the server accepts only this exact ordinal form: `'redirect'`
+ * and `'1'` are both 400s.
+ */
+export const REDIRECT_ACCESS_MODE = 'Redirect';
+
+/**
+ * The default, and the mode that does NOT expose the key: Arbitarr fetches the
+ * payload upstream and streams the bytes. A new source gets this unless the
+ * operator changes it.
+ */
+export const PROXY_ACCESS_MODE = 'Proxy';
 
 /**
  * The five outcomes of `POST /api/admin/sources/{id}/test`, mirroring the
@@ -69,6 +100,12 @@ export interface CreateSourceRequest {
   enabled: boolean;
   /** Omitted entirely when the operator typed nothing. */
   apiKey?: string;
+  /**
+   * Optional server-side: omitting it stores `'Proxy'`. Sent ALWAYS anyway, so
+   * the form is explicit about the security-relevant choice it just presented
+   * rather than relying on a default agreeing with the control's initial value.
+   */
+  nzbAccessMode?: string;
 }
 
 /**
@@ -99,4 +136,18 @@ export interface UpdateSourceRequest {
   enabled: boolean;
   /** Present ONLY when replacing the stored key. Absent means "leave it alone". */
   apiKey?: string;
+  /**
+   * A FOURTH null policy, and the reason it is called out rather than folded in
+   * with one of the three above: omitting this LEAVES THE STORED MODE ALONE (it
+   * is `SourceOptions.NzbAccessMode`, whose null means "no opinion"), so it is
+   * `apiKey`-shaped rather than `kind`-shaped.
+   *
+   * It is nonetheless sent on EVERY edit, unlike `apiKey`. The form always shows
+   * the operator which mode is selected, so submitting without saying so would
+   * let a displayed value and a stored value diverge silently — and for this
+   * particular column that divergence is the difference between the indexer key
+   * staying server-side and being handed to the caller. A field the operator can
+   * see is a field the submit must mean.
+   */
+  nzbAccessMode?: string;
 }

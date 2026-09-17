@@ -154,6 +154,43 @@ public sealed class SourceRegistry : ISourceRegistry
         return _projected = resolved.Select(r => r.Source).ToArray();
     }
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// <para><b>Answered from the SAME resolution <see cref="ResolveAsync"/> served</b>, which is
+    /// what the interface requires and is the whole reason this lives on the registry rather than
+    /// being a second <c>SourceRepository</c> read at the download route. Within one scope the memo
+    /// has already been populated by the search or by the route's own <c>ResolveAsync</c>, so this
+    /// issues no query at all; across scopes it resolves once, exactly as any other consumer does.
+    /// A source's mode therefore can never disagree with the adapter that same request is about to
+    /// use.</para>
+    ///
+    /// <para><b>The match is on <see cref="IUpstreamSource.Name"/> because that is what the caller
+    /// holds, and it is safe HERE in a way a database read keyed on the same string would not
+    /// be.</b> The name is operator-editable, so keying a fresh table read on it could pick a
+    /// different row than the one the adapter came from (arb-kfe9). This match is against the
+    /// already-resolved set, where every entry's name came from the very row whose mode sits beside
+    /// it — so a rename moves both together or neither, and there is no window in which they
+    /// disagree.</para>
+    ///
+    /// <para>Ordinal comparison, matching the download route's own source lookup. An unmatched name
+    /// answers Proxy per the interface contract: fail closed, never redirect a credential on the
+    /// strength of a name that resolved to nothing.</para>
+    /// </remarks>
+    public async Task<string> ResolveNzbAccessModeAsync(string sourceName, CancellationToken cancellationToken)
+    {
+        var resolved = await ResolveWithRowIdsAsync(cancellationToken).ConfigureAwait(false);
+
+        foreach (var entry in resolved)
+        {
+            if (string.Equals(entry.Source.Name, sourceName, StringComparison.Ordinal))
+            {
+                return entry.NzbAccessMode;
+            }
+        }
+
+        return StaticSourceRegistry.DefaultNzbAccessMode;
+    }
+
     /// <summary>
     /// The same resolution <see cref="ResolveAsync"/> returns, each adapter still paired with the
     /// <see cref="Source.Id"/> of the row it was built from (arb-x7w8.10).
@@ -164,7 +201,7 @@ public sealed class SourceRegistry : ISourceRegistry
     /// warnings and <c>ResolvedSourceSetFingerprintSource</c> already use; the display name is
     /// operator-editable, so a name match would turn a rename into an ungated source. It is not on
     /// <see cref="ISourceRegistry"/> because no CONSUMER of the search path wants it — only a
-    /// decorator composed over this concrete type does, and that interface is kept at one method for
+    /// decorator composed over this concrete type does, and that interface is kept narrow for
     /// exactly the decoration its own doc describes.
     /// </remarks>
     public async Task<IReadOnlyList<ResolvedSource>> ResolveWithRowIdsAsync(CancellationToken cancellationToken)
@@ -230,7 +267,8 @@ public sealed class SourceRegistry : ISourceRegistry
                         row.DisplayName,
                         RequestTimeout: RequestTimeoutFor(row)),
                     CreateClient(nameof(NzbHydraSource)),
-                    _circuitBreaker)));
+                    _circuitBreaker),
+                    row.NzbAccessMode));
                 break;
 
             case SourceRepository.NewznabKind:
@@ -272,7 +310,8 @@ public sealed class SourceRegistry : ISourceRegistry
                         row.DisplayName,
                         RequestTimeout: RequestTimeoutFor(row)),
                     CreateClient(NewznabHttpClientName),
-                    _circuitBreaker)));
+                    _circuitBreaker),
+                    row.NzbAccessMode));
                 break;
 
             default:
@@ -365,7 +404,21 @@ public sealed class SourceRegistry : ISourceRegistry
 /// edit at any time, so a name match turns a rename into a source that quietly stops being gated;
 /// the id cannot be edited and is already what this registry's skip warnings and
 /// <c>ResolvedSourceSetFingerprintSource</c> identify a source by.
+///
+/// <para><b>arb-x7w8.14 added <paramref name="NzbAccessMode"/>, CARRIED from the same row rather
+/// than re-read.</b> The download route has to know whether to proxy a payload or redirect to it,
+/// and that is a ROW property. Carrying it here means the mode and the adapter provably came from
+/// ONE read of the table; a second read keyed by display name could disagree with this one, and
+/// would key on the single field an operator can edit — which arb-kfe9 records as the wrong key for
+/// exactly this reason.</para>
 /// </remarks>
 /// <param name="SourceId">The <c>Sources</c> row this adapter was built from.</param>
 /// <param name="Source">The live adapter.</param>
-public readonly record struct ResolvedSource(long SourceId, IUpstreamSource Source);
+/// <param name="NzbAccessMode">
+/// The row's <see cref="Source.NzbAccessMode"/> — <c>"Proxy"</c> or <c>"Redirect"</c>. Verbatim from
+/// the row and deliberately NOT normalised here: <c>SourceRepository.ValidateNzbAccessMode</c>
+/// already matched it ordinally against the accepted set at the write boundary, and re-parsing it
+/// leniently on the way out is precisely what CLAUDE.md §3 forbids for a value selecting whether a
+/// credential is exposed.
+/// </param>
+public readonly record struct ResolvedSource(long SourceId, IUpstreamSource Source, string NzbAccessMode);

@@ -38,6 +38,21 @@
   max-width: 70ch;
 }
 
+/* arb-x7w8.14: the redirect-mode key-exposure warning. --warn rather than
+   --danger because the mode is a supported, deliberate operator choice and not
+   an error — and because --danger is already spoken for by .confirm, the
+   destructive-removal prompt. Two different reds, one meaning "this deletes
+   something" and the other "this discloses something", would leave neither
+   reading as urgent. Both tokens are contrast-checked against --bg-panel in
+   theme.css; neither is re-derived here. */
+.accessModeWarning {
+  margin: -4px 0 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--warn);
+  max-width: 70ch;
+}
+
 .testResult {
   margin-top: 12px;
   font-size: 13px;

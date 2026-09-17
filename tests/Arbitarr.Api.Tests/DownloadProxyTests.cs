@@ -610,6 +610,155 @@ public class DownloadProxyTests
         Assert.IsNotType<Microsoft.AspNetCore.Http.HttpResults.RedirectHttpResult>(result);
     }
 
+    /// <summary>
+    /// arb-x7w8.14 — THE SIBLING OF THE TEST ABOVE, asserting the inverse for redirect mode. The pair
+    /// is the point: proxy mode must never redirect and redirect mode must never serve bytes. Each
+    /// half is stated on the RESULT TYPE rather than on a status code, because
+    /// <c>FileContentHttpResult</c> has no redirect affordance and <c>RedirectHttpResult</c> has no
+    /// body — so a mode branch wired the wrong way round fails here instead of passing silently
+    /// behind a plausible-looking 200 or 302.
+    ///
+    /// <para><b>The Location is the release's own link, passed through UNCHANGED.</b> No URL is built
+    /// and no key is appended, because the indexer already put its key into that link when it
+    /// generated the search result — that disclosure is the whole of what this mode costs, and it is
+    /// what NZBHydra2's and Prowlarr's equivalents do. Asserted against the exact original string so a
+    /// later "normalisation" of the link cannot quietly change where the caller is sent.</para>
+    ///
+    /// <para><b>The adapter is never invoked, and that is the structural half of the claim.</b>
+    /// arb-ywcj's ruling is that the mode branches AT THE ROUTE, before the adapter is called, which
+    /// is why <c>IUpstreamSource.FetchDownloadAsync</c> was not widened into a result type. If a
+    /// future change moved the branch inside the adapter, THIS assertion is what notices — the
+    /// result-type one would still pass.</para>
+    /// </summary>
+    [Fact]
+    public async Task Redirect_mode_answers_a_redirect_to_the_link_and_never_calls_the_adapter()
+    {
+        var release = TestReleases.Torrent(sourceName: "eztv", guid: "123");
+        var lookup = new InMemoryReleaseLookup();
+        lookup.Record(release);
+
+        var source = new FakeUpstreamSource(
+            "eztv",
+            downloadFactory: () => new MemoryStream("nzb-bytes"u8.ToArray()));
+        var sources = new IUpstreamSource[] { source };
+
+        var registry = new StaticSourceRegistry(
+            sources,
+            new Dictionary<string, string>(StringComparer.Ordinal) { ["eztv"] = "Redirect" });
+
+        var result = await DownloadProxyEndpoint.HandleAsync(
+            release.ProxyGuid, ValidApiKey, Resolver(), lookup, registry, NullEventSink.Instance, CancellationToken.None);
+
+        var redirect = Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.RedirectHttpResult>(result);
+        Assert.Equal(release.Candidate.Link.OriginalString, redirect.Url);
+        Assert.IsNotType<Microsoft.AspNetCore.Http.HttpResults.FileContentHttpResult>(result);
+
+        // Nothing was fetched, so the indexer was never asked for the payload.
+        Assert.Empty(source.DownloadRequests);
+    }
+
+    /// <summary>
+    /// A mode that is not EXACTLY <c>"Redirect"</c> serves bytes. This is the route's fail-closed rule
+    /// stated as a test: the match is ordinal and exact, so a mis-cased spelling, a padded one, a
+    /// numeric form or an empty string all proxy rather than handing the indexer key to the caller.
+    /// <c>"Proxy"</c> heads the list to pin that the default is unaffected by redirect mode existing.
+    ///
+    /// <para><b>None of these can be reached through <c>SourceRepository</c></b>, which rejects every
+    /// one at the write boundary (<c>SourceRepositoryTests</c>). They are asserted HERE because the
+    /// route must not rely on that for its own safety: a value from a row written by an older version,
+    /// or by some future second writer, must still fail closed. Defence at the read boundary and
+    /// defence at the write boundary are not the same guarantee, and CLAUDE.md §3's rule is about the
+    /// value that selects the posture, wherever it is read.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("Proxy")]
+    [InlineData("redirect")]
+    [InlineData("REDIRECT")]
+    [InlineData(" Redirect ")]
+    [InlineData("1")]
+    [InlineData("")]
+    public async Task Any_mode_that_is_not_exactly_Redirect_serves_bytes(string accessMode)
+    {
+        var release = TestReleases.Torrent(sourceName: "eztv", guid: "123");
+        var lookup = new InMemoryReleaseLookup();
+        lookup.Record(release);
+
+        var payload = "nzb-bytes"u8.ToArray();
+        var source = new FakeUpstreamSource("eztv", downloadFactory: () => new MemoryStream(payload));
+        var sources = new IUpstreamSource[] { source };
+
+        var registry = new StaticSourceRegistry(
+            sources,
+            new Dictionary<string, string>(StringComparer.Ordinal) { ["eztv"] = accessMode });
+
+        var result = await DownloadProxyEndpoint.HandleAsync(
+            release.ProxyGuid, ValidApiKey, Resolver(), lookup, registry, NullEventSink.Instance, CancellationToken.None);
+
+        var bytes = Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.FileContentHttpResult>(result);
+        Assert.Equal(payload, bytes.FileContents);
+        Assert.IsNotType<Microsoft.AspNetCore.Http.HttpResults.RedirectHttpResult>(result);
+    }
+
+    /// <summary>
+    /// A redirect does NOT clear a source's sticky refusal health item, and a proxied payload does —
+    /// the two asserted together because the contrast IS the ruling, and either half alone would let
+    /// the other drift.
+    ///
+    /// <para><b>Why a 302 does not count as a successful grab.</b> The success path's own comment
+    /// gives the rule: the item clears when a payload actually came back from this source, recorded
+    /// after the body is fully read rather than on the fetch call, because "a fetch that starts and
+    /// then trips the size cap is not a successful grab". Arbitarr observes no payload at all in
+    /// redirect mode — it emits a header and the caller goes off to the indexer alone — so a redirect
+    /// is STRICTLY WEAKER evidence than the truncated fetch that comment already declines to count.
+    /// Clearing on it would hide a genuinely broken download path behind a source the operator had
+    /// merely switched modes on, which is the exact defect (arb-ln0/arb-v3w) the sticky item exists to
+    /// stop.</para>
+    ///
+    /// <para>The refusal is planted through the tracker's own API rather than by driving a refusal
+    /// through the endpoint, so this test is about the clearing rule and does not also depend on the
+    /// ADR 0014 catch block that sets it.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_redirect_does_not_clear_a_sticky_refusal_but_a_proxied_payload_does()
+    {
+        var release = TestReleases.Torrent(sourceName: "eztv", guid: "123");
+        var lookup = new InMemoryReleaseLookup();
+        lookup.Record(release);
+
+        var source = new FakeUpstreamSource(
+            "eztv",
+            downloadFactory: () => new MemoryStream("nzb-bytes"u8.ToArray()));
+        var sources = new IUpstreamSource[] { source };
+
+        var tracker = new Arbitarr.Core.Diagnostics.DownloadRefusalTracker();
+        tracker.RecordRefusal("eztv", "Refused HTTP 302: the source redirected instead of serving the file.", DateTimeOffset.UnixEpoch);
+
+        // The item is really there, so the assertion below is about it surviving rather than about it
+        // never having existed.
+        Assert.Single(tracker.Snapshot());
+
+        var redirectRegistry = new StaticSourceRegistry(
+            sources,
+            new Dictionary<string, string>(StringComparer.Ordinal) { ["eztv"] = "Redirect" });
+
+        var redirectResult = await DownloadProxyEndpoint.HandleAsync(
+            release.ProxyGuid, ValidApiKey, Resolver(), lookup, redirectRegistry, NullEventSink.Instance,
+            CancellationToken.None, tracker);
+
+        Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.RedirectHttpResult>(redirectResult);
+        Assert.Single(tracker.Snapshot());
+
+        // THE CONTRAST: the same source, same tracker, proxy mode — a payload really does come back,
+        // and that DOES clear the item. Without this half, an implementation that never cleared at all
+        // would pass the assertion above.
+        var proxyResult = await DownloadProxyEndpoint.HandleAsync(
+            release.ProxyGuid, ValidApiKey, Resolver(), lookup, new StaticSourceRegistry(sources),
+            NullEventSink.Instance, CancellationToken.None, tracker);
+
+        Assert.IsType<Microsoft.AspNetCore.Http.HttpResults.FileContentHttpResult>(proxyResult);
+        Assert.Empty(tracker.Snapshot());
+    }
+
     /// <summary>Captures every event the endpoint records, so a test can assert on kind, source and reason.</summary>
     private sealed class RecordingEventSink : Arbitarr.Core.Diagnostics.IEventSink
     {
