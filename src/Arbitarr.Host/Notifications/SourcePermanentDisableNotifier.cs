@@ -3,6 +3,7 @@ using Arbitarr.Core.Notifications;
 using Arbitarr.Data.Notifications;
 using Arbitarr.Data.Sources;
 using Arbitarr.Host.Sources;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -85,6 +86,96 @@ public sealed class SourcePermanentDisableNotifier
     /// rows, not from upstream — so it does not grow per call and needs no eviction.</para>
     /// </summary>
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _gates = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Guards <see cref="_inFlight"/> and <see cref="_idle"/> together. Both are read and written as
+    /// one unit — the decision to complete <see cref="_idle"/> is made from the count — so they
+    /// cannot be split across two independent synchronisation primitives without reintroducing the
+    /// race that would let a waiter observe zero before the last delivery's continuation ran.
+    /// </summary>
+    private readonly object _quiescenceGate = new();
+
+    /// <summary>
+    /// Deliveries scheduled by <see cref="NotifyInBackground"/> that have not finished yet. Counted
+    /// rather than collected: a list of completed tasks would grow for the life of the process, and
+    /// nothing here needs the tasks themselves, only whether any remain.
+    /// </summary>
+    private int _inFlight;
+
+    /// <summary>
+    /// Completed when <see cref="_inFlight"/> next reaches zero, then replaced. Null while nothing is
+    /// in flight, which is what lets <see cref="DeliveriesIdle"/> answer without allocating in the
+    /// common case.
+    ///
+    /// <para><see cref="TaskCreationOptions.RunContinuationsAsynchronously"/> is required, not
+    /// stylistic: this source is completed from the last delivery's continuation, so a waiter resumed
+    /// inline would run ON that delivery's thread — in a test, that means assertions executing inside
+    /// the notifier's own bookkeeping.</para>
+    /// </summary>
+    private TaskCompletionSource? _idle;
+
+    /// <summary>
+    /// A task completing when every delivery raised by <see cref="NotifyInBackground"/> SO FAR has
+    /// finished — whether it delivered, failed, or threw. Already completed when nothing is in
+    /// flight.
+    ///
+    /// <para><b>What it is for.</b> Deliveries are fire-and-forget, so there is otherwise nothing to
+    /// await and no way to tell "the notice has not been sent yet" from "no notice will be sent".
+    /// Tests need that distinction to assert either outcome without a wall-clock sleep standing in
+    /// for it, and an orderly shutdown could await this to avoid dropping a notice that is already
+    /// in flight.</para>
+    ///
+    /// <para><b>The search path must NEVER await this.</b> Doing so would hand every search the
+    /// webhook endpoint's latency and could fail a search because a notification target is
+    /// misconfigured — precisely the coupling <see cref="NotifyInBackground"/> exists to prevent. It
+    /// is an observation point, not a synchronisation point for production callers.</para>
+    ///
+    /// <para>It covers deliveries STARTED BEFORE IT WAS READ. A delivery raised after this returns is
+    /// not included, which is why a caller arms it before the act that should produce one.</para>
+    ///
+    /// <para><c>public</c>, not <c>internal</c>: there is no <c>InternalsVisibleTo</c> from this
+    /// project to either test assembly (the same reason as <see cref="ReadAttempts"/> below), and the
+    /// seam is useless if the tests that need it cannot reach it.</para>
+    /// </summary>
+    public Task DeliveriesIdle
+    {
+        get
+        {
+            lock (_quiescenceGate)
+            {
+                return _inFlight == 0
+                    ? Task.CompletedTask
+                    : (_idle ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).Task;
+            }
+        }
+    }
+
+    /// <summary>
+    /// How many times <see cref="ReadWithRetryAsync{T}"/> attempts one settings read before giving
+    /// up. Three TOTAL attempts, not three retries after the first.
+    ///
+    /// <para>The number is small on purpose. This runs on a background task raised from the search
+    /// fan-out, and the condition being announced is already durably recorded, so a long retry chain
+    /// would buy nothing an operator can act on any sooner while holding a thread-pool thread and a
+    /// SQLite connection for the duration.</para>
+    ///
+    /// <para><c>public</c>, not <c>internal</c>: there is no <c>InternalsVisibleTo</c> from this
+    /// project to the test assembly, and the bound is asserted by name so that a test cannot drift
+    /// from the value it is meant to be pinning — re-spelling "3" in the test is exactly how such an
+    /// assertion silently stops describing the product.</para>
+    /// </summary>
+    public const int ReadAttempts = 3;
+
+    /// <summary>
+    /// The pause between read attempts, taken through <see cref="TimeProvider"/> so a test drives it
+    /// without real waiting. Short because the faults this covers are brief by nature: a checkpoint
+    /// or a vacuum holding an exclusive lock, not an outage.
+    ///
+    /// <para><c>public</c> for the same reason as <see cref="ReadAttempts"/>: no
+    /// <c>InternalsVisibleTo</c>, and a test that advanced a hand-copied span would stop releasing
+    /// the pause the moment this value changed.</para>
+    /// </summary>
+    public static readonly TimeSpan ReadRetryDelay = TimeSpan.FromMilliseconds(200);
 
     public SourcePermanentDisableNotifier(
         IServiceScopeFactory scopeFactory,
@@ -218,13 +309,33 @@ public sealed class SourcePermanentDisableNotifier
         var repository = scope.ServiceProvider.GetRequiredService<NotificationRepository>();
         var transport = scope.ServiceProvider.GetRequiredService<WebhookNotificationTransport>();
 
-        var settings = await repository.GetSettingsAsync(cancellationToken).ConfigureAwait(false);
         var trigger = TriggerFor(transition);
+
+        var settings = await ReadWithRetryAsync(
+            ct => repository.GetSettingsAsync(ct),
+            trigger,
+            cancellationToken).ConfigureAwait(false);
+
         if (!settings.IsEnabled(trigger))
         {
             // Muted, or the notifier is off entirely. Nothing is queued for later: there is no cursor
             // to hold a position with, and the edge has already been consumed by the row write, so a
-            // deferred send would have to re-derive a transition that no longer exists.
+            // deferred send would have to re-derive a transition that no longer exists. That remains
+            // the right answer for THIS case — the operator asked not to be told.
+            //
+            // It is NOT the right answer for a FAILURE before the POST, which is a different thing
+            // wearing the same shape: the operator did want to be told and the notice was lost
+            // anyway. Because the disable flag is committed before this task runs and no later
+            // search re-raises the edge (see ReadWithRetryAsync's remarks), such a loss is
+            // permanent. The two settings reads are therefore retried a bounded number of times.
+            // A SUSTAINED fault still loses the notice, and that residual is accepted knowingly.
+            //
+            // Closing the residual entirely would need a durable "notified" flag written after the
+            // POST, and that was REJECTED: a flag written late is a flag that can be missing after a
+            // crash or a restart, and this type's whole restart story (see the class remarks) is
+            // that state is read from the row so a process which starts with a source already
+            // disabled announces nothing. A second flag would reintroduce exactly the duplicate
+            // storm at boot that reading the row avoids, in exchange for a narrower fault window.
             return;
         }
 
@@ -234,7 +345,16 @@ public sealed class SourcePermanentDisableNotifier
             sourceName,
             _timeProvider.GetUtcNow());
 
-        var url = await repository.ReadWebhookUrlForDeliveryAsync(cancellationToken).ConfigureAwait(false);
+        var url = await ReadWithRetryAsync(
+            ct => repository.ReadWebhookUrlForDeliveryAsync(ct),
+            trigger,
+            cancellationToken).ConfigureAwait(false);
+
+        // NOT retried, deliberately. DeliverAsync already bounds itself with its own timeout, and a
+        // re-POST cannot be told apart from a first POST by the receiving end — so a retry here
+        // would risk telling an operator twice that a source died, which is the duplicate-notice
+        // failure this whole type is built to avoid. A failed POST is reported by the warning below
+        // and by the recorded delivery outcome.
         var outcome = await transport.DeliverAsync(url, payload, cancellationToken).ConfigureAwait(false);
         await repository.RecordDeliveryAsync(outcome, cancellationToken).ConfigureAwait(false);
 
@@ -252,6 +372,63 @@ public sealed class SourcePermanentDisableNotifier
     }
 
     /// <summary>
+    /// Runs one of <see cref="NotifyAsync"/>'s two settings reads, retrying a transient SQLite fault
+    /// up to <see cref="ReadAttempts"/> times in total.
+    ///
+    /// <para><b>Why the reads are retried when nothing else here is.</b> The permanent-disable flag
+    /// is committed by <c>SourceBackoffStore.RecordOutcomeAsync</c> BEFORE this task is raised, and
+    /// the two are not one transaction. Once that row says disabled, the edge can never be computed
+    /// again — a later authentication failure reads <c>true</c> and yields no transition, and in fact
+    /// never gets that far, because <c>IsCallableAsync</c> refuses the source outright so the search
+    /// path stops recording outcomes for it at all. Only a success clears the flag, and a refused
+    /// source is never called to produce one. So an exception thrown between that commit and the POST
+    /// does not delay the notice, it destroys it: the operator is never told the source went dead,
+    /// and nothing re-raises it. These two reads are the only app code on that stretch, and both are
+    /// idempotent, which is what makes retrying them safe.</para>
+    ///
+    /// <para><b><see cref="SqliteException"/> as a whole family, not narrowed by result code.</b>
+    /// SQLITE_BUSY and SQLITE_LOCKED from a concurrent checkpoint or vacuum are the expected shapes,
+    /// but a connection that fails to open and the journal-mode verification in
+    /// <c>SqliteConnectionFactory</c> throw the same type for what is, from here, the same situation:
+    /// the database was momentarily not answerable. Narrowing by result code would silently drop
+    /// those back into the losing path for no benefit, since the response to all of them is identical
+    /// and bounded. Anything that is NOT a SQLite fault is left to propagate to the caller's backstop
+    /// unretried, because it is not evidence of a transient condition.</para>
+    ///
+    /// <para>Cancellation is never retried: an <see cref="OperationCanceledException"/> means the
+    /// host is going away, and re-reading would only delay that.</para>
+    /// </summary>
+    private async Task<T> ReadWithRetryAsync<T>(
+        Func<CancellationToken, Task<T>> read,
+        NotificationTrigger trigger,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await read(cancellationToken).ConfigureAwait(false);
+            }
+            catch (SqliteException ex) when (attempt < ReadAttempts)
+            {
+                // The TRIGGER and the ATTEMPT only. Never the source, the webhook URL or the stored
+                // key: since #65 log rows are persistent and readable through GET /api/admin/logs,
+                // so anything named here is a durable leak (CLAUDE.md §1). The exception is passed as
+                // the log's exception rather than interpolated, for the same reason the backstop does
+                // it that way.
+                _logger.LogWarning(
+                    ex,
+                    "Reading notification settings for {Trigger} failed on attempt {Attempt} of {Attempts}; retrying.",
+                    trigger,
+                    attempt,
+                    ReadAttempts);
+
+                await Task.Delay(ReadRetryDelay, _timeProvider, cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <summary>
     /// The fire-and-forget entry point the gate decorator calls. Returns immediately: the caller is
     /// <c>BudgetedUpstreamSource</c> on the SEARCH path, inside the <c>Task.WhenAll</c> fan-out that
     /// #461 made resilient to one slow source. Awaiting a webhook POST there would hand every search
@@ -261,21 +438,58 @@ public sealed class SourcePermanentDisableNotifier
     /// <para><see cref="CancellationToken.None"/> deliberately: the notice describes a state change
     /// that is already durably written, and it must outlive a search whose client disconnects or
     /// whose per-source timeout elapses.</para>
+    ///
+    /// <para>The task is not returned — the caller must not await it, per the above. It is counted
+    /// instead, so <see cref="DeliveriesIdle"/> can report when the work has finished without any
+    /// caller gaining the ability to block on it.</para>
     /// </summary>
     public void NotifyInBackground(string sourceName, SourcePermanentDisableTransition transition)
     {
+        // Counted BEFORE the task is scheduled, so a caller that reads DeliveriesIdle after this
+        // returns can never observe zero for a delivery this call already committed to raising.
+        lock (_quiescenceGate)
+        {
+            _inFlight++;
+        }
+
         _ = Task.Run(async () =>
         {
+            // The finally wraps the ENTIRE body rather than sitting inside the catch below: the
+            // decrement must happen even for a throw the catch does not see — an exception from
+            // TriggerFor while building the log arguments, or an OperationCanceledException, which
+            // would otherwise strand the count above zero and hang every future waiter forever.
             try
             {
-                await NotifyAsync(sourceName, transition, CancellationToken.None).ConfigureAwait(false);
+                try
+                {
+                    await NotifyAsync(sourceName, transition, CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    // Per-item error handling (docs/standards/architecture.md). The exception is logged
+                    // with its trigger and NOT with the source, matching the delivery warning above; the
+                    // search that produced it has already been answered from the other sources.
+                    _logger.LogError(ex, "Source permanent-disable notification for {Trigger} failed.", TriggerFor(transition));
+                }
             }
-            catch (Exception ex)
+            finally
             {
-                // Per-item error handling (docs/standards/architecture.md). The exception is logged
-                // with its trigger and NOT with the source, matching the delivery warning above; the
-                // search that produced it has already been answered from the other sources.
-                _logger.LogError(ex, "Source permanent-disable notification for {Trigger} failed.", TriggerFor(transition));
+                TaskCompletionSource? idle = null;
+
+                lock (_quiescenceGate)
+                {
+                    if (--_inFlight == 0)
+                    {
+                        // Detached and cleared under the lock, completed outside it. Completing while
+                        // holding the gate would run a waiter's continuation with the lock held if the
+                        // source were ever created without RunContinuationsAsynchronously, and the
+                        // next delivery would then block behind an unrelated test's assertions.
+                        idle = _idle;
+                        _idle = null;
+                    }
+                }
+
+                idle?.TrySetResult();
             }
         });
     }

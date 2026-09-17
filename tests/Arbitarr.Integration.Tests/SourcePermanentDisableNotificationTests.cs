@@ -5,8 +5,10 @@ using Arbitarr.Data.Entities;
 using Arbitarr.Data.Notifications;
 using Arbitarr.Data.Sources;
 using Arbitarr.Integration.Tests.TestSupport;
+using Arbitarr.Host.Notifications;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace Arbitarr.Integration.Tests;
@@ -52,6 +54,7 @@ public sealed class SourcePermanentDisableNotificationTests : IAsyncLifetime
 
     private readonly ArbitarrWebApplicationFactory _factory;
     private readonly CapturingHandler _webhook = new();
+    private readonly CapturingLoggerProvider _logs = new();
     private readonly string _configDirectory;
 
     public SourcePermanentDisableNotificationTests()
@@ -78,6 +81,12 @@ public sealed class SourcePermanentDisableNotificationTests : IAsyncLifetime
             // type, the notifier, the gate decorator and the settings gate are all real.
             services.RemoveAll<WebhookNotificationTransport>();
             services.AddSingleton(new WebhookNotificationTransport(new HttpClient(_webhook)));
+
+            // ADDITIVE, and not a substitution: an extra sink alongside whatever the host already
+            // logs to. The delivery runs on a background task whose only account of itself is what
+            // it logs, so without this a failure here can say "no notice arrived" and never why —
+            // the undiagnosable shape CLAUDE.md §4 and arb-krtr both warn about.
+            services.AddSingleton<ILoggerProvider>(_logs);
         })));
 
     /// <summary>A tiny holder so the built factory is disposed with the test that made it.</summary>
@@ -138,12 +147,32 @@ public sealed class SourcePermanentDisableNotificationTests : IAsyncLifetime
             });
     }
 
-    /// <summary>Records the real serialized bodies the transport posted.</summary>
+    /// <summary>
+    /// Records the real serialized bodies the transport posted, and SIGNALS each arrival.
+    ///
+    /// <para><b>The signal is the point.</b> The notice is delivered from a fire-and-forget
+    /// <c>Task.Run</c>, so a test has nothing to await unless the receiving end provides it. Polling
+    /// a body count against a wall-clock deadline instead — which this file used to do — is not a
+    /// wait on the condition at all: it is a fixed sleep wearing a loop, and under a loaded runner it
+    /// expires while the delivery is still queued. Completing a
+    /// <see cref="TaskCompletionSource{TResult}"/> the moment a body is read gives the test the real
+    /// event to wait on, so the bound that remains is only a guard against hanging.</para>
+    /// </summary>
     private sealed class CapturingHandler : HttpMessageHandler
     {
         private readonly List<string> _bodies = [];
 
         private readonly object _gate = new();
+
+        /// <summary>
+        /// Completed by the Nth POST. <see cref="TaskCreationOptions.RunContinuationsAsynchronously"/>
+        /// so a waiting test never resumes ON the transport's thread, which would let assertions run
+        /// inside the delivery and make the handler's own bookkeeping race them.
+        /// </summary>
+        private readonly List<TaskCompletionSource<string>> _arrivals =
+        [
+            new(TaskCreationOptions.RunContinuationsAsynchronously),
+        ];
 
         public IReadOnlyList<string> Bodies
         {
@@ -156,6 +185,24 @@ public sealed class SourcePermanentDisableNotificationTests : IAsyncLifetime
             }
         }
 
+        /// <summary>
+        /// A task completing when the <paramref name="ordinal"/>th notice (1-based) has been posted,
+        /// created up front if that notice has not arrived yet. Asking BEFORE the event is what makes
+        /// this a signal rather than a poll.
+        /// </summary>
+        public Task<string> Arrival(int ordinal)
+        {
+            lock (_gate)
+            {
+                while (_arrivals.Count < ordinal)
+                {
+                    _arrivals.Add(new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously));
+                }
+
+                return _arrivals[ordinal - 1].Task;
+            }
+        }
+
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
@@ -164,12 +211,98 @@ public sealed class SourcePermanentDisableNotificationTests : IAsyncLifetime
                 ? string.Empty
                 : await request.Content.ReadAsStringAsync(cancellationToken);
 
+            TaskCompletionSource<string> arrived;
             lock (_gate)
             {
                 _bodies.Add(body);
+
+                while (_arrivals.Count < _bodies.Count)
+                {
+                    _arrivals.Add(new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously));
+                }
+
+                arrived = _arrivals[_bodies.Count - 1];
             }
 
+            // Outside the lock: a continuation must never run while this handler holds the gate its
+            // own next call needs.
+            arrived.TrySetResult(body);
+
             return new HttpResponseMessage(HttpStatusCode.NoContent);
+        }
+    }
+
+    /// <summary>
+    /// Collects what the notifier logged, so a failure to deliver can say WHY rather than only that
+    /// nothing arrived. Thread-safe: written from the background delivery, read from the test.
+    /// </summary>
+    private sealed class CapturingLoggerProvider : ILoggerProvider
+    {
+        private readonly object _gate = new();
+
+        private readonly List<string> _lines = [];
+
+        public IReadOnlyList<string> Lines
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _lines.ToArray();
+                }
+            }
+        }
+
+        public ILogger CreateLogger(string categoryName) => new Sink(this, categoryName);
+
+        public void Dispose()
+        {
+        }
+
+        private void Add(string line)
+        {
+            lock (_gate)
+            {
+                _lines.Add(line);
+            }
+        }
+
+        private sealed class Sink : ILogger
+        {
+            private readonly CapturingLoggerProvider _owner;
+            private readonly string _category;
+
+            public Sink(CapturingLoggerProvider owner, string category)
+            {
+                _owner = owner;
+                _category = category;
+            }
+
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+            /// <summary>
+            /// Only the notifier's own category, and only Warning and worse. The host logs a great
+            /// deal at Information that would bury the two lines this file needs, and a failure
+            /// message is only useful if it is readable.
+            /// </summary>
+            public bool IsEnabled(LogLevel logLevel) =>
+                logLevel >= LogLevel.Warning
+                && _category.Contains(nameof(SourcePermanentDisableNotifier), StringComparison.Ordinal);
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter)
+            {
+                if (!IsEnabled(logLevel))
+                {
+                    return;
+                }
+
+                _owner.Add($"{logLevel}: {formatter(state, exception)}");
+            }
         }
     }
 
@@ -205,6 +338,10 @@ public sealed class SourcePermanentDisableNotificationTests : IAsyncLifetime
                     Arbitarr.Core.Sources.SearchProtocol.Newznab),
                 CancellationToken.None));
         }
+
+        // The seam first, so the wait below is on a delivery already known to have finished rather
+        // than on a wall clock racing a saturated thread pool.
+        await WaitForDeliveriesAsync(host);
 
         var body = await WaitForOneNoticeAsync();
 
@@ -268,6 +405,25 @@ public sealed class SourcePermanentDisableNotificationTests : IAsyncLifetime
         // POSITIVE CONTROL: the first search DOES notify, proving the capture is wired and would
         // have seen a second notice had one been sent.
         await SearchOnceAsync(host);
+
+        // The EDGE is what produces a notice, and it is computed from this row. Asserting it here
+        // separates "the source was never disabled, so there was correctly nothing to announce" from
+        // "it was disabled and the announcement went missing" — two failures that otherwise both
+        // surface as an empty capture, which is the undiagnosable shape this file keeps fighting.
+        using (var scope = host.Factory.Services.CreateScope())
+        {
+            var state = await scope.ServiceProvider.GetRequiredService<SourceBackoffStore>()
+                .GetAsync(SourceName, CancellationToken.None);
+
+            Assert.True(
+                state?.IsPermanentlyDisabled == true,
+                "The first search did not permanently disable the source, so no edge was raised and "
+                + "no notice was due. The failure is upstream of the notifier: the search did not "
+                + "record a rejecting outcome. Observed state: "
+                + (state is null ? "no backoff row at all." : $"IsPermanentlyDisabled={state.IsPermanentlyDisabled}."));
+        }
+
+        await WaitForDeliveriesAsync(host);
         await WaitForOneNoticeAsync();
 
         // Three more searches. The gate now refuses the source outright, so these are skips — and a
@@ -277,8 +433,53 @@ public sealed class SourcePermanentDisableNotificationTests : IAsyncLifetime
             await SearchOnceAsync(host);
         }
 
-        await Task.Delay(500);
+        // NO TIMED WAIT HERE, and that is the point of the seam. This used to be a bounded
+        // Task.WhenAny against a fixed delay, defended as unavoidable on the grounds that an event
+        // which never happens offers nothing to await. That reasoning was wrong once the notifier
+        // began counting its deliveries: a notice raised by any of those three searches would have
+        // been COUNTED before its task was scheduled, so DeliveriesIdle cannot complete while one is
+        // pending. Waiting for it and finding nothing posted is therefore a real observation rather
+        // than a guess that enough time has passed.
+        //
+        // It is also not vacuous (CLAUDE.md §4). DeliveriesIdle completes immediately when nothing
+        // was ever raised, so on its own it would pass against a notifier that never notifies. The
+        // POSITIVE CONTROL above is what makes it bite: the same seam, awaited the same way, was
+        // required to yield a real posted notice a few lines earlier.
+        await WaitForDeliveriesAsync(host);
+
         Assert.Single(_webhook.Bodies);
+    }
+
+    /// <summary>
+    /// Waits for every notice raised so far to finish being delivered.
+    ///
+    /// <para><b>This is what makes the assertions deterministic.</b> A search returns once the
+    /// outcome is RECORDED; the notice is raised afterwards on a fire-and-forget task that nothing
+    /// awaits. So a search completing says nothing about whether its notice has been posted, and a
+    /// test reading the capture straight afterwards is racing the delivery. That race is not
+    /// theoretical: it failed a full local run of this suite, having waited the entire budget and
+    /// found the notifier had not logged a single line, because the queued work had not yet reached
+    /// the head of a saturated pool.</para>
+    ///
+    /// <para><b>The timeout is a HANG GUARD ONLY, not the synchronisation.</b> The real wait is on
+    /// <see cref="SourcePermanentDisableNotifier.DeliveriesIdle"/>, which completes when the work
+    /// actually finishes, however long the pool makes that take. The bound exists so a delivery that
+    /// never completes at all fails by name instead of hanging until the test host gives up.</para>
+    /// </summary>
+    private static async Task WaitForDeliveriesAsync(WebApplicationFactoryHost host)
+    {
+        var notifier = host.Factory.Services.GetRequiredService<SourcePermanentDisableNotifier>();
+
+        try
+        {
+            await notifier.DeliveriesIdle.WaitAsync(TimeSpan.FromSeconds(30));
+        }
+        catch (TimeoutException)
+        {
+            Assert.Fail(
+                "A source permanent-disable delivery never completed. The notifier still reports "
+                + "work in flight, so it is stuck rather than finished-and-silent.");
+        }
     }
 
     /// <summary>
@@ -322,25 +523,41 @@ public sealed class SourcePermanentDisableNotificationTests : IAsyncLifetime
         $"Source '{SourceName}' rejected Arbitarr's API key and is disabled: {UpstreamRejectionBody}";
 
     /// <summary>
-    /// Waits for the fire-and-forget delivery to land. The notifier hands off to <c>Task.Run</c> by
-    /// design — that is what keeps a webhook POST off the search path — so the test waits on the
-    /// CONDITION rather than sleeping a fixed span.
+    /// Waits for the fire-and-forget delivery to land, on the RECEIVER'S OWN SIGNAL.
+    ///
+    /// <para>The notifier hands off to <c>Task.Run</c> by design — that is what keeps a webhook POST
+    /// off the search path — so there is nothing on the production side to await. The previous
+    /// version of this method polled a body count until a 15 second deadline and called that waiting
+    /// on the condition; it was not. A deadline is a fixed sleep however it is spelled, and it
+    /// expired on a loaded CI runner while the delivery was still pending, failing the test with no
+    /// indication of why. What is awaited now is the <see cref="CapturingHandler.Arrival"/> signal
+    /// the fake receiver raises when it has actually read a body.</para>
+    ///
+    /// <para><b>The bound that remains is a HANG GUARD, not the synchronisation.</b> Callers reach
+    /// here having already awaited <see cref="WaitForDeliveriesAsync"/>, so the delivery is finished
+    /// and the body is expected to be present already; this bound only stops an unwired gate from
+    /// hanging until the test host gives up. The message carries whatever the notifier logged, so a
+    /// failure says WHICH stage was reached. Only the notifier's own Warning-and-worse lines are
+    /// captured, and its two log statements both name a closed-enum trigger and outcome and never
+    /// the target, so no webhook URL, source address or key can reach this message — which matters
+    /// because this repository and its CI logs are public (CLAUDE.md §1).</para>
     /// </summary>
     private async Task<string> WaitForOneNoticeAsync()
     {
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(15);
-        while (DateTime.UtcNow < deadline)
+        try
         {
-            var bodies = _webhook.Bodies;
-            if (bodies.Count > 0)
-            {
-                return bodies[0];
-            }
-
-            await Task.Delay(25);
+            return await _webhook.Arrival(1).WaitAsync(TimeSpan.FromSeconds(15));
         }
-
-        Assert.Fail("No notification was posted; the composed host may not wire the notifying gate.");
-        return string.Empty;
+        catch (TimeoutException)
+        {
+            var logged = _logs.Lines;
+            Assert.Fail(
+                "No notification was posted even though every delivery has completed; the composed "
+                + "host may not wire the notifying gate, or the delivery failed before the POST. "
+                + (logged.Count == 0
+                    ? "The notifier logged nothing, so it never ran at all."
+                    : $"The notifier logged: {string.Join(" | ", logged)}"));
+            return string.Empty;
+        }
     }
 }
