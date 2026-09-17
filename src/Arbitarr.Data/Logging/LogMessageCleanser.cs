@@ -193,13 +193,16 @@ public static partial class LogMessageCleanser
             // pathological input cannot reach the store by exhausting the match timeout.
             //
             // The timeout is reachable from OUTSIDE this type, not only through the test-only
-            // timeoutProbe overload: CredentialPatterns' NamedCredential arm scans quadratically
-            // against a long unterminated [\w-] run, and an input just under MaxCleanseInputLength
-            // exceeds PublicMatchTimeoutMilliseconds. That is precisely why this arm exists and why
-            // it must keep returning a constant. Bounding that prefix to remove the quadratic scan
-            // is tracked separately and needs corpus evidence that no current positive row
-            // regresses; it is deliberately NOT done here, because doing it would not change what
-            // this catch must guarantee.
+            // timeoutProbe overload: arb-ofz6 moved CredentialPatterns' NamedCredential arm onto
+            // RegexOptions.NonBacktracking, which closes the quadratic scan against a long
+            // unterminated [\w-] run that used to reliably exceed PublicMatchTimeoutMilliseconds —
+            // but the other three shared arms, and any shape not yet found in NamedCredential
+            // itself, may still reach this timeout (tracked for those other arms as arb-0na2). That
+            // is precisely why this catch stays and why it must keep returning a constant: on a
+            // timeout from ANY arm, this row's text is replaced by TimeoutPlaceholder and never
+            // passed through unscrubbed — the arb-gbj0 guarantee above holds regardless of which
+            // arm timed out. This is defence in depth, not something the NonBacktracking change was
+            // meant to make unreachable.
             return TimeoutPlaceholder;
         }
 
