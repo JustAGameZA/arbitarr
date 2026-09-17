@@ -109,7 +109,7 @@ Arbitarr's own per-source setting, configured in **Settings > Sources** on each 
 - **Proxy** (the default): Arbitarr fetches the file from the indexer and serves the bytes. The indexer's API key never leaves the server.
 - **Redirect**: Arbitarr answers with a redirect to the indexer's own download URL. This saves Arbitarr the download bandwidth, and **that URL contains the indexer's API key** — the indexer put it there when it generated the search result — so the key becomes visible to Sonarr, Radarr and anything else that can read the response.
 
-Redirect is off by default and is opted into one indexer at a time; the Settings form states the exposure when you select it. See [ADR 0023](docs/adr/0023-nzb-access-mode-redirect.md) for the security trade-off in full.
+Redirect is off by default and is opted into one indexer at a time; the Settings form states the exposure when you select it. See [ADR 0023](docs/adr/0023-nzb-access-mode-redirect.md) for the security trade-off in full. See [SECURITY.md's "Known issues (fixed)" note](SECURITY.md#known-issues-fixed) for a since-fixed logging issue that affected earlier redirect-mode deployments.
 
 Magnet links are answered by a redirect under **either** mode, because a magnet carries no file to fetch. No indexer key is involved in that case.
 

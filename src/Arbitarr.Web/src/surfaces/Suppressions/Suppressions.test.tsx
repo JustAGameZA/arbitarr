@@ -101,6 +101,36 @@ describe('Suppressions', () => {
     expect(screen.getByText('Shadow only')).toBeInTheDocument();
   });
 
+  /**
+   * arb-p94u: this row used to render a bare `new Date(v).toLocaleString()`,
+   * exactly the ambiguity Activity's AC9 forbids for the same underlying data
+   * an operator correlates against logs. The `title` assertion is what pins
+   * the fix; the text assertion is an EXACT match against
+   * `toLocaleString(undefined, { timeZoneName: 'short' })`, with a positive
+   * control proving that string differs from the bare rendering on the
+   * CURRENT runner -- a `/[A-Za-z]/` "has a letter" check would be vacuous on
+   * an AM/PM (en-US-ish) locale, where the bare rendering already contains
+   * letters with no zone information.
+   */
+  it('renders the occurred timestamp with a timezone abbreviation and the raw instant in title', async () => {
+    mockApi({ ...EMPTY_DECISIONS, '/api/admin/suppressions': { body: entries } });
+    renderSurface(<SuppressionsPage />);
+
+    const row = (await screen.findByText('block-cam')).closest('tr');
+    expect(row).not.toBeNull();
+    const [timeCell] = within(row as HTMLElement).getAllByRole('cell');
+
+    const iso = '2026-09-01T12:30:00+00:00';
+    const parsed = new Date(iso);
+    const expected = parsed.toLocaleString(undefined, { timeZoneName: 'short' });
+    // Positive control: proves the exact-match assertion below could not have
+    // passed against the old bare rendering on this runner.
+    expect(expected).not.toBe(parsed.toLocaleString(undefined));
+
+    expect(timeCell).toHaveAttribute('title', iso);
+    expect(timeCell.textContent).toBe(expected);
+  });
+
   it('heads the identifier column for what it holds, not for a release title', async () => {
     mockApi({ ...EMPTY_DECISIONS, '/api/admin/suppressions': { body: entries } });
     renderSurface(<SuppressionsPage />);

@@ -42,6 +42,17 @@ export const APP_NAME = 'Arbitarr';
 export const NOT_FOUND_TITLE = `Page not found — ${APP_NAME}`;
 
 /**
+ * Title shown while RouteError's panel is up (AppShell.tsx, RouteError.tsx).
+ *
+ * AppShell is the sole writer of `document.title`; RouteError never touches it
+ * directly. It signals AppShell through the RouteErrorContext instead, and
+ * AppShell substitutes this title for `resolveDocumentTitle(pathname)` while
+ * the boundary is showing. Kept beside NOT_FOUND_TITLE so the title mechanism
+ * stays in one file, same as the other named titles above.
+ */
+export const ERROR_TITLE = `Something went wrong — ${APP_NAME}`;
+
+/**
  * Title for the sign-in screen (arb-7m7).
  *
  * `/login` is deliberately absent from ROUTES above -- see routes.tsx's note on
