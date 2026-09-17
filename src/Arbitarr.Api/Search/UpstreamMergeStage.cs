@@ -34,9 +34,37 @@ namespace Arbitarr.Api.Search;
 /// with every source's outcome in hand, rather than pre-empted by an exception escaping the
 /// fan-out (CONTEXT.md's protocol-answer vs infrastructure-error distinction;
 /// <c>SearchEndpoint.InfrastructureErrorResult</c>'s remarks carry the full reasoning).
+///
+/// <para><b>EVERY LEG IS BOUNDED BY <see cref="DefaultFanOutCeiling"/> (arb-4cso).</b> Naming a
+/// failed source buys nothing if the merge never returns to report the name, and until this ceiling
+/// existed nothing guaranteed it would. The per-source catch clauses below give ISOLATION — one
+/// source's failure does not take the others down — and isolation is not a bound. This ceiling is
+/// the bound; the two are complementary rather than alternatives. See
+/// <see cref="MergeAsync"/> for why it is per PASS here and not per source.</para>
 /// </summary>
 public sealed class UpstreamMergeStage : IMergeStage
 {
+    /// <summary>
+    /// The default whole-fan-out ceiling: AC14's end-to-end response budget, the same ≤12s figure
+    /// the adapters already cite (<c>NewznabSourceOptions</c>, <c>NzbHydraSource</c>,
+    /// <c>NzbHydraSourceOptions</c>, <c>ArrApiProviderOptions</c>) and derived in
+    /// <c>docs/step0-measurements.md</c> from a worst-observed 9.1s fan-out plus margin, sitting
+    /// well under the 30s indexer timeout Sonarr/Radarr default to.
+    ///
+    /// <para><b>The figure is taken from the budget, not invented, and deliberately reads nothing
+    /// from <see cref="IUpstreamSource"/>.</b> The contract exposes only <c>Name</c>, so a ceiling
+    /// derived per source could not see that source's own <c>TimeoutSeconds</c> without widening it
+    /// — it would have to make up a second number, and two competing bounds on one call is worse
+    /// than one correct one. The whole-response budget is the one quantity that is genuinely this
+    /// stage's to own: it is what the CALLER is waiting on.</para>
+    ///
+    /// <para>The ceiling bounds the fan-out at the whole-response target, so a ceiling hit spends
+    /// the target on the fan-out alone and the post-merge stages (dedup, cache write, render —
+    /// <c>docs/step0-measurements.md</c>'s "negligible", sub-100ms) push the response marginally
+    /// past it; that is deliberate, and well inside the same table's 20s hard ceiling.</para>
+    /// </summary>
+    public static readonly TimeSpan DefaultFanOutCeiling = TimeSpan.FromSeconds(12);
+
     /// <summary>
     /// arb-x7w8.4: the sources are RESOLVED per merge rather than injected as a fixed list. The
     /// source set now lives in the database and an operator's edit must take effect on the next
@@ -45,11 +73,19 @@ public sealed class UpstreamMergeStage : IMergeStage
     /// </summary>
     private readonly ISourceRegistry _registry;
 
+    private readonly TimeSpan _fanOutCeiling;
+
     private static readonly IReadOnlyList<ReleaseCandidate> Empty = Array.Empty<ReleaseCandidate>();
 
-    public UpstreamMergeStage(ISourceRegistry registry)
+    /// <param name="fanOutCeiling">
+    /// Overrides <see cref="DefaultFanOutCeiling"/>. A parameter rather than a constant so a test can
+    /// drive the ceiling in milliseconds instead of waiting out the real budget — the same reason
+    /// <see cref="Arbitarr.Core.Sources.CapsRefresher"/> takes its per-source ceiling that way.
+    /// </param>
+    public UpstreamMergeStage(ISourceRegistry registry, TimeSpan? fanOutCeiling = null)
     {
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
+        _fanOutCeiling = fanOutCeiling ?? DefaultFanOutCeiling;
     }
 
     public string Name => "UpstreamMerge";
@@ -64,7 +100,24 @@ public sealed class UpstreamMergeStage : IMergeStage
         IReadOnlyList<ReleaseCandidate> candidates,
         CancellationToken cancellationToken = default) => Task.FromResult(candidates);
 
-    /// <summary>Fans <paramref name="query"/> out to all sources and returns the merged, source-tagged union.</summary>
+    /// <summary>
+    /// Fans <paramref name="query"/> out to all sources and returns the merged, source-tagged union.
+    ///
+    /// <para><b>The ceiling is imposed here, once, spanning the whole fan-out.</b> Applied through a
+    /// token linked to the caller's — the precedent <c>SourceConnectivityProber</c> set and
+    /// <see cref="Arbitarr.Core.Sources.CapsRefresher"/> followed — because the adapters' HttpClients
+    /// are per-source configured and their <c>Timeout</c> is not this stage's to mutate. Per PASS
+    /// rather than per source, which is the opposite of <c>CapsRefresher</c>'s choice and for the
+    /// opposite reason: the caps pass has no caller waiting, so a whole-pass budget there would let
+    /// one dead upstream starve every source behind it. Here the legs run CONCURRENTLY, so one
+    /// source's stall spends no other source's time, and there IS a caller waiting — on the whole
+    /// merge, with a single deadline of its own. Bounding each leg separately would bound nothing
+    /// the caller cares about.</para>
+    ///
+    /// <para>A ceiling hit is a NAMED source in <see cref="MergeResult.TimedOutSources"/>, never an
+    /// exception, so the merge still answers with the survivors' releases — the stage's
+    /// non-escalation invariant holds for this bound exactly as it does for a source's own.</para>
+    /// </summary>
     public async Task<MergeResult> MergeAsync(SearchQuery query, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
@@ -74,31 +127,38 @@ public sealed class UpstreamMergeStage : IMergeStage
         // so a second consumer in the same scope does not re-read the rows or the keys.
         var sources = await _registry.ResolveAsync(cancellationToken).ConfigureAwait(false);
 
+        // Deliberately started AFTER resolution: the ceiling bounds the outbound fan-out, which is
+        // what can hang. Resolution is a local read already bounded by the caller's own token, and
+        // charging it to the sources' budget would shorten the fan-out by however long the registry
+        // took on a cold scope.
+        using var ceiling = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        ceiling.CancelAfter(_fanOutCeiling);
+
         var tasks = sources.Select(async source =>
         {
-            // WHY NO PER-SOURCE CancellationTokenSource HERE (lead's ruling, 2026-09-16). Each
-            // adapter's HttpClient.Timeout is already built from that source's own TimeoutSeconds
-            // row at resolution time (Arbitarr.Host's SourceRegistry). IUpstreamSource exposes only
-            // Name, so a CTS built here could not read that budget without widening the contract —
-            // it would have to invent a second, different number, and two competing bounds on the
-            // same call is worse than one correct one.
+            // WHY THE CEILING IS NOT PER-SOURCE (lead's ruling, 2026-09-16, narrowed by arb-4cso).
+            // Each adapter's HttpClient.Timeout is already built from that source's own
+            // TimeoutSeconds row at resolution time (Arbitarr.Host's SourceRegistry). IUpstreamSource
+            // exposes only Name, so a per-source CTS built here could not read that budget without
+            // widening the contract — it would have to invent a second, different number, and two
+            // competing bounds on the same call is worse than one correct one. That ruling stands:
+            // the ceiling above is per PASS and reads nothing from the source.
             //
-            // Be precise about what that existing bound covers, though: HttpClient.Timeout bounds
-            // ONE HTTP REQUEST, not one search leg. A leg can outlive it by an unbounded multiple,
-            // because three things sit outside any single request's clock:
+            // Be precise about what the adapter's own bound covers, because it is why a pass-level
+            // ceiling was needed at all: HttpClient.Timeout bounds ONE HTTP REQUEST, not one search
+            // leg. A leg can outlive it by an unbounded multiple, because three things sit outside
+            // any single request's clock:
             //   1. the page loop — NewznabSource issues up to MaxUpstreamCallsPerSearch sequential
             //      requests per SearchAsync, each getting the full timeout afresh;
             //   2. the rate-limiter wait, which is time spent before a request is issued at all and
             //      so is not inside any request's timeout;
             //   3. the budget decorator's DB scopes (BudgetedUpstreamSource's hit-counting and
             //      backoff reads/writes), which bracket the call rather than being part of it.
-            // So what the fan-out owes today is ISOLATION, not a third timeout: whichever bound
-            // fires, one source hitting it must not drop the others' results and must not vanish
-            // unnamed. A genuine whole-fan-out ceiling — the only thing that would actually bound a
-            // leg — is a follow-up bead (arb-4cso, arch-461 B3).
+            // None of the three is reachable by a per-request timeout however it is chosen, which is
+            // why the bound has to span the leg rather than sit inside it.
             try
             {
-                var results = await source.SearchAsync(query, cancellationToken).ConfigureAwait(false);
+                var results = await source.SearchAsync(query, ceiling.Token).ConfigureAwait(false);
                 return (Source: source, Results: results, Outcome: SourceOutcome.Succeeded);
             }
             // CLAUSE ORDER IS LOAD-BEARING: RequestLimitReachedException must be matched BEFORE the
@@ -107,8 +167,13 @@ public sealed class UpstreamMergeStage : IMergeStage
             {
                 return (Source: source, Results: Empty, Outcome: SourceOutcome.RateLimited);
             }
-            // The source's own budget fired. HttpClient.Timeout surfaces as a TaskCanceledException
-            // (an OperationCanceledException) carrying the token that cancelled it.
+            // The source's own budget fired, OR this stage's fan-out ceiling did. Both are "this
+            // source ran out of time", both land here, and both are TimedOut — the caller reads a
+            // name, not a cause, and TimedOutSources is already documented as the list for a source
+            // that ran out of time rather than for one specific clock. HttpClient.Timeout surfaces
+            // as a TaskCanceledException (an OperationCanceledException) carrying the token that
+            // cancelled it; the ceiling surfaces as a cancellation of ceiling.Token, which is
+            // likewise not the caller's token, so the same filter admits it without a new arm.
             //
             // BOTH halves of this filter are load-bearing, and the identity half CANNOT stand alone.
             // An adapter bounds its own call by LINKING its budget to the caller's token (this is
@@ -195,9 +260,13 @@ public sealed class UpstreamMergeStage : IMergeStage
 /// <param name="Releases">Merged, source-tagged release set (union across all responding sources).</param>
 /// <param name="RateLimitedSources">Names of sources that failed with <see cref="RequestLimitReachedException"/>.</param>
 /// <param name="TimedOutSources">
-/// Names of sources whose search ran out of time under their own budget (the adapter's
-/// <c>HttpClient.Timeout</c>, built from that source's <c>TimeoutSeconds</c> row). Excludes the
-/// caller abandoning the whole request, which is not a source's fault and is not caught here.
+/// Names of sources whose search ran out of time under EITHER clock that can end a leg: that
+/// source's own budget (the adapter's <c>HttpClient.Timeout</c>, built from its <c>TimeoutSeconds</c>
+/// row) or the stage's whole-fan-out ceiling (<see cref="UpstreamMergeStage.DefaultFanOutCeiling"/>,
+/// arb-4cso). The two are deliberately NOT distinguished: a caller acting on this list — naming the
+/// indexers that did not answer — does the same thing either way, and splitting it would be a wire
+/// shape asserting a difference no consumer uses. Excludes the caller abandoning the whole request,
+/// which is not a source's fault and is not caught here.
 /// </param>
 /// <param name="FailedSources">
 /// Names of sources that failed any other way — transport, protocol, parse. Before arb-x7w8.7 these
