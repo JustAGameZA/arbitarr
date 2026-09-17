@@ -37,6 +37,37 @@ export function errorMessage(error: unknown): string {
   return 'Request failed.';
 }
 
+/**
+ * Prunes entries from a per-row `Map` whose key is no longer present in
+ * `liveIds`, for the refusal-tracking Maps Rules and ApiKeys each keep
+ * (arb-gn4z, arb-kkgq). A row's refusal renders nowhere once its row has
+ * left the list, but without this it stays keyed to that id forever -- if
+ * the id is later reused, a stale refusal would resurface under a fetch the
+ * operator had nothing to do with.
+ *
+ * Returns the SAME `Map` reference when nothing needs pruning, so a fetch
+ * that changes row order or an unrelated field -- not membership -- does
+ * not produce a new Map identity. Both call sites feed this straight into a
+ * `useState` functional updater, and `useState` bails out of the re-render
+ * when the updater returns a value `Object.is`-equal to the current state;
+ * a version that always returned a fresh Map would re-trigger its own
+ * effect on every refetch, unbounded. Never mutates `failures`.
+ */
+export function pruneToLiveIds<K, V>(
+  failures: ReadonlyMap<K, V>,
+  liveIds: ReadonlySet<K>,
+): ReadonlyMap<K, V> {
+  let changed = false;
+  const next = new Map(failures);
+  for (const id of failures.keys()) {
+    if (!liveIds.has(id)) {
+      next.delete(id);
+      changed = true;
+    }
+  }
+  return changed ? next : failures;
+}
+
 interface QueryStateProps<T> {
   isPending: boolean;
   error: unknown;
