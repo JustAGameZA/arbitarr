@@ -63,6 +63,16 @@ describe('formatBytes', () => {
 
   it('stays in TiB beyond the largest unit rather than inventing a bigger one', () => {
     expect(formatBytes(1024 ** 4 * 5)).toBe('5.0 TiB');
+    // One unit short of the next multiple of the top unit: still rounds up
+    // within TiB rather than carrying to a unit that does not exist.
+    expect(formatBytes(1024 ** 5 - 1)).toBe('1024.0 TiB');
+  });
+
+  it('carries into the next unit when rounding reaches 1024', () => {
+    expect(formatBytes(1024 ** 2 - 1)).toBe('1.0 MiB');
+    expect(formatBytes(1024 ** 3 - 1)).toBe('1.0 GiB');
+    expect(formatBytes(1024 ** 4 - 1)).toBe('1.0 TiB');
+    expect(formatBytes(1023.6)).toBe('1.0 KiB');
   });
 
   // Same sentinel as formatRate and formatDurationSeconds above: a plausible
@@ -75,7 +85,9 @@ describe('formatBytes', () => {
 
     // The character is U+2014 (em-dash), matching the file's other absence
     // sentinels -- a hyphen or en-dash would read identically in review.
-    expect(formatBytes(null)).toBe('—');
+    // Checked by code point, not string equality, so a hyphen or en-dash
+    // that happened to satisfy toBe above would still fail here.
+    expect(formatBytes(null).codePointAt(0)).toBe(0x2014);
   });
 
   it('does not depend on locale-sensitive number formatting', () => {

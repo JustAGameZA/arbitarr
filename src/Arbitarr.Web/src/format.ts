@@ -113,5 +113,16 @@ export function formatBytes(value: number | null | undefined): string {
     amount /= 1024;
     unit += 1;
   }
-  return `${amount.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+
+  // Round before deciding whether the value has crossed into the next unit:
+  // 1048575 (1024**2 - 1) divides down to 1023.999... KiB, which toFixed(1)
+  // alone would print as "1024.0 KiB" -- a unit-sized figure in a unit it
+  // never carried into. Rounding first and re-checking the threshold carries
+  // it to "1.0 MiB" instead, the same way the values on either side of it do.
+  let display = Number(amount.toFixed(unit === 0 ? 0 : 1));
+  if (display >= 1024 && unit < units.length - 1) {
+    unit += 1;
+    display = Number((display / 1024).toFixed(1));
+  }
+  return `${display.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
