@@ -17,10 +17,14 @@ already cost rework, see [CLAUDE.md](CLAUDE.md). This file defines words.
 
 ## The domain
 
-**Broker.** Arbitarr is not an indexer and not a proxy. It sits between
-Sonarr/Radarr and NZBHydra2 speaking Torznab/Newznab on *both* sides, and its
-job is to answer whether a release actually is the episode that was asked for
-before results pass downstream.
+**Broker.** Arbitarr is not an indexer and not a proxy. It speaks
+Torznab/Newznab on *both* sides — Sonarr/Radarr inbound, one or more
+configured **Source** rows outbound, whether that is NZBHydra2, a directly
+configured indexer, or a mix of both — and its job is to answer whether a
+release actually is the episode that was asked for before results pass
+downstream. NZBHydra2 is a supported source, not what "broker" means; see
+**Source adapter** below for how a specific outbound implementation is
+selected.
 
 **Protocol.** Which of those two families a *request* belongs to — the
 `/torznab/api` route or the `/newznab/api` route — carried on `SearchQuery` as
