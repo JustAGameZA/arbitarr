@@ -10,6 +10,19 @@ import { agreementRate, formatDurationSeconds, formatRate } from '../../format';
 import { useAgreementQuery } from '../Suppressions/decisionQueries';
 import { useEffectiveConfigQuery, useRecentSearchesQuery, useStatusQuery } from './queries';
 
+/**
+ * The one announcement scope all three Dashboard queries share (arb-xzvk).
+ *
+ * Status, Recent searches and Effective configuration are three queries but one
+ * arrival: an operator navigating here experiences a single page loading, and
+ * before this each QueryState announced "Loading…" on its own pending edge, so
+ * a screen reader said it three times. One key, declared once at module level
+ * rather than typed as a literal at each call site, because three call sites
+ * that must agree on a string are three chances for one of them to drift and
+ * silently become its own scope again.
+ */
+const DASHBOARD_LOAD_SCOPE = 'dashboard';
+
 /** ISO-8601 timestamps render in the operator's own locale, as the legacy page did. */
 function formatTimestamp(value: string): string {
   return new Date(value).toLocaleString();
@@ -339,7 +352,12 @@ export default function DashboardPage() {
       <section className={styles.panel}>
         <h2 className={styles.panelHeading}>Status</h2>
         <div className={styles.panelBody}>
-          <QueryState isPending={status.isPending} error={status.error} data={status.data}>
+          <QueryState
+            isPending={status.isPending}
+            error={status.error}
+            data={status.data}
+            announceScope={DASHBOARD_LOAD_SCOPE}
+          >
             {(data) => (
               <>
                 <HealthBanners status={data} />
@@ -354,7 +372,12 @@ export default function DashboardPage() {
       <section className={styles.panel}>
         <h2 className={styles.panelHeading}>Recent searches</h2>
         <div className={styles.panelBody}>
-          <QueryState isPending={searches.isPending} error={searches.error} data={searches.data}>
+          <QueryState
+            isPending={searches.isPending}
+            error={searches.error}
+            data={searches.data}
+            announceScope={DASHBOARD_LOAD_SCOPE}
+          >
             {(entries) =>
               entries.length === 0 ? (
                 <p className={styles.empty}>
@@ -419,7 +442,12 @@ export default function DashboardPage() {
         the terms that actually matter to them.
       */}
       <Disclosure summary="Effective configuration">
-        <QueryState isPending={config.isPending} error={config.error} data={config.data}>
+        <QueryState
+          isPending={config.isPending}
+          error={config.error}
+          data={config.data}
+          announceScope={DASHBOARD_LOAD_SCOPE}
+        >
           {(data) => <ConfigFacts config={data} />}
         </QueryState>
       </Disclosure>

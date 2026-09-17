@@ -59,6 +59,23 @@ interface QueryStateProps<T> {
    * `role="alert"` stays QueryState's own and is not the caller's to forget.
    */
   renderError?: (error: unknown) => ReactNode;
+  /**
+   * Groups this query's pending announcement with its siblings' (arb-xzvk).
+   *
+   * A surface that mounts several QueryStates for ONE navigation passes the
+   * same key to each, and the group announces "Loading…" once instead of once
+   * per query — Dashboard's Status, Recent searches and Effective configuration
+   * made a screen-reader operator hear it three times. Passed straight through
+   * to `useAnnounceOnChange`; omitted, every instance announces on its own
+   * pending edge exactly as before, which is right for a surface with a single
+   * query and is what the 25+ existing call sites get without changing.
+   *
+   * Scopes only the ANNOUNCEMENT. The visible "Loading…" paragraph stays
+   * per-instance: each panel still shows its own query's state, because the
+   * three resolve independently and a shared spinner would misreport two of
+   * them.
+   */
+  announceScope?: string;
 }
 
 /**
@@ -76,17 +93,31 @@ interface QueryStateProps<T> {
  * `role="alert"` errors are NOT routed through this -- they already interrupt
  * on their own (25+ existing call sites), and an assertive alert queued
  * behind a polite announcement would only delay it.
+ *
+ * `scope` (arb-xzvk) names a GROUP of announcers that speak for one event, so
+ * the group announces once however many of its members fire. The ref guard
+ * above is per-INSTANCE and cannot do this: Dashboard's three queries are three
+ * separate hook instances, each correctly seeing its own false->true edge, and
+ * each announcing "Loading…" for what the operator experiences as one
+ * navigation. Coalescing therefore has to happen where the announcements meet,
+ * in the store, not here.
+ *
+ * Optional, and omitting it is exactly the pre-arb-xzvk behaviour -- every
+ * existing call site keeps compiling and keeps announcing unconditionally.
+ * That default is deliberate, not incidental: the seven `.success` "Saved."
+ * sites are genuinely independent events that must each be heard, and silently
+ * grouping them would undo the `seq` nonce arb-tku8's codereview added.
  */
-export function useAnnounceOnChange(active: boolean, message: string): void {
+export function useAnnounceOnChange(active: boolean, message: string, scope?: string): void {
   const announce = useLiveStatusStore((state) => state.announce);
   const wasActive = useRef(false);
 
   useEffect(() => {
     if (active && !wasActive.current) {
-      announce(message);
+      announce(message, scope);
     }
     wasActive.current = active;
-  }, [active, message, announce]);
+  }, [active, message, scope, announce]);
 }
 
 /**
@@ -110,9 +141,14 @@ export function QueryState<T>({
   data,
   children,
   renderError = errorMessage,
+  announceScope,
 }: QueryStateProps<T>) {
   const pending = isPending || data === undefined;
-  useAnnounceOnChange(error === null || error === undefined ? pending : false, 'Loading…');
+  useAnnounceOnChange(
+    error === null || error === undefined ? pending : false,
+    'Loading…',
+    announceScope,
+  );
 
   if (error !== null && error !== undefined) {
     return (
