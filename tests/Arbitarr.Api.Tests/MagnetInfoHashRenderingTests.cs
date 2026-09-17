@@ -100,6 +100,21 @@ public sealed class MagnetInfoHashRenderingTests
         Assert.Equal(DeclaredHash, InfoHashAttrOf(ItemNamed(rendered, "Both Disagree")));
     }
 
+    /// <summary>
+    /// A whitespace-only declared <c>infohash</c> attr is not a declared value: the magnet's btih is
+    /// rendered instead. This pins <c>TorznabFeedParser</c>'s use of
+    /// <c>string.IsNullOrWhiteSpace</c> rather than <c>string.IsNullOrEmpty</c> — a tidy-up to the
+    /// latter would treat the whitespace run as "present" and blank a hash the magnet did supply.
+    /// </summary>
+    [Fact]
+    public void A_whitespace_only_declared_infohash_attr_falls_back_to_the_magnets_btih()
+    {
+        var rendered = RenderFeed(
+            ("Whitespace Attr", $"magnet:?xt=urn:btih:{MagnetHash}&dn=Some.Release.1080p", "   "));
+
+        Assert.Equal(MagnetHash, InfoHashAttrOf(ItemNamed(rendered, "Whitespace Attr")));
+    }
+
     private static readonly XNamespace IndexerXmlWriterSchemaNs = "http://torznab.com/schemas/2015/feed";
 
     private static XElement ItemNamed(XDocument rendered, string title) =>
