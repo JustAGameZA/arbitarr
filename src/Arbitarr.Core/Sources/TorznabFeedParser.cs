@@ -71,11 +71,14 @@ public static class TorznabFeedParser
     }
 
     /// <summary>
-    /// The exact-topic parameter a magnet URI carries its BitTorrent info hash in. Required for
+    /// The prefix of the <c>xt</c> parameter's VALUE — not of the parameter name — behind which a
+    /// magnet URI carries its BitTorrent info hash (<c>xt=urn:btih:&lt;hash&gt;</c>). Required for
     /// admission below: it is what distinguishes a magnet link naming a torrent from an arbitrary
-    /// string that merely begins <c>magnet:</c>.
+    /// string that merely begins <c>magnet:</c>. Renamed from <c>...TopicPrefix</c> (codereview-492)
+    /// because that name read as though it prefixed the PARAMETER, and that reading is exactly the
+    /// one under which testing it against the raw <c>xt=…</c> parameter would look correct.
     /// </summary>
-    private const string BitTorrentExactTopicPrefix = "urn:btih:";
+    private const string BitTorrentExactTopicValuePrefix = "urn:btih:";
 
     /// <summary>
     /// arb-x7w8.15: admits a <c>magnet:</c> link as an explicitly recognised, NON-FETCHABLE download
@@ -101,12 +104,55 @@ public static class TorznabFeedParser
     /// SCHEME rather than prefix-testing the raw string is what keeps a value such as
     /// <c>https://evil.example/#magnet:?xt=urn:btih:…</c> out: that is an http(s) URL, so it goes to
     /// the origin pin, which refuses it.</para>
+    ///
+    /// <para><b>Control characters are refused (sec-492).</b> <c>Uri.TryCreate</c> accepts a
+    /// RAW CR/LF inside a magnet query, and <see cref="Uri.OriginalString"/> — alone among the Uri
+    /// accessors — preserves it verbatim: <see cref="Uri.Query"/> and <see cref="Uri.AbsoluteUri"/>
+    /// both re-encode it to <c>%0D%0A</c>. <c>OriginalString</c> is therefore what this checks,
+    /// because it is also exactly what <c>DownloadProxyEndpoint</c>'s magnet arm hands to
+    /// <c>Results.Redirect</c>, and so what lands in the <c>Location</c> header. Kestrel THROWS on a
+    /// control character in a header value, so response splitting was never exploitable — but that
+    /// guard is Kestrel's rather than ours, and the failure it produces is a guaranteed 500 on every
+    /// such item, which a malicious feed can mint at will. Refusing here closes it by construction
+    /// and one layer earlier: the item is dropped like any other non-conforming link instead of
+    /// becoming a server error at download time. A percent-ENCODED <c>%0D%0A</c> needs no rejection
+    /// and gets none: it stays encoded through <c>OriginalString</c> into the header, where it is
+    /// inert text. <see cref="char.IsControl(char)"/> rather than a CR/LF pair, because nothing
+    /// legitimate in a magnet URI is a control character and enumerating the harmful ones is the
+    /// weaker rule.</para>
+    ///
+    /// <para><b>The info hash must be non-empty (codereview-492).</b> <c>magnet:?xt=urn:btih:</c>
+    /// satisfied the prefix test while naming no torrent at all, and was admitted as though it did.
+    /// At least one character is now required after the prefix — which is also what makes
+    /// <paramref name="infoHash"/> meaningful rather than sometimes an empty string.</para>
+    ///
+    /// <para><b>The hash is returned, not just checked (arb-4ysc).</b> <paramref name="infoHash"/>
+    /// receives the btih value EXACTLY as the feed wrote it — no case transcoding and no base32/hex
+    /// conversion — because it is rendered straight back out as a <c>torznab:attr name="infohash"</c>
+    /// and a value we reshaped would no longer be the one the upstream indexer published. The
+    /// <see cref="Uri"/> handed back is likewise the feed's own link, trackers and all; the hash is
+    /// an addition to it, never a replacement for it. It is a third <c>out</c> on the one method
+    /// rather than a second overload: an overload pair made every <c>cref</c> to this name ambiguous,
+    /// and a caller that does not want the hash says so explicitly with <c>out _</c>.</para>
     /// </summary>
-    public static bool TryValidateMagnetLink(string? link, out Uri validated)
+    /// <param name="link">The upstream-supplied link value.</param>
+    /// <param name="validated">The admitted magnet URI, or <see langword="null"/> when refused.</param>
+    /// <param name="infoHash">
+    /// The btih value verbatim from the admitted magnet, or <see langword="null"/> when refused.
+    /// </param>
+    public static bool TryValidateMagnetLink(string? link, out Uri validated, out string? infoHash)
     {
         validated = null!;
+        infoHash = null;
 
         if (!Uri.TryCreate(link, UriKind.Absolute, out var parsedLink))
+        {
+            return false;
+        }
+
+        // sec-492: refused before anything is read out of the URI, so no downstream reader — the
+        // redirect's Location header above all — can ever see a control character from this method.
+        if (parsedLink.OriginalString.Any(char.IsControl))
         {
             return false;
         }
@@ -123,19 +169,42 @@ public static class TorznabFeedParser
         // A magnet is hostless, so Uri exposes the whole "?xt=…&dn=…" as Query. Requiring the
         // BitTorrent exact topic is what makes this an info-hash link rather than any string that
         // happens to carry the magnet scheme.
-        var carriesInfoHash = parsedLink.Query.TrimStart('?')
-            .Split('&', StringSplitOptions.RemoveEmptyEntries)
-            .Any(parameter =>
-                parameter.StartsWith("xt=", StringComparison.OrdinalIgnoreCase)
-                && parameter.AsSpan("xt=".Length).StartsWith(BitTorrentExactTopicPrefix, StringComparison.OrdinalIgnoreCase));
-
-        if (!carriesInfoHash)
+        //
+        // Every xt is considered, not just the first: a magnet may legitimately carry several exact
+        // topics (a btih beside a urn:sha1 or a urn:btmh), in any order, and only one of them has to
+        // be the BitTorrent hash. MagnetLinkAdmissionTests pins a second-position btih so a rewrite
+        // that looked only at the first xt cannot pass.
+        foreach (var parameter in parsedLink.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
         {
-            return false;
+            if (!parameter.StartsWith("xt=", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var value = parameter["xt=".Length..];
+            if (!value.StartsWith(BitTorrentExactTopicValuePrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var candidateHash = value[BitTorrentExactTopicValuePrefix.Length..];
+
+            // codereview-492: a bare "xt=urn:btih:" carries no hash. Requiring a character here is
+            // what keeps it out; keep scanning rather than returning, so an empty first btih does
+            // not mask a real one later in the query.
+            if (candidateHash.Length == 0)
+            {
+                continue;
+            }
+
+            // Verbatim: whatever case and encoding (hex or base32) the feed published, because this
+            // value is rendered straight back out as the infohash attr.
+            infoHash = candidateHash;
+            validated = parsedLink;
+            return true;
         }
 
-        validated = parsedLink;
-        return true;
+        return false;
     }
 
     /// <summary>
@@ -164,7 +233,13 @@ public static class TorznabFeedParser
             // load-bearing only in that an http(s) link never reaches this branch: the magnet check
             // matches on the parsed scheme, so every http(s) value still goes to the pin below and
             // is refused or admitted exactly as before.
-            if (!TryValidateMagnetLink(link, out var linkUri)
+            //
+            // arb-4ysc: the admission also hands back the btih it had to parse anyway. Taking it
+            // HERE rather than re-parsing the link further down is the point: a second parse is a
+            // second place for "what counts as an info hash" to be decided, and the copy that
+            // drifts is the one nobody notices, because both keep producing plausible hashes. The
+            // pinned arm leaves magnetInfoHash null — an http(s) link has no btih to give.
+            if (!TryValidateMagnetLink(link, out var linkUri, out var magnetInfoHash)
                 && !TryValidateOriginPinnedLink(link, allowedOrigin, out linkUri))
             {
                 // Drop the item rather than defaulting to a placeholder URI: a placeholder would
@@ -250,6 +325,23 @@ public static class TorznabFeedParser
                 ? parsedGrabs
                 : (int?)null;
 
+            // arb-4ysc: the info hash IndexerXmlWriter re-emits as torznab:attr name="infohash".
+            // Before this, nothing on any production path set it, so that writer branch was dead and
+            // Sonarr/Radarr never saw a hash from a real feed.
+            //
+            // The declared ATTR WINS over the magnet's btih when both are present and disagree. The
+            // attr is what the indexer chose to publish as this release's identity, whereas the btih
+            // is inferred from a link that also carries trackers and a display name; where they
+            // differ the feed is telling us something about the release the link is not. This is the
+            // same precedence the protocol switch above uses, for the same reason — a declared
+            // attribute beats a value read out of the link. Both are taken VERBATIM: neither is
+            // case-folded nor converted between hex and base32, because this value is rendered
+            // straight back out and a reshaped hash is no longer the one the indexer published.
+            var infoHash = ReadAttr(item, "infohash") is { } declaredInfoHash
+                && !string.IsNullOrWhiteSpace(declaredInfoHash)
+                    ? declaredInfoHash
+                    : magnetInfoHash;
+
             results.Add(new ReleaseCandidate
             {
                 Title = title,
@@ -259,6 +351,7 @@ public static class TorznabFeedParser
                 Link = linkUri,
                 Category = categories,
                 Protocol = protocol,
+                InfoHash = infoHash,
                 Poster = poster,
                 UsenetGroup = usenetGroup,
                 PasswordProtected = TryParsePasswordProtected(ReadAttr(item, "password")),
