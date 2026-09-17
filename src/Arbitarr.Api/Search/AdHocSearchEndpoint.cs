@@ -29,13 +29,42 @@ public sealed record AdHocReleaseResponse(
     string? AiVerdict);
 
 /// <summary>
-/// Cache/rate-limit provenance for an ad-hoc search response, so the admin dashboard can show the
+/// Cache and FAILURE provenance for an ad-hoc search response, so the admin dashboard can show the
 /// same set-level two-age cache Age/Band (AC-M7a-cache) the Torznab/Newznab XML responses carry,
-/// and which upstream sources (if any) were rate-limited while materializing it. Per-release
-/// cache-band age is not yet available (that lands with the M5/M6 classifier pipeline) — this strip
-/// only reports what <see cref="PaginationSnapshotService"/> already knows today.
+/// and which upstream sources (if any) were rate-limited, ran out of time, or failed outright while
+/// materializing it. Per-release cache-band age is not yet available (that lands with the M5/M6
+/// classifier pipeline): this strip only reports what <see cref="PaginationSnapshotService"/>
+/// already knows today.
 /// </summary>
-public sealed record AdHocSearchProvenanceResponse(TimeSpan? CacheAge, CacheBand CacheBand, IReadOnlyList<string> RateLimitedSources);
+/// <remarks>
+/// arb-cy1y: <paramref name="TimedOutSources"/> and <paramref name="FailedSources"/> are APPENDED,
+/// never inserted, so the positional order every existing consumer binds by is unchanged. Without
+/// them an all-timed-out or all-failed merge reached the dashboard as a plain empty release list,
+/// indistinguishable from a query that genuinely matched nothing, while <c>/torznab/api</c>
+/// answered the identical merge with a 900/5xx infrastructure element (arb-nus0). The three lists
+/// stay SEPARATE because what an operator should read off each one differs: a rate limit is an
+/// answer ("not now"), a timeout is silence, and a failure is a fault.
+/// </remarks>
+/// <param name="CacheAge">Age of the set this response was rendered from, or null when nothing was cached.</param>
+/// <param name="CacheBand">Freshness band for that same age.</param>
+/// <param name="RateLimitedSources">Names of sources that answered with a rate limit.</param>
+/// <param name="TimedOutSources">
+/// Names of sources that did not answer within either clock that can end a leg, projected verbatim
+/// from <see cref="MergeResult.TimedOutSources"/>, whose remarks are the contract. A source named
+/// here is NOT necessarily unhealthy: #504's whole-fan-out ceiling puts a healthy-but-slow source
+/// in this list too, which is why copy built on it says the source did not answer in time rather
+/// than that it is down.
+/// </param>
+/// <param name="FailedSources">
+/// Names of sources that failed some other way (transport, protocol, parse), projected verbatim
+/// from <see cref="MergeResult.FailedSources"/>.
+/// </param>
+public sealed record AdHocSearchProvenanceResponse(
+    TimeSpan? CacheAge,
+    CacheBand CacheBand,
+    IReadOnlyList<string> RateLimitedSources,
+    IReadOnlyList<string> TimedOutSources,
+    IReadOnlyList<string> FailedSources);
 
 /// <summary>Response body for <c>GET /api/admin/search</c>.</summary>
 public sealed record AdHocSearchResponse(
@@ -143,7 +172,12 @@ public static class AdHocSearchEndpoint
 
         var response = new AdHocSearchResponse(
             Releases: releases,
-            Provenance: new AdHocSearchProvenanceResponse(result.CacheAge, result.CacheBand, result.RateLimitedSources));
+            Provenance: new AdHocSearchProvenanceResponse(
+                result.CacheAge,
+                result.CacheBand,
+                result.RateLimitedSources,
+                result.TimedOutSources,
+                result.FailedSources));
 
         return Results.Ok(response);
     }

@@ -51,13 +51,130 @@ public sealed class MaintenanceHostedService(
 {
     private readonly ILogger _logger = logger ?? NullLogger<MaintenanceHostedService>.Instance;
 
+    private readonly TaskCompletionSource _firstPassCompleted =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>
+    /// Set by <see cref="RunIterationAsync"/> in place of the <c>break</c> it used to execute when
+    /// a step observed cancellation, and read by <see cref="RunLoopAsync"/> immediately afterwards.
+    /// Not volatile and not interlocked on purpose: it is written and read on the SINGLE
+    /// <see cref="ExecuteAsync"/> task, never from another thread, with an await between the two
+    /// only in the sense that the awaits happen before the write.
+    /// </summary>
+    private bool _stopRequested;
+
+    /// <summary>
+    /// arb-km0a: completes once this service's FIRST pass has finished, whatever its outcome —
+    /// every step succeeded, a step threw and was absorbed by its own catch, or the host was
+    /// stopped part-way through. A test host awaits this before reading state the first pass
+    /// writes, instead of racing it.
+    ///
+    /// <para><b>Why the seam is needed at all.</b> <c>BackgroundService.StartAsync</c> returns at
+    /// <see cref="ExecuteAsync"/>'s FIRST await (<see cref="ResolveIntervalAsync"/>, a settings
+    /// read), so "the host has started" says nothing about the first pass having run. The automatic
+    /// backup step is deliberately immediate — it runs before the first <c>Task.Delay</c>, see the
+    /// arb-rwhb remarks below — so a startup backup failure it records into
+    /// <c>BackupStateStore</c> can land in the middle of an unrelated test body. That is the
+    /// three-times-observed defect arb-km0a fixes.</para>
+    ///
+    /// <para><b>Completed from a <c>finally</c>, exactly like
+    /// <c>SqliteLoggerProvider.DrainCompleted</c>, and for the same reason.</b> A waiter must never
+    /// be stranded by the one case the seam exists to survive — the first pass not finishing the
+    /// way it planned to. So it publishes even when the loop breaks on cancellation and even if
+    /// something outside the per-step catches throws. This task therefore never faults and never
+    /// cancels; awaiting it cannot throw. It is completed exactly once (the <c>finally</c> is
+    /// inside the first iteration only), and <see cref="TaskCompletionSource.TrySetResult"/> keeps
+    /// that safe regardless.</para>
+    ///
+    /// <para>This is a completion signal, NOT a success signal: a caller that needs to know whether
+    /// the pass succeeded reads the state the pass writes (<c>BackupStateStore.LastBackupFailure</c>),
+    /// which is the whole point of awaiting this first.</para>
+    /// </summary>
+    public Task FirstPassCompleted => _firstPassCompleted.Task;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // The interval is resolved once, from the first scope, and reused for the lifetime of the
-        // service -- see the restart-required rationale above.
-        var interval = await ResolveIntervalAsync(stoppingToken).ConfigureAwait(false);
+        try
+        {
+            // The interval is resolved once, from the first scope, and reused for the lifetime of
+            // the service -- see the restart-required rationale above.
+            var interval = await ResolveIntervalAsync(stoppingToken).ConfigureAwait(false);
+
+            await RunLoopAsync(interval, stoppingToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            // arb-km0a: the outermost finally covers the paths RunLoopAsync's own publication
+            // cannot -- ResolveIntervalAsync throwing or being cancelled before the first iteration
+            // is ever entered. A host that never reaches a pass at all must still release its
+            // awaiters rather than leave them hanging until their bound elapses.
+            _firstPassCompleted.TrySetResult();
+        }
+    }
+
+    private async Task RunLoopAsync(TimeSpan interval, CancellationToken stoppingToken)
+    {
+        // arb-km0a: false for the first iteration only; set once it has published, so the
+        // per-iteration finally below is a no-op for every subsequent cycle.
+        var firstPass = true;
 
         while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                await RunIterationAsync(stoppingToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                // arb-km0a: published here, AFTER the pass's work steps and BEFORE the delay below.
+                // Putting it after the delay instead would make the "completion" arrive one whole
+                // maintenance interval late -- and under a FakeTimeProvider, which never advances on
+                // its own, never at all. The seam's meaning is "the work this pass does is done",
+                // which is precisely what a caller reading the state that work writes needs.
+                if (firstPass)
+                {
+                    firstPass = false;
+                    _firstPassCompleted.TrySetResult();
+                }
+            }
+
+            if (_stopRequested)
+            {
+                break;
+            }
+
+            try
+            {
+                await Task.Delay(interval, timeProvider, stoppingToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// arb-km0a: the WORK of one pass — the four steps, in order, each with the separate catch it
+    /// had. Extracted from <see cref="ExecuteAsync"/>'s loop body so the first iteration has a seam
+    /// to publish <see cref="FirstPassCompleted"/> from.
+    ///
+    /// <para>Two mechanical changes, neither of them behavioural. The <c>break</c>s the loop body
+    /// used became <see cref="_stopRequested"/>, because a <c>break</c> cannot cross a method
+    /// boundary; <see cref="RunLoopAsync"/> breaks on that flag immediately after this returns, so
+    /// the loop still exits at the same point. And the INTER-CYCLE DELAY STAYED IN THE LOOP rather
+    /// than coming along — it is the wait BETWEEN passes, not part of one, and it must sit on the
+    /// far side of the publication or the completion would arrive an interval late. The steps
+    /// themselves, their order, their isolation from one another and the immediacy of the first
+    /// pass are all exactly as they were.</para>
+    /// </summary>
+    private async Task RunIterationAsync(CancellationToken stoppingToken)
+    {
+        // The bare block preserves the loop body's original INDENTATION, so this extraction shows
+        // up in the diff as the four break-to-return rewrites and nothing else. Re-indenting a
+        // hundred lines of load-bearing commentary to save one brace would bury those four lines in
+        // whitespace churn and make the next reviewer of this method diff it against the wrong
+        // thing.
         {
             try
             {
@@ -65,7 +182,8 @@ public sealed class MaintenanceHostedService(
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
-                break;
+                _stopRequested = true;
+                return;
             }
             catch (Exception ex)
             {
@@ -80,7 +198,8 @@ public sealed class MaintenanceHostedService(
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
-                break;
+                _stopRequested = true;
+                return;
             }
             catch (Exception ex)
             {
@@ -117,7 +236,8 @@ public sealed class MaintenanceHostedService(
                 // timeout, the existing contract) instead of abandoning it. Introducing a
                 // fire-and-forget dispatch in this chain would silently reopen arb-rwhb: the copy
                 // would outlive StopAsync and read files the config directory's owner then deletes.
-                break;
+                _stopRequested = true;
+                return;
             }
             catch (Exception ex)
             {
@@ -140,7 +260,8 @@ public sealed class MaintenanceHostedService(
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
-                break;
+                _stopRequested = true;
+                return;
             }
             catch (Exception ex)
             {
@@ -150,15 +271,6 @@ public sealed class MaintenanceHostedService(
                 // CapsRefresher already absorbs a per-source fetch failure without writing, so
                 // anything landing here is a failure to resolve the source SET at all.
                 _logger.LogError(ex, "Source caps refresh failed; will retry next cycle.");
-            }
-
-            try
-            {
-                await Task.Delay(interval, timeProvider, stoppingToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                break;
             }
         }
     }
