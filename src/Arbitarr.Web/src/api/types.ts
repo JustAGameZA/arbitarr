@@ -699,7 +699,9 @@ export type NotificationTrigger =
   | 'SuppressionRateHigh'
   | 'SuppressionRateNormal'
   | 'DownloadRefused'
-  | 'DownloadRefusalCleared';
+  | 'DownloadRefusalCleared'
+  | 'SourcePermanentlyDisabled'
+  | 'SourcePermanentlyDisabledCleared';
 
 /**
  * NotificationDeliveryOutcome.cs — a CLOSED set, mirrored closed here.

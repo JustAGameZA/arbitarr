@@ -35,6 +35,8 @@ const ALL_TRIGGERS = [
   'SuppressionRateNormal',
   'DownloadRefused',
   'DownloadRefusalCleared',
+  'SourcePermanentlyDisabled',
+  'SourcePermanentlyDisabledCleared',
 ];
 
 const unconfigured = {
@@ -461,6 +463,50 @@ describe('Notifications section', () => {
 
     await user.click(screen.getByRole('checkbox', { name: /Source refusing downloads/ }));
     await user.click(screen.getByRole('checkbox', { name: /Download refusal cleared/ }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(lastPutBody(api).enabledTriggers).toEqual(['SourceFailing', 'SourceRecovered']);
+  });
+
+  it('sends the permanent-disable triggers when toggled on (arb-rx1f)', async () => {
+    const user = userEvent.setup();
+    const api = mockApi({ [ROUTE]: { body: unconfigured } });
+    renderSurface(<NotificationsSection />);
+
+    await user.click(await screen.findByRole('checkbox', { name: /Source key rejected/ }));
+    await user.click(screen.getByRole('checkbox', { name: /Source key accepted again/ }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(lastPutBody(api).enabledTriggers).toEqual([
+      'SourceFailing',
+      'SourceRecovered',
+      'SourcePermanentlyDisabled',
+      'SourcePermanentlyDisabledCleared',
+    ]);
+  });
+
+  it('sends the permanent-disable triggers as absent once toggled back off (arb-rx1f)', async () => {
+    const user = userEvent.setup();
+    const api = mockApi({
+      [ROUTE]: {
+        body: {
+          ...unconfigured,
+          enabledTriggers: [
+            'SourceFailing',
+            'SourceRecovered',
+            'SourcePermanentlyDisabled',
+            'SourcePermanentlyDisabledCleared',
+          ],
+        },
+      },
+    });
+    renderSurface(<NotificationsSection />);
+
+    expect(await screen.findByRole('checkbox', { name: /Source key rejected/ })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /Source key accepted again/ })).toBeChecked();
+
+    await user.click(screen.getByRole('checkbox', { name: /Source key rejected/ }));
+    await user.click(screen.getByRole('checkbox', { name: /Source key accepted again/ }));
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
     expect(lastPutBody(api).enabledTriggers).toEqual(['SourceFailing', 'SourceRecovered']);

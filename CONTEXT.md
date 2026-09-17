@@ -155,14 +155,19 @@ appears, one when it clears, pushed from a decorator rather than through
 `NotificationPolicy.FoldSourceFailure` — see
 [ADR 0014](docs/adr/0014-refuse-upstream-download-redirects.md).
 
-**One item is a known exception to that.** The permanently-disabled-source item
-(`source-permanently-disabled`, arb-x7w8.11) is **read-derived**: it is projected
-from the durable backoff row each time `/api/status` is served, rather than owned
-by a tracker. There is therefore no edge for a decorator to observe, and it
-**deliberately does not notify today**. That is the accepted cost of the
-projection, which is also what makes the item impossible to expire by elapsed
-time. Giving it an edge is bead **arb-rx1f**; mirroring the row into a second
-tracker to obtain one is specifically not the fix.
+**One item reaches its notification by a different route.** The
+permanently-disabled-source item (`source-permanently-disabled`, arb-x7w8.11) is
+**read-derived**: it is projected from the durable backoff row each time
+`/api/status` is served, rather than owned by a tracker. That is still true, and
+it is what makes the item impossible to expire by elapsed time. There is
+therefore no tracker for a decorator to wrap — but since **arb-rx1f** the item
+does notify: `SourcePermanentDisableNotifier` raises one notification when a
+source becomes permanently disabled and one when the flag clears, computing the
+edge where the backoff row is WRITTEN (the one point holding the before-state and
+the after-state together) rather than where it is read. Pushed outside
+`NotificationPolicy`, as arb-apj's refusal notices are and for the same reason.
+Mirroring the row into a second tracker to obtain an edge was specifically not
+the fix, and still is not.
 
 ---
 

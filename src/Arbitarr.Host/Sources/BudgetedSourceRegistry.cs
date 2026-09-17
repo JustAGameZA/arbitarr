@@ -2,6 +2,7 @@ using Arbitarr.Core.Diagnostics;
 using Arbitarr.Core.Sources;
 using Arbitarr.Data;
 using Arbitarr.Data.Entities;
+using Arbitarr.Host.Notifications;
 using Microsoft.EntityFrameworkCore;
 
 namespace Arbitarr.Host.Sources;
@@ -58,6 +59,13 @@ public sealed class BudgetedSourceRegistry : ISourceRegistry
     private readonly IEventSink _eventSink;
 
     /// <summary>
+    /// arb-rx1f: handed to every decorator this scope builds. It is a SINGLETON while this registry
+    /// is scoped, which is what the feature needs — its per-source gates and the notify-once property
+    /// they provide have to outlive the request that happens to observe the edge.
+    /// </summary>
+    private readonly SourcePermanentDisableNotifier? _permanentDisableNotifier;
+
+    /// <summary>
     /// The wrapped set this scope has already produced, or null until the first resolution. One
     /// scope, one set of decorators — see the type doc.
     /// </summary>
@@ -67,12 +75,14 @@ public sealed class BudgetedSourceRegistry : ISourceRegistry
         SourceRegistry inner,
         ArbitarrDbContext dbContext,
         ISourceGateScopeFactory gateScopeFactory,
-        IEventSink eventSink)
+        IEventSink eventSink,
+        SourcePermanentDisableNotifier? permanentDisableNotifier = null)
     {
         _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _gateScopeFactory = gateScopeFactory ?? throw new ArgumentNullException(nameof(gateScopeFactory));
         _eventSink = eventSink ?? throw new ArgumentNullException(nameof(eventSink));
+        _permanentDisableNotifier = permanentDisableNotifier;
     }
 
     /// <inheritdoc />
@@ -113,7 +123,8 @@ public sealed class BudgetedSourceRegistry : ISourceRegistry
                 source,
                 configurations[sourceId],
                 _gateScopeFactory,
-                _eventSink));
+                _eventSink,
+                _permanentDisableNotifier));
         }
 
         return _wrapped = wrapped;

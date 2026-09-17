@@ -172,16 +172,19 @@ public static class StatusEndpoint
     /// a premise <see cref="PermanentlyDisabledItemsAsync"/> enforces rather than assumes by keeping
     /// only states whose name is in that published set (sec-511).</para>
     ///
-    /// <para><b>THIS ITEM DOES NOT NOTIFY, and that is a KNOWN EXCEPTION to the rule that health
-    /// items do.</b> CONTEXT.md's "Health item" entry records that items notify since arb-apj
+    /// <para><b>THIS ITEM NOTIFIES, BUT NOT FROM HERE — and nothing on this path should be changed
+    /// to make it.</b> CONTEXT.md's "Health item" entry records that items notify since arb-apj
     /// (#247), pushed from a decorator around the tracker that owns them. This one has no such
-    /// decorator to hang off because it has no tracker and no edge: it is PROJECTED at read time
-    /// from the backoff row, so nothing in this path observes the transition from absent to present
-    /// and there is no moment at which a notification could be raised. That is the cost of the
-    /// projection design, accepted knowingly rather than overlooked, because the projection is what
-    /// makes the item impossible to expire by elapsed time (see the paragraph above). Giving it an
-    /// edge is bead arb-rx1f; until that lands, do NOT add a second tracker mirroring the row here
-    /// to obtain one, which would reintroduce exactly the drift the projection removes.</para>
+    /// decorator to hang off because it has no tracker and no edge HERE: it is PROJECTED at read
+    /// time from the backoff row, so nothing in this path observes the transition from absent to
+    /// present. That remains the projection's design, and it is what makes the item impossible to
+    /// expire by elapsed time (see the paragraph above). arb-rx1f supplied the edge at the other
+    /// end instead: <c>SourcePermanentDisableNotifier</c> reads the row's flag before and after
+    /// <c>SourceBackoffStore.RecordOutcomeAsync</c> — the one point holding both states — and raises
+    /// one notification when a source becomes permanently disabled and one when it clears, outside
+    /// <c>NotificationPolicy</c>. So do NOT add a tracker, an edge, or a notification call to this
+    /// read path to "fix" a gap that is already closed: mirroring the row into a second tracker
+    /// would reintroduce exactly the drift the projection removes.</para>
     /// </summary>
     public const string SourcePermanentlyDisabledKey = "source-permanently-disabled";
 
