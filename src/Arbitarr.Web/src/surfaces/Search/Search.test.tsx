@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -140,6 +140,40 @@ describe('Search', () => {
     // never carried, so its cache strip was always blank.
     expect(screen.getByText('Fresh')).toBeInTheDocument();
     expect(screen.getByText('1m 30s')).toBeInTheDocument();
+  });
+
+  /**
+   * arb-p94u: the "Published" column used to render a bare
+   * `new Date(v).toLocaleString()`, exactly the ambiguity Activity's AC9
+   * forbids for the same underlying data an operator correlates against logs.
+   * The `title` assertion is what pins the fix; the text assertion is an
+   * EXACT match against `toLocaleString(undefined, { timeZoneName: 'short'
+   * })`, with a positive control proving that string differs from the bare
+   * rendering on the CURRENT runner -- a `/[A-Za-z]/` "has a letter" check
+   * would be vacuous on an AM/PM (en-US-ish) locale, where the bare rendering
+   * already contains letters with no zone information.
+   */
+  it('renders the published timestamp with a timezone abbreviation and the raw instant in title', async () => {
+    const user = userEvent.setup();
+    mockApi({ '/api/admin/search': { body: response } });
+    renderSurface(<SearchPage />);
+
+    await runSearch(user);
+
+    const row = (await screen.findByText('Some.Series.S01E02.1080p')).closest('tr');
+    expect(row).not.toBeNull();
+    const cells = within(row as HTMLElement).getAllByRole('cell');
+    const publishedCell = cells[4];
+
+    const iso = '2026-09-05T22:10:00+00:00';
+    const parsed = new Date(iso);
+    const expected = parsed.toLocaleString(undefined, { timeZoneName: 'short' });
+    // Positive control: proves the exact-match assertion below could not have
+    // passed against the old bare rendering on this runner.
+    expect(expected).not.toBe(parsed.toLocaleString(undefined));
+
+    expect(publishedCell).toHaveAttribute('title', iso);
+    expect(publishedCell.textContent).toBe(expected);
   });
 
   it('tells the operator a query ran and matched nothing', async () => {

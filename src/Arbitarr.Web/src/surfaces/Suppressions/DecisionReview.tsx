@@ -9,10 +9,7 @@ import {
   useDecisionsQuery,
   useReviewDecisionMutation,
 } from './decisionQueries';
-
-function formatTimestamp(value: string): string {
-  return new Date(value).toLocaleString();
-}
+import { formatTimestamp, formatTimestampTitle } from '../../format';
 
 /**
  * The review controls for one decision.
@@ -146,7 +143,9 @@ function DecisionsTable({ decisions }: { decisions: DecisionEntry[] }) {
           {decisions.map((decision) => (
             <Fragment key={decision.id}>
               <tr>
-                <td>{formatTimestamp(decision.occurredAt)}</td>
+                <td title={formatTimestampTitle(decision.occurredAt)}>
+                  {formatTimestamp(decision.occurredAt)}
+                </td>
                 <td>{decision.summary}</td>
                 <td>{decision.reason ?? ''}</td>
                 {/* Same wording as the audit-log table above: shadowMode means
