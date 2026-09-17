@@ -203,6 +203,20 @@ public sealed class SourceRepository
         new[] { ProxyAccessMode, RedirectAccessMode };
 
     /// <summary>
+    /// The smallest accepted <see cref="Entities.Source.TimeoutSeconds"/> (arb-2cjk). See
+    /// <see cref="ValidateTimeoutSeconds"/> for why the floor is a rejection rather than the silent
+    /// demotion the read side already performs.
+    /// </summary>
+    public const int MinTimeoutSeconds = 1;
+
+    /// <summary>
+    /// The largest accepted <see cref="Entities.Source.TimeoutSeconds"/> (arb-2cjk): the documented
+    /// Sonarr/Radarr indexer timeout default, past which the client that is waiting has given up.
+    /// See <see cref="ValidateTimeoutSeconds"/> for why this is NOT AC14's ≤12s search budget.
+    /// </summary>
+    public const int MaxTimeoutSeconds = 30;
+
+    /// <summary>
     /// Validates and inserts a new source. Rejects a non-absolute/non-http(s) <paramref name="baseUrl"/>
     /// and a <paramref name="displayName"/> that collides (ordinal, case-insensitive) with an existing
     /// source — both are AC24 rejections, not clamps. If <paramref name="apiKey"/> is supplied it is
@@ -443,6 +457,10 @@ public sealed class SourceRepository
     /// null-checking the value, because for those two <c>null</c> is a real stored state (unlimited)
     /// that is NOT <c>0</c>. A null-check would make "store unlimited" indistinguishable from "leave
     /// whatever is there", so an operator clearing a limit would silently keep the old one.</para>
+    ///
+    /// <para>Called by BOTH write paths (<see cref="AddAsync"/> and <see cref="UpdateAsync"/>), which
+    /// is what makes one validation here cover create and update together rather than needing two
+    /// that can drift apart.</para>
     /// </summary>
     private static void ApplyOptions(Source source, SourceOptions? options)
     {
@@ -464,6 +482,11 @@ public sealed class SourceRepository
         if (options.NzbAccessMode is not null)
         {
             ValidateNzbAccessMode(options.NzbAccessMode);
+        }
+
+        if (options.SetTimeoutSeconds && options.TimeoutSeconds is { } timeoutSeconds)
+        {
+            ValidateTimeoutSeconds(timeoutSeconds);
         }
 
         if (options.ApiPath is not null)
@@ -612,6 +635,52 @@ public sealed class SourceRepository
         {
             throw new SourceValidationException(
                 $"'{nzbAccessMode}' is not a known NZB access mode. Accepted value(s): {string.Join(", ", KnownNzbAccessModes)}.");
+        }
+    }
+
+    /// <summary>
+    /// Rejects a <paramref name="timeoutSeconds"/> outside
+    /// [<see cref="MinTimeoutSeconds"/>, <see cref="MaxTimeoutSeconds"/>] (arb-2cjk). Only a non-null
+    /// value reaches here: <c>null</c> is a real stored state meaning "take the adapter's default"
+    /// (see <see cref="Entities.Source.TimeoutSeconds"/>) and is not a duration to bound.
+    ///
+    /// <para><b>The floor makes an existing silent demotion explicit.</b> A stored <c>0</c> or a
+    /// negative was already not honoured — <c>SourceRegistry.RequestTimeoutFor</c> maps any
+    /// non-positive value back to "adapter default", because a non-positive
+    /// <see cref="System.Net.Http.HttpClient.Timeout"/> is rejected by <c>HttpClient</c> itself and
+    /// would fault the whole source set at construction. Accepting such a value and then quietly
+    /// ignoring it is the shape this type's reject-never-clamp posture exists to avoid: an operator
+    /// who saved it is entitled to be told it will not be used. That read-side mapping stays as the
+    /// guard for rows written before this validation existed; it is a fallback for old data, not a
+    /// second opinion about new data.</para>
+    ///
+    /// <para><b>The ceiling is bounded by the CLIENT's patience, not by our own response budget.</b>
+    /// The tempting figure is AC14's ≤12s end-to-end search budget (<c>docs/step0-measurements.md</c>,
+    /// "AC14 — end-to-end response time budget"), and it is the wrong quantity: that is a
+    /// WHOLE-RESPONSE bound over a concurrent fan-out, while this is a PER-REQUEST bound on one leg
+    /// of it, and a leg legitimately issues several sequential requests. Using the whole-response
+    /// figure for a per-request knob conflates exactly the two quantities
+    /// <c>UpstreamMergeStage.DefaultFanOutCeiling</c> exists to separate. What genuinely caps a
+    /// per-request timeout is the point past which nobody is still listening: the same document
+    /// records Sonarr/Radarr's documented 30s indexer timeout default, so a request configured to
+    /// run longer than that waits for an answer its own caller has already abandoned. 30s also
+    /// matches <c>SettingsValidator.ValidateSyncArbitrationBudget</c>'s ceiling, but that number is
+    /// derived from admin-UI responsiveness (<c>SettingsValidator.cs</c>'s comment there, AC14b), not
+    /// from the *arr abandon point — the two coincide numerically from independent derivations, and
+    /// neither should follow if the other moves.</para>
+    /// </summary>
+    private static void ValidateTimeoutSeconds(int timeoutSeconds)
+    {
+        if (timeoutSeconds < MinTimeoutSeconds)
+        {
+            throw new SourceValidationException(
+                $"Source timeout must be >= {MinTimeoutSeconds} seconds, got {timeoutSeconds}.");
+        }
+
+        if (timeoutSeconds > MaxTimeoutSeconds)
+        {
+            throw new SourceValidationException(
+                $"Source timeout must be <= {MaxTimeoutSeconds} seconds, got {timeoutSeconds}.");
         }
     }
 
