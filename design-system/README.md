@@ -240,6 +240,11 @@ any one piece breaks the others silently:
 native `<details>`/`<summary>` pair (arb-h9gd). First caller: the Dashboard's *Effective
 configuration*.
 
+**This primitive is for demoting a panel, not a licence to replace every bare `<details>`.** A
+native `<details>` used in-row for content that is not a panel — LogsTab's exception rows, for
+example — stays fine on its own; it is not a second, competing disclosure implementation, just a
+plain use of the element this component also wraps.
+
 **Native, not hand-rolled, and that is the whole component.** `<details>` supplies the disclosure
 contract correctly and for free: open/closed state, the expanded state exposed to assistive
 technology, the summary-to-region association, `Enter`/`Space` activation, and removal of collapsed

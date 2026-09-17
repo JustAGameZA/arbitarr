@@ -25,8 +25,9 @@ namespace Arbitarr.Core.Media;
 /// documented at length on these clients' registrations in <c>Program.cs</c>, not a stylistic one:
 /// <c>IHttpClientFactory</c>'s logging handler collapses the whole query string to <c>?*</c> before
 /// the message is formatted, so the key never reaches the log store, while <c>LogMessageCleanser</c>
-/// remains the guard for every other route a key-bearing URI can take to a log line. The cleanser
-/// scrubs query strings but NOT url paths (CLAUDE.md §1), so a key moved into a path segment would
+/// remains the guard for every other route a key-bearing URI can take to a log line. The cleanser's
+/// shared arms scrub credential-shaped values by pattern wherever they appear, but carry no arm for
+/// an arbitrary key in a URL path (CLAUDE.md §1), so a key moved into a path segment would
 /// be covered by neither layer. Do not "improve" this to an <c>X-Api-Key</c> header either: both
 /// work upstream, but a second placement would split the codebase's one convention and invalidate
 /// the comments <c>SonarrKeyIsScrubbedFromLogsTests</c> and <c>DisableUriRedactionSwitchTests</c>
@@ -224,7 +225,8 @@ public abstract class ArrQueueReader
     /// <summary>
     /// Builds the queue URI. The key rides in the QUERY STRING for the reason this type's doc states:
     /// that is where the logging handler's <c>?*</c> collapse fires and where
-    /// <c>LogMessageCleanser</c> scrubs. A path segment is covered by neither.
+    /// <c>LogMessageCleanser</c>'s shared arms scrub by pattern. An arbitrary key in a path segment is
+    /// covered by neither.
     ///
     /// <para>A base PATH is preserved (the <c>/</c>-terminated normalisation), so an *arr behind a
     /// reverse proxy at a sub-path is read at the right place rather than at the proxy's root —

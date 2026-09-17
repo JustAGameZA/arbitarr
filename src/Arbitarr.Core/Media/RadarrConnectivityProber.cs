@@ -32,8 +32,10 @@ namespace Arbitarr.Core.Media;
 /// <c>Program.cs</c>): <c>IHttpClientFactory</c>'s logging handler collapses the whole query string
 /// to <c>?*</c> before the message is formatted, so the key never reaches the log store at all, while
 /// <c>LogMessageCleanser</c> stays the guard for every other way a key-bearing URI can reach a log
-/// line. The cleanser scrubs credentials in query strings but NOT in URL paths (CLAUDE.md §1), so
-/// moving the key to a path segment would be covered by neither layer. Do not "improve" this to an
+/// line. The cleanser's shared arms scrub credential-shaped values by pattern (query-string
+/// parameters, auth headers, named assignments) wherever they appear, but carry no arm for an
+/// arbitrary key in a URL path (CLAUDE.md §1), so moving the key to a path segment would be covered
+/// by neither layer. Do not "improve" this to an
 /// <c>X-Api-Key</c> header: both work upstream, but a second placement would split the codebase's one
 /// convention and invalidate the comments <c>SonarrKeyIsScrubbedFromLogsTests</c> and
 /// <c>DisableUriRedactionSwitchTests</c> pin.</para>

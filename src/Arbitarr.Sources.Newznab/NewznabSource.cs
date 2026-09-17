@@ -447,8 +447,9 @@ public sealed class NewznabSource : IUpstreamSource
     /// lands in the persistent log store served at <c>/api/admin/logs</c>. Two things make the query
     /// string the only safe place: the framework's own URI redaction collapses the whole query
     /// string to <c>?*</c> while printing every path segment in full, and
-    /// <c>LogMessageCleanser</c> scrubs credentials in QUERY STRINGS only. A key moved into the path
-    /// is covered by NEITHER and lands in the log store verbatim. A key moved into a header escapes
+    /// <c>LogMessageCleanser</c>'s shared arms scrub credential-shaped values by pattern but carry no
+    /// arm for an arbitrary key in a URL path. A key moved into the path is covered by NEITHER and
+    /// lands in the log store verbatim. A key moved into a header escapes
     /// the URI log, but then rides on every request this client makes including any future
     /// non-indexer one, and is not scrubbed from an exception's own rendering of the request.</para>
     ///

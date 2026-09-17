@@ -808,9 +808,10 @@ builder.Services.AddScoped<Arbitarr.Data.Media.ArrInstanceRepository>();
 // TWO LAYERS COVER THAT, AND THE ONE THAT ACTUALLY FIRES HERE IS NOT THE ONE THE NEIGHBOURING
 // COMMENTS NAME. .NET's own logging handler collapses the whole query string to "?*" before the
 // message is formatted, so through this client the key never reaches LogMessageCleanser at all --
-// the stored row reads ".../api/v3/system/status?*". The cleanser (which scrubs query-string
-// credentials but NOT URL paths, CLAUDE.md §1) stays the guard for every OTHER way a key-bearing URI
-// can reach a log line: an exception message, or a hand-written one.
+// the stored row reads ".../api/v3/system/status?*". The cleanser (whose shared arms scrub
+// credential-shaped values by pattern but carry no arm for an arbitrary key in a URL path, CLAUDE.md
+// §1) stays the guard for every OTHER way a key-bearing URI can reach a log line: an exception
+// message, or a hand-written one.
 // SonarrKeyIsScrubbedFromLogsTests drives THIS registered client through the real probe route and
 // asserts both layers, with a positive control matching what is genuinely logged so it cannot pass
 // vacuously. If either URI builder is ever changed to put the key in a path segment, NEITHER layer
@@ -1099,8 +1100,9 @@ builder.Services.AddSingleton(sp => new Arbitarr.Media.Providers.AnimeListsProvi
 // static file and the URI has no key in its query string or its path -- so there is nothing in the
 // logged URI to leak (CLAUDE.md section 1). Logging the address an operator configured is useful.
 // If a future upstream ever needs authentication, that stops being true and this registration needs
-// .RemoveAllLoggers(), because a token in a URL PATH is scrubbed by neither .NET's query-string
-// redaction nor LogMessageCleanser.
+// .RemoveAllLoggers(), because an arbitrary token in a URL PATH is scrubbed by neither .NET's
+// query-string redaction nor any of LogMessageCleanser's pattern-based arms (its one path-shaped arm
+// matches only a Discord/Telegram webhook URL, which this is not).
 //
 // THE TIMEOUT IS SET HERE, ONCE, and AnimeListsProvider must never assign HttpClient.Timeout
 // itself: it holds this POOLED client for the life of the process, and HttpClient throws on that

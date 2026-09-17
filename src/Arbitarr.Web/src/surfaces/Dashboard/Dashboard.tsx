@@ -61,9 +61,9 @@ function FactRow({ label, value }: { label: string; value: ReactNode }) {
  *
  * The wording states the fix, not just the fault: ADR 0014 records that the original incident's
  * whole cost was invisibility, with the setting name buried in event text nobody was watching.
- * "Observed since" is deliberately hedged — the server holds these in memory only, so the
- * timestamp is when THIS PROCESS first saw the condition, which a restart resets even though the
- * misconfiguration is unchanged. Claiming a plain "since" would overstate it.
+ * "Observed since" names when the condition began, not when this process happened to notice it:
+ * arb-v3w persisted health items (see the HealthItem doc), so `observedSinceUtc` survives a
+ * restart rather than resetting with it.
  *
  * `role="alert"` rather than a bare div: this appears after the page has already rendered, when
  * the status query resolves, so a screen-reader user would otherwise never be told.
@@ -84,8 +84,9 @@ function HealthBanners({ status }: { status: StatusResponse }) {
       {items.map((item) => (
         <div key={`${item.key}-${item.sourceName}`} className={styles.banner} role="alert">
           {item.sourceName} refused a download: it redirected instead of serving the file —
-          observed since {formatTimestamp(item.observedSinceUtc)}. Fix &lsquo;NZB access type&rsquo;
-          in NZBHydra2 by setting it to Proxy rather than Redirect to indexer.
+          observed since {formatTimestamp(item.observedSinceUtc)} (survives a restart). Fix
+          &lsquo;NZB access type&rsquo; in NZBHydra2 by setting it to Proxy rather than Redirect to
+          indexer.
         </div>
       ))}
     </>

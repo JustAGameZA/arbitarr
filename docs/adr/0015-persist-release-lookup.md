@@ -43,6 +43,8 @@ A cancellation (`OperationCanceledException`) is rethrown on both sides — that
 
 **Amended 2026-09-11.** The paragraph above replaces an earlier "Follow-up in flight (arb-zwk)" note. Of the three gaps it listed, the search-side degradation guard and the asynchronous TTL read landed in #201 (`37a7097`); only paging `MaintenanceJob.PruneReleaseLookupAsync` (see the Consequences section) remains open.
 
+**Amended 2026-09-17.** "One row per rendered release per search" understated the row count since arb-vlsu (#468): a dedup group additionally registers one row per `AlternateMember`, bounded by the number of sources contributing to that group, alongside the representative's own row. Both `SearchEndpoint` and `DownloadProxyEndpoint` write under this multiplier. The TTL bound and the paged prune behaviour below are unaffected — both operate per row regardless of why the row exists, so the multiplier changes how many rows exist, not how any one of them expires or is pruned.
+
 ## Alternatives rejected
 
 ### A self-describing HMAC GUID, with no lookup at all

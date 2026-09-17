@@ -24,7 +24,8 @@ namespace Arbitarr.Integration.Tests;
 ///
 /// <para><b>TWO INDEPENDENT LAYERS PROTECT THE QUERY STRING, and this file measured which one
 /// actually fires.</b> The repository's standing comments name <see cref="LogMessageCleanser"/>,
-/// which scrubs credentials in query strings but not in URL paths (CLAUDE.md §1). That is true and
+/// whose shared arms scrub credential-shaped values by pattern but carry none for an arbitrary key
+/// in a URL path (CLAUDE.md §1). That is true and
 /// still load-bearing — but it is not what covers THIS path. .NET's own HttpClient logging handler
 /// collapses the entire query string to <c>?*</c> before the message is ever formatted, so through
 /// the registered client the key never reaches the cleanser at all. The end-to-end test below
